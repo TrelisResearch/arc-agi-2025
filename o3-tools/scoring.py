@@ -56,18 +56,31 @@ class GridScorer:
         }
     
     def calculate_residual_grid(self, predicted: List[List[int]], actual: List[List[int]]) -> List[List[int]]:
-        """Calculate the residual grid (difference between predicted and actual)"""
+        """
+        Calculate the residual grid using difference-based approach.
+        
+        The residual represents the "patch" needed to reconstruct the actual output:
+        actual_output = predicted_output + residual
+        
+        This follows the true MDL principle where you send:
+        1. A program that produces an approximate solution
+        2. A minimal correction (residual) to fix any errors
+        """
         residual = []
         
-        # If dimensions don't match, return the actual grid as residual
+        # If dimensions don't match, we need a more complex residual representation
+        # For simplicity, return a special marker that the actual grid is needed
         if len(predicted) != len(actual) or any(len(row) != len(actual[0]) for row in predicted):
+            # Return actual grid as before for dimension mismatches
+            # TODO: Could implement more sophisticated dimension-aware residual
             return actual
         
         for pred_row, actual_row in zip(predicted, actual):
             residual_row = []
             for pred_cell, actual_cell in zip(pred_row, actual_row):
-                # 0 if correct, actual value if incorrect
-                residual_row.append(0 if pred_cell == actual_cell else actual_cell)
+                # Difference-based: actual - predicted
+                # This allows perfect reconstruction: predicted + residual = actual
+                residual_row.append(actual_cell - pred_cell)
             residual.append(residual_row)
         
         return residual
@@ -85,64 +98,180 @@ class GridScorer:
         """Count the number of tokens in a text string"""
         return len(self.encoding.encode(text))
     
-    def calculate_mdl_score(self, program: str, residual_grid: List[List[int]], 
-                           alpha: float = 1.0, beta: float = 4.0) -> Dict:
+    def strip_comments_and_compress(self, program: str) -> int:
+        """Strip comments from Python code and return gzipped size in bytes"""
+        import ast
+        import re
+        
+        # Remove single-line comments (lines starting with #)
+        lines = program.split('\n')
+        lines_no_comments = []
+        for line in lines:
+            # Remove inline comments but preserve # inside strings
+            # Simple approach: split on # and take the first part if not in quotes
+            if '#' in line:
+                # This is a simple approach - doesn't handle # inside strings perfectly
+                # but should work for most generated code
+                comment_pos = line.find('#')
+                line = line[:comment_pos].rstrip()
+            if line.strip():  # Only keep non-empty lines
+                lines_no_comments.append(line)
+        
+        cleaned_program = '\n'.join(lines_no_comments)
+        
+        # Compress and return size
+        compressed = gzip.compress(cleaned_program.encode('utf-8'))
+        return len(compressed)
+    
+    def calculate_mdl_score(self, program: str, residual_grid: List[List[int]]) -> Dict:
         """
-        Calculate MDL (Minimum Description Length) score
+        Calculate MDL (Minimum Description Length) score using gzip compression
         
         Args:
             program: The Python program as a string
-            residual_grid: The residual grid (differences)
-            alpha: Weight for program tokens (default 1.0)
-            beta: Weight for residual compression (default 4.0)
+            residual_grid: The residual grid (differences between predicted and actual)
         
         Returns:
-            Dictionary with MDL components and total score
+            Dictionary with MDL components and total score (all in bytes)
         """
-        program_tokens = self.count_tokens(program)
+        # Use gzip compression for program (after stripping comments)
+        program_bytes = self.strip_comments_and_compress(program)
+        
+        # Compress residual grid
         residual_bytes = self.gzip_compress_grid(residual_grid)
         
-        # Calculate total MDL score
-        mdl_score = alpha * program_tokens + beta * residual_bytes
+        # MDL score: program + residual (training examples are given, not part of description length)
+        mdl_score = program_bytes + residual_bytes
         
         return {
-            'program_tokens': program_tokens,
+            'program_bytes': program_bytes,
             'residual_bytes': residual_bytes,
-            'mdl_score': mdl_score,
-            'alpha': alpha,
-            'beta': beta
+            'mdl_score': mdl_score
         }
     
-    def calculate_null_program_mdl(self, actual_grid: List[List[int]], 
-                                  alpha: float = 1.0, beta: float = 4.0) -> Dict:
+    def calculate_training_mdl_score(self, program: str, training_examples: List[Dict], executor) -> Dict:
+        """
+        Calculate MDL score based on training examples (the correct approach).
+        
+        This represents the cost of encoding the training pattern:
+        MDL = program_bytes + residual_bytes_for_all_training_outputs
+        
+        Args:
+            program: The Python program as a string
+            training_examples: List of {"input": grid, "output": grid} training examples
+            executor: ProgramExecutor instance to run the program
+        
+        Returns:
+            Dictionary with training-based MDL components and total score
+        """
+        # Use gzip compression for program (after stripping comments)
+        program_bytes = self.strip_comments_and_compress(program)
+        
+        # Calculate residuals for all training examples
+        all_training_residuals = []
+        training_errors = []
+        
+        for example in training_examples:
+            train_input = example['input']
+            train_expected = example['output']
+            
+            # Execute program on training input
+            train_predicted, error, timed_out = executor.execute_program(program, train_input)
+            
+            if error or timed_out or train_predicted is None:
+                # If program fails on training, use the full expected output as residual
+                training_errors.append({
+                    'input': train_input,
+                    'expected': train_expected, 
+                    'error': error or 'timeout' if timed_out else 'no output'
+                })
+                residual = train_expected  # Full output needed as residual
+            else:
+                # Calculate difference-based residual
+                residual = self.calculate_residual_grid(train_predicted, train_expected)
+            
+            all_training_residuals.extend(residual)
+        
+        # Compress all training residuals together
+        training_residual_bytes = self.gzip_compress_grid(all_training_residuals)
+        
+        # MDL score: program + training residuals
+        mdl_score = program_bytes + training_residual_bytes
+        
+        return {
+            'program_bytes': program_bytes,
+            'training_residual_bytes': training_residual_bytes,
+            'mdl_score': mdl_score,
+            'training_examples_count': len(training_examples),
+            'training_errors': training_errors
+        }
+    
+    def calculate_null_program_training_mdl(self, training_examples: List[Dict]) -> Dict:
+        """
+        Calculate MDL score for the null program using training examples.
+        
+        Args:
+            training_examples: List of {"input": grid, "output": grid} training examples
+        
+        Returns:
+            Dictionary with null program training-based MDL components and total score
+        """
+        # Null program: def transform(grid): return grid
+        null_program = "def transform(grid):\n    return grid"
+        null_program_bytes = self.strip_comments_and_compress(null_program)
+        
+        # For null program applied to training examples:
+        # predicted = input, actual = output, so residual represents full transformation cost
+        all_training_residuals = []
+        
+        for example in training_examples:
+            train_input = example['input']
+            train_output = example['output']
+            
+            # Null program predicts input unchanged, so residual = output - input
+            residual = self.calculate_residual_grid(train_input, train_output)
+            all_training_residuals.extend(residual)
+        
+        # Compress all training residuals together
+        training_residual_bytes = self.gzip_compress_grid(all_training_residuals)
+        
+        # Simple sum since both components are in bytes
+        null_mdl_score = null_program_bytes + training_residual_bytes
+        
+        return {
+            'null_program': null_program,
+            'null_program_bytes': null_program_bytes,
+            'null_training_residual_bytes': training_residual_bytes,
+            'null_mdl_score': null_mdl_score,
+            'training_examples_count': len(training_examples)
+        }
+
+    def calculate_null_program_mdl(self, actual_grid: List[List[int]]) -> Dict:
         """
         Calculate MDL score for the null program (returns input unchanged)
         
         Args:
             actual_grid: The expected output grid
-            alpha: Weight for program tokens (default 1.0)
-            beta: Weight for residual compression (default 4.0)
         
         Returns:
-            Dictionary with null program MDL components and total score
+            Dictionary with null program MDL components and total score (all in bytes)
         """
         # Null program: def transform(grid): return grid
         null_program = "def transform(grid):\n    return grid"
-        null_program_tokens = self.count_tokens(null_program)
+        null_program_bytes = self.strip_comments_and_compress(null_program)
         
         # For null program, residual is the full actual grid (since predicted = input, actual = output)
         # This represents the full "surprise" of the transformation
         null_residual_bytes = self.gzip_compress_grid(actual_grid)
         
-        null_mdl_score = alpha * null_program_tokens + beta * null_residual_bytes
+        # Simple sum since both components are in bytes
+        null_mdl_score = null_program_bytes + null_residual_bytes
         
         return {
             'null_program': null_program,
-            'null_program_tokens': null_program_tokens,
+            'null_program_bytes': null_program_bytes,
             'null_residual_bytes': null_residual_bytes,
-            'null_mdl_score': null_mdl_score,
-            'alpha': alpha,
-            'beta': beta
+            'null_mdl_score': null_mdl_score
         }
 
 
@@ -151,6 +280,23 @@ class ProgramExecutor:
     
     def __init__(self, timeout: float = 0.1):
         self.timeout = timeout
+    
+    def _convert_numpy_types(self, obj):
+        """Convert numpy types to Python native types for JSON serialization"""
+        import numpy as np
+        
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, (np.integer, np.int64, np.int32, np.int16, np.int8)):
+            return int(obj)
+        elif isinstance(obj, (np.floating, np.float64, np.float32)):
+            return float(obj)
+        elif isinstance(obj, list):
+            return [self._convert_numpy_types(item) for item in obj]
+        elif isinstance(obj, tuple):
+            return tuple(self._convert_numpy_types(item) for item in obj)
+        else:
+            return obj
     
     def execute_program(self, program: str, test_input: List[List[int]]) -> Tuple[Optional[List[List[int]]], str, bool]:
         """
@@ -163,6 +309,26 @@ class ProgramExecutor:
         wrapper = f"""
 import json
 import sys
+
+def convert_numpy_types(obj):
+    \"\"\"Convert numpy types to Python native types for JSON serialization\"\"\"
+    try:
+        import numpy as np
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, (np.integer, np.int64, np.int32, np.int16, np.int8)):
+            return int(obj)
+        elif isinstance(obj, (np.floating, np.float64, np.float32)):
+            return float(obj)
+    except ImportError:
+        pass  # numpy not available
+    
+    if isinstance(obj, list):
+        return [convert_numpy_types(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(convert_numpy_types(item) for item in obj)
+    else:
+        return obj
 
 # Define the test input
 test_input = {json.dumps(test_input)}
@@ -192,6 +358,8 @@ else:
                 pass
 
 if output is not None:
+    # Convert numpy types before JSON serialization
+    output = convert_numpy_types(output)
     print(json.dumps(output))
 else:
     print("ERROR: No valid transformation function found")
@@ -216,6 +384,11 @@ else:
                         return None, result.stdout.strip(), False
                     
                     output = json.loads(result.stdout.strip())
+                    
+                    # Convert numpy types to Python types if needed
+                    if output is not None:
+                        output = self._convert_numpy_types(output)
+                    
                     return output, "", False
                 except json.JSONDecodeError:
                     return None, f"Invalid output format: {result.stdout}", False
@@ -246,9 +419,21 @@ if __name__ == "__main__":
     score = scorer.score_grid(predicted, actual)
     print("Grid score:", json.dumps(score, indent=2))
     
-    # Test residual and MDL
+    # Test difference-based residual and reconstruction
     residual = scorer.calculate_residual_grid(predicted, actual)
-    print("\nResidual grid:", residual)
+    print(f"\nDifference-based residual: {residual}")
+    
+    # Demonstrate perfect reconstruction: actual = predicted + residual
+    reconstructed = []
+    for pred_row, residual_row in zip(predicted, residual):
+        recon_row = []
+        for pred_cell, residual_cell in zip(pred_row, residual_row):
+            recon_row.append(pred_cell + residual_cell)
+        reconstructed.append(recon_row)
+    
+    print(f"Original actual:    {actual}")
+    print(f"Reconstructed:      {reconstructed}")
+    print(f"Perfect reconstruction? {reconstructed == actual}")
     
     program = "def transform(grid):\n    return [[grid[row][col] for col in range(len(grid[0]))] for row in range(len(grid))]"
     mdl = scorer.calculate_mdl_score(program, residual)

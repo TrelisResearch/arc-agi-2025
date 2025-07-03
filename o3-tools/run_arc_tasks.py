@@ -108,9 +108,16 @@ IMPORTANT: You have access to a live Python code interpreter. You MUST:
 1. Use the code interpreter to analyze and understand the training examples
 2. Develop your transform function iteratively, testing it on EVERY training example
 3. Keep refining until your function correctly transforms ALL training examples
-4. Do NOT stop until you have verified your solution works on ALL training examples
+4. Once you find a working solution, you MUST end your response with the "Final answer:" section
 
-Use the code interpreter repeatedly! Test your function on each example individually and verify the outputs match exactly."""
+Use the code interpreter to verify your solution works, but ALWAYS conclude with:
+
+Final answer:
+```python
+def transform(grid):
+    # Your verified transformation logic here
+    return transformed_grid
+```"""
         else:
             tools_instruction = ""
         
@@ -353,18 +360,18 @@ Requirements:
             }
             
             if predicted_output is not None:
-                # Compare with actual output
+                # Compare with TEST output (for accuracy metrics)
                 actual_output = task_data['test'][0]['output']
                 score = self.scorer.score_grid(predicted_output, actual_output)
                 results['score'] = score
                 
-                # Calculate MDL score for predicted program
-                residual = self.scorer.calculate_residual_grid(predicted_output, actual_output)
-                mdl = self.scorer.calculate_mdl_score(program, residual)
+                # Calculate MDL score based on TRAINING examples (correct approach!)
+                training_examples = task_data.get('train', [])
+                mdl = self.scorer.calculate_training_mdl_score(program, training_examples, self.executor)
                 results['mdl'] = mdl
                 
-                # Calculate null program MDL for comparison
-                null_mdl = self.scorer.calculate_null_program_mdl(actual_output)
+                # Calculate null program MDL for comparison using training examples
+                null_mdl = self.scorer.calculate_null_program_training_mdl(training_examples)
                 results['null_mdl'] = null_mdl
                 
                 # Show MDL comparison
@@ -373,6 +380,10 @@ Requirements:
                     print(f"  📊 MDL: {mdl['mdl_score']:.1f} vs null {null_mdl['null_mdl_score']:.1f} (↓{mdl_improvement:.1f} better)")
                 else:
                     print(f"  📊 MDL: {mdl['mdl_score']:.1f} vs null {null_mdl['null_mdl_score']:.1f} (↑{-mdl_improvement:.1f} worse)")
+                
+                # Show training vs test performance
+                if mdl.get('training_errors'):
+                    print(f"  ⚠️  Program failed on {len(mdl['training_errors'])}/{mdl['training_examples_count']} training examples")
                 
                 results['predicted_output'] = predicted_output
                 results['actual_output'] = actual_output
@@ -395,8 +406,9 @@ Requirements:
                 results['mdl'] = None
                 results['actual_output'] = actual_output
                 
-                # Still calculate null program MDL for comparison
-                null_mdl = self.scorer.calculate_null_program_mdl(actual_output)
+                # Still calculate null program MDL for comparison using training examples
+                training_examples = task_data.get('train', [])
+                null_mdl = self.scorer.calculate_null_program_training_mdl(training_examples)
                 results['null_mdl'] = null_mdl
                 
                 print(f"  ❌ Execution failed: {error}")
@@ -475,8 +487,8 @@ Requirements:
         # Calculate MDL statistics
         mdl_scores = [r.get('mdl', {}).get('mdl_score') for r in results if r.get('mdl')]
         avg_mdl = sum(mdl_scores) / len(mdl_scores) if mdl_scores else 0
-        avg_program_tokens = sum(r.get('mdl', {}).get('program_tokens', 0) for r in results if r.get('mdl')) / total_tasks if total_tasks > 0 else 0
-        avg_residual_bytes = sum(r.get('mdl', {}).get('residual_bytes', 0) for r in results if r.get('mdl')) / total_tasks if total_tasks > 0 else 0
+        avg_program_bytes = sum(r.get('mdl', {}).get('program_bytes', 0) for r in results if r.get('mdl')) / total_tasks if total_tasks > 0 else 0
+        avg_training_residual_bytes = sum(r.get('mdl', {}).get('training_residual_bytes', 0) for r in results if r.get('mdl')) / total_tasks if total_tasks > 0 else 0
         
         # Calculate null program MDL statistics
         null_mdl_scores = [r.get('null_mdl', {}).get('null_mdl_score') for r in results if r.get('null_mdl')]
@@ -510,8 +522,8 @@ Requirements:
             'correct_pixels': correct_pixels,
             'pixel_accuracy': correct_pixels / total_pixels if total_pixels > 0 else 0.0,
             'avg_mdl_score': avg_mdl,
-            'avg_program_tokens': avg_program_tokens,
-            'avg_residual_bytes': avg_residual_bytes,
+            'avg_program_bytes': avg_program_bytes,
+            'avg_training_residual_bytes': avg_training_residual_bytes,
             'avg_null_mdl_score': avg_null_mdl,
             'tasks_beating_null': tasks_beating_null,
             'avg_mdl_improvement': avg_mdl_improvement,
@@ -540,8 +552,8 @@ Requirements:
         print(f"Tasks solved correctly: {correct_tasks}/{total_tasks} ({summary['task_accuracy']:.1%})")
         print(f"Pixel accuracy: {correct_pixels}/{total_pixels} ({summary['pixel_accuracy']:.1%})")
         print(f"Average MDL score: {avg_mdl:.1f}")
-        print(f"Average program tokens: {avg_program_tokens:.1f}")
-        print(f"Average residual bytes: {avg_residual_bytes:.1f}")
+        print(f"Average program bytes (gzipped): {avg_program_bytes:.1f}")
+        print(f"Average training residual bytes: {avg_training_residual_bytes:.1f}")
         print(f"Average null program MDL: {avg_null_mdl:.1f}")
         print(f"Solutions beating null baseline: {tasks_beating_null}/{len(mdl_improvements)} ({tasks_beating_null/len(mdl_improvements)*100:.1f}%)" if mdl_improvements else "Solutions beating null baseline: N/A")
         print(f"Average MDL improvement over null: {avg_mdl_improvement:.1f}")

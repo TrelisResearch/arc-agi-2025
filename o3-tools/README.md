@@ -2,9 +2,13 @@
 
 A tool for testing OpenAI o3/o4 models on ARC-AGI tasks with and without code interpreter tools.
 
-**Tweaks**
+**Todo**
+[ ] Possibly improve the gzip approach further to make it more meaningful. Right now, correct programs often have a longer MDL (program + description) than a null program.
+[ ] Use the MDL to set up a priority list of programs to be improved upon in a later implementation. Sample that priority list to see if it improves on the solve rate versus the responses api with internal tool loops.
 [x] prompt so that the model keeps reasoning until it finds a python program that solves (for the tool use case). don't include the test examples in the prompt.
-[ ] Use gzip for the program too (strip comments), possibly this removes the need for having the alpha and beta parameters. Also, make sure we're including all train examples for that task in the data description length (I think we're doing that already right?)
+[x] Use gzip for the program too (strip comments), possibly this removes the need for having the alpha and beta parameters. Also, make sure we're including all train examples for that task in the data description length.
+[x] **Fixed residual calculation**: Changed from broken "actual-value-if-wrong" to proper difference-based approach (`residual = actual - predicted`) that allows perfect reconstruction and follows true MDL principle.
+[x] **Fixed MDL to use training examples**: Changed from using test output (wrong!) to using training examples (correct!) - MDL now represents the cost of encoding the training pattern, not predicting the test.
 
 **Open questions:**
 - What happens if the grid output isn't the right size? how is pixel accuracy and MDL score calculated?
@@ -80,20 +84,25 @@ The tool provides three complementary scoring metrics to evaluate model performa
 - **Example**: If 7 out of 9 pixels match → 77.8% pixel accuracy
 
 ### 3. **MDL Score (Minimum Description Length)**
->![TIP]
->Note: May be better to gzip the python program (perhaps stripping any comments?)
 
-- **What it measures**: Combined cost of program complexity and output errors
-- **Formula**: `MDL = α × program_tokens + β × gzip_bytes(residual_grid)`
-- **Parameters**: 
-  - `α = 1.0` (program complexity weight)
-  - `β = 4.0` (error weight, following "one wrong pixel ≈ four tokens" heuristic)
+- **What it measures**: Combined cost of program complexity and reconstruction errors
+- **Formula**: `MDL = program_bytes + residual_bytes` (both gzip-compressed)
+- **Core Principle**: Represents the cost of encoding the **training pattern**
+  - **Program**: Compressed Python code that attempts to learn the transformation
+  - **Training Residuals**: Compressed differences for ALL training examples that the program failed to capture
+- **Training-Based Calculation**: `MDL = program_bytes + training_residual_bytes`
 - **Components**:
-  - `program_tokens`: Number of tokens in the generated Python code
-  - `residual_grid`: Grid showing differences between predicted and actual output
-  - `gzip_bytes`: Compressed size of the residual grid in bytes
-- **Interpretation**: Lower scores are better (less complex program + fewer errors)
-- **Example**: A 50-token program with 10 bytes of residual → MDL = 50 + 4×10 = 90
+  - `program_bytes`: Gzip-compressed size of the Python program
+  - `training_residual_bytes`: Gzip-compressed size of residuals from all training examples
+  - `training_examples_count`: Number of training examples used
+  - `training_errors`: List of training examples where the program failed to execute
+- **Benefits of difference-based residuals**:
+  - ✅ **Perfect reconstruction**: Can always recover actual from predicted + residual
+  - ✅ **Proper credit**: Good programs get smaller residuals (mostly zeros compress well)
+  - ✅ **No ambiguity**: Each residual value has clear meaning
+  - ✅ **True MDL**: Follows information theory - sending minimal "patch" to fix errors
+- **Interpretation**: Lower scores are better (simpler program + fewer/smaller errors)
+- **Example**: A program with 100 compressed bytes and residual of 35 bytes → MDL = 135
 
 ### **Why These Metrics Matter**
 
@@ -157,11 +166,11 @@ Summary reports aggregate across all tasks and include:
     "error": null
   },
   "mdl": {
-    "program_tokens": 18,
-    "residual_bytes": 32,
-    "mdl_score": 146.0,
-    "alpha": 1.0,
-    "beta": 4.0
+    "program_bytes": 78,
+    "training_residual_bytes": 95,
+    "mdl_score": 173,
+    "training_examples_count": 3,
+    "training_errors": []
   },
   "predicted_output": [[0,0,4], [0,8,6], [5,3,6]],
   "actual_output": [[0,0,4], [0,8,6], [5,3,6]]
@@ -185,8 +194,8 @@ Summary reports aggregate across all tasks and include:
   "correct_pixels": 85,
   "pixel_accuracy": 0.944,
   "avg_mdl_score": 158.3,
-  "avg_program_tokens": 45.2,
-  "avg_residual_bytes": 28.3,
+  "avg_program_bytes": 89.2,
+  "avg_training_residual_bytes": 68.9,
   "total_tool_calls": 12,
   "avg_tool_calls": 1.2,
   "total_tokens": 35847,
@@ -209,8 +218,8 @@ Tools enabled: True
 Tasks solved correctly: 4/10 (40.0%)
 Pixel accuracy: 85/90 (94.4%)
 Average MDL score: 158.3
-Average program tokens: 45.2
-Average residual bytes: 28.3
+Average program bytes: 89.2
+Average training residual bytes: 68.9
 Total tool calls made: 12
 Average tool calls per task: 1.2
 Total tokens used: 35,847
