@@ -401,3 +401,14 @@ uv run python cleanup_logs.py
 ## Additional Notes
 
 - You can control the maximum number of tool calls the model can make per task using --max_tool_calls (default: 16). This is especially useful for limiting cost and runaway tool loops when --tools is enabled.
+
+## create_grid_size_distributed_subset.py
+
+This script creates a new subset of ARC-AGI problems by selecting tasks from the evaluation sets of arc-agi-1 and arc-agi-2, distributed evenly by grid size. For each task, the grid size is defined as the sum of the number of cells in the first input and first output grid (from the first training example). The script selects 30 tasks from each evaluation set, spaced evenly across the range of grid sizes, and copies them into a new subset directory for balanced benchmarking.
+
+Usage:
+```
+uv run o3-tools/create_grid_size_distributed_subset.py
+```
+
+The script will output a manifest of selected tasks and their grid sizes.

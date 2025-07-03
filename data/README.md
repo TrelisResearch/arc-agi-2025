@@ -197,3 +197,32 @@ for task_id in task_ids:
 
 - ARC-AGI-1: https://github.com/fchollet/ARC-AGI
 - ARC-AGI-2: https://github.com/arcprize/ARC-AGI-2
+
+## grid_size_distributed_30 Subset
+
+This subset contains 30 tasks from each of the arc-agi-1 and arc-agi-2 evaluation sets, selected to be evenly distributed by grid size. For each task, the grid size is defined as the sum of the number of cells in the first input and first output grid (from the first training example). This provides a balanced benchmark across a range of task complexities.
+
+- The selected task IDs are listed in:
+  - `data/subsets/arc-agi-1/grid_size_distributed_30.txt`
+  - `data/subsets/arc-agi-2/grid_size_distributed_30.txt`
+- The actual task files are in:
+  - `data/subsets/grid_size_distributed_30/arc-agi-1/`
+  - `data/subsets/grid_size_distributed_30/arc-agi-2/`
+- A manifest with filenames and grid sizes is in:
+  - `data/subsets/grid_size_distributed_30/manifest.json`
+
+### How to use this subset
+
+To run with this subset, use the following command:
+
+```
+uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset grid_size_distributed_30 --model o3 --tools
+```
+
+or for arc-agi-2:
+
+```
+uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-2 --subset grid_size_distributed_30 --model o3 --tools
+```
+
+This will run the 30 selected tasks for the specified dataset, evenly distributed by grid size.
