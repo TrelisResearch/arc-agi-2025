@@ -2,9 +2,13 @@
 
 A tool for testing OpenAI o3/o4 models on ARC-AGI tasks with and without code interpreter tools.
 
+**Open questions:**
+- What happens if the grid output isn't the right size? how is pixel accuracy and MDL score calculated?
+- If there is no output grid, how does that affect MDL and pixel score aggregation?
+
 ## Features
 
-- Run ARC-AGI tasks with OpenAI models (currently using gpt-4o-mini as o4-mini is not yet available)
+- Run ARC-AGI tasks with OpenAI models (currently using gpt-4o-mini or o4-mini)
 - Support for code interpreter tools via function calling
 - Comprehensive scoring including pixel accuracy and MDL (Minimum Description Length) scoring
 - Budget tracking with token usage and cost estimation
@@ -72,6 +76,9 @@ The tool provides three complementary scoring metrics to evaluate model performa
 - **Example**: If 7 out of 9 pixels match → 77.8% pixel accuracy
 
 ### 3. **MDL Score (Minimum Description Length)**
+>![TIP]
+>Note: May be better to gzip the python program (perhaps stripping any comments?)
+
 - **What it measures**: Combined cost of program complexity and output errors
 - **Formula**: `MDL = α × program_tokens + β × gzip_bytes(residual_grid)`
 - **Parameters**: 
