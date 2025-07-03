@@ -20,6 +20,18 @@ data/
     │   ├── shortest_1_details.json     # Detailed info for shortest task
     │   ├── shortest_10_details.json    # Detailed info for 10 shortest tasks
     │   ├── shortest_100_details.json   # Detailed info for 100 shortest tasks
+    │   ├── middle_1.txt                # Task ID of the median task
+    │   ├── middle_10.txt               # Task IDs of 10 median tasks
+    │   ├── middle_100.txt              # Task IDs of 100 median tasks
+    │   ├── middle_1_details.json       # Detailed info for median task
+    │   ├── middle_10_details.json      # Detailed info for 10 median tasks
+    │   ├── middle_100_details.json     # Detailed info for 100 median tasks
+    │   ├── longest_1.txt               # Task ID of the longest task
+    │   ├── longest_10.txt              # Task IDs of 10 longest tasks
+    │   ├── longest_100.txt             # Task IDs of 100 longest tasks
+    │   ├── longest_1_details.json      # Detailed info for longest task
+    │   ├── longest_10_details.json     # Detailed info for 10 longest tasks
+    │   ├── longest_100_details.json    # Detailed info for 100 longest tasks
     │   └── tasks_with_multiple_tests.json  # Tasks with >1 test example
     └── arc-agi-2/
         ├── shortest_1.txt              # Task ID of the shortest task
@@ -28,6 +40,18 @@ data/
         ├── shortest_1_details.json     # Detailed info for shortest task
         ├── shortest_10_details.json    # Detailed info for 10 shortest tasks
         ├── shortest_100_details.json   # Detailed info for 100 shortest tasks
+        ├── middle_1.txt                # Task ID of the median task
+        ├── middle_10.txt               # Task IDs of 10 median tasks
+        ├── middle_100.txt              # Task IDs of 100 median tasks
+        ├── middle_1_details.json       # Detailed info for median task
+        ├── middle_10_details.json      # Detailed info for 10 median tasks
+        ├── middle_100_details.json     # Detailed info for 100 median tasks
+        ├── longest_1.txt               # Task ID of the longest task
+        ├── longest_10.txt              # Task IDs of 10 longest tasks
+        ├── longest_100.txt             # Task IDs of 100 longest tasks
+        ├── longest_1_details.json      # Detailed info for longest task
+        ├── longest_10_details.json     # Detailed info for 10 longest tasks
+        ├── longest_100_details.json    # Detailed info for 100 longest tasks
         └── tasks_with_multiple_tests.json  # Tasks with >1 test example
 ```
 
@@ -98,11 +122,24 @@ The `subsets/` directory contains predefined task subsets based on **task size**
 - For example, a task with 3 training examples of 3×3 grids (input+output each) and 1 test example of 3×3 grids (input+output) would have size: 3×(3×3×2) + 1×(3×3×2) = 54 + 18 = 72 cells
 
 ### Available Subsets
-- **shortest_1.txt**: Single shortest task
-  - ARC-AGI-1: `6150a2bd` (54 total cells)
-  - ARC-AGI-2: `833966f4` (30 total cells)
-- **shortest_10.txt**: 10 shortest tasks
-- **shortest_100.txt**: 100 shortest tasks
+
+**Important**: Tasks are ranked by size **globally across both training and evaluation splits combined**. The shortest tasks may come from either split.
+
+- **shortest_1.txt**: Single shortest task across the entire dataset
+  - ARC-AGI-1: `6150a2bd` (54 total cells, from training)
+  - ARC-AGI-2: `833966f4` (30 total cells, from training)
+- **shortest_10.txt**: 10 shortest tasks across the entire dataset
+- **shortest_100.txt**: 100 shortest tasks across the entire dataset
+- **middle_1.txt**: Single median task across the entire dataset  
+  - ARC-AGI-1: `ea32f347` (1000 total cells, from training)
+  - ARC-AGI-2: `7d7772cc` (1152 total cells, from training)
+- **middle_10.txt**: 10 median tasks centered around the middle size
+- **middle_100.txt**: 100 median tasks centered around the middle size
+- **longest_1.txt**: Single longest task across the entire dataset
+  - ARC-AGI-1: `3631a71a` (9000 total cells, from training)
+  - ARC-AGI-2: `d8e07eb2` (9240 total cells, from training)
+- **longest_10.txt**: 10 longest tasks across the entire dataset
+- **longest_100.txt**: 100 longest tasks across the entire dataset
 
 Each `.txt` file contains one task ID per line. The corresponding `_details.json` files include additional metadata like the computed size and which split (training/evaluation) the task belongs to.
 
