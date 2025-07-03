@@ -19,10 +19,11 @@ load_dotenv()
 class ARCTaskRunner:
     """Run ARC tasks using the OpenAI Responses API (single-shot with tool execution)"""
     
-    def __init__(self, model: str = "gpt-4o-mini", use_tools: bool = False, max_tool_calls: int = 64):
+    def __init__(self, model: str = "gpt-4.1-nano", use_tools: bool = False, max_tool_calls: int = 64, reasoning_effort: str = "medium"):
         self.model = model
         self.use_tools = use_tools
         self.max_tool_calls = max_tool_calls
+        self.reasoning_effort = reasoning_effort
         self.api_key = os.getenv('OPENAI_API_KEY')
         self.task_loader = TaskLoader()
         self.scorer = GridScorer()
@@ -153,7 +154,8 @@ Requirements:
         """Call the OpenAI Responses API with retry logic for prompt violations"""
         data = {
             "model": self.model,
-            "input": messages
+            "input": messages,
+            "reasoning": {"effort": self.reasoning_effort}
         }
         if self.use_tools:
             data["tools"] = [{"type": "code_interpreter", "container": {"type": "auto"}}]
@@ -598,11 +600,13 @@ def main():
                        help="Limit number of tasks to run")
     parser.add_argument("--max_tool_calls", type=int, default=64,
                        help="Maximum number of tool calls allowed for the model (default: 64, only applies if --tools is set)")
+    parser.add_argument("--reasoning_effort", type=str, default="medium", choices=["low", "medium", "high"],
+                       help="Reasoning effort for the model (default: medium)")
     
     args = parser.parse_args()
     
     # Create runner and run tasks
-    runner = ARCTaskRunner(model=args.model, use_tools=args.tools, max_tool_calls=args.max_tool_calls)
+    runner = ARCTaskRunner(model=args.model, use_tools=args.tools, max_tool_calls=args.max_tool_calls, reasoning_effort=args.reasoning_effort)
     runner.run_subset(args.subset, args.dataset, args.limit)
 
 
