@@ -9,14 +9,14 @@ import os
 
 def run_tasks_and_collect_data():
     """Run 3 shortest tasks and collect results"""
-    print("Running 10 shortest tasks on gpt-4.1-mini with tools...")
+    print("Running 10 middle tasks on gpt-4.1 with tools...")
     
     # Run the tasks
     cmd = [
         "uv", "run", "python", "run_arc_tasks.py",
         "--dataset", "arc-agi-1",
-        "--subset", "shortest_10", 
-        "--model", "gpt-4.1-mini",
+        "--subset", "middle_10", 
+        "--model", "gpt-4.1",
         "--tools"
     ]
     
@@ -28,7 +28,7 @@ def run_tasks_and_collect_data():
         return None
     
     # Find the most recent summary file
-    log_files = [f for f in os.listdir("logs/") if f.endswith("_summary_arc-agi-1_shortest_10.json")]
+    log_files = [f for f in os.listdir("logs/") if f.endswith("_summary_arc-agi-1_middle_10.json")]
     if not log_files:
         print("No summary files found!")
         return None
