@@ -3,8 +3,8 @@
 A tool for testing OpenAI o3/o4 models on ARC-AGI tasks with and without code interpreter tools.
 
 **Tweaks**
-[ ] Use gzip for the program too (strip comments).
-[ ] prompt so that the model keeps reasoning until it finds a python program that solves (for the tool use case).
+[x] prompt so that the model keeps reasoning until it finds a python program that solves (for the tool use case). don't include the test examples in the prompt.
+[ ] Use gzip for the program too (strip comments), possibly this removes the need for having the alpha and beta parameters. Also, make sure we're including all train examples for that task in the data description length (I think we're doing that already right?)
 
 **Open questions:**
 - What happens if the grid output isn't the right size? how is pixel accuracy and MDL score calculated?

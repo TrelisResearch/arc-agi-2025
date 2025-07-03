@@ -60,7 +60,7 @@ class TaskLoader:
         
         return sorted(subsets)
     
-    def format_task_for_prompt(self, task_data: Dict) -> str:
+    def format_task_for_prompt(self, task_data: Dict, include_test: bool = False) -> str:
         """Format task data into a string suitable for prompting"""
         lines = []
         
@@ -73,8 +73,8 @@ class TaskLoader:
             lines.append("Output:")
             lines.append(self._format_grid(example['output']))
         
-        # Format test input (without output for the model to predict)
-        if task_data.get('test'):
+        # Only include test if explicitly requested
+        if include_test and task_data.get('test'):
             lines.append("\nTest Input:")
             lines.append(self._format_grid(task_data['test'][0]['input']))
         

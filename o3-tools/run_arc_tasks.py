@@ -97,20 +97,31 @@ class ARCTaskRunner:
     
     def create_prompt(self, task_data: Dict) -> str:
         """Create a prompt for the model to solve an ARC task"""
-        task_str = self.task_loader.format_task_for_prompt(task_data)
+        # Don't include test input in the prompt
+        task_str = self.task_loader.format_task_for_prompt(task_data, include_test=False)
         
-        # Same prompt for both cases - just specify code block format clearly
-        tools_instruction = """
-You have access to a live Python code interpreter. Use it to explore the examples and develop your solution iteratively.""" if self.use_tools else ""
+        # Different instructions based on tools availability
+        if self.use_tools:
+            tools_instruction = """
+
+IMPORTANT: You have access to a live Python code interpreter. You MUST:
+1. Use the code interpreter to analyze and understand the training examples
+2. Develop your transform function iteratively, testing it on EVERY training example
+3. Keep refining until your function correctly transforms ALL training examples
+4. Do NOT stop until you have verified your solution works on ALL training examples
+
+Use the code interpreter repeatedly! Test your function on each example individually and verify the outputs match exactly."""
+        else:
+            tools_instruction = ""
         
         prompt = f"""You are solving an ARC (Abstraction and Reasoning Corpus) task. 
-I will show you training examples with input and output grids, and then give you a test input to solve.
+I will show you training examples with input and output grids. Your goal is to find the transformation pattern.
 
 {task_str}
 
-Please analyze the pattern in the training examples and write a Python function that transforms the input grid to the output grid.{tools_instruction}
+Analyze the pattern in the training examples and write a Python function that performs this transformation.{tools_instruction}
 
-You can think through the problem and explain your reasoning, but you must end your response with:
+Your function should work correctly on all the training examples shown above.
 
 Final answer:
 ```python
@@ -120,12 +131,11 @@ def transform(grid):
 ```
 
 Requirements:
-- The grid is a 2D list where grid[row][col] gives you the value at that position
+- The function takes a 2D list (grid) where grid[row][col] gives the value at that position
 - Values are integers from 0-9
-- Return a new grid with the same structure
+- Return a new grid (2D list) with the transformation applied
 - You can use numpy if needed - just add 'import numpy as np' at the start of your function
-- Make sure your function handles the test input correctly
-- Always include "Final answer:" followed by your ```python code block
+- Your function MUST produce the correct output for all training examples
 """
         
         return prompt
