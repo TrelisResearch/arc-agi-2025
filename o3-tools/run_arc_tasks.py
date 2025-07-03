@@ -18,9 +18,10 @@ load_dotenv()
 class ARCTaskRunner:
     """Run ARC tasks using the OpenAI Responses API (single-shot with tool execution)"""
     
-    def __init__(self, model: str = "gpt-4o-mini", use_tools: bool = False):
+    def __init__(self, model: str = "gpt-4o-mini", use_tools: bool = False, max_tool_calls: int = 16):
         self.model = model
         self.use_tools = use_tools
+        self.max_tool_calls = max_tool_calls
         self.api_key = os.getenv('OPENAI_API_KEY')
         self.task_loader = TaskLoader()
         self.scorer = GridScorer()
@@ -156,8 +157,8 @@ Requirements:
         
         if self.use_tools:
             data["tools"] = [{"type": "code_interpreter", "container": {"type": "auto"}}]
-            # Request detailed outputs for tool calls
             data["include"] = ["code_interpreter_call.outputs"]
+            data["max_tool_calls"] = self.max_tool_calls
         
         try:
             response = requests.post(
@@ -584,11 +585,13 @@ def main():
                        help="Enable code interpreter tools")
     parser.add_argument("--limit", type=int,
                        help="Limit number of tasks to run")
+    parser.add_argument("--max_tool_calls", type=int, default=16,
+                       help="Maximum number of tool calls allowed for the model (default: 16, only applies if --tools is set)")
     
     args = parser.parse_args()
     
     # Create runner and run tasks
-    runner = ARCTaskRunner(model=args.model, use_tools=args.tools)
+    runner = ARCTaskRunner(model=args.model, use_tools=args.tools, max_tool_calls=args.max_tool_calls)
     runner.run_subset(args.subset, args.dataset, args.limit)
 
 

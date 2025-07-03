@@ -60,6 +60,7 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_100 --model
 #   --model: OpenAI model name (default: gpt-4o-mini)
 #   --tools: Enable code interpreter tools
 #   --limit: Limit number of tasks to run
+#   --max_tool_calls: Maximum number of tool calls allowed for the model (default: 16, only applies if --tools is set)
 ```
 
 ### Available Subsets
@@ -396,3 +397,7 @@ uv run python cleanup_logs.py
 - **API architecture**: Uses only the Responses API - Chat Completions API has been removed
 - **Cost accuracy**: Fixed cost calculation to use correct Responses API field names
 - **Pixel counting**: Fixed pixel accuracy calculation to include failed executions in totals
+
+## Additional Notes
+
+- You can control the maximum number of tool calls the model can make per task using --max_tool_calls (default: 16). This is especially useful for limiting cost and runaway tool loops when --tools is enabled.
