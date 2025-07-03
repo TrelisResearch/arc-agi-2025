@@ -365,25 +365,28 @@ Requirements:
                 score = self.scorer.score_grid(predicted_output, actual_output)
                 results['score'] = score
                 
-                # Calculate MDL score based on TRAINING examples (correct approach!)
+                # Calculate residual reduction - measures pattern learning ability
                 training_examples = task_data.get('train', [])
-                mdl = self.scorer.calculate_training_mdl_score(program, training_examples, self.executor)
-                results['mdl'] = mdl
+                reduction = self.scorer.calculate_residual_reduction(program, training_examples, self.executor)
+                results['residual_reduction'] = reduction
                 
-                # Calculate null program MDL for comparison using training examples
-                null_mdl = self.scorer.calculate_null_program_training_mdl(training_examples)
-                results['null_mdl'] = null_mdl
+                # Show pattern learning performance
+                learning_score = reduction['pattern_learning_score']
+                print(f"  🧠 Pattern learning: {learning_score:.1f}% ({reduction['program_residual_bytes']} vs {reduction['null_residual_bytes']} bytes)")
                 
-                # Show MDL comparison
-                mdl_improvement = null_mdl['null_mdl_score'] - mdl['mdl_score']
-                if mdl_improvement > 0:
-                    print(f"  📊 MDL: {mdl['mdl_score']:.1f} vs null {null_mdl['null_mdl_score']:.1f} (↓{mdl_improvement:.1f} better)")
+                # Show training performance with better clarity
+                total_training = reduction['training_examples_count']
+                executed = reduction['training_executions']
+                correct = reduction['training_correct']
+                failed = len(reduction.get('training_errors', []))
+                
+                if failed > 0:
+                    print(f"  ⚠️  Program crashed on {failed}/{total_training} training examples")
                 else:
-                    print(f"  📊 MDL: {mdl['mdl_score']:.1f} vs null {null_mdl['null_mdl_score']:.1f} (↑{-mdl_improvement:.1f} worse)")
+                    print(f"  ✅ Program executed on all {total_training} training examples")
                 
-                # Show training vs test performance
-                if mdl.get('training_errors'):
-                    print(f"  ⚠️  Program failed on {len(mdl['training_errors'])}/{mdl['training_examples_count']} training examples")
+                if executed > 0:
+                    print(f"  🎯 Training accuracy: {correct}/{executed} ({correct/executed:.1%}) correct outputs")
                 
                 results['predicted_output'] = predicted_output
                 results['actual_output'] = actual_output
@@ -406,13 +409,14 @@ Requirements:
                 results['mdl'] = None
                 results['actual_output'] = actual_output
                 
-                # Still calculate null program MDL for comparison using training examples
+                # Still calculate null baseline for comparison
                 training_examples = task_data.get('train', [])
-                null_mdl = self.scorer.calculate_null_program_training_mdl(training_examples)
-                results['null_mdl'] = null_mdl
+                null_residuals = self.scorer.calculate_null_program_training_residuals(training_examples)
+                null_residual_bytes = self.scorer.gzip_compress_grid(null_residuals)
+                results['null_residual_bytes'] = null_residual_bytes
                 
                 print(f"  ❌ Execution failed: {error}")
-                print(f"  📊 Null program MDL baseline: {null_mdl['null_mdl_score']:.1f}")
+                print(f"  📊 Null baseline: {null_residual_bytes} residual bytes to beat")
             
             return results
             
@@ -484,25 +488,27 @@ Requirements:
         total_pixels = sum(r.get('score', {}).get('total_pixels', 0) for r in results)
         correct_pixels = sum(r.get('score', {}).get('correct_pixels', 0) for r in results)
         
-        # Calculate MDL statistics
-        mdl_scores = [r.get('mdl', {}).get('mdl_score') for r in results if r.get('mdl')]
-        avg_mdl = sum(mdl_scores) / len(mdl_scores) if mdl_scores else 0
-        avg_program_bytes = sum(r.get('mdl', {}).get('program_bytes', 0) for r in results if r.get('mdl')) / total_tasks if total_tasks > 0 else 0
-        avg_training_residual_bytes = sum(r.get('mdl', {}).get('training_residual_bytes', 0) for r in results if r.get('mdl')) / total_tasks if total_tasks > 0 else 0
+        # Calculate pattern learning statistics
+        pattern_learning_scores = [r.get('residual_reduction', {}).get('pattern_learning_score') for r in results if r.get('residual_reduction')]
+        avg_pattern_learning = sum(pattern_learning_scores) / len(pattern_learning_scores) if pattern_learning_scores else 0
         
-        # Calculate null program MDL statistics
-        null_mdl_scores = [r.get('null_mdl', {}).get('null_mdl_score') for r in results if r.get('null_mdl')]
-        avg_null_mdl = sum(null_mdl_scores) / len(null_mdl_scores) if null_mdl_scores else 0
+        program_residual_bytes = [r.get('residual_reduction', {}).get('program_residual_bytes', 0) for r in results if r.get('residual_reduction')]
+        avg_program_residual_bytes = sum(program_residual_bytes) / len(program_residual_bytes) if program_residual_bytes else 0
         
-        # Calculate how many solutions beat the null baseline
-        mdl_improvements = []
-        for r in results:
-            if r.get('mdl') and r.get('null_mdl'):
-                improvement = r['null_mdl']['null_mdl_score'] - r['mdl']['mdl_score']
-                mdl_improvements.append(improvement)
+        null_residual_bytes = [r.get('residual_reduction', {}).get('null_residual_bytes', 0) for r in results if r.get('residual_reduction')]
+        avg_null_residual_bytes = sum(null_residual_bytes) / len(null_residual_bytes) if null_residual_bytes else 0
         
-        tasks_beating_null = sum(1 for imp in mdl_improvements if imp > 0)
-        avg_mdl_improvement = sum(mdl_improvements) / len(mdl_improvements) if mdl_improvements else 0
+        # Calculate training execution and correctness statistics
+        training_executions = sum(r.get('residual_reduction', {}).get('training_executions', 0) for r in results if r.get('residual_reduction'))
+        training_correct = sum(r.get('residual_reduction', {}).get('training_correct', 0) for r in results if r.get('residual_reduction'))
+        total_training_examples = sum(r.get('residual_reduction', {}).get('training_examples_count', 0) for r in results if r.get('residual_reduction'))
+        
+        training_execution_rate = training_executions / total_training_examples if total_training_examples > 0 else 0
+        training_correctness_rate = training_correct / training_executions if training_executions > 0 else 0
+        
+        # Count how many programs achieved good pattern learning (>50%)
+        good_pattern_learners = sum(1 for score in pattern_learning_scores if score > 50)
+        excellent_pattern_learners = sum(1 for score in pattern_learning_scores if score > 80)
         
         # Calculate tool usage statistics
         total_tool_calls = sum(r.get('tool_calls_count', 0) for r in results)
@@ -521,12 +527,13 @@ Requirements:
             'total_pixels': total_pixels,
             'correct_pixels': correct_pixels,
             'pixel_accuracy': correct_pixels / total_pixels if total_pixels > 0 else 0.0,
-            'avg_mdl_score': avg_mdl,
-            'avg_program_bytes': avg_program_bytes,
-            'avg_training_residual_bytes': avg_training_residual_bytes,
-            'avg_null_mdl_score': avg_null_mdl,
-            'tasks_beating_null': tasks_beating_null,
-            'avg_mdl_improvement': avg_mdl_improvement,
+            'avg_pattern_learning_score': avg_pattern_learning,
+            'avg_program_residual_bytes': avg_program_residual_bytes,
+            'avg_null_residual_bytes': avg_null_residual_bytes,
+            'training_execution_rate': training_execution_rate,
+            'training_correctness_rate': training_correctness_rate,
+            'good_pattern_learners': good_pattern_learners,
+            'excellent_pattern_learners': excellent_pattern_learners,
             'total_tool_calls': total_tool_calls,
             'avg_tool_calls': avg_tool_calls,
             'total_tokens': self.total_tokens,
@@ -551,12 +558,13 @@ Requirements:
         print(f"Tools enabled: {self.use_tools}")
         print(f"Tasks solved correctly: {correct_tasks}/{total_tasks} ({summary['task_accuracy']:.1%})")
         print(f"Pixel accuracy: {correct_pixels}/{total_pixels} ({summary['pixel_accuracy']:.1%})")
-        print(f"Average MDL score: {avg_mdl:.1f}")
-        print(f"Average program bytes (gzipped): {avg_program_bytes:.1f}")
-        print(f"Average training residual bytes: {avg_training_residual_bytes:.1f}")
-        print(f"Average null program MDL: {avg_null_mdl:.1f}")
-        print(f"Solutions beating null baseline: {tasks_beating_null}/{len(mdl_improvements)} ({tasks_beating_null/len(mdl_improvements)*100:.1f}%)" if mdl_improvements else "Solutions beating null baseline: N/A")
-        print(f"Average MDL improvement over null: {avg_mdl_improvement:.1f}")
+        print(f"Average pattern learning: {avg_pattern_learning:.1f}%")
+        print(f"Training execution rate: {training_execution_rate:.1%} ({training_executions}/{total_training_examples})")
+        print(f"Training correctness rate: {training_correctness_rate:.1%} ({training_correct}/{training_executions})" if training_executions > 0 else "Training correctness rate: N/A")
+        print(f"Programs with >50% pattern learning: {good_pattern_learners}/{len(pattern_learning_scores)}")
+        print(f"Programs with >80% pattern learning: {excellent_pattern_learners}/{len(pattern_learning_scores)}")
+        print(f"Average program residual: {avg_program_residual_bytes:.1f} bytes")
+        print(f"Average null baseline: {avg_null_residual_bytes:.1f} bytes")
         print(f"Total tool calls made: {total_tool_calls}")
         print(f"Average tool calls per task: {avg_tool_calls:.1f}")
         print(f"Total tokens used: {self.total_tokens:,}")

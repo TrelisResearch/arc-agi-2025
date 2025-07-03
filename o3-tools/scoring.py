@@ -62,18 +62,10 @@ class GridScorer:
         The residual represents the "patch" needed to reconstruct the actual output:
         actual_output = predicted_output + residual
         
-        This follows the true MDL principle where you send:
-        1. A program that produces an approximate solution
-        2. A minimal correction (residual) to fix any errors
+        This assumes predicted and actual have the same dimensions.
+        Dimension mismatches should be handled at a higher level.
         """
         residual = []
-        
-        # If dimensions don't match, we need a more complex residual representation
-        # For simplicity, return a special marker that the actual grid is needed
-        if len(predicted) != len(actual) or any(len(row) != len(actual[0]) for row in predicted):
-            # Return actual grid as before for dimension mismatches
-            # TODO: Could implement more sophisticated dimension-aware residual
-            return actual
         
         for pred_row, actual_row in zip(predicted, actual):
             residual_row = []
@@ -85,13 +77,13 @@ class GridScorer:
         
         return residual
     
-    def gzip_compress_grid(self, grid: List[List[int]]) -> int:
-        """Compress a grid and return the gzipped size in bytes"""
-        # Convert grid to a string representation
-        grid_str = json.dumps(grid)
+    def gzip_compress_grid(self, data) -> int:
+        """Compress data (grid or flattened list) and return the gzipped size in bytes"""
+        # Convert data to a string representation
+        data_str = json.dumps(data)
         
         # Compress and return size
-        compressed = gzip.compress(grid_str.encode('utf-8'))
+        compressed = gzip.compress(data_str.encode('utf-8'))
         return len(compressed)
     
     def count_tokens(self, text: str) -> int:
@@ -149,12 +141,12 @@ class GridScorer:
             'mdl_score': mdl_score
         }
     
-    def calculate_training_mdl_score(self, program: str, training_examples: List[Dict], executor) -> Dict:
+    def calculate_residual_reduction(self, program: str, training_examples: List[Dict], executor) -> Dict:
         """
-        Calculate MDL score based on training examples (the correct approach).
+        Calculate residual reduction percentage - a cleaner measure of pattern learning.
         
-        This represents the cost of encoding the training pattern:
-        MDL = program_bytes + residual_bytes_for_all_training_outputs
+        This measures what percentage of the transformation pattern the program learned:
+        residual_reduction = (null_residual_bytes - program_residual_bytes) / null_residual_bytes
         
         Args:
             program: The Python program as a string
@@ -162,14 +154,13 @@ class GridScorer:
             executor: ProgramExecutor instance to run the program
         
         Returns:
-            Dictionary with training-based MDL components and total score
+            Dictionary with residual reduction components and percentage
         """
-        # Use gzip compression for program (after stripping comments)
-        program_bytes = self.strip_comments_and_compress(program)
-        
         # Calculate residuals for all training examples
         all_training_residuals = []
         training_errors = []
+        training_executions = 0
+        training_correct = 0
         
         for example in training_examples:
             train_input = example['input']
@@ -179,33 +170,101 @@ class GridScorer:
             train_predicted, error, timed_out = executor.execute_program(program, train_input)
             
             if error or timed_out or train_predicted is None:
-                # If program fails on training, use the full expected output as residual
+                # If program fails on training, use null baseline residual
                 training_errors.append({
                     'input': train_input,
                     'expected': train_expected, 
                     'error': error or 'timeout' if timed_out else 'no output'
                 })
-                residual = train_expected  # Full output needed as residual
+                # Use null baseline: grid of zeros with correct output dimensions
+                null_prediction = [[0 for _ in range(len(train_expected[0]))] for _ in range(len(train_expected))]
+                residual = self.calculate_residual_grid(null_prediction, train_expected)
             else:
-                # Calculate difference-based residual
-                residual = self.calculate_residual_grid(train_predicted, train_expected)
+                training_executions += 1
+                
+                # Check dimensions first
+                if (len(train_predicted) != len(train_expected) or 
+                    any(len(row) != len(train_expected[0]) for row in train_predicted)):
+                    # Wrong dimensions - use null baseline residual
+                    null_prediction = [[0 for _ in range(len(train_expected[0]))] for _ in range(len(train_expected))]
+                    residual = self.calculate_residual_grid(null_prediction, train_expected)
+                else:
+                    # Calculate difference-based residual
+                    residual = self.calculate_residual_grid(train_predicted, train_expected)
+                    
+                    # Check if this training example was solved correctly
+                    if train_predicted == train_expected:
+                        training_correct += 1
             
-            all_training_residuals.extend(residual)
+            # Flatten residual grid properly - convert 2D grid to 1D list
+            flat_residual = []
+            for row in residual:
+                if isinstance(row, list):
+                    flat_residual.extend(row)
+                else:
+                    flat_residual.append(row)
+            all_training_residuals.extend(flat_residual)
         
-        # Compress all training residuals together
-        training_residual_bytes = self.gzip_compress_grid(all_training_residuals)
+        # Compress program's training residuals
+        program_residual_bytes = self.gzip_compress_grid(all_training_residuals)
         
-        # MDL score: program + training residuals
-        mdl_score = program_bytes + training_residual_bytes
+        # Calculate null program residuals for comparison
+        null_residuals = self.calculate_null_program_training_residuals(training_examples)
+        null_residual_bytes = self.gzip_compress_grid(null_residuals)
+        
+        # Calculate residual reduction percentage
+        if null_residual_bytes > 0:
+            residual_reduction = (null_residual_bytes - program_residual_bytes) / null_residual_bytes
+            residual_reduction = max(0.0, min(1.0, residual_reduction))  # Clamp to [0,1]
+        else:
+            residual_reduction = 1.0 if program_residual_bytes == 0 else 0.0
         
         return {
-            'program_bytes': program_bytes,
-            'training_residual_bytes': training_residual_bytes,
-            'mdl_score': mdl_score,
+            'program_residual_bytes': program_residual_bytes,
+            'null_residual_bytes': null_residual_bytes,
+            'residual_reduction': residual_reduction,
+            'pattern_learning_score': residual_reduction * 100,  # 0-100% score
             'training_examples_count': len(training_examples),
+            'training_executions': training_executions,
+            'training_correct': training_correct,
             'training_errors': training_errors
         }
     
+    def calculate_null_program_training_residuals(self, training_examples: List[Dict]) -> List[int]:
+        """
+        Calculate raw residuals for null program on training examples.
+        
+        Null program predicts a grid of zeros with the correct output dimensions.
+        This represents "knowing nothing except the output size".
+        
+        Args:
+            training_examples: List of {"input": grid, "output": grid} training examples
+        
+        Returns:
+            Flattened list of all training residuals for null program
+        """
+        all_training_residuals = []
+        
+        for example in training_examples:
+            train_output = example['output']
+            
+            # Null program predicts grid of zeros with correct output dimensions
+            null_prediction = [[0 for _ in range(len(train_output[0]))] for _ in range(len(train_output))]
+            
+            # Calculate residual: actual - null_prediction
+            residual = self.calculate_residual_grid(null_prediction, train_output)
+            
+            # Flatten residual grid properly - convert 2D grid to 1D list
+            flat_residual = []
+            for row in residual:
+                if isinstance(row, list):
+                    flat_residual.extend(row)
+                else:
+                    flat_residual.append(row)
+            all_training_residuals.extend(flat_residual)
+        
+        return all_training_residuals
+
     def calculate_null_program_training_mdl(self, training_examples: List[Dict]) -> Dict:
         """
         Calculate MDL score for the null program using training examples.

@@ -3,22 +3,21 @@
 A tool for testing OpenAI o3/o4 models on ARC-AGI tasks with and without code interpreter tools.
 
 **Todo**
-[ ] Possibly improve the gzip approach further to make it more meaningful. Right now, correct programs often have a longer MDL (program + description) than a null program.
-[ ] Use the MDL to set up a priority list of programs to be improved upon in a later implementation. Sample that priority list to see if it improves on the solve rate versus the responses api with internal tool loops.
+[ ] Use the pattern learning scores to set up a priority list of programs to be improved upon in a later implementation. Sample that priority list to see if it improves on the solve rate versus the responses api with internal tool loops.
 [x] prompt so that the model keeps reasoning until it finds a python program that solves (for the tool use case). don't include the test examples in the prompt.
 [x] Use gzip for the program too (strip comments), possibly this removes the need for having the alpha and beta parameters. Also, make sure we're including all train examples for that task in the data description length.
-[x] **Fixed residual calculation**: Changed from broken "actual-value-if-wrong" to proper difference-based approach (`residual = actual - predicted`) that allows perfect reconstruction and follows true MDL principle.
-[x] **Fixed MDL to use training examples**: Changed from using test output (wrong!) to using training examples (correct!) - MDL now represents the cost of encoding the training pattern, not predicting the test.
+[x] **Fixed residual calculation**: Changed from broken "actual-value-if-wrong" to proper difference-based approach (`residual = actual - predicted`) that allows perfect reconstruction.
+[x] **Replaced MDL with residual reduction**: Changed from complex MDL (program + residuals) to pure pattern learning measurement using residual reduction percentage.
 
 **Open questions:**
-- What happens if the grid output isn't the right size? how is pixel accuracy and MDL score calculated?
-- If there is no output grid, how does that affect MDL and pixel score aggregation?
+- What happens if the grid output isn't the right size? how is pixel accuracy and residual reduction calculated?
+- If there is no output grid, how does that affect residual reduction and pixel score aggregation?
 
 ## Features
 
 - Run ARC-AGI tasks with OpenAI models (currently using gpt-4o-mini or o4-mini)
 - Support for code interpreter tools via function calling
-- Comprehensive scoring including pixel accuracy and MDL (Minimum Description Length) scoring
+- Comprehensive scoring including pixel accuracy and residual reduction pattern learning
 - Budget tracking with token usage and cost estimation
 - Detailed logging of all runs for analysis
 - Support for different datasets and task subsets
@@ -83,41 +82,43 @@ The tool provides three complementary scoring metrics to evaluate model performa
 - **Use case**: Measures partial correctness when solutions aren't perfect
 - **Example**: If 7 out of 9 pixels match → 77.8% pixel accuracy
 
-### 3. **MDL Score (Minimum Description Length)**
+### 3. **Residual Reduction (Pattern Learning Score)**
 
-- **What it measures**: Combined cost of program complexity and reconstruction errors
-- **Formula**: `MDL = program_bytes + residual_bytes` (both gzip-compressed)
-- **Core Principle**: Represents the cost of encoding the **training pattern**
-  - **Program**: Compressed Python code that attempts to learn the transformation
-  - **Training Residuals**: Compressed differences for ALL training examples that the program failed to capture
-- **Training-Based Calculation**: `MDL = program_bytes + training_residual_bytes`
+- **What it measures**: How much of the transformation pattern the program learned compared to no program at all
+- **Formula**: `reduction = (null_residual_bytes - program_residual_bytes) / null_residual_bytes`
+- **Core Principle**: Measures the **pattern learning ability** by comparing residuals
+  - **Program Residuals**: Compressed differences for ALL training examples that the program failed to capture
+  - **Null Baseline**: Compressed differences for null program (predicts grid of zeros with correct output dimensions)
+- **Training-Based Calculation**: Uses only training examples to measure learning
 - **Components**:
-  - `program_bytes`: Gzip-compressed size of the Python program
-  - `training_residual_bytes`: Gzip-compressed size of residuals from all training examples
-  - `training_examples_count`: Number of training examples used
-  - `training_errors`: List of training examples where the program failed to execute
-- **Benefits of difference-based residuals**:
-  - ✅ **Perfect reconstruction**: Can always recover actual from predicted + residual
-  - ✅ **Proper credit**: Good programs get smaller residuals (mostly zeros compress well)
-  - ✅ **No ambiguity**: Each residual value has clear meaning
-  - ✅ **True MDL**: Follows information theory - sending minimal "patch" to fix errors
-- **Interpretation**: Lower scores are better (simpler program + fewer/smaller errors)
-- **Example**: A program with 100 compressed bytes and residual of 35 bytes → MDL = 135
+  - `program_residual_bytes`: Gzip-compressed size of residuals from program execution on training
+  - `null_residual_bytes`: Gzip-compressed size of residuals from null program (all zeros) on training
+  - `residual_reduction`: Percentage improvement over null baseline (0.0 to 1.0)
+  - `pattern_learning_score`: Same as residual_reduction × 100 (0% to 100%)
+  - `training_executions`: Number of training examples the program executed successfully
+  - `training_correct`: Number of training examples the program got exactly right
+- **Benefits of residual reduction**:
+  - ✅ **Pure pattern learning**: Measures only how well the program learned the transformation
+  - ✅ **No complexity bias**: Doesn't penalize longer but more accurate programs
+  - ✅ **Intuitive scale**: 0% = no learning, 100% = perfect pattern learning
+  - ✅ **Baseline comparison**: Always compared to outputting all zeros (meaningful null baseline)
+- **Interpretation**: Higher scores are better (0% = no better than all zeros, 100% = perfect pattern learning)
+- **Example**: A program with 35 residual bytes vs null baseline 150 bytes → 76.7% pattern learning
 
 ### **Why These Metrics Matter**
 
 - **Binary Correctness**: Shows the "solve rate" - what percentage of tasks are completely correct
 - **Pixel Accuracy**: Reveals how close imperfect solutions are to being correct  
-- **MDL Score**: Balances solution quality with code complexity, rewarding both accuracy and elegance
+- **Pattern Learning**: Measures how well the program learned the transformation pattern, independent of code complexity
 
 **Example Results Interpretation**:
 ```
 Tasks solved correctly: 4/10 (40.0%)     # 40% perfect solutions
 Pixel accuracy: 85/90 (94.4%)            # Very close to correct on average
-Average MDL score: 120.5                 # Moderate complexity + few errors
+Average pattern learning: 76.7%          # Programs learned most of the patterns
 ```
 
-This shows a model that writes mostly-correct but not perfect solutions with reasonable code complexity.
+This shows a model that writes mostly-correct solutions with strong pattern learning ability.
 
 ## Output
 
@@ -129,7 +130,7 @@ Results are saved in the `logs/` directory:
 Each individual task log includes:
 - Complete program code generated by the model
 - Execution results and any errors encountered
-- All three scoring metrics (binary correctness, pixel accuracy, MDL)
+- All three scoring metrics (binary correctness, pixel accuracy, pattern learning)
 - Predicted vs actual output grids for comparison
 - Token usage breakdown and estimated costs
 - Tool usage statistics (when tools are enabled)
@@ -137,7 +138,7 @@ Each individual task log includes:
 
 Summary reports aggregate across all tasks and include:
 - Overall task solve rate and pixel accuracy across the subset
-- Average MDL scores, program complexity, and residual error sizes
+- Average pattern learning scores, training success rates, and residual analysis
 - Total costs and token usage for the entire run
 - Tool usage patterns and performance comparisons
 
@@ -165,11 +166,13 @@ Summary reports aggregate across all tasks and include:
     "correct_pixels": 9,
     "error": null
   },
-  "mdl": {
-    "program_bytes": 78,
-    "training_residual_bytes": 95,
-    "mdl_score": 173,
+  "residual_reduction": {
+    "program_residual_bytes": 35,
+    "null_residual_bytes": 150,
+    "residual_reduction": 0.767,
+    "pattern_learning_score": 76.7,
     "training_examples_count": 3,
+    "training_successes": 3,
     "training_errors": []
   },
   "predicted_output": [[0,0,4], [0,8,6], [5,3,6]],
@@ -193,9 +196,12 @@ Summary reports aggregate across all tasks and include:
   "total_pixels": 90,
   "correct_pixels": 85,
   "pixel_accuracy": 0.944,
-  "avg_mdl_score": 158.3,
-  "avg_program_bytes": 89.2,
-  "avg_training_residual_bytes": 68.9,
+  "avg_pattern_learning_score": 76.7,
+  "avg_program_residual_bytes": 42.5,
+  "avg_null_residual_bytes": 135.8,
+  "training_success_rate": 0.933,
+  "good_pattern_learners": 7,
+  "excellent_pattern_learners": 4,
   "total_tool_calls": 12,
   "avg_tool_calls": 1.2,
   "total_tokens": 35847,
@@ -217,9 +223,12 @@ API: Responses (single-shot)
 Tools enabled: True
 Tasks solved correctly: 4/10 (40.0%)
 Pixel accuracy: 85/90 (94.4%)
-Average MDL score: 158.3
-Average program bytes: 89.2
-Average training residual bytes: 68.9
+Average pattern learning: 76.7%
+Training success rate: 93.3% (28/30)
+Programs with >50% pattern learning: 7/10
+Programs with >80% pattern learning: 4/10
+Average program residual: 42.5 bytes
+Average null baseline: 135.8 bytes
 Total tool calls made: 12
 Average tool calls per task: 1.2
 Total tokens used: 35,847
@@ -229,7 +238,9 @@ Total cost: $0.196734
 This example shows:
 - **40% solve rate**: 4 out of 10 tasks solved perfectly
 - **94.4% pixel accuracy**: Very close to correct solutions on average
-- **Low MDL scores**: Efficient programs with minimal errors
+- **76.7% pattern learning**: Programs learned most of the transformation patterns
+- **93.3% training success**: Programs executed successfully on training examples
+- **70% good learners**: 7 out of 10 programs showed >50% pattern learning
 - **Tool usage**: Model used code interpreter 1.2 times per task on average
 - **Cost tracking**: Detailed token usage and cost calculation for budget management
 
@@ -245,13 +256,16 @@ This example shows:
 - `tool_calls_count`: Number of code interpreter calls made
 - `score.correct`: Boolean - whether output exactly matches expected
 - `score.pixel_accuracy`: Fraction of pixels that match (0.0 to 1.0)
-- `mdl.mdl_score`: Combined program complexity + error cost
+- `residual_reduction.pattern_learning_score`: Percentage pattern learning (0-100%)
+- `residual_reduction.training_successes`: Number of training examples that executed successfully
 - `predicted_output` vs `actual_output`: Compare model's solution to ground truth
 
 **Summary Reports:**
 - `task_accuracy`: Fraction of tasks solved perfectly 
 - `pixel_accuracy`: Overall pixel-level accuracy across all tasks
-- `avg_mdl_score`: Average efficiency score (lower = better)
+- `avg_pattern_learning_score`: Average pattern learning percentage (higher = better)
+- `training_success_rate`: Fraction of training examples that executed successfully
+- `good_pattern_learners`: Number of programs with >50% pattern learning
 - `total_cost`: Total USD spent on this run
 - `results[]`: Contains all individual task data for deeper analysis
 
