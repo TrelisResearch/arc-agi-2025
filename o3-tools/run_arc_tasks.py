@@ -123,6 +123,7 @@ Requirements:
 - The grid is a 2D list where grid[row][col] gives you the value at that position
 - Values are integers from 0-9
 - Return a new grid with the same structure
+- You can use numpy if needed - just add 'import numpy as np' at the start of your function
 - Make sure your function handles the test input correctly
 - Always include "Final answer:" followed by your ```python code block
 """

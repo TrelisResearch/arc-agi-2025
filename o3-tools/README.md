@@ -2,6 +2,10 @@
 
 A tool for testing OpenAI o3/o4 models on ARC-AGI tasks with and without code interpreter tools.
 
+**Tweaks**
+[ ] Use gzip for the program too (strip comments).
+[ ] prompt so that the model keeps reasoning until it finds a python program that solves (for the tool use case).
+
 **Open questions:**
 - What happens if the grid output isn't the right size? how is pixel accuracy and MDL score calculated?
 - If there is no output grid, how does that affect MDL and pixel score aggregation?
