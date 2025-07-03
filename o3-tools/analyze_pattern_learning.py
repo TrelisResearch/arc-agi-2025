@@ -9,14 +9,14 @@ import os
 
 def run_tasks_and_collect_data():
     """Run 3 shortest tasks and collect results"""
-    print("Running 10 middle tasks on gpt-4.1 with tools...")
+    print("Running 10 middle tasks on gpt-4.1-mini with tools...")
     
     # Run the tasks
     cmd = [
         "uv", "run", "python", "run_arc_tasks.py",
         "--dataset", "arc-agi-1",
         "--subset", "middle_10", 
-        "--model", "gpt-4.1",
+        "--model", "gpt-4.1-mini",
         "--tools"
     ]
     
