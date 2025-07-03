@@ -3,11 +3,21 @@
 A tool for testing OpenAI o3/o4 models on ARC-AGI tasks with and without code interpreter tools.
 
 **Todo**
-[ ] Use the pattern learning scores to set up a priority list of programs to be improved upon in a later implementation. Sample that priority list to see if it improves on the solve rate versus the responses api with internal tool loops.
+[ ] Reorganize data so that training and evaluation problems are split, because they are so different in terms of difficulty.
+
+Improvements:
+[ ] Try inputting images of the problem as well as just the problem itself.
+[ ] Simplify gzip to just compress a list of numbers (even with no new lines) vs just zeros.
+[ ] Use pixel accuracy OR gzip OR training problems correct to re-sample.
 [x] prompt so that the model keeps reasoning until it finds a python program that solves (for the tool use case). don't include the test examples in the prompt.
 [x] Use gzip for the program too (strip comments), possibly this removes the need for having the alpha and beta parameters. Also, make sure we're including all train examples for that task in the data description length.
 [x] **Fixed residual calculation**: Changed from broken "actual-value-if-wrong" to proper difference-based approach (`residual = actual - predicted`) that allows perfect reconstruction.
 [x] **Replaced MDL with residual reduction**: Changed from complex MDL (program + residuals) to pure pattern learning measurement using residual reduction percentage.
+
+For Kaggle / low compute:
+[ ] Run on Qwen 3 using OpenRouter as an API endpoint.
+[ ] Add in a tool to run python code.
+    [ ] Allow access to specific grids via defined variables (to save context).
 
 **Open questions:**
 - What happens if the grid output isn't the right size? how is pixel accuracy and residual reduction calculated?
@@ -60,7 +70,7 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_100 --model
 #   --model: OpenAI model name (default: gpt-4o-mini)
 #   --tools: Enable code interpreter tools
 #   --limit: Limit number of tasks to run
-#   --max_tool_calls: Maximum number of tool calls allowed for the model (default: 16, only applies if --tools is set)
+#   --max_tool_calls: Maximum number of tool calls allowed for the model (default: 64, only applies if --tools is set)
 ```
 
 ### Available Subsets
@@ -400,7 +410,7 @@ uv run python cleanup_logs.py
 
 ## Additional Notes
 
-- You can control the maximum number of tool calls the model can make per task using --max_tool_calls (default: 16). This is especially useful for limiting cost and runaway tool loops when --tools is enabled.
+- You can control the maximum number of tool calls the model can make per task using --max_tool_calls (default: 64). This is especially useful for limiting cost and runaway tool loops when --tools is enabled.
 
 ## create_grid_size_distributed_subset.py
 

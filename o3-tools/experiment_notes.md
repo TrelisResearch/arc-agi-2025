@@ -10,7 +10,7 @@
   uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-2 --subset grid_size_distributed_30 --model o3 --tools
   ```
 - **Reasoning level:** Medium (default)
-- **Max tool calls:** 16 (default)
+- **Max tool calls:** 64 (default)
 - **Purpose:** Benchmark o3 model performance across a range of grid sizes in the evaluation set
 
 --- 

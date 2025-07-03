@@ -19,7 +19,7 @@ load_dotenv()
 class ARCTaskRunner:
     """Run ARC tasks using the OpenAI Responses API (single-shot with tool execution)"""
     
-    def __init__(self, model: str = "gpt-4o-mini", use_tools: bool = False, max_tool_calls: int = 16):
+    def __init__(self, model: str = "gpt-4o-mini", use_tools: bool = False, max_tool_calls: int = 64):
         self.model = model
         self.use_tools = use_tools
         self.max_tool_calls = max_tool_calls
@@ -596,8 +596,8 @@ def main():
                        help="Enable code interpreter tools")
     parser.add_argument("--limit", type=int,
                        help="Limit number of tasks to run")
-    parser.add_argument("--max_tool_calls", type=int, default=16,
-                       help="Maximum number of tool calls allowed for the model (default: 16, only applies if --tools is set)")
+    parser.add_argument("--max_tool_calls", type=int, default=64,
+                       help="Maximum number of tool calls allowed for the model (default: 64, only applies if --tools is set)")
     
     args = parser.parse_args()
     
