@@ -112,6 +112,38 @@ class GridScorer:
             'alpha': alpha,
             'beta': beta
         }
+    
+    def calculate_null_program_mdl(self, actual_grid: List[List[int]], 
+                                  alpha: float = 1.0, beta: float = 4.0) -> Dict:
+        """
+        Calculate MDL score for the null program (returns input unchanged)
+        
+        Args:
+            actual_grid: The expected output grid
+            alpha: Weight for program tokens (default 1.0)
+            beta: Weight for residual compression (default 4.0)
+        
+        Returns:
+            Dictionary with null program MDL components and total score
+        """
+        # Null program: def transform(grid): return grid
+        null_program = "def transform(grid):\n    return grid"
+        null_program_tokens = self.count_tokens(null_program)
+        
+        # For null program, residual is the full actual grid (since predicted = input, actual = output)
+        # This represents the full "surprise" of the transformation
+        null_residual_bytes = self.gzip_compress_grid(actual_grid)
+        
+        null_mdl_score = alpha * null_program_tokens + beta * null_residual_bytes
+        
+        return {
+            'null_program': null_program,
+            'null_program_tokens': null_program_tokens,
+            'null_residual_bytes': null_residual_bytes,
+            'null_mdl_score': null_mdl_score,
+            'alpha': alpha,
+            'beta': beta
+        }
 
 
 class ProgramExecutor:

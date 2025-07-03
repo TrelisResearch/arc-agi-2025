@@ -347,10 +347,21 @@ Requirements:
                 score = self.scorer.score_grid(predicted_output, actual_output)
                 results['score'] = score
                 
-                # Calculate MDL score
+                # Calculate MDL score for predicted program
                 residual = self.scorer.calculate_residual_grid(predicted_output, actual_output)
                 mdl = self.scorer.calculate_mdl_score(program, residual)
                 results['mdl'] = mdl
+                
+                # Calculate null program MDL for comparison
+                null_mdl = self.scorer.calculate_null_program_mdl(actual_output)
+                results['null_mdl'] = null_mdl
+                
+                # Show MDL comparison
+                mdl_improvement = null_mdl['null_mdl_score'] - mdl['mdl_score']
+                if mdl_improvement > 0:
+                    print(f"  📊 MDL: {mdl['mdl_score']:.1f} vs null {null_mdl['null_mdl_score']:.1f} (↓{mdl_improvement:.1f} better)")
+                else:
+                    print(f"  📊 MDL: {mdl['mdl_score']:.1f} vs null {null_mdl['null_mdl_score']:.1f} (↑{-mdl_improvement:.1f} worse)")
                 
                 results['predicted_output'] = predicted_output
                 results['actual_output'] = actual_output
@@ -372,7 +383,13 @@ Requirements:
                 }
                 results['mdl'] = None
                 results['actual_output'] = actual_output
+                
+                # Still calculate null program MDL for comparison
+                null_mdl = self.scorer.calculate_null_program_mdl(actual_output)
+                results['null_mdl'] = null_mdl
+                
                 print(f"  ❌ Execution failed: {error}")
+                print(f"  📊 Null program MDL baseline: {null_mdl['null_mdl_score']:.1f}")
             
             return results
             
@@ -450,6 +467,20 @@ Requirements:
         avg_program_tokens = sum(r.get('mdl', {}).get('program_tokens', 0) for r in results if r.get('mdl')) / total_tasks if total_tasks > 0 else 0
         avg_residual_bytes = sum(r.get('mdl', {}).get('residual_bytes', 0) for r in results if r.get('mdl')) / total_tasks if total_tasks > 0 else 0
         
+        # Calculate null program MDL statistics
+        null_mdl_scores = [r.get('null_mdl', {}).get('null_mdl_score') for r in results if r.get('null_mdl')]
+        avg_null_mdl = sum(null_mdl_scores) / len(null_mdl_scores) if null_mdl_scores else 0
+        
+        # Calculate how many solutions beat the null baseline
+        mdl_improvements = []
+        for r in results:
+            if r.get('mdl') and r.get('null_mdl'):
+                improvement = r['null_mdl']['null_mdl_score'] - r['mdl']['mdl_score']
+                mdl_improvements.append(improvement)
+        
+        tasks_beating_null = sum(1 for imp in mdl_improvements if imp > 0)
+        avg_mdl_improvement = sum(mdl_improvements) / len(mdl_improvements) if mdl_improvements else 0
+        
         # Calculate tool usage statistics
         total_tool_calls = sum(r.get('tool_calls_count', 0) for r in results)
         avg_tool_calls = total_tool_calls / total_tasks if total_tasks > 0 else 0
@@ -470,6 +501,9 @@ Requirements:
             'avg_mdl_score': avg_mdl,
             'avg_program_tokens': avg_program_tokens,
             'avg_residual_bytes': avg_residual_bytes,
+            'avg_null_mdl_score': avg_null_mdl,
+            'tasks_beating_null': tasks_beating_null,
+            'avg_mdl_improvement': avg_mdl_improvement,
             'total_tool_calls': total_tool_calls,
             'avg_tool_calls': avg_tool_calls,
             'total_tokens': self.total_tokens,
@@ -497,6 +531,9 @@ Requirements:
         print(f"Average MDL score: {avg_mdl:.1f}")
         print(f"Average program tokens: {avg_program_tokens:.1f}")
         print(f"Average residual bytes: {avg_residual_bytes:.1f}")
+        print(f"Average null program MDL: {avg_null_mdl:.1f}")
+        print(f"Solutions beating null baseline: {tasks_beating_null}/{len(mdl_improvements)} ({tasks_beating_null/len(mdl_improvements)*100:.1f}%)" if mdl_improvements else "Solutions beating null baseline: N/A")
+        print(f"Average MDL improvement over null: {avg_mdl_improvement:.1f}")
         print(f"Total tool calls made: {total_tool_calls}")
         print(f"Average tool calls per task: {avg_tool_calls:.1f}")
         print(f"Total tokens used: {self.total_tokens:,}")
