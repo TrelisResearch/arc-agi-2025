@@ -5,6 +5,7 @@ import json
 import argparse
 import datetime
 import requests
+import time
 from pathlib import Path
 from typing import Dict, List, Optional
 from dotenv import load_dotenv
@@ -149,32 +150,42 @@ Requirements:
         return prompt
     
     def call_responses_api(self, messages: List[Dict]) -> Dict:
-        """Call the OpenAI Responses API"""
+        """Call the OpenAI Responses API with retry logic for prompt violations"""
         data = {
             "model": self.model,
             "input": messages
         }
-        
         if self.use_tools:
             data["tools"] = [{"type": "code_interpreter", "container": {"type": "auto"}}]
             data["include"] = ["code_interpreter_call.outputs"]
             data["max_tool_calls"] = self.max_tool_calls
-        
-        try:
-            response = requests.post(
-                'https://api.openai.com/v1/responses',
-                headers=self.headers,
-                json=data
-            )
-            
-            if response.status_code == 200:
-                return response.json()
-            else:
-                error_data = response.json() if response.content else {}
-                raise Exception(f"API error {response.status_code}: {error_data}")
-                
-        except Exception as e:
-            raise Exception(f"API call failed: {str(e)}")
+
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
+            try:
+                response = requests.post(
+                    'https://api.openai.com/v1/responses',
+                    headers=self.headers,
+                    json=data
+                )
+                if response.status_code == 200:
+                    return response.json()
+                else:
+                    error_data = response.json() if response.content else {}
+                    # Check for prompt violation error
+                    if response.status_code == 400 and error_data.get('error', {}).get('code') == 'invalid_prompt':
+                        print(f"[WARN] Prompt violation detected (attempt {attempt}/{max_retries}). Retrying...")
+                        if attempt < max_retries:
+                            time.sleep(2)
+                            continue
+                    raise Exception(f"API error {response.status_code}: {error_data}")
+            except Exception as e:
+                if attempt < max_retries:
+                    print(f"[WARN] API call failed (attempt {attempt}/{max_retries}): {e}. Retrying...")
+                    time.sleep(2)
+                    continue
+                else:
+                    raise Exception(f"API call failed after {max_retries} attempts: {e}")
     
     
     def extract_code_from_response(self, response_data: Dict) -> str:

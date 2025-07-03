@@ -123,23 +123,19 @@ The `subsets/` directory contains predefined task subsets based on **task size**
 
 ### Available Subsets
 
-**Important**: Tasks are ranked by size **globally across both training and evaluation splits combined**. The shortest tasks may come from either split.
+The following subset files are available for each dataset in `data/subsets/arc-agi-1/` and `data/subsets/arc-agi-2/`:
 
-- **shortest_1.txt**: Single shortest task across the entire dataset
-  - ARC-AGI-1: `6150a2bd` (54 total cells, from training)
-  - ARC-AGI-2: `833966f4` (30 total cells, from training)
-- **shortest_10.txt**: 10 shortest tasks across the entire dataset
-- **shortest_100.txt**: 100 shortest tasks across the entire dataset
-- **middle_1.txt**: Single median task across the entire dataset  
-  - ARC-AGI-1: `ea32f347` (1000 total cells, from training)
-  - ARC-AGI-2: `7d7772cc` (1152 total cells, from training)
-- **middle_10.txt**: 10 median tasks centered around the middle size
-- **middle_100.txt**: 100 median tasks centered around the middle size
-- **longest_1.txt**: Single longest task across the entire dataset
-  - ARC-AGI-1: `3631a71a` (9000 total cells, from training)
-  - ARC-AGI-2: `d8e07eb2` (9240 total cells, from training)
-- **longest_10.txt**: 10 longest tasks across the entire dataset
-- **longest_100.txt**: 100 longest tasks across the entire dataset
+- **shortest_1.txt**: Single shortest task
+- **shortest_10.txt**: 10 shortest tasks
+- **shortest_100.txt**: 100 shortest tasks
+- **middle_1.txt**: Single median task
+- **middle_10.txt**: 10 median tasks
+- **middle_100.txt**: 100 median tasks
+- **longest_1.txt**: Single longest task
+- **longest_10.txt**: 10 longest tasks
+- **longest_100.txt**: 100 longest tasks
+- **grid_size_distributed_30.txt**: 30 tasks evenly distributed by grid size (see below)
+- **tasks_with_multiple_tests.json**: Tasks with more than one test example (JSON, not a subset for evaluation)
 
 Each `.txt` file contains one task ID per line. The corresponding `_details.json` files include additional metadata like the computed size and which split (training/evaluation) the task belongs to.
 
