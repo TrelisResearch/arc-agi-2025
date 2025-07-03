@@ -22,6 +22,8 @@ A tool for testing OpenAI o3/o4 models on ARC-AGI tasks with and without code in
 - Detailed logging of all runs for analysis
 - Support for different datasets and task subsets
 
+> **Note:** In testing, o3 looped (with tools enabled) does not solve any of the longest ARC-AGI problems (tested on 5). Shortest and medium tasks are solved much more reliably.
+
 ## Setup
 
 1. Install dependencies with uv:

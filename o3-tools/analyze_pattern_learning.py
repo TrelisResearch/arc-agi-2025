@@ -8,15 +8,15 @@ from datetime import datetime
 import os
 
 def run_tasks_and_collect_data():
-    """Run 10 shortest tasks and collect results"""
-    print("Running 10 shortest tasks on gpt-4o-mini with tools...")
+    """Run 3 shortest tasks and collect results"""
+    print("Running 10 shortest tasks on gpt-4.1-mini with tools...")
     
     # Run the tasks
     cmd = [
         "uv", "run", "python", "run_arc_tasks.py",
         "--dataset", "arc-agi-1",
         "--subset", "shortest_10", 
-        "--model", "gpt-4o-mini",
+        "--model", "gpt-4.1-mini",
         "--tools"
     ]
     
