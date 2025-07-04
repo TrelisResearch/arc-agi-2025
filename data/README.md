@@ -114,22 +114,32 @@ Each task file is a JSON object with the following structure:
 ## Subset Naming Convention (2025+)
 
 Subsets are now split by training and evaluation for each dataset:
-- `shortest_1_training`, `shortest_10_training`, `shortest_30_training`
-- `shortest_1_evaluation`, `shortest_10_evaluation`, `shortest_30_evaluation`
+- `shortest_training_1`, `shortest_training_10`, `shortest_training_30`
+- `shortest_evaluation_1`, `shortest_evaluation_10`, `shortest_evaluation_30`
 - ... and similarly for `middle` and `longest`
+- `grid_size_distributed_30_training`: 30 training tasks evenly distributed by grid size
+- `grid_size_distributed_30_evaluation`: 30 evaluation tasks evenly distributed by grid size
 
 Each subset contains only task IDs from the relevant split. Legacy mixed subsets are in the `archive/` folder.
+
+**Grid Size Distributed Subsets:**
+These subsets select 30 tasks evenly spaced across the range of grid sizes (total cells in all input/output grids). They provide a balanced representation of task complexity within each split.
 
 **Example usage:**
 
 Run the 10 shortest evaluation tasks from ARC-AGI-2:
 ```bash
-uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-2 --subset shortest_10_evaluation
+uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-2 --subset shortest_evaluation_10
 ```
 
 Run the 30 longest training tasks from ARC-AGI-1:
 ```bash
-uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset longest_30_training
+uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset longest_training_30
+```
+
+Run 30 grid size distributed evaluation tasks from ARC-AGI-2:
+```bash
+uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-2 --subset grid_size_distributed_30_evaluation
 ```
 
 ## Task Size Definition

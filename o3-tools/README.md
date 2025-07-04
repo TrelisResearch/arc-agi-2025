@@ -11,7 +11,7 @@ Objective: Define a test that is a representative measure of performance while a
 **Levers:**
 - FAST:
 [x] Include the test grid, it adds information.
-[ ] When providing code, also provide a summary of the rationale behind what is being done. (not in the reasoning). [Test this out in a clean test script to go in a tests folder.]
+[x] When providing code, also provide a summary of the rationale behind what is being done. (not in the reasoning). [Test this out in a clean test script to go in a tests folder.]
 [x] Check whether the code sandbox on openai is ephemeral or not. Yes, with `auto` the same container is used and variables persist.
 
 - MEDIUM:
@@ -107,6 +107,8 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_
 - `shortest_evaluation_10`: 10 shortest evaluation tasks
 - `shortest_evaluation_30`: 30 shortest evaluation tasks
 - ... and similarly for `middle` and `longest`
+- `grid_size_distributed_30_training`: 30 training tasks evenly distributed by grid size
+- `grid_size_distributed_30_evaluation`: 30 evaluation tasks evenly distributed by grid size
 
 **Example:**
 
@@ -118,6 +120,11 @@ uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-2 --subset shortest_ev
 Run the 30 longest training tasks from ARC-AGI-1:
 ```bash
 uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset longest_training_30 --model o3
+```
+
+Run 30 grid size distributed evaluation tasks from ARC-AGI-2:
+```bash
+uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-2 --subset grid_size_distributed_30_evaluation --tools
 ```
 
 Run 30 tasks in parallel with 15 workers for 15x speedup:
