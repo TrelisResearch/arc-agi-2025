@@ -130,10 +130,11 @@ class ARCTaskRunner:
             tools_instruction = """
 
 IMPORTANT: You have access to a live Python code interpreter. You MUST:
-1. Use the code interpreter to analyze and understand the training examples
-2. Develop your transform function iteratively, testing it on EVERY training example
-3. Keep refining until your function correctly transforms ALL training examples
-4. Once you find a working solution, you MUST end your response with the "Final answer:" section
+1. First complete **Step 1: Pattern Analysis** by describing the pattern you observe
+2. Use the code interpreter to analyze and understand the training examples
+3. Develop your transform function iteratively, testing it on EVERY training example
+4. Keep refining until your function correctly transforms ALL training examples
+5. Once you find a working solution, you MUST end your response with the "Final answer:" section
 
 Use the code interpreter to verify your solution works, but ALWAYS conclude with:
 
@@ -158,8 +159,15 @@ The test input is shown for context so you understand what type of grid your pro
 
 {task_str}
 
-Analyze the pattern in the training examples and write a Python function that performs this transformation.{tools_instruction}
+Please analyze the pattern in the training examples step by step. First, provide a brief summary of your reasoning approach and what pattern you discovered. Then write a Python function that performs this transformation.{tools_instruction}
 
+**Step 1: Pattern Analysis**
+Briefly describe:
+- What pattern you see across the training examples
+- How the input grids are transformed to create the output grids
+- Any key insights about the transformation rule
+
+**Step 2: Implementation**
 Your function should work correctly on all the training examples shown above and be robust enough to handle the test input.
 
 Final answer:
