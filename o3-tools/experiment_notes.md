@@ -32,6 +32,19 @@
 - Interpretation: likely close on 5/30 additional tasks beyond the 3/30 correctly solved
 - **Next planned experiment:** Run 30 tasks with high reasoning level, evenly distributed across task lengths. Ablate leaving out the reasoning summaries.
 
+### Improved Failure Tracking (2025-01-04):
+- **Problem:** Failed tasks were logged to files but silent in console output, causing confusion
+- **Issues:** 
+  - Progress counter incremented for failed tasks, making them appear successful
+  - No clear distinction between API failures and successful tasks with execution issues
+  - Summary statistics didn't track failed tasks separately
+- **Improvements Made:**
+  - **Explicit console logging:** Failed tasks now print `❌ TASK FAILED: {task_id}` with error details
+  - **Enhanced progress tracking:** Shows `✅ COMPLETED` vs `❌ FAILED` status with task IDs
+  - **Detailed summary stats:** Separates successful API calls from complete failures
+  - **Failed task listing:** Summary includes list of all failed tasks with error messages
+  - **Better data tracking:** Added `api_success` field to distinguish failure types
+
 --- 
 
 ## 2024-07-03

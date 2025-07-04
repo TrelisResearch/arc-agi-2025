@@ -56,13 +56,15 @@ class ARCTaskRunner:
             self.total_cost += cost
             self.total_tokens += tokens
     
-    def _update_progress(self, total_tasks: int):
+    def _update_progress(self, total_tasks: int, task_id: str = None, success: bool = True):
         """Thread-safe method to update and print progress"""
         with self._progress_lock:
             self.completed_tasks += 1
             if self.max_workers > 1:  # Only show progress for parallel execution
                 progress_pct = (self.completed_tasks / total_tasks) * 100
-                print(f"Progress: {self.completed_tasks}/{total_tasks} tasks completed ({progress_pct:.1f}%)")
+                status = "✅ COMPLETED" if success else "❌ FAILED"
+                task_info = f" ({task_id})" if task_id else ""
+                print(f"Progress: {self.completed_tasks}/{total_tasks} tasks processed ({progress_pct:.1f}%) - {status}{task_info}")
     
     def get_model_pricing(self, model: str) -> tuple[float, float]:
         """Get input and output pricing rates for a model in $/1M tokens"""
@@ -217,17 +219,42 @@ Requirements:
                     return response.json()
                 else:
                     error_data = response.json() if response.content else {}
+                    
+                    # Check for rate limit error (429)
+                    if response.status_code == 429:
+                        error_msg = error_data.get('error', {}).get('message', '')
+                        print(f"[WARN] Rate limit hit (attempt {attempt}/{max_retries}): {error_msg}")
+                        
+                        if attempt < max_retries:
+                            # Extract delay from error message if available
+                            import re
+                            delay_match = re.search(r'Please try again in (\d+)ms', error_msg)
+                            if delay_match:
+                                delay_ms = int(delay_match.group(1))
+                                delay_seconds = delay_ms / 1000.0 + 0.5  # Add 500ms buffer
+                                print(f"[WARN] Waiting {delay_seconds:.1f}s before retry...")
+                                time.sleep(delay_seconds)
+                            else:
+                                # Exponential backoff: 2, 4, 8 seconds
+                                delay = 2 ** attempt
+                                print(f"[WARN] Using exponential backoff: {delay}s")
+                                time.sleep(delay)
+                            continue
+                    
                     # Check for prompt violation error
-                    if response.status_code == 400 and error_data.get('error', {}).get('code') == 'invalid_prompt':
+                    elif response.status_code == 400 and error_data.get('error', {}).get('code') == 'invalid_prompt':
                         print(f"[WARN] Prompt violation detected (attempt {attempt}/{max_retries}). Retrying...")
                         if attempt < max_retries:
                             time.sleep(2)
                             continue
+                    
                     raise Exception(f"API error {response.status_code}: {error_data}")
             except Exception as e:
                 if attempt < max_retries:
                     print(f"[WARN] API call failed (attempt {attempt}/{max_retries}): {e}. Retrying...")
-                    time.sleep(2)
+                    # Exponential backoff for general errors
+                    delay = 2 ** attempt
+                    time.sleep(delay)
                     continue
                 else:
                     raise Exception(f"API call failed after {max_retries} attempts: {e}")
@@ -378,8 +405,8 @@ Requirements:
                 actual_output = task_data['test'][0]['output']
                 total_pixels = len(actual_output) * len(actual_output[0]) if actual_output else 0
                 
-                # Update progress tracking
-                self._update_progress(total_tasks)
+                # Update progress tracking - successful API call but no code
+                self._update_progress(total_tasks, task_id, success=True)
                 
                 return {
                     'task_id': task_id,
@@ -401,14 +428,14 @@ Requirements:
                         'error': 'No code generated'
                     },
                     'mdl': None,
-                    'actual_output': actual_output
+                    'actual_output': actual_output,
+                    'api_success': True  # API call succeeded, just no code
                 }
             
             # Execute program on test input
             test_input = task_data['test'][0]['input']
             predicted_output, error, timed_out = self.executor.execute_program(program, test_input)
             
-            # Create base results
             results = {
                 'task_id': task_id,
                 'model': self.model,
@@ -420,28 +447,26 @@ Requirements:
                 'tokens_used': usage.get('total_tokens', 0),
                 'tool_calls_count': tool_calls_count,
                 'request_cost': request_cost,
-                'raw_response': response_data
+                'raw_response': response_data,
+                'api_success': True  # API call succeeded
             }
             
-            if predicted_output is not None:
-                # Compare with TEST output (for accuracy metrics)
+            if predicted_output is not None and not timed_out and not error:
+                # Score the result
                 actual_output = task_data['test'][0]['output']
                 score = self.scorer.score_grid(predicted_output, actual_output)
                 results['score'] = score
                 
-                # Calculate residual reduction - measures pattern learning ability
+                # Calculate residual reduction (pattern learning)
                 training_examples = task_data.get('train', [])
                 reduction = self.scorer.calculate_residual_reduction(program, training_examples, self.executor)
                 results['residual_reduction'] = reduction
+                results['mdl'] = reduction
                 
-                # Show pattern learning performance
-                learning_score = reduction['pattern_learning_score']
-                print(f"  🧠 Pattern learning: {learning_score:.1f}% ({reduction['program_residual_bytes']} vs {reduction['null_residual_bytes']} bytes)")
-                
-                # Show training performance with better clarity
-                total_training = reduction['training_examples_count']
-                executed = reduction['training_executions']
-                correct = reduction['training_correct']
+                # Print training execution summary
+                executed = reduction.get('training_executions', 0)
+                correct = reduction.get('training_correct', 0)
+                total_training = reduction.get('training_examples_count', 0)
                 failed = len(reduction.get('training_errors', []))
                 
                 if failed > 0:
@@ -482,8 +507,8 @@ Requirements:
                 print(f"  ❌ Execution failed: {error}")
                 print(f"  📊 Null baseline: {null_residual_bytes} residual bytes to beat")
             
-            # Update progress tracking
-            self._update_progress(total_tasks)
+            # Update progress tracking - successful task
+            self._update_progress(total_tasks, task_id, success=True)
             
             return results
             
@@ -494,9 +519,13 @@ Requirements:
                 total_pixels = len(actual_output) * len(actual_output[0]) if actual_output else 0
             except:
                 total_pixels = 0
-                
-            # Update progress tracking
-            self._update_progress(total_tasks)
+            
+            # Print explicit error message for console visibility
+            print(f"  ❌ TASK FAILED: {task_id}")
+            print(f"     Error: {str(e)}")
+            
+            # Update progress tracking - failed task
+            self._update_progress(total_tasks, task_id, success=False)
                 
             return {
                 'task_id': task_id,
@@ -506,7 +535,8 @@ Requirements:
                     'pixel_accuracy': 0.0,
                     'total_pixels': total_pixels,
                     'correct_pixels': 0
-                }
+                },
+                'api_success': False  # API call failed
             }
     
     def run_subset(self, subset_name: str, dataset: str = "arc-agi-1", limit: Optional[int] = None) -> List[Dict]:
@@ -580,7 +610,7 @@ Requirements:
                         }
                         results.append(error_result)
                         # Still update progress for failed tasks
-                        self._update_progress(total_tasks)
+                        self._update_progress(total_tasks, task_id, success=False)
             
             # Sort results by task_id to maintain consistent order
             results.sort(key=lambda x: x.get('task_id', ''))
@@ -609,23 +639,30 @@ Requirements:
         # Calculate statistics
         total_tasks = len(results)
         correct_tasks = sum(1 for r in results if r.get('score', {}).get('correct', False))
+        
+        # Separate successful API calls from complete failures
+        api_successes = [r for r in results if r.get('api_success', True)]  # Default True for backward compatibility
+        api_failures = [r for r in results if not r.get('api_success', True)]
+        failed_tasks = len(api_failures)
+        successful_api_calls = len(api_successes)
+        
         total_pixels = sum(r.get('score', {}).get('total_pixels', 0) for r in results)
         correct_pixels = sum(r.get('score', {}).get('correct_pixels', 0) for r in results)
         
-        # Calculate pattern learning statistics
-        pattern_learning_scores = [r.get('residual_reduction', {}).get('pattern_learning_score') for r in results if r.get('residual_reduction')]
+        # Calculate pattern learning statistics (only for successful tasks)
+        pattern_learning_scores = [r.get('residual_reduction', {}).get('pattern_learning_score') for r in api_successes if r.get('residual_reduction')]
         avg_pattern_learning = sum(pattern_learning_scores) / len(pattern_learning_scores) if pattern_learning_scores else 0
         
-        program_residual_bytes = [r.get('residual_reduction', {}).get('program_residual_bytes', 0) for r in results if r.get('residual_reduction')]
+        program_residual_bytes = [r.get('residual_reduction', {}).get('program_residual_bytes', 0) for r in api_successes if r.get('residual_reduction')]
         avg_program_residual_bytes = sum(program_residual_bytes) / len(program_residual_bytes) if program_residual_bytes else 0
         
-        null_residual_bytes = [r.get('residual_reduction', {}).get('null_residual_bytes', 0) for r in results if r.get('residual_reduction')]
+        null_residual_bytes = [r.get('residual_reduction', {}).get('null_residual_bytes', 0) for r in api_successes if r.get('residual_reduction')]
         avg_null_residual_bytes = sum(null_residual_bytes) / len(null_residual_bytes) if null_residual_bytes else 0
         
-        # Calculate training execution and correctness statistics
-        training_executions = sum(r.get('residual_reduction', {}).get('training_executions', 0) for r in results if r.get('residual_reduction'))
-        training_correct = sum(r.get('residual_reduction', {}).get('training_correct', 0) for r in results if r.get('residual_reduction'))
-        total_training_examples = sum(r.get('residual_reduction', {}).get('training_examples_count', 0) for r in results if r.get('residual_reduction'))
+        # Calculate training execution and correctness statistics (only for successful tasks)
+        training_executions = sum(r.get('residual_reduction', {}).get('training_executions', 0) for r in api_successes if r.get('residual_reduction'))
+        training_correct = sum(r.get('residual_reduction', {}).get('training_correct', 0) for r in api_successes if r.get('residual_reduction'))
+        total_training_examples = sum(r.get('residual_reduction', {}).get('training_examples_count', 0) for r in api_successes if r.get('residual_reduction'))
         
         training_execution_rate = training_executions / total_training_examples if total_training_examples > 0 else 0
         training_correctness_rate = training_correct / training_executions if training_executions > 0 else 0
@@ -646,8 +683,11 @@ Requirements:
             'use_tools': self.use_tools,
             'api_type': 'responses_api',
             'total_tasks': total_tasks,
+            'successful_api_calls': successful_api_calls,
+            'failed_api_calls': failed_tasks,
             'correct_tasks': correct_tasks,
             'task_accuracy': correct_tasks / total_tasks if total_tasks > 0 else 0.0,
+            'success_rate': successful_api_calls / total_tasks if total_tasks > 0 else 0.0,
             'total_pixels': total_pixels,
             'correct_pixels': correct_pixels,
             'pixel_accuracy': correct_pixels / total_pixels if total_pixels > 0 else 0.0,
@@ -680,6 +720,10 @@ Requirements:
         print(f"Model: {self.model}")
         print(f"API: Responses (single-shot)")
         print(f"Tools enabled: {self.use_tools}")
+        print(f"Total tasks attempted: {total_tasks}")
+        print(f"Successful API calls: {successful_api_calls}/{total_tasks} ({summary['success_rate']:.1%})")
+        if failed_tasks > 0:
+            print(f"Failed API calls: {failed_tasks}/{total_tasks} ({failed_tasks/total_tasks:.1%}) ❌")
         print(f"Tasks solved correctly: {correct_tasks}/{total_tasks} ({summary['task_accuracy']:.1%})")
         print(f"Pixel accuracy: {correct_pixels}/{total_pixels} ({summary['pixel_accuracy']:.1%})")
         print(f"Average pattern learning: {avg_pattern_learning:.1f}%")
@@ -693,6 +737,15 @@ Requirements:
         print(f"Average tool calls per task: {avg_tool_calls:.1f}")
         print(f"Total tokens used: {self.total_tokens:,}")
         print(f"Total cost: ${self.total_cost:.6f}")
+        
+        # List failed tasks for debugging
+        if failed_tasks > 0:
+            print(f"\n❌ FAILED TASKS ({failed_tasks}):")
+            for result in api_failures:
+                task_id = result.get('task_id', 'unknown')
+                error = result.get('error', 'Unknown error')
+                print(f"  - {task_id}: {error}")
+        
         print(f"\nResults saved to: {filepath}")
 
 
