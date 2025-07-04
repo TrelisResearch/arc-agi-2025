@@ -6,7 +6,16 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 class TaskLoader:
-    """Loads ARC-AGI tasks from the data directory"""
+    """Loads ARC-AGI tasks from the data directory.
+    
+    Subset naming convention (2025+):
+      - shortest_1_training, shortest_10_training, shortest_30_training
+      - shortest_1_evaluation, ...
+      - middle_1_training, ...
+      - longest_1_evaluation, ...
+    Each subset contains only task IDs from the relevant split.
+    Legacy mixed subsets are in archive/.
+    """
     
     def __init__(self, data_root: str = "../data"):
         self.data_root = Path(data_root)
@@ -48,16 +57,17 @@ class TaskLoader:
         return tasks
     
     def get_available_subsets(self, dataset: str = "arc-agi-1") -> List[str]:
-        """List available subset files for a dataset"""
+        """List available subset files for a dataset (ignores archive/ and details)."""
         subset_dir = self.data_root / "subsets" / dataset
         if not subset_dir.exists():
             return []
-        
         subsets = []
         for file in subset_dir.glob("*.txt"):
-            if not file.name.endswith("_details.json"):
+            if (
+                not file.name.endswith("_details.json")
+                and "archive" not in str(file.parent)
+            ):
                 subsets.append(file.stem)
-        
         return sorted(subsets)
     
     def format_task_for_prompt(self, task_data: Dict, include_test: bool = False) -> str:

@@ -3,16 +3,16 @@
 A tool for testing OpenAI o3/o4 models on ARC-AGI tasks with and without code interpreter tools.
 
 **Todo**
-[ ] Reorganize data so that training and evaluation problems are split, because they are so different in terms of difficulty.
+[x] Reorganize data so that training and evaluation problems are split, because they are so different in terms of difficulty.
 
 **Measuring Performance:**
 Objective: Define a test that is a representative measure of performance while also being fast to run.
 
 **Levers:**
 - FAST:
-[ ] When providing code, also provide a summary of the rationale behind what is being done. (not in the reasoning).
-[ ] Check whether the code sandbox on openai is ephemeral or not.
 [ ] Include the test grid, it adds information.
+[ ] When providing code, also provide a summary of the rationale behind what is being done. (not in the reasoning). [Test this out in a clean test script to go in a tests folder.]
+[x] Check whether the code sandbox on openai is ephemeral or not. Seems like it is persistent in our setup (although probably we should more rigourously check if we care about it).
 
 - MEDIUM:
 [ ] Try inputting images of the problem as well as just the problem itself.
@@ -68,33 +68,49 @@ OPENAI_API_KEY=your_key_here
 
 Run the shortest task from ARC-AGI-1:
 ```bash
-uv run python run_arc_tasks.py
+uv run python o3-tools/run_arc_tasks.py
 ```
 
 ### Advanced Usage
 
 ```bash
-# Run 10 shortest tasks from ARC-AGI-2 with tools enabled
-uv run python run_arc_tasks.py --dataset arc-agi-2 --subset shortest_10 --tools
+# Run 10 shortest training tasks from ARC-AGI-2 with tools enabled
+uv run python run_arc_tasks.py --dataset arc-agi-2 --subset shortest_training_1 --tools
 
-# Run specific subset with model selection
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_100 --model gpt-4o-mini --limit 5
+# Run 30 shortest evaluation tasks from ARC-AGI-1 with model selection and a limit of 5
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_30 --model gpt-4.1-mini --limit 5
 
 # Available options:
 #   --dataset: arc-agi-1 or arc-agi-2
-#   --subset: shortest_1, shortest_10, shortest_100, etc.
+#   --subset: shortest_training_1, shortest_training_10, shortest_training_30, shortest_evaluation_1, shortest_evaluation_10, shortest_evaluation_30, etc.
 #   --model: OpenAI model name (default: gpt-4o-mini)
 #   --tools: Enable code interpreter tools
 #   --limit: Limit number of tasks to run
 #   --max_tool_calls: Maximum number of tool calls allowed for the model (default: 64, only applies if --tools is set)
-#   --reasoning_effort: Reasoning effort for the model (low, medium, high; default: medium)
+#   --reasoning_effort: Reasoning effort for the model (low, medium, high; default: medium, only applies to o3/o4/o1 models)
 ```
 
 ### Available Subsets
 
-- `shortest_1`: Single shortest task
-- `shortest_10`: 10 shortest tasks  
-- `shortest_100`: 100 shortest tasks
+- `shortest_training_1`: Single shortest training task
+- `shortest_training_10`: 10 shortest training tasks
+- `shortest_training_30`: 30 shortest training tasks
+- `shortest_evaluation_1`: Single shortest evaluation task
+- `shortest_evaluation_10`: 10 shortest evaluation tasks
+- `shortest_evaluation_30`: 30 shortest evaluation tasks
+- ... and similarly for `middle` and `longest`
+
+**Example:**
+
+Run the 10 shortest evaluation tasks from ARC-AGI-2 with tools enabled:
+```bash
+uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-2 --subset shortest_evaluation_10 --tools
+```
+
+Run the 30 longest training tasks from ARC-AGI-1:
+```bash
+uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset longest_training_30 --model o3
+```
 
 ## Scoring Metrics
 

@@ -6,15 +6,9 @@ from typing import List, Dict, Tuple, Optional
 import subprocess
 import tempfile
 import os
-import signal
-import tiktoken
 
 class GridScorer:
     """Scores predicted grids against ground truth"""
-    
-    def __init__(self):
-        # Initialize tokenizer for counting tokens
-        self.encoding = tiktoken.encoding_for_model("gpt-4")
     
     def score_grid(self, predicted: List[List[int]], actual: List[List[int]]) -> Dict:
         """Score a predicted grid against the actual grid"""
@@ -85,10 +79,6 @@ class GridScorer:
         # Compress and return size
         compressed = gzip.compress(data_str.encode('utf-8'))
         return len(compressed)
-    
-    def count_tokens(self, text: str) -> int:
-        """Count the number of tokens in a text string"""
-        return len(self.encoding.encode(text))
     
     def strip_comments_and_compress(self, program: str) -> int:
         """Strip comments from Python code and return gzipped size in bytes"""

@@ -154,9 +154,14 @@ Requirements:
         """Call the OpenAI Responses API with retry logic for prompt violations"""
         data = {
             "model": self.model,
-            "input": messages,
-            "reasoning": {"effort": self.reasoning_effort}
+            "input": messages
         }
+        
+        # Only add reasoning effort for reasoning models
+        model_lower = self.model.lower()
+        if (model_lower.startswith(('o3', 'o4', 'o1'))):
+            data["reasoning"] = {"effort": self.reasoning_effort}
+        
         if self.use_tools:
             data["tools"] = [{"type": "code_interpreter", "container": {"type": "auto"}}]
             data["include"] = ["code_interpreter_call.outputs"]
@@ -592,7 +597,7 @@ def main():
                        help="Dataset to use")
     parser.add_argument("--subset", default="shortest_1",
                        help="Subset name (e.g., shortest_1, shortest_10, shortest_100)")
-    parser.add_argument("--model", default="gpt-4o-mini",
+    parser.add_argument("--model", default="gpt-4.1-mini",
                        help="OpenAI model to use")
     parser.add_argument("--tools", action="store_true",
                        help="Enable code interpreter tools")

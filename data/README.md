@@ -111,11 +111,28 @@ Each task file is a JSON object with the following structure:
   - 3 test examples: 7 tasks
   - 4 test examples: 1 task (`8dab14c2`)
 
-## Subset Files
+## Subset Naming Convention (2025+)
 
-The `subsets/` directory contains predefined task subsets based on **task size**.
+Subsets are now split by training and evaluation for each dataset:
+- `shortest_1_training`, `shortest_10_training`, `shortest_30_training`
+- `shortest_1_evaluation`, `shortest_10_evaluation`, `shortest_30_evaluation`
+- ... and similarly for `middle` and `longest`
 
-### Task Size Definition
+Each subset contains only task IDs from the relevant split. Legacy mixed subsets are in the `archive/` folder.
+
+**Example usage:**
+
+Run the 10 shortest evaluation tasks from ARC-AGI-2:
+```bash
+uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-2 --subset shortest_10_evaluation
+```
+
+Run the 30 longest training tasks from ARC-AGI-1:
+```bash
+uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset longest_30_training
+```
+
+## Task Size Definition
 **Task size** is calculated as the total number of grid cells across all inputs and outputs in a task:
 - Size = sum of (width × height) for all input grids + sum of (width × height) for all output grids
 - This includes all training examples and all test examples
