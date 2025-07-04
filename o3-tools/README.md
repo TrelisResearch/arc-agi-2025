@@ -10,7 +10,7 @@ Objective: Define a test that is a representative measure of performance while a
 
 **Levers:**
 - FAST:
-[ ] Include the test grid, it adds information.
+[x] Include the test grid, it adds information.
 [ ] When providing code, also provide a summary of the rationale behind what is being done. (not in the reasoning). [Test this out in a clean test script to go in a tests folder.]
 [x] Check whether the code sandbox on openai is ephemeral or not. Seems like it is persistent in our setup (although probably we should more rigourously check if we care about it).
 

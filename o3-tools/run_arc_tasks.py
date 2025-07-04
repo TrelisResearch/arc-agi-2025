@@ -15,7 +15,6 @@ from scoring import GridScorer, ProgramExecutor
 
 load_dotenv()
 
-
 class ARCTaskRunner:
     """Run ARC tasks using the OpenAI Responses API (single-shot with tool execution)"""
     
@@ -100,8 +99,8 @@ class ARCTaskRunner:
     
     def create_prompt(self, task_data: Dict) -> str:
         """Create a prompt for the model to solve an ARC task"""
-        # Don't include test input in the prompt
-        task_str = self.task_loader.format_task_for_prompt(task_data, include_test=False)
+        # Include test input in the prompt for context
+        task_str = self.task_loader.format_task_for_prompt(task_data, include_test=True)
         
         # Different instructions based on tools availability
         if self.use_tools:
@@ -125,13 +124,20 @@ def transform(grid):
             tools_instruction = ""
         
         prompt = f"""You are solving an ARC (Abstraction and Reasoning Corpus) task. 
-I will show you training examples with input and output grids. Your goal is to find the transformation pattern.
+I will show you training examples with input and output grids, plus a test input grid. Your task is to:
+
+1. **Analyze the training examples** to discover the transformation pattern that maps each input grid to its corresponding output grid
+2. **Write a Python program** that implements this transformation pattern  
+3. **DO NOT predict or generate the test output** - your job is only to write the transformation program
+4. **Ensure your program generalizes** - it will be applied to the test input grid (which may differ in size or complexity from training examples) after you provide it
+
+The test input is shown for context so you understand what type of grid your program will eventually process. Focus on learning the pattern from training examples and writing robust code that can handle the test case.
 
 {task_str}
 
 Analyze the pattern in the training examples and write a Python function that performs this transformation.{tools_instruction}
 
-Your function should work correctly on all the training examples shown above.
+Your function should work correctly on all the training examples shown above and be robust enough to handle the test input.
 
 Final answer:
 ```python
@@ -146,6 +152,7 @@ Requirements:
 - Return a new grid (2D list) with the transformation applied
 - You can use numpy if needed - just add 'import numpy as np' at the start of your function
 - Your function MUST produce the correct output for all training examples
+- Your function must be robust enough to work on the test input grid
 """
         
         return prompt
