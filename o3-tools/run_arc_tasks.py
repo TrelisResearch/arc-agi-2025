@@ -6,9 +6,11 @@ import argparse
 import datetime
 import requests
 import time
+import threading
 from pathlib import Path
 from typing import Dict, List, Optional
 from dotenv import load_dotenv
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from task_loader import TaskLoader
 from scoring import GridScorer, ProgramExecutor
@@ -18,11 +20,13 @@ load_dotenv()
 class ARCTaskRunner:
     """Run ARC tasks using the OpenAI Responses API (single-shot with tool execution)"""
     
-    def __init__(self, model: str = "gpt-4.1-nano", use_tools: bool = False, max_tool_calls: int = 64, reasoning_effort: str = "medium"):
+    def __init__(self, model: str = "gpt-4.1-nano", use_tools: bool = False, max_tool_calls: int = 64, reasoning_effort: str = "medium", max_workers: int = 1, rate_limit_delay: float = 0.0):
         self.model = model
         self.use_tools = use_tools
         self.max_tool_calls = max_tool_calls
         self.reasoning_effort = reasoning_effort
+        self.max_workers = max_workers
+        self.rate_limit_delay = rate_limit_delay
         self.api_key = os.getenv('OPENAI_API_KEY')
         self.task_loader = TaskLoader()
         self.scorer = GridScorer()
@@ -32,14 +36,33 @@ class ARCTaskRunner:
         self.logs_dir = Path("logs")
         self.logs_dir.mkdir(exist_ok=True)
         
-        # Track costs
+        # Thread-safe cost and token tracking
+        self._cost_lock = threading.Lock()
         self.total_cost = 0.0
         self.total_tokens = 0
+        
+        # Thread-safe progress tracking
+        self._progress_lock = threading.Lock()
+        self.completed_tasks = 0
         
         self.headers = {
             'Authorization': f'Bearer {self.api_key}',
             'Content-Type': 'application/json'
         }
+    
+    def _update_costs(self, cost: float, tokens: int):
+        """Thread-safe method to update total costs and tokens"""
+        with self._cost_lock:
+            self.total_cost += cost
+            self.total_tokens += tokens
+    
+    def _update_progress(self, total_tasks: int):
+        """Thread-safe method to update and print progress"""
+        with self._progress_lock:
+            self.completed_tasks += 1
+            if self.max_workers > 1:  # Only show progress for parallel execution
+                progress_pct = (self.completed_tasks / total_tasks) * 100
+                print(f"Progress: {self.completed_tasks}/{total_tasks} tasks completed ({progress_pct:.1f}%)")
     
     def get_model_pricing(self, model: str) -> tuple[float, float]:
         """Get input and output pricing rates for a model in $/1M tokens"""
@@ -274,9 +297,14 @@ Requirements:
         
         return count
     
-    def run_task(self, task_id: str, task_data: Dict) -> Dict:
+    def run_task(self, task_id: str, task_data: Dict, total_tasks: int = 1) -> Dict:
         """Run a single ARC task using Responses API (single-shot for built-in tools)"""
-        print(f"\nProcessing task: {task_id}")
+        if self.max_workers == 1:  # Only print for sequential execution
+            print(f"\nProcessing task: {task_id}")
+        
+        # Apply rate limiting if configured
+        if self.rate_limit_delay > 0:
+            time.sleep(self.rate_limit_delay)
         
         # Create initial prompt
         prompt = self.create_prompt(task_data)
@@ -295,7 +323,6 @@ Requirements:
             # Extract usage data from response
             usage = response_data.get('usage', {})
             total_tokens = usage.get('total_tokens', 0)
-            self.total_tokens += total_tokens
             
             # Calculate cost based on model - with fallback calculation
             input_rate, output_rate = self.get_model_pricing(self.model)
@@ -331,7 +358,7 @@ Requirements:
                     request_cost = 0.0
                     print(f"  ⚠️  No usage data available - cost calculation failed")
             
-            self.total_cost += request_cost
+            self._update_costs(request_cost, total_tokens)
             
             # Extract code and count tool calls
             program = self.extract_code_from_response(response_data)
@@ -342,6 +369,9 @@ Requirements:
                 # Count pixels even when no code is generated
                 actual_output = task_data['test'][0]['output']
                 total_pixels = len(actual_output) * len(actual_output[0]) if actual_output else 0
+                
+                # Update progress tracking
+                self._update_progress(total_tasks)
                 
                 return {
                     'task_id': task_id,
@@ -444,6 +474,9 @@ Requirements:
                 print(f"  ❌ Execution failed: {error}")
                 print(f"  📊 Null baseline: {null_residual_bytes} residual bytes to beat")
             
+            # Update progress tracking
+            self._update_progress(total_tasks)
+            
             return results
             
         except Exception as e:
@@ -453,6 +486,9 @@ Requirements:
                 total_pixels = len(actual_output) * len(actual_output[0]) if actual_output else 0
             except:
                 total_pixels = 0
+                
+            # Update progress tracking
+            self._update_progress(total_tasks)
                 
             return {
                 'task_id': task_id,
@@ -466,29 +502,81 @@ Requirements:
             }
     
     def run_subset(self, subset_name: str, dataset: str = "arc-agi-1", limit: Optional[int] = None) -> List[Dict]:
-        """Run all tasks in a subset"""
+        """Run all tasks in a subset with optional parallelization"""
         tasks = self.task_loader.load_tasks_from_subset(subset_name, dataset)
         
         if limit:
             tasks = tasks[:limit]
         
+        total_tasks = len(tasks)
+        
         # Print configuration info
-        print(f"\nRunning {len(tasks)} tasks from {dataset}/{subset_name}")
+        print(f"\nRunning {total_tasks} tasks from {dataset}/{subset_name}")
         print(f"Model: {self.model}")
         print(f"API: Responses API (single-shot)")
         if self.use_tools:
             print("Tools: ENABLED (code interpreter - OpenAI runs code internally, model can iterate)")
         else:
             print("Tools: DISABLED (model outputs final code, we execute it locally)")
+        if self.max_workers > 1:
+            print(f"Parallelization: ENABLED ({self.max_workers} workers)")
+            if self.rate_limit_delay > 0:
+                print(f"Rate limiting: {self.rate_limit_delay}s delay between requests")
+        else:
+            print("Parallelization: DISABLED (sequential execution)")
         print("-" * 50)
         
+        # Reset progress counter for this subset
+        with self._progress_lock:
+            self.completed_tasks = 0
+        
         results = []
-        for task_id, task_data in tasks:
-            result = self.run_task(task_id, task_data)
-            results.append(result)
+        
+        if self.max_workers == 1:
+            # Sequential execution (original behavior)
+            for task_id, task_data in tasks:
+                result = self.run_task(task_id, task_data, total_tasks)
+                results.append(result)
+                
+                # Save individual result
+                self.save_result(result)
+        else:
+            # Parallel execution
+            print(f"Starting parallel execution with {self.max_workers} workers...")
             
-            # Save individual result
-            self.save_result(result)
+            def process_task(task_info):
+                task_id, task_data = task_info
+                result = self.run_task(task_id, task_data, total_tasks)
+                # Save individual result
+                self.save_result(result)
+                return result
+            
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                # Submit all tasks
+                future_to_task = {executor.submit(process_task, task_info): task_info[0] 
+                                for task_info in tasks}
+                
+                # Collect results as they complete
+                for future in as_completed(future_to_task):
+                    task_id = future_to_task[future]
+                    try:
+                        result = future.result()
+                        results.append(result)
+                    except Exception as e:
+                        print(f"Task {task_id} failed with error: {e}")
+                        # Create a minimal error result
+                        error_result = {
+                            'task_id': task_id,
+                            'error': str(e),
+                            'score': {'correct': False, 'pixel_accuracy': 0.0, 'total_pixels': 0, 'correct_pixels': 0}
+                        }
+                        results.append(error_result)
+                        # Still update progress for failed tasks
+                        self._update_progress(total_tasks)
+            
+            # Sort results by task_id to maintain consistent order
+            results.sort(key=lambda x: x.get('task_id', ''))
+            print(f"\nParallel execution completed. All {total_tasks} tasks processed.")
         
         # Save summary
         self.save_summary(results, subset_name, dataset)
@@ -496,9 +584,11 @@ Requirements:
         return results
     
     def save_result(self, result: Dict):
-        """Save individual task result"""
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{timestamp}_{result['task_id']}.json"
+        """Save individual task result with thread-safe unique filename"""
+        # Add microseconds and thread ID to ensure unique filenames in parallel execution
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        thread_id = threading.get_ident()
+        filename = f"{timestamp}_{thread_id}_{result['task_id']}.json"
         filepath = self.logs_dir / filename
         
         with open(filepath, 'w') as f:
@@ -614,11 +704,25 @@ def main():
                        help="Maximum number of tool calls allowed for the model (default: 64, only applies if --tools is set)")
     parser.add_argument("--reasoning_effort", type=str, default="medium", choices=["low", "medium", "high"],
                        help="Reasoning effort for the model (default: medium)")
+    parser.add_argument("--max_workers", type=int, default=1,
+                       help="Maximum number of parallel workers (default: 1)")
+    parser.add_argument("--rate_limit_delay", type=float, default=0.0,
+                       help="Delay between API calls in seconds (default: 0.0)")
     
     args = parser.parse_args()
     
+    # Validate max_workers
+    if args.max_workers < 1:
+        parser.error("--max_workers must be at least 1")
+    if args.max_workers > 30:
+        parser.error("--max_workers cannot exceed 30 (OpenAI rate limits)")
+    
+    # Validate rate_limit_delay
+    if args.rate_limit_delay < 0:
+        parser.error("--rate_limit_delay cannot be negative")
+    
     # Create runner and run tasks
-    runner = ARCTaskRunner(model=args.model, use_tools=args.tools, max_tool_calls=args.max_tool_calls, reasoning_effort=args.reasoning_effort)
+    runner = ARCTaskRunner(model=args.model, use_tools=args.tools, max_tool_calls=args.max_tool_calls, reasoning_effort=args.reasoning_effort, max_workers=args.max_workers, rate_limit_delay=args.rate_limit_delay)
     runner.run_subset(args.subset, args.dataset, args.limit)
 
 

@@ -12,7 +12,7 @@ Objective: Define a test that is a representative measure of performance while a
 - FAST:
 [x] Include the test grid, it adds information.
 [ ] When providing code, also provide a summary of the rationale behind what is being done. (not in the reasoning). [Test this out in a clean test script to go in a tests folder.]
-[x] Check whether the code sandbox on openai is ephemeral or not. Seems like it is persistent in our setup (although probably we should more rigourously check if we care about it).
+[x] Check whether the code sandbox on openai is ephemeral or not. Yes, with `auto` the same container is used and variables persist.
 
 - MEDIUM:
 [ ] Try inputting images of the problem as well as just the problem itself.
@@ -80,14 +80,22 @@ uv run python run_arc_tasks.py --dataset arc-agi-2 --subset shortest_training_1 
 # Run 30 shortest evaluation tasks from ARC-AGI-1 with model selection and a limit of 5
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_30 --model gpt-4.1-mini --limit 5
 
+# Run tasks in parallel with 10 workers for faster execution
+uv run python run_arc_tasks.py --dataset arc-agi-2 --subset shortest_training_30 --max_workers 10
+
+# Run tasks in parallel with rate limiting to respect API limits
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_10 --max_workers 5 --rate_limit_delay 0.5
+
 # Available options:
 #   --dataset: arc-agi-1 or arc-agi-2
 #   --subset: shortest_training_1, shortest_training_10, shortest_training_30, shortest_evaluation_1, shortest_evaluation_10, shortest_evaluation_30, etc.
-#   --model: OpenAI model name (default: gpt-4o-mini)
+#   --model: OpenAI model name (default: gpt-4.1-nano)
 #   --tools: Enable code interpreter tools
 #   --limit: Limit number of tasks to run
 #   --max_tool_calls: Maximum number of tool calls allowed for the model (default: 64, only applies if --tools is set)
 #   --reasoning_effort: Reasoning effort for the model (low, medium, high; default: medium, only applies to o3/o4/o1 models)
+#   --max_workers: Number of parallel workers (default: 1, max: 30)
+#   --rate_limit_delay: Delay between API calls in seconds (default: 0.0)
 ```
 
 ### Available Subsets
@@ -111,6 +119,62 @@ Run the 30 longest training tasks from ARC-AGI-1:
 ```bash
 uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset longest_training_30 --model o3
 ```
+
+Run 30 tasks in parallel with 15 workers for 15x speedup:
+```bash
+uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-2 --subset shortest_training_30 --max_workers 15
+```
+
+## Parallelization
+
+The tool supports parallel execution to dramatically reduce wall-clock time for large task sets:
+
+### Key Features
+
+- **Thread-based parallelization**: Up to 30 concurrent workers
+- **Thread-safe execution**: Safe cost tracking, progress reporting, and file I/O
+- **Rate limiting**: Optional delays to respect API rate limits
+- **Progress tracking**: Real-time progress updates for parallel execution
+- **Robust error handling**: Individual task failures don't crash the entire batch
+
+### Usage Examples
+
+```bash
+# Run 10 tasks with 5 workers (2x speedup)
+uv run python run_arc_tasks.py --max_workers 5
+
+# Run 30 tasks with maximum parallelization (up to 30x speedup)
+uv run python run_arc_tasks.py --subset shortest_training_30 --max_workers 30
+
+# Run with rate limiting to avoid hitting API limits
+uv run python run_arc_tasks.py --max_workers 10 --rate_limit_delay 0.2
+
+# Conservative parallel execution with 5 workers and 0.5s delay
+uv run python run_arc_tasks.py --max_workers 5 --rate_limit_delay 0.5
+```
+
+### Performance Benefits
+
+- **Sequential**: 30 tasks × 10 seconds each = 5 minutes total
+- **10 workers**: 30 tasks ÷ 10 workers × 10 seconds = 30 seconds total  
+- **30 workers**: 30 tasks ÷ 30 workers × 10 seconds = 10 seconds total
+
+**Actual speedup depends on**:
+- API response times
+- Network latency
+- OpenAI rate limits
+- Task complexity
+
+### Rate Limiting Guidelines
+
+OpenAI has rate limits that vary by model and tier. Recommended settings:
+
+- **Conservative**: `--max_workers 5 --rate_limit_delay 0.5`
+- **Moderate**: `--max_workers 10 --rate_limit_delay 0.2` 
+- **Aggressive**: `--max_workers 20 --rate_limit_delay 0.1`
+- **Maximum**: `--max_workers 30` (only if you have high rate limits)
+
+**Note**: Start conservative and increase workers/reduce delays if you don't hit rate limits.
 
 ## Scoring Metrics
 
@@ -258,6 +322,40 @@ Summary reports aggregate across all tasks and include:
 
 ## Example Console Output
 
+### Sequential Execution
+```
+Running 10 tasks from arc-agi-1/shortest_10
+Model: o4-mini
+API: Responses API (single-shot)
+Tools: ENABLED (code interpreter - OpenAI runs code internally, model can iterate)
+Parallelization: DISABLED (sequential execution)
+--------------------------------------------------
+
+Processing task: 6150a2bd
+  💰 Cost: $0.019646 (input: 1089 @ $1.1, output: 4321 @ $4.4)
+  🧠 Pattern learning: 76.7% (35 vs 150 bytes)
+  ✅ Program executed on all 3 training examples
+  🎯 Training accuracy: 3/3 (100%) correct outputs
+  ✅ Perfect solution found!
+```
+
+### Parallel Execution
+```
+Running 10 tasks from arc-agi-1/shortest_10
+Model: o4-mini
+API: Responses API (single-shot)
+Tools: ENABLED (code interpreter - OpenAI runs code internally, model can iterate)
+Parallelization: ENABLED (5 workers)
+--------------------------------------------------
+Starting parallel execution with 5 workers...
+Progress: 3/10 tasks completed (30.0%)
+Progress: 7/10 tasks completed (70.0%)
+Progress: 10/10 tasks completed (100.0%)
+
+Parallel execution completed. All 10 tasks processed.
+```
+
+### Summary Output
 ```
 ==================================================
 SUMMARY
@@ -445,6 +543,9 @@ uv run python cleanup_logs.py
 
 - You can control the maximum number of tool calls the model can make per task using --max_tool_calls (default: 64). This is especially useful for limiting cost and runaway tool loops when --tools is enabled.
 - You can also set the reasoning effort for the model using --reasoning_effort (choices: low, medium, high; default: medium). This may affect the model's thoroughness and cost.
+- **Parallelization**: Use `--max_workers` (1-30) to run tasks in parallel. Start with 5 workers and increase gradually while monitoring for rate limit errors. Use `--rate_limit_delay` to add delays between requests if needed.
+- **Cost Control**: Parallel execution accumulates costs faster but maintains the same per-task costs. Monitor total spending especially when using expensive models like o3 with many workers.
+- **Thread Safety**: All file I/O, progress tracking, and cost accumulation is thread-safe. Individual task logs use unique filenames with thread IDs to prevent conflicts.
 
 ## create_grid_size_distributed_subset.py
 
