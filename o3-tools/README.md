@@ -27,6 +27,7 @@ Objective: Define a test that is a representative measure of performance while a
     - Add f(..., gzip) as a metric.
 
 Other ideas:
+[ ] Overfitting checks are probably needed because sometimes all training problems are solved but then the test fails. Could just rotate or do simple checks like that.
 [ ] Allow the code environment to persist for a given task. [not relevant until we do the code sandbox locally.]
 
 Completed:
