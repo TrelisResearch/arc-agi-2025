@@ -16,21 +16,20 @@ Objective: Define a test that is a representative measure of performance while a
 
 - MEDIUM:
 [ ] Bringing the sandbox to be local:
-  [ ] Describe the code interpreter as a tool that the openai resopnese api can use.
-  - When the tool is called, the code interpreter output / results need to be passed back as a tool response. We'll write a small test script to go in the tests folder to check this out. and test it with gpt-4.1-nano.
-  - We'll need to update code for how loggings works and to apply a max number of turns. In fact we'll need to handle looping of the code ourselves, until "Final Answer: " is present.
-  [ ] Stop looping at thresholds:
-    - Stop after 4 | 16 tool calls if no valid grid sizes created.
-    - Stop after 8 | 32 tool calls if no training problems solved.
-[ ] Build a priority list based on # (or percentage) of training grids solved.
+  [x] Just run the code locally each time, rather than use the remote code interpreter.
+  - Drop the MDL / compression calculation altogether from scripts here.
+  - Print, after each tool call, the result in terms of pixel match average on all training examples AND number of training examples solved out of those present.
 
 [ ] Try inputting images of the problem as well as just the problem itself.
+
+[ ] Build a priority list based on # (or percentage) of training grids solved. Ideally you have an id and converstaion history for each candidate incomplete program (so you can reuse LLM cache).
 
 - SLOW:
 [ ] Add pixel accuracy as a priority list metric (e.g. metric = f(pixel accuracy, training problems solved)).
     - Add f(..., gzip) as a metric.
 
 Other ideas:
+[ ] Use a code interpreter tool rather than running code from an extract code block.
 [ ] Overfitting checks are probably needed because sometimes all training problems are solved but then the test fails. Could just rotate or do simple checks like that.
 [ ] Allow the code environment to persist for a given task. [not relevant until we do the code sandbox locally.]
 
