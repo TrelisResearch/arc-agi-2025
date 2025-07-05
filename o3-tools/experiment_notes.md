@@ -2,6 +2,29 @@
 
 ---
 
+## 2025-07-05
+
+### Experiment 1: Multi-turn with 8 max turns
+- **Experiment:** Run o3 model on 30 grid size distributed tasks with extended multi-turn capability
+- **Subset:** grid_size_distributed_30_evaluation
+- **Dataset:** arc-agi-2 (evaluation) 
+- **Model:** o3
+- **Reasoning effort:** Medium
+- **Workers:** 10 (parallel execution)
+- **Tools enabled:** True (multi-turn local execution)
+- **Max turns:** 8 (increased from default 3)
+- **Purpose:** Test whether additional turns improve solve rate on challenging distributed tasks
+
+### Results:
+- **Status:** In progress - awaiting final results
+
+### Notes:
+- Using new multi-turn implementation with local code execution and training feedback
+- Extended max turns to allow more iterative improvement attempts
+- Running in parallel with 10 workers for efficiency
+
+---
+
 ## 2025-07-04
 
 ### Experiment 1: High Reasoning Effort

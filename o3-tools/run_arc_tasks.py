@@ -526,7 +526,44 @@ Requirements:
                 if not program:
                     if self.max_workers == 1:
                         print(f"     ❌ No code found in response")
-                    break
+                    
+                    # Stop if this is the last turn
+                    if turn == self.max_turns - 1:
+                        if self.max_workers == 1:
+                            print(f"     ⏰ Max turns ({self.max_turns}) reached")
+                        break
+                    
+                    # Continue conversation with request for code
+                    # Extract reasoning item and assistant message for context preservation
+                    reasoning_item = None
+                    assistant_msg = None
+                    for item in response.output:
+                        if item.type == "reasoning":
+                            reasoning_item = item
+                        elif item.type == "message" and item.role == "assistant":
+                            assistant_msg = item
+                    
+                    # Add to conversation history
+                    if reasoning_item and assistant_msg:
+                        conversation_history.extend([reasoning_item, assistant_msg])
+                    elif assistant_msg:
+                        conversation_history.append(assistant_msg)
+                    
+                    # Add request for code
+                    code_request = """I need you to provide Python code to solve this task. Please provide a complete solution in this format:
+
+```python
+def transform(grid):
+    # Your transformation logic here
+    return transformed_grid
+```
+
+Make sure to include the function definition inside a proper code block."""
+                    
+                    conversation_history.append({"role": "user", "content": code_request})
+                    if self.max_workers == 1:
+                        print(f"     💬 Requesting code from model...")
+                    continue
                 
                 # Test on test input first
                 test_input = task_data['test'][0]['input']
