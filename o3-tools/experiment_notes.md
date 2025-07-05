@@ -16,12 +16,27 @@
 - **Purpose:** Test whether additional turns improve solve rate on challenging distributed tasks
 
 ### Results:
-- **Status:** In progress - awaiting final results
+- **Tasks attempted:** 30/30 (100.0% completion)
+- **Tasks solved correctly:** 2/30 (6.7%) - tasks 7ed72f31 and 36a08778
+- **Pixel accuracy:** 580/12175 (4.8%)
+- **Average pattern learning:** 74.2%
+- **Training execution rate:** 100.0% (8/8)
+- **Training correctness rate:** 87.5% (7/8)
+- **Programs with >50% pattern learning:** 2/2
+- **Programs with >80% pattern learning:** 1/2
+- **Average program residual:** 47.0 bytes
+- **Average null baseline:** 198.5 bytes
+- **Total tokens used:** 2,398,560
+- **Total cost:** $10.51
 
 ### Notes:
 - Using new multi-turn implementation with local code execution and training feedback
 - Extended max turns to allow more iterative improvement attempts
 - Running in parallel with 10 workers for efficiency
+- **Comparison to previous experiments:** 6.7% solve rate vs July 4th medium reasoning (3.6%) and high reasoning (10.0%) - **BUT NOTE:** July 4th experiments allowed up to 64 tool calls vs today's 8-turn limit, making cost/resource investment very different
+- **Strong pattern learning:** High pattern learning scores (74.2% average) suggest model understands patterns but struggles with execution
+- **Cost efficiency:** ~$0.35 per task average, ranging from $0.06 to $1.92 - much more cost-controlled than July 4th experiments
+- **Resource-constrained performance:** 6.7% solve rate with 8-turn limit may represent good efficiency compared to unlimited tool calls
 
 ---
 

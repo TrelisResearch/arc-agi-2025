@@ -19,7 +19,10 @@ Objective: Define a test that is a representative measure of performance while a
   [x] Just run the code locally each time, rather than use the remote code interpreter.
   - Drop the MDL / compression calculation altogether from scripts here.
   - Print, after each tool call, the result in terms of pixel match average on all training examples AND number of training examples solved out of those present.
-    [ ] in our logging / logs, it would be best to save not just the final responses, but the ones before thta too - so I can inspect what the code output is and what is being passed back in.
+  [ ] Improve logging:
+    - Manually inspect the prompt
+    - in our logging / logs, it would be best to save not just the final responses, but the ones before thta too - so I can inspect what the code output is and what is being passed back in.
+    - Run tests on low levels of reasoning effort.
 
 [ ] Try inputting images of the problem as well as just the problem itself.
 
