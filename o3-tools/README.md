@@ -2,6 +2,9 @@
 
 A tool for testing OpenAI o3/o4 models on ARC-AGI tasks with and without code interpreter tools.
 
+>[!TIP]
+> This branch contains an approach where the remote code interpreter is used to solve the tasks.
+
 **Todo**
 [x] Reorganize data so that training and evaluation problems are split, because they are so different in terms of difficulty.
 
