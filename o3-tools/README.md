@@ -15,12 +15,16 @@ Objective: Define a test that is a representative measure of performance while a
 [x] Check whether the code sandbox on openai is ephemeral or not. Yes, with `auto` the same container is used and variables persist.
 
 - MEDIUM:
-[ ] Try inputting images of the problem as well as just the problem itself.
 [ ] Bringing the sandbox to be local:
-    [ ] Stop looping at thresholds:
-        - Stop after 4 | 16 tool calls if no valid grid sizes created.
-        - Stop after 8 | 32 tool calls if no training problems solved.
-    [ ] Build a priority list based on # (or percentage) of training grids solved.
+  [ ] Describe the code interpreter as a tool that the openai resopnese api can use.
+  - When the tool is called, the code interpreter output / results need to be passed back as a tool response. We'll write a small test script to go in the tests folder to check this out. and test it with gpt-4.1-nano.
+  - We'll need to update code for how loggings works and to apply a max number of turns. In fact we'll need to handle looping of the code ourselves, until "Final Answer: " is present.
+  [ ] Stop looping at thresholds:
+    - Stop after 4 | 16 tool calls if no valid grid sizes created.
+    - Stop after 8 | 32 tool calls if no training problems solved.
+[ ] Build a priority list based on # (or percentage) of training grids solved.
+
+[ ] Try inputting images of the problem as well as just the problem itself.
 
 - SLOW:
 [ ] Add pixel accuracy as a priority list metric (e.g. metric = f(pixel accuracy, training problems solved)).
