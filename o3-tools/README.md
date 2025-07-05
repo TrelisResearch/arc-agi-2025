@@ -78,8 +78,11 @@ uv run python o3-tools/run_arc_tasks.py
 ### Advanced Usage
 
 ```bash
-# Run 10 shortest training tasks from ARC-AGI-2 with tools enabled
-uv run python run_arc_tasks.py --dataset arc-agi-2 --subset shortest_training_1 --tools
+# Run 10 shortest training tasks from ARC-AGI-2 with multi-turn execution enabled
+uv run python run_arc_tasks.py --dataset arc-agi-2 --subset shortest_training_10 --tools
+
+# Run with custom max turns for multi-turn execution  
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_1 --tools --max_turns 5
 
 # Run 30 shortest evaluation tasks from ARC-AGI-1 with model selection and a limit of 5
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_30 --model gpt-4.1-mini --limit 5
@@ -93,10 +96,10 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_
 # Available options:
 #   --dataset: arc-agi-1 or arc-agi-2
 #   --subset: shortest_training_1, shortest_training_10, shortest_training_30, shortest_evaluation_1, shortest_evaluation_10, shortest_evaluation_30, etc.
-#   --model: OpenAI model name (default: gpt-4.1-nano)
-#   --tools: Enable code interpreter tools
+#   --model: OpenAI model name (default: gpt-4.1-mini)
+#   --tools: Enable multi-turn execution with local code testing and training feedback
 #   --limit: Limit number of tasks to run
-#   --max_tool_calls: Maximum number of tool calls allowed for the model (default: 64, only applies if --tools is set)
+#   --max_turns: Maximum number of turns for multi-turn execution (default: 3, only applies if --tools is set)
 #   --reasoning_effort: Reasoning effort for the model (low, medium, high; default: medium, only applies to o3/o4/o1 models)
 #   --max_workers: Number of parallel workers (default: 1, max: 30)
 #   --rate_limit_delay: Delay between API calls in seconds (default: 0.0)
@@ -493,18 +496,20 @@ Current pricing (as of 2025, $/1M tokens):
 We use **only the Responses API** with two modes:
 
 **With `--tools` enabled**:
-- OpenAI's built-in code interpreter runs internally
-- Model can execute code, see results, and iterate within the same API call
-- Model has access to a live Python environment and can debug interactively
-- More expensive but potentially more accurate
+- **Multi-turn local execution** with training feedback (up to `--max_turns`, default 3)
+- Model writes code, we test it locally on test input immediately  
+- If incorrect, we run it on training examples and provide detailed feedback
+- Model can see training results and iterate to improve the solution
+- Uses encrypted reasoning traces to maintain context between turns
+- More expensive but potentially more accurate through iteration
 
 **Without `--tools` (default)**:
-- Model outputs final code as text
+- **Single-shot mode**: Model outputs final code as text in one API call
 - We extract and execute the code locally using subprocess
 - Model cannot see execution results or iterate
 - Less expensive but requires model to write correct code in one shot
 
-**Key Point**: In both cases, we execute the final code locally to score it. The difference is whether the model gets to use a code interpreter during problem-solving.
+**Key Point**: In both cases, we execute the final code locally to score it. The difference is whether the model gets multiple turns with training feedback to improve its solution.
 
 ## File Structure
 
