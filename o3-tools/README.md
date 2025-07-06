@@ -19,7 +19,8 @@ Cleanups:
   [x] Strip out "tools calls made" etc. as there are no tool calls. There are only turns used.
   [x] Automatically support non-reasoning or reasoning models (no flags required).
   [ ] Improve logging:
-    [ ] Manually inspect the prompt
+    [ ] Manually inspect the prompt.
+    [ ] Inspect how wrong grids are passed back to the model (or failed runs of the code produced).
     [ ] in our logging / logs, it would be best to save not just the final responses, but the ones before thta too - so I can inspect what the code output is and what is being passed back in.
     [ ] Run tests on low levels of reasoning effort.
   [ ] Swap to chat completions endpoint so as to allow for openai-style endpoint usage (enable other models, incl. reasoning). THIS IS NOT GOING TO SUPPORT OPENAI REASONING MODELS, WHICH DONT' DISCLOSE THE REASONING TRACE, AND SO YOU MUST USE THE RESPONSES API TO USE REASONING WITH OPENAI MODELS. OTHERS (CLAUDE, QWEN, GEMINI?, DEEPSEEK?) RESPOND WITH <think> TAGS.
@@ -53,13 +54,14 @@ For Kaggle / low compute competition:
 ## Features
 
 - Run ARC-AGI tasks with OpenAI models (currently using gpt-4o-mini or o4-mini)
-- Support for code interpreter tools via function calling
+- Support for reasoning models (o3, o4, o1)
+- Multi-turn execution with training examples feedback
 - Comprehensive scoring including pixel accuracy and binary correctness
 - Budget tracking with token usage and cost estimation
 - Detailed logging of all runs for analysis
 - Support for different datasets and task subsets
 
-> **Note:** In testing, o3 looped (with tools enabled) does not solve any of the longest ARC-AGI problems (tested on 5). Shortest and medium tasks are solved much more reliably.
+> **Note:** In testing, o3 looped does not solve any of the longest ARC-AGI problems (tested on 5). Shortest and medium tasks are solved much more reliably.
 
 ## Setup
 
@@ -86,10 +88,10 @@ uv run python o3-tools/run_arc_tasks.py
 
 ```bash
 # Run 10 shortest training tasks from ARC-AGI-2 with multi-turn execution enabled
-uv run python run_arc_tasks.py --dataset arc-agi-2 --subset shortest_training_1 --tools
+uv run python run_arc_tasks.py --dataset arc-agi-2 --subset shortest_training_1
 
 # Run with custom max turns for multi-turn execution  
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_1 --tools --max_turns 5
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_1 --max_turns 5
 
 # Run 30 shortest evaluation tasks from ARC-AGI-1 with model selection and a limit of 5
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_30 --model gpt-4.1-mini --limit 5
@@ -104,9 +106,8 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_
 #   --dataset: arc-agi-1 or arc-agi-2
 #   --subset: shortest_training_1, shortest_training_10, shortest_training_30, shortest_evaluation_1, shortest_evaluation_10, shortest_evaluation_30, etc.
 #   --model: OpenAI model name (default: gpt-4.1-mini)
-#   --tools: Enable multi-turn execution with local code testing and training feedback
 #   --limit: Limit number of tasks to run
-#   --max_turns: Maximum number of turns for multi-turn execution (default: 3, only applies if --tools is set)
+#   --max_turns: Maximum number of turns for multi-turn execution (default: 3)
 #   --reasoning_effort: Reasoning effort for the model (low, medium, high; default: low, only applies to o3/o4/o1 models)
 #   --max_workers: Number of parallel workers (default: 1, max: 30)
 #   --rate_limit_delay: Delay between API calls in seconds (default: 0.0)
@@ -126,9 +127,9 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_
 
 **Example:**
 
-Run the 10 shortest evaluation tasks from ARC-AGI-2 with tools enabled:
+Run the 10 shortest evaluation tasks from ARC-AGI-2:
 ```bash
-uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-2 --subset shortest_evaluation_10 --tools
+uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-2 --subset shortest_evaluation_10
 ```
 
 Run the 30 longest training tasks from ARC-AGI-1:
@@ -138,7 +139,7 @@ uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset longest_tra
 
 Run 30 grid size distributed evaluation tasks from ARC-AGI-2:
 ```bash
-uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-2 --subset grid_size_distributed_30_evaluation --tools
+uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-2 --subset grid_size_distributed_30_evaluation
 ```
 
 Run 30 tasks in parallel with 15 workers for 15x speedup:
@@ -257,7 +258,6 @@ Summary reports aggregate across all tasks and include:
   "task_id": "6150a2bd",
   "model": "o4-mini", 
   "reasoning_effort": "medium",
-  "use_tools": true,
   "api_type": "responses_api",
   "program": "def transform(grid):\n    return [row[::-1] for row in grid[::-1]]",
   "execution_error": "",
@@ -284,7 +284,6 @@ Summary reports aggregate across all tasks and include:
   "task_id": "6150a2bd",
   "model": "gpt-4o-mini", 
   "reasoning_effort": "N/A",
-  "use_tools": false,
   "api_type": "responses_api",
   "program": "def transform(grid):\n    return [row[::-1] for row in grid[::-1]]",
   "execution_error": "",
@@ -314,7 +313,6 @@ Summary reports aggregate across all tasks and include:
   "subset": "shortest_10", 
   "model": "o4-mini",
   "reasoning_effort": "low",
-  "use_tools": true,
   "api_type": "responses_api",
   "total_tasks": 10,
   "correct_tasks": 4,
@@ -337,7 +335,6 @@ Summary reports aggregate across all tasks and include:
 Running 10 tasks from arc-agi-1/shortest_10
 Model: o4-mini
 API: Responses API (single-shot)
-Tools: ENABLED (code interpreter - OpenAI runs code internally, model can iterate)
 Parallelization: DISABLED (sequential execution)
 --------------------------------------------------
 
@@ -351,7 +348,6 @@ Processing task: 6150a2bd
 Running 10 tasks from arc-agi-1/shortest_10
 Model: o4-mini
 API: Responses API (single-shot)
-Tools: ENABLED (code interpreter - OpenAI runs code internally, model can iterate)
 Parallelization: ENABLED (5 workers)
 --------------------------------------------------
 Starting parallel execution with 5 workers...
@@ -433,10 +429,6 @@ This example shows:
 
 Compare different configurations:
 ```bash
-# Compare tools vs no-tools performance
-grep '"use_tools": true' logs/*summary*.json | grep task_accuracy
-grep '"use_tools": false' logs/*summary*.json | grep task_accuracy
-
 # Find most expensive runs
 grep '"total_cost"' logs/*summary*.json | sort -k2 -n
 ```
@@ -451,11 +443,8 @@ uv run python scoring.py      # Test scoring functionality
 
 Quick API test:
 ```bash
-# Test with a single task (fast and cheap)
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_1 --model gpt-4o-mini
-
-# Test with tools enabled (slower but more capable)
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_1 --model gpt-4o-mini --tools
+# Test with a single task
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_1 --model gpt-4o-mini --max_turns 1
 ```
 
 ## Cost Management
@@ -495,21 +484,14 @@ Current pricing (as of 2025, $/1M tokens):
 
 ## Important: Multi-Turn Behavior
 
-We use **only the Responses API** with two modes:
+We use **only the Responses API** with multi-turn mode:
 
-**With `--tools` enabled (Multi-turn)**:
 - **Multi-turn local execution** with training feedback (up to `--max_turns`, default 3)
 - Model writes code, we test it locally on test input immediately  
 - If incorrect, we run it on training examples and provide detailed feedback
 - Model can see training results and iterate to improve the solution
 - Uses encrypted reasoning traces to maintain context between turns
 - More expensive but potentially more accurate through iteration
-
-**Without `--tools` (default - Single-turn)**:
-- **Single-shot mode**: Model outputs final code as text in one API call
-- We extract and execute the code locally using subprocess
-- Model cannot see execution results or iterate
-- Less expensive but requires model to write correct code in one shot
 
 **Key Point**: In both cases, we execute the final code locally to score it. The difference is whether the model gets multiple conversation turns with training feedback to improve its solution.
 
@@ -559,7 +541,7 @@ uv run python cleanup_logs.py
 
 ## Additional Notes
 
-- You can control the maximum number of turns using --max_turns (default: 3). This is especially useful for limiting cost and runaway conversations when --tools is enabled.
+- You can control the maximum number of turns using --max_turns (default: 3). This is especially useful for limiting cost and runaway conversations.
 - You can also set the reasoning effort for the model using --reasoning_effort (choices: low, medium, high; default: medium). This may affect the model's thoroughness and cost.
 - **Automatic Model Detection**: The script automatically detects reasoning models (o3, o4, o1) vs non-reasoning models (GPT-4 series). Reasoning effort is only sent to models that support it, preventing API errors.
 - **Parallelization**: Use `--max_workers` (1-30) to run tasks in parallel. Start with 5 workers and increase gradually while monitoring for rate limit errors. Use `--rate_limit_delay` to add delays between requests if needed.

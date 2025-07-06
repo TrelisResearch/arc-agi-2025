@@ -4,7 +4,6 @@ import os
 import json
 import argparse
 import datetime
-import requests
 import time
 import threading
 from pathlib import Path
@@ -21,10 +20,8 @@ load_dotenv()
 class ARCTaskRunner:
     """Run ARC tasks using the OpenAI Responses API (single-shot with tool execution)"""
     
-    def __init__(self, model: str = "gpt-4.1-nano", use_tools: bool = False, max_tool_calls: int = 64, reasoning_effort: str = "low", max_workers: int = 1, rate_limit_delay: float = 0.0, max_turns: int = 3):
+    def __init__(self, model: str = "gpt-4.1-nano", reasoning_effort: str = "low", max_workers: int = 1, rate_limit_delay: float = 0.0, max_turns: int = 3):
         self.model = model
-        self.use_tools = use_tools
-        self.max_tool_calls = max_tool_calls
         self.reasoning_effort = reasoning_effort
         self.max_workers = max_workers
         self.rate_limit_delay = rate_limit_delay
@@ -153,7 +150,7 @@ I will show you training examples with input and output grids, plus a test input
 1. **Analyze the training examples** to discover the transformation pattern that maps each input grid to its corresponding output grid
 2. **Write a Python program** that implements this transformation pattern  
 3. **DO NOT predict or generate the test output** - your job is only to write the transformation program
-4. **Ensure your program generalizes** - it will be applied to the test input grid (which may differ in size or complexity from training examples) after you provide it
+4. **Ensure your program generalizes** - it will be applied to the test input grid after you provide it
 
 The test input is shown for context so you understand what type of grid your program will eventually process. Focus on learning the pattern from training examples and writing robust code that can handle the test case.
 
@@ -163,13 +160,6 @@ Analyze the pattern in the training examples and write a Python function that pe
 
 Your function should work correctly on all the training examples shown above and be robust enough to handle the test input.
 
-Final answer:
-```python
-def transform(grid):
-    # Your transformation logic here
-    return transformed_grid
-```
-
 Requirements:
 - The function takes a 2D list (grid) where grid[row][col] gives the value at that position
 - Values are integers from 0-9
@@ -177,6 +167,15 @@ Requirements:
 - You can use numpy if needed - just add 'import numpy as np' at the start of your function
 - Your function MUST produce the correct output for all training examples
 - Your function must be robust enough to work on the test input grid
+
+You MUST end your response with the following exact format:
+
+Final answer:
+```python
+def transform(grid):
+    # Your transformation logic here
+    return transformed_grid
+```
 """
         
         return prompt
@@ -193,11 +192,8 @@ Requirements:
             # Add reasoning effort and encrypted content only for reasoning models
             if self.is_reasoning_model():
                 kwargs["reasoning"] = {"effort": self.reasoning_effort}
-                
-                # For multi-turn with encrypted reasoning traces (only supported by reasoning models)
-                if self.use_tools:
-                    kwargs["include"] = ["reasoning.encrypted_content"]
-                    kwargs["store"] = False  # Enable stateless mode for encrypted content
+                kwargs["include"] = ["reasoning.encrypted_content"]
+                kwargs["store"] = False  # Enable stateless mode for encrypted content
             
             # Make the API call
             response = self.client.responses.create(**kwargs)
@@ -366,7 +362,6 @@ Requirements:
             'task_id': task_id,
             'model': self.model,
             'reasoning_effort': self.reasoning_effort if self.is_reasoning_model() else "N/A",
-            'use_tools': self.use_tools,
             'api_type': 'responses_api_multiturn',
             'program': program,
             'execution_error': '',
@@ -423,7 +418,6 @@ Requirements:
             'task_id': task_id,
             'model': self.model,
             'reasoning_effort': self.reasoning_effort if self.is_reasoning_model() else "N/A",
-            'use_tools': self.use_tools,
             'api_type': 'responses_api_multiturn',
             'program': program,
             'execution_error': error_msg,
@@ -454,11 +448,7 @@ Requirements:
         if self.rate_limit_delay > 0:
             time.sleep(self.rate_limit_delay)
         
-        # Multi-turn conversation if tools enabled, otherwise single-shot
-        if self.use_tools:
-            return self.run_task_multiturn(task_id, task_data, total_tasks)
-        else:
-            return self.run_task_single_shot(task_id, task_data, total_tasks)
+        return self.run_task_multiturn(task_id, task_data, total_tasks)
     
     def run_task_multiturn(self, task_id: str, task_data: Dict, total_tasks: int = 1) -> Dict:
         """Run multi-turn conversation with local code execution"""
@@ -603,128 +593,7 @@ Make sure to include the function definition inside a proper code block."""
             self._update_costs(total_cost, total_tokens)
             
             return self.create_failure_result(task_id, "", all_responses, total_cost, total_tokens, 0, task_data, str(e))
-    
-    def run_task_single_shot(self, task_id: str, task_data: Dict, total_tasks: int = 1) -> Dict:
-        """Run single-shot task without tools (legacy mode)"""
-        print(f"  📝 Single-shot mode...")
-        
-        # Create initial prompt
-        prompt = self.create_prompt(task_data, is_first_turn=True)
-        
-        # Prepare initial messages
-        messages = [
-            {"role": "system", "content": "You are an expert at solving abstract reasoning puzzles. Write clean, efficient Python code."},
-            {"role": "user", "content": prompt}
-        ]
-        
-        try:
-            response = self.call_responses_api(messages)
-            
-            # Extract usage data from response
-            usage = response.usage
-            total_tokens = usage.total_tokens
-            
-            # Calculate cost based on model
-            input_rate, output_rate = self.get_model_pricing(self.model)
-            
-            # Get token counts
-            input_tokens = usage.input_tokens
-            output_tokens = usage.output_tokens
-            
-            # Calculate request cost with proper input/output breakdown
-            prompt_cost = (input_tokens / 1_000_000) * input_rate
-            completion_cost = (output_tokens / 1_000_000) * output_rate
-            request_cost = prompt_cost + completion_cost
-            
-            # Show reasoning token breakdown for reasoning models
-            reasoning_tokens = getattr(usage, 'output_tokens_details', {}).get('reasoning_tokens', 0) if hasattr(usage, 'output_tokens_details') else 0
-            if self.max_workers == 1:
-                if reasoning_tokens > 0:
-                    visible_tokens = output_tokens - reasoning_tokens
-                    print(f"  💰 Cost: ${request_cost:.6f} (input: {input_tokens}, output: {output_tokens})")
-                    print(f"     ↳ Output breakdown: {reasoning_tokens} reasoning + {visible_tokens} visible tokens")
-                else:
-                    print(f"  💰 Cost: ${request_cost:.6f} (input: {input_tokens}, output: {output_tokens})")
-            
-            self._update_costs(request_cost, total_tokens)
-            
-            # Extract code
-            program = self.extract_code_from_response(response)
-            
-            if not program:
-                if self.max_workers == 1:
-                    print(f"  ❌ No code found in response")
-                # No code means 0 pixel accuracy (total pixels from expected output)
-                actual_output = task_data['test'][0]['output']
-                total_pixels = len(actual_output) * len(actual_output[0]) if actual_output else 0
-                
-                # No progress update needed (handled by parallel executor)
-                
-                return self.create_failure_result(task_id, '', [response], request_cost, total_tokens, 1, task_data, 'No code generated')
-            
-            # Execute program on test input
-            test_input = task_data['test'][0]['input']
-            predicted_output, error, timed_out = self.executor.execute_program(program, test_input)
-            
-            if predicted_output is not None and not timed_out and not error:
-                # Score the result
-                test_expected = task_data['test'][0]['output']
-                test_score = self.scorer.score_grid(predicted_output, test_expected)
-                
-                # Also get training stats for logging
-                training_feedback, solved_count, pixel_acc = self.create_training_feedback(program, task_data['train'])
-                if self.max_workers == 1:
-                    print(f"  📊 Training: {solved_count}/{len(task_data['train'])} solved, {pixel_acc:.1%} accuracy")
-                
-                # Progress tracking handled by parallel executor
-                
-                if test_score['correct']:
-                    if self.max_workers == 1:
-                        print(f"  ✅ Perfect solution found!")
-                    # Add actual outputs to test_score for logging
-                    test_score['predicted_output'] = predicted_output
-                    test_score['actual_output'] = test_expected
-                    return self.create_success_result(task_id, program, response, test_score, request_cost, total_tokens, 1, task_data)
-                else:
-                    if self.max_workers == 1:
-                        print(f"  ❌ Incorrect solution")
-                    return self.create_failure_result(task_id, program, [response], request_cost, total_tokens, 1, task_data, 'Incorrect solution')
-            else:
-                # Execution failed
-                if self.max_workers == 1:
-                    print(f"  ❌ Execution failed: {error or 'Timed out' if timed_out else 'Unknown error'}")
-                # Progress tracking handled by parallel executor
-                
-                return self.create_failure_result(task_id, program, [response], request_cost, total_tokens, 1, task_data, error or 'Execution failed')
 
-            
-        except Exception as e:
-            # Exception means 0 pixel accuracy (try to get total pixels from expected output)
-            try:
-                actual_output = task_data['test'][0]['output']
-                total_pixels = len(actual_output) * len(actual_output[0]) if actual_output else 0
-            except:
-                total_pixels = 0
-            
-            # Print explicit error message for console visibility
-            if self.max_workers == 1:
-                print(f"  ❌ TASK FAILED: {task_id}")
-                print(f"     Error: {str(e)}")
-            
-            # Progress tracking handled by parallel executor
-                
-            return {
-                'task_id': task_id,
-                'error': str(e),
-                'score': {
-                    'correct': False, 
-                    'pixel_accuracy': 0.0,
-                    'total_pixels': total_pixels,
-                    'correct_pixels': 0
-                },
-                'api_success': False  # API call failed
-            }
-    
     def run_subset(self, subset_name: str, dataset: str = "arc-agi-1", limit: Optional[int] = None) -> List[Dict]:
         """Run all tasks in a subset with optional parallelization"""
         tasks = self.task_loader.load_tasks_from_subset(subset_name, dataset)
@@ -737,12 +606,8 @@ Make sure to include the function definition inside a proper code block."""
         # Print configuration info
         print(f"\nRunning {total_tasks} tasks from {dataset}/{subset_name}")
         print(f"Model: {self.model}")
-        if self.use_tools:
-            print(f"API: Responses API (multi-turn, max {self.max_turns} turns)")
-            print("Tools: ENABLED (multi-turn local execution with training feedback)")
-        else:
-            print(f"API: Responses API (single-shot)")
-            print("Tools: DISABLED (model outputs final code, we execute it locally)")
+        print(f"API: Responses API (multi-turn, max {self.max_turns} turns)")
+        print("Tools: ENABLED (multi-turn local execution with training examples feedback)")
         if self.max_workers > 1:
             print(f"Parallelization: ENABLED ({self.max_workers} workers)")
             if self.rate_limit_delay > 0:
@@ -860,7 +725,6 @@ Make sure to include the function definition inside a proper code block."""
             'subset': subset_name,
             'model': self.model,
             'reasoning_effort': self.reasoning_effort if self.is_reasoning_model() else "N/A",
-            'use_tools': self.use_tools,
             'api_type': 'responses_api',
             'total_tasks': total_tasks,
             'successful_api_calls': successful_api_calls,
@@ -894,11 +758,7 @@ Make sure to include the function definition inside a proper code block."""
         # Only show reasoning effort for reasoning models
         if self.is_reasoning_model():
             print(f"Reasoning effort: {self.reasoning_effort}")
-        if self.use_tools:
-            print(f"API: Responses (multi-turn, max {self.max_turns} turns)")
-        else:
-            print(f"API: Responses (single-shot)")
-        print(f"Multi-turn enabled: {self.use_tools}")
+        print(f"API: Responses (multi-turn, max {self.max_turns} turns)")
         print(f"Total tasks attempted: {total_tasks}")
         print(f"Successful API calls: {successful_api_calls}/{total_tasks} ({summary['success_rate']:.1%})")
         if failed_tasks > 0:
@@ -929,8 +789,6 @@ def main():
                        help="Subset name (e.g., shortest_1, shortest_10, shortest_100)")
     parser.add_argument("--model", default="gpt-4.1-mini",
                        help="OpenAI model to use")
-    parser.add_argument("--tools", action="store_true",
-                       help="Enable multi-turn execution with local code testing and training feedback")
     parser.add_argument("--limit", type=int,
                        help="Limit number of tasks to run")
     parser.add_argument("--max_tool_calls", type=int, default=64,
@@ -957,7 +815,7 @@ def main():
         parser.error("--rate_limit_delay cannot be negative")
     
     # Create runner and run tasks
-    runner = ARCTaskRunner(model=args.model, use_tools=args.tools, max_tool_calls=args.max_tool_calls, reasoning_effort=args.reasoning_effort, max_workers=args.max_workers, rate_limit_delay=args.rate_limit_delay, max_turns=args.max_turns)
+    runner = ARCTaskRunner(model=args.model, reasoning_effort=args.reasoning_effort, max_workers=args.max_workers, rate_limit_delay=args.rate_limit_delay, max_turns=args.max_turns)
     runner.run_subset(args.subset, args.dataset, args.limit)
 
 
