@@ -325,9 +325,6 @@ Requirements:
     
     def create_success_result(self, task_id: str, program: str, response, test_score: Dict, total_cost: float, total_tokens: int, turns_used: int, task_data: Dict) -> Dict:
         """Create a successful task result"""
-        # Calculate residual reduction (pattern learning)
-        training_examples = task_data.get('train', [])
-        reduction = self.scorer.calculate_residual_reduction(program, training_examples, self.executor)
         
         # Convert response to JSON-serializable format
         response_dict = None
@@ -374,8 +371,6 @@ Requirements:
             'turns_used': turns_used,
             'raw_response': response_dict,
             'score': test_score,
-            'residual_reduction': reduction,
-            'mdl': reduction,
             'predicted_output': test_score.get('predicted_output'),
             'actual_output': test_score.get('actual_output'),
             'api_success': True
@@ -439,7 +434,6 @@ Requirements:
                 'correct_pixels': 0,
                 'error': error_msg
             },
-            'mdl': None,
             'actual_output': actual_output,
             'api_success': True
         }
@@ -875,27 +869,7 @@ Make sure to include the function definition inside a proper code block."""
         total_pixels = sum(r.get('score', {}).get('total_pixels', 0) for r in results)
         correct_pixels = sum(r.get('score', {}).get('correct_pixels', 0) for r in results)
         
-        # Calculate pattern learning statistics (only for successful tasks)
-        pattern_learning_scores = [r.get('residual_reduction', {}).get('pattern_learning_score') for r in api_successes if r.get('residual_reduction')]
-        avg_pattern_learning = sum(pattern_learning_scores) / len(pattern_learning_scores) if pattern_learning_scores else 0
-        
-        program_residual_bytes = [r.get('residual_reduction', {}).get('program_residual_bytes', 0) for r in api_successes if r.get('residual_reduction')]
-        avg_program_residual_bytes = sum(program_residual_bytes) / len(program_residual_bytes) if program_residual_bytes else 0
-        
-        null_residual_bytes = [r.get('residual_reduction', {}).get('null_residual_bytes', 0) for r in api_successes if r.get('residual_reduction')]
-        avg_null_residual_bytes = sum(null_residual_bytes) / len(null_residual_bytes) if null_residual_bytes else 0
-        
-        # Calculate training execution and correctness statistics (only for successful tasks)
-        training_executions = sum(r.get('residual_reduction', {}).get('training_executions', 0) for r in api_successes if r.get('residual_reduction'))
-        training_correct = sum(r.get('residual_reduction', {}).get('training_correct', 0) for r in api_successes if r.get('residual_reduction'))
-        total_training_examples = sum(r.get('residual_reduction', {}).get('training_examples_count', 0) for r in api_successes if r.get('residual_reduction'))
-        
-        training_execution_rate = training_executions / total_training_examples if total_training_examples > 0 else 0
-        training_correctness_rate = training_correct / training_executions if training_executions > 0 else 0
-        
-        # Count how many programs achieved good pattern learning (>50%)
-        good_pattern_learners = sum(1 for score in pattern_learning_scores if score > 50)
-        excellent_pattern_learners = sum(1 for score in pattern_learning_scores if score > 80)
+
         
         # Calculate tool usage statistics
         total_tool_calls = sum(r.get('tool_calls_count', 0) for r in results)
@@ -917,13 +891,6 @@ Make sure to include the function definition inside a proper code block."""
             'total_pixels': total_pixels,
             'correct_pixels': correct_pixels,
             'pixel_accuracy': correct_pixels / total_pixels if total_pixels > 0 else 0.0,
-            'avg_pattern_learning_score': avg_pattern_learning,
-            'avg_program_residual_bytes': avg_program_residual_bytes,
-            'avg_null_residual_bytes': avg_null_residual_bytes,
-            'training_execution_rate': training_execution_rate,
-            'training_correctness_rate': training_correctness_rate,
-            'good_pattern_learners': good_pattern_learners,
-            'excellent_pattern_learners': excellent_pattern_learners,
             'total_tool_calls': total_tool_calls,
             'avg_tool_calls': avg_tool_calls,
             'total_tokens': self.total_tokens,
@@ -955,13 +922,6 @@ Make sure to include the function definition inside a proper code block."""
             print(f"Failed API calls: {failed_tasks}/{total_tasks} ({failed_tasks/total_tasks:.1%}) ❌")
         print(f"Tasks solved correctly: {correct_tasks}/{total_tasks} ({summary['task_accuracy']:.1%})")
         print(f"Pixel accuracy: {correct_pixels}/{total_pixels} ({summary['pixel_accuracy']:.1%})")
-        print(f"Average pattern learning: {avg_pattern_learning:.1f}%")
-        print(f"Training execution rate: {training_execution_rate:.1%} ({training_executions}/{total_training_examples})")
-        print(f"Training correctness rate: {training_correctness_rate:.1%} ({training_correct}/{training_executions})" if training_executions > 0 else "Training correctness rate: N/A")
-        print(f"Programs with >50% pattern learning: {good_pattern_learners}/{len(pattern_learning_scores)}")
-        print(f"Programs with >80% pattern learning: {excellent_pattern_learners}/{len(pattern_learning_scores)}")
-        print(f"Average program residual: {avg_program_residual_bytes:.1f} bytes")
-        print(f"Average null baseline: {avg_null_residual_bytes:.1f} bytes")
         print(f"Total tool calls made: {total_tool_calls}")
         print(f"Average tool calls per task: {avg_tool_calls:.1f}")
         print(f"Total tokens used: {self.total_tokens:,}")

@@ -17,12 +17,15 @@ Objective: Define a test that is a representative measure of performance while a
 - MEDIUM:
 [ ] Bringing the sandbox to be local:
   [x] Just run the code locally each time, rather than use the remote code interpreter.
-  - Drop the MDL / compression calculation altogether from scripts here.
-  - Print, after each tool call, the result in terms of pixel match average on all training examples AND number of training examples solved out of those present.
+    - Print, after each tool call, the result in terms of pixel match average on all training examples AND number of training examples solved out of those present.
+  [x] Drop the MDL / compression calculation altogether from scripts here.
+  [ ] Strip out "tools calls made" etc. as there are no tool calls. There are only turns used.
+  [ ] Automatically support non-reasoning or reasoning models (no flags required).
   [ ] Improve logging:
     - Manually inspect the prompt
     - in our logging / logs, it would be best to save not just the final responses, but the ones before thta too - so I can inspect what the code output is and what is being passed back in.
     - Run tests on low levels of reasoning effort.
+    - Swap to chat completions endpoint so as to allow for openai-style endpoint usage (enable other models, incl. reasoning).
 
 [ ] Try inputting images of the problem as well as just the problem itself.
 
@@ -39,9 +42,7 @@ Other ideas:
 
 Completed:
 [x] prompt so that the model keeps reasoning until it finds a python program that solves (for the tool use case). don't include the test examples in the prompt.
-[x] Use gzip for the program too (strip comments), possibly this removes the need for having the alpha and beta parameters. Also, make sure we're including all train examples for that task in the data description length.
-[x] **Fixed residual calculation**: Changed from broken "actual-value-if-wrong" to proper difference-based approach (`residual = actual - predicted`) that allows perfect reconstruction.
-[x] **Replaced MDL with residual reduction**: Changed from complex MDL (program + residuals) to pure pattern learning measurement using residual reduction percentage.
+[x] **Simplified scoring**: Removed complex compression-based calculations and focused on core metrics.
 
 For Kaggle / low compute competition:
 [ ] Testing out a baseline with Qwen.
@@ -51,7 +52,7 @@ For Kaggle / low compute competition:
 
 - Run ARC-AGI tasks with OpenAI models (currently using gpt-4o-mini or o4-mini)
 - Support for code interpreter tools via function calling
-- Comprehensive scoring including pixel accuracy and residual reduction pattern learning
+- Comprehensive scoring including pixel accuracy and binary correctness
 - Budget tracking with token usage and cost estimation
 - Detailed logging of all runs for analysis
 - Support for different datasets and task subsets
@@ -83,7 +84,7 @@ uv run python o3-tools/run_arc_tasks.py
 
 ```bash
 # Run 10 shortest training tasks from ARC-AGI-2 with multi-turn execution enabled
-uv run python run_arc_tasks.py --dataset arc-agi-2 --subset shortest_training_10 --tools
+uv run python run_arc_tasks.py --dataset arc-agi-2 --subset shortest_training_1 --tools
 
 # Run with custom max turns for multi-turn execution  
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_1 --tools --max_turns 5
@@ -196,7 +197,7 @@ OpenAI has rate limits that vary by model and tier. Recommended settings:
 
 ## Scoring Metrics
 
-The tool provides three complementary scoring metrics to evaluate model performance:
+The tool provides two core scoring metrics to evaluate model performance:
 
 ### 1. **Binary Correctness**
 - **What it measures**: Whether the predicted output grid exactly matches the expected output
@@ -210,43 +211,18 @@ The tool provides three complementary scoring metrics to evaluate model performa
 - **Use case**: Measures partial correctness when solutions aren't perfect
 - **Example**: If 7 out of 9 pixels match → 77.8% pixel accuracy
 
-### 3. **Residual Reduction (Pattern Learning Score)**
-
-- **What it measures**: How much of the transformation pattern the program learned compared to no program at all
-- **Formula**: `reduction = (null_residual_bytes - program_residual_bytes) / null_residual_bytes`
-- **Core Principle**: Measures the **pattern learning ability** by comparing residuals
-  - **Program Residuals**: Compressed differences for ALL training examples that the program failed to capture
-  - **Null Baseline**: Compressed differences for null program (predicts grid of zeros with correct output dimensions)
-- **Training-Based Calculation**: Uses only training examples to measure learning
-- **Components**:
-  - `program_residual_bytes`: Gzip-compressed size of residuals from program execution on training
-  - `null_residual_bytes`: Gzip-compressed size of residuals from null program (all zeros) on training
-  - `residual_reduction`: Percentage improvement over null baseline (0.0 to 1.0)
-  - `pattern_learning_score`: Same as residual_reduction × 100 (0% to 100%)
-  - `training_executions`: Number of training examples the program executed successfully
-  - `training_correct`: Number of training examples the program got exactly right
-- **Benefits of residual reduction**:
-  - ✅ **Pure pattern learning**: Measures only how well the program learned the transformation
-  - ✅ **No complexity bias**: Doesn't penalize longer but more accurate programs
-  - ✅ **Intuitive scale**: 0% = no learning, 100% = perfect pattern learning
-  - ✅ **Baseline comparison**: Always compared to outputting all zeros (meaningful null baseline)
-- **Interpretation**: Higher scores are better (0% = no better than all zeros, 100% = perfect pattern learning)
-- **Example**: A program with 35 residual bytes vs null baseline 150 bytes → 76.7% pattern learning
-
 ### **Why These Metrics Matter**
 
 - **Binary Correctness**: Shows the "solve rate" - what percentage of tasks are completely correct
 - **Pixel Accuracy**: Reveals how close imperfect solutions are to being correct  
-- **Pattern Learning**: Measures how well the program learned the transformation pattern, independent of code complexity
 
 **Example Results Interpretation**:
 ```
 Tasks solved correctly: 4/10 (40.0%)     # 40% perfect solutions
 Pixel accuracy: 85/90 (94.4%)            # Very close to correct on average
-Average pattern learning: 76.7%          # Programs learned most of the patterns
 ```
 
-This shows a model that writes mostly-correct solutions with strong pattern learning ability.
+This shows a model that writes mostly-correct solutions.
 
 ## Output
 
@@ -258,7 +234,7 @@ Results are saved in the `logs/` directory:
 Each individual task log includes:
 - Complete program code generated by the model
 - Execution results and any errors encountered
-- All three scoring metrics (binary correctness, pixel accuracy, pattern learning)
+- Both scoring metrics (binary correctness and pixel accuracy)
 - Predicted vs actual output grids for comparison
 - Token usage breakdown and estimated costs
 - Tool usage statistics (when tools are enabled)
@@ -266,7 +242,6 @@ Each individual task log includes:
 
 Summary reports aggregate across all tasks and include:
 - Overall task solve rate and pixel accuracy across the subset
-- Average pattern learning scores, training success rates, and residual analysis
 - Total costs and token usage for the entire run
 - Tool usage patterns and performance comparisons
 
@@ -294,15 +269,6 @@ Summary reports aggregate across all tasks and include:
     "correct_pixels": 9,
     "error": null
   },
-  "residual_reduction": {
-    "program_residual_bytes": 35,
-    "null_residual_bytes": 150,
-    "residual_reduction": 0.767,
-    "pattern_learning_score": 76.7,
-    "training_examples_count": 3,
-    "training_successes": 3,
-    "training_errors": []
-  },
   "predicted_output": [[0,0,4], [0,8,6], [5,3,6]],
   "actual_output": [[0,0,4], [0,8,6], [5,3,6]]
 }
@@ -324,12 +290,6 @@ Summary reports aggregate across all tasks and include:
   "total_pixels": 90,
   "correct_pixels": 85,
   "pixel_accuracy": 0.944,
-  "avg_pattern_learning_score": 76.7,
-  "avg_program_residual_bytes": 42.5,
-  "avg_null_residual_bytes": 135.8,
-  "training_success_rate": 0.933,
-  "good_pattern_learners": 7,
-  "excellent_pattern_learners": 4,
   "total_tool_calls": 12,
   "avg_tool_calls": 1.2,
   "total_tokens": 35847,
@@ -351,9 +311,6 @@ Parallelization: DISABLED (sequential execution)
 
 Processing task: 6150a2bd
   💰 Cost: $0.019646 (input: 1089 @ $1.1, output: 4321 @ $4.4)
-  🧠 Pattern learning: 76.7% (35 vs 150 bytes)
-  ✅ Program executed on all 3 training examples
-  🎯 Training accuracy: 3/3 (100%) correct outputs
   ✅ Perfect solution found!
 ```
 
@@ -385,12 +342,6 @@ API: Responses (single-shot)
 Tools enabled: True
 Tasks solved correctly: 4/10 (40.0%)
 Pixel accuracy: 85/90 (94.4%)
-Average pattern learning: 76.7%
-Training success rate: 93.3% (28/30)
-Programs with >50% pattern learning: 7/10
-Programs with >80% pattern learning: 4/10
-Average program residual: 42.5 bytes
-Average null baseline: 135.8 bytes
 Total tool calls made: 12
 Average tool calls per task: 1.2
 Total tokens used: 35,847
@@ -400,9 +351,6 @@ Total cost: $0.196734
 This example shows:
 - **40% solve rate**: 4 out of 10 tasks solved perfectly
 - **94.4% pixel accuracy**: Very close to correct solutions on average
-- **76.7% pattern learning**: Programs learned most of the transformation patterns
-- **93.3% training success**: Programs executed successfully on training examples
-- **70% good learners**: 7 out of 10 programs showed >50% pattern learning
 - **Tool usage**: Model used code interpreter 1.2 times per task on average
 - **Cost tracking**: Detailed token usage and cost calculation for budget management
 
@@ -418,16 +366,11 @@ This example shows:
 - `tool_calls_count`: Number of code interpreter calls made
 - `score.correct`: Boolean - whether output exactly matches expected
 - `score.pixel_accuracy`: Fraction of pixels that match (0.0 to 1.0)
-- `residual_reduction.pattern_learning_score`: Percentage pattern learning (0-100%)
-- `residual_reduction.training_successes`: Number of training examples that executed successfully
 - `predicted_output` vs `actual_output`: Compare model's solution to ground truth
 
 **Summary Reports:**
 - `task_accuracy`: Fraction of tasks solved perfectly 
 - `pixel_accuracy`: Overall pixel-level accuracy across all tasks
-- `avg_pattern_learning_score`: Average pattern learning percentage (higher = better)
-- `training_success_rate`: Fraction of training examples that executed successfully
-- `good_pattern_learners`: Number of programs with >50% pattern learning
 - `total_cost`: Total USD spent on this run
 - `results[]`: Contains all individual task data for deeper analysis
 
@@ -448,7 +391,7 @@ grep '"total_cost"' logs/*summary*.json | sort -k2 -n
 Test individual components:
 ```bash
 uv run python task_loader.py  # Test task loading functionality
-uv run python scoring.py      # Test scoring and MDL calculation
+uv run python scoring.py      # Test scoring functionality
 ```
 
 Quick API test:
@@ -521,7 +464,7 @@ We use **only the Responses API** with two modes:
 o3-tools/
 ├── run_arc_tasks.py             # Main script (Responses API only)
 ├── task_loader.py               # Load ARC tasks and subsets
-├── scoring.py                   # Grid scoring and MDL calculation
+├── scoring.py                   # Grid scoring
 ├── cleanup_logs.py             # Clean up log files
 ├── logs/                       # Results and summaries
 └── README.md                   # This file
