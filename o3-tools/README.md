@@ -17,12 +17,12 @@ Objective: Define a test that is a representative measure of performance while a
 Cleanups:
   [x] Drop the MDL / compression calculation altogether from scripts here.
   [x] Strip out "tools calls made" etc. as there are no tool calls. There are only turns used.
-  [ ] Automatically support non-reasoning or reasoning models (no flags required).
-  [ ] Swap to chat completions endpoint so as to allow for openai-style endpoint usage (enable other models, incl. reasoning).
+  [x] Automatically support non-reasoning or reasoning models (no flags required).
   [ ] Improve logging:
     [ ] Manually inspect the prompt
     [ ] in our logging / logs, it would be best to save not just the final responses, but the ones before thta too - so I can inspect what the code output is and what is being passed back in.
     [ ] Run tests on low levels of reasoning effort.
+  [ ] Swap to chat completions endpoint so as to allow for openai-style endpoint usage (enable other models, incl. reasoning). THIS IS NOT GOING TO SUPPORT OPENAI REASONING MODELS, WHICH DONT' DISCLOSE THE REASONING TRACE, AND SO YOU MUST USE THE RESPONSES API TO USE REASONING WITH OPENAI MODELS. OTHERS (CLAUDE, QWEN, GEMINI?, DEEPSEEK?) RESPOND WITH <think> TAGS.
 
 - MEDIUM:
 [x] Bringing the sandbox to be local:
@@ -251,11 +251,12 @@ Summary reports aggregate across all tasks and include:
 
 ### Individual Task Log (`{timestamp}_{task_id}.json`)
 
+**Reasoning Model Example (o4-mini):**
 ```json
 {
   "task_id": "6150a2bd",
   "model": "o4-mini", 
-  "reasoning_effort": "low",
+  "reasoning_effort": "medium",
   "use_tools": true,
   "api_type": "responses_api",
   "program": "def transform(grid):\n    return [row[::-1] for row in grid[::-1]]",
@@ -264,6 +265,33 @@ Summary reports aggregate across all tasks and include:
   "tokens_used": 1189,
   "turns_used": 2,
   "request_cost": 0.004146,
+  "raw_response": { /* Full API response */ },
+  "score": {
+    "correct": true,
+    "pixel_accuracy": 1.0,
+    "total_pixels": 9,
+    "correct_pixels": 9,
+    "error": null
+  },
+  "predicted_output": [[0,0,4], [0,8,6], [5,3,6]],
+  "actual_output": [[0,0,4], [0,8,6], [5,3,6]]
+}
+```
+
+**Non-Reasoning Model Example (gpt-4o-mini):**
+```json
+{
+  "task_id": "6150a2bd",
+  "model": "gpt-4o-mini", 
+  "reasoning_effort": "N/A",
+  "use_tools": false,
+  "api_type": "responses_api",
+  "program": "def transform(grid):\n    return [row[::-1] for row in grid[::-1]]",
+  "execution_error": "",
+  "timed_out": false,
+  "tokens_used": 542,
+  "turns_used": 1,
+  "request_cost": 0.000405,
   "raw_response": { /* Full API response */ },
   "score": {
     "correct": true,
@@ -335,6 +363,8 @@ Parallel execution completed. All 10 tasks processed.
 ```
 
 ### Summary Output
+
+**Reasoning Model Example (o4-mini):**
 ```
 ==================================================
 SUMMARY
@@ -353,6 +383,24 @@ Total tokens used: 35,847
 Total cost: $0.196734
 ```
 
+**Non-Reasoning Model Example (gpt-4o-mini):**
+```
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-1
+Subset: shortest_10
+Model: gpt-4o-mini
+API: Responses (single-shot)
+Multi-turn enabled: False
+Tasks solved correctly: 3/10 (30.0%)
+Pixel accuracy: 78/90 (86.7%)
+Total turns used: 10
+Average turns per task: 1.0
+Total tokens used: 12,456
+Total cost: $0.009845
+```
+
 This example shows:
 - **40% solve rate**: 4 out of 10 tasks solved perfectly
 - **94.4% pixel accuracy**: Very close to correct solutions on average
@@ -366,7 +414,7 @@ This example shows:
 **Individual Task Logs:**
 - `task_id`: ARC task identifier
 - `model`: OpenAI model used (e.g., "o4-mini", "gpt-4o-mini")
-- `reasoning_effort`: Reasoning effort level for reasoning models ("low", "medium", "high")
+- `reasoning_effort`: Reasoning effort level for reasoning models ("low", "medium", "high") or "N/A" for non-reasoning models
 - `program`: Generated Python code 
 - `execution_error`: Any runtime errors (empty if successful)
 - `request_cost`: Cost for this specific task in USD
@@ -512,7 +560,8 @@ uv run python cleanup_logs.py
 ## Additional Notes
 
 - You can control the maximum number of turns using --max_turns (default: 3). This is especially useful for limiting cost and runaway conversations when --tools is enabled.
-- You can also set the reasoning effort for the model using --reasoning_effort (choices: low, medium, high; default: low). This may affect the model's thoroughness and cost.
+- You can also set the reasoning effort for the model using --reasoning_effort (choices: low, medium, high; default: medium). This may affect the model's thoroughness and cost.
+- **Automatic Model Detection**: The script automatically detects reasoning models (o3, o4, o1) vs non-reasoning models (GPT-4 series). Reasoning effort is only sent to models that support it, preventing API errors.
 - **Parallelization**: Use `--max_workers` (1-30) to run tasks in parallel. Start with 5 workers and increase gradually while monitoring for rate limit errors. Use `--rate_limit_delay` to add delays between requests if needed.
 - **Cost Control**: Parallel execution accumulates costs faster but maintains the same per-task costs. Monitor total spending especially when using expensive models like o3 with many workers.
 - **Thread Safety**: All file I/O, progress tracking, and cost accumulation is thread-safe. Individual task logs use unique filenames with thread IDs to prevent conflicts.

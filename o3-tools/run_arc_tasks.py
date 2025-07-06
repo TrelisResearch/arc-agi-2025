@@ -69,6 +69,12 @@ class ARCTaskRunner:
                 task_info = f" ({task_id})" if task_id else ""
                 print(f"Progress: {self.completed_tasks}/{total_tasks} tasks processed ({progress_pct:.1f}%) - {status}{task_info}")
     
+    def is_reasoning_model(self, model: str = None) -> bool:
+        """Check if the model supports reasoning effort parameter"""
+        model_to_check = model or self.model
+        model_lower = model_to_check.lower()
+        return model_lower.startswith(('o3', 'o4', 'o1'))
+    
     def get_model_pricing(self, model: str) -> tuple[float, float]:
         """Get input and output pricing rates for a model in $/1M tokens"""
         model_lower = model.lower()
@@ -184,15 +190,14 @@ Requirements:
                 "input": input_messages
             }
             
-            # Add reasoning effort for reasoning models
-            model_lower = self.model.lower()
-            if model_lower.startswith(('o3', 'o4', 'o1')):
+            # Add reasoning effort and encrypted content only for reasoning models
+            if self.is_reasoning_model():
                 kwargs["reasoning"] = {"effort": self.reasoning_effort}
-            
-            # For multi-turn with encrypted reasoning traces
-            if self.use_tools:
-                kwargs["include"] = ["reasoning.encrypted_content"]
-                kwargs["store"] = False  # Enable stateless mode for encrypted content
+                
+                # For multi-turn with encrypted reasoning traces (only supported by reasoning models)
+                if self.use_tools:
+                    kwargs["include"] = ["reasoning.encrypted_content"]
+                    kwargs["store"] = False  # Enable stateless mode for encrypted content
             
             # Make the API call
             response = self.client.responses.create(**kwargs)
@@ -325,7 +330,7 @@ Requirements:
     
     def create_success_result(self, task_id: str, program: str, response, test_score: Dict, total_cost: float, total_tokens: int, turns_used: int, task_data: Dict) -> Dict:
         """Create a successful task result"""
-        
+
         # Convert response to JSON-serializable format
         response_dict = None
         if response:
@@ -356,11 +361,11 @@ Requirements:
                 }
             except Exception as e:
                 response_dict = {'error': f'Failed to serialize response: {str(e)}'}
-        
+
         return {
             'task_id': task_id,
             'model': self.model,
-            'reasoning_effort': self.reasoning_effort,
+            'reasoning_effort': self.reasoning_effort if self.is_reasoning_model() else "N/A",
             'use_tools': self.use_tools,
             'api_type': 'responses_api_multiturn',
             'program': program,
@@ -417,7 +422,7 @@ Requirements:
         return {
             'task_id': task_id,
             'model': self.model,
-            'reasoning_effort': self.reasoning_effort,
+            'reasoning_effort': self.reasoning_effort if self.is_reasoning_model() else "N/A",
             'use_tools': self.use_tools,
             'api_type': 'responses_api_multiturn',
             'program': program,
@@ -854,7 +859,7 @@ Make sure to include the function definition inside a proper code block."""
             'dataset': dataset,
             'subset': subset_name,
             'model': self.model,
-            'reasoning_effort': self.reasoning_effort,
+            'reasoning_effort': self.reasoning_effort if self.is_reasoning_model() else "N/A",
             'use_tools': self.use_tools,
             'api_type': 'responses_api',
             'total_tasks': total_tasks,
@@ -887,8 +892,7 @@ Make sure to include the function definition inside a proper code block."""
         print(f"Subset: {subset_name}")
         print(f"Model: {self.model}")
         # Only show reasoning effort for reasoning models
-        model_lower = self.model.lower()
-        if model_lower.startswith(('o3', 'o4', 'o1')):
+        if self.is_reasoning_model():
             print(f"Reasoning effort: {self.reasoning_effort}")
         if self.use_tools:
             print(f"API: Responses (multi-turn, max {self.max_turns} turns)")
