@@ -10,28 +10,10 @@ Objective: Define a test that is a representative measure of performance while a
 
 **Levers:**
 - FAST:
-[x] Include the test grid, it adds information.
-[x] When providing code, also provide a summary of the rationale behind what is being done. (not in the reasoning). [Test this out in a clean test script to go in a tests folder.]
-[x] Check whether the code sandbox on openai is ephemeral or not. Yes, with `auto` the same container is used and variables persist.
-
-Cleanups:
-  [x] Drop the MDL / compression calculation altogether from scripts here.
-  [x] Strip out "tools calls made" etc. as there are no tool calls. There are only turns used.
-  [x] Automatically support non-reasoning or reasoning models (no flags required).
-  [ ] Improve logging:
-    [x] Manually inspect the prompt.
-    [x] Inspect how wrong grids are passed back to the model (or failed runs of the code produced).
-    [ ] in our logging / logs, it would be best to save not just the final responses, but the ones before thta too - so I can inspect what the code output is and what is being passed back in.
-  [x] Run tests on low levels of reasoning effort.
-  [ ] Swap to chat completions endpoint so as to allow for openai-style endpoint usage (enable other models, incl. reasoning). THIS IS NOT GOING TO SUPPORT OPENAI REASONING MODELS, WHICH DONT' DISCLOSE THE REASONING TRACE, AND SO YOU MUST USE THE RESPONSES API TO USE REASONING WITH OPENAI MODELS. OTHERS (CLAUDE, QWEN, GEMINI?, DEEPSEEK?) RESPOND WITH <think> TAGS.
+...
 
 - MEDIUM:
-[x] Bringing the sandbox to be local:
-  [x] Just run the code locally each time, rather than use the remote code interpreter.
-    - Print, after each tool call, the result in terms of pixel match average on all training examples AND number of training examples solved out of those present.
-
 [ ] Try inputting images of the problem as well as just the problem itself.
-
 [ ] Build a priority list based on # (or percentage) of training grids solved. Ideally you have an id and converstaion history for each candidate incomplete program (so you can reuse LLM cache).
 
 - SLOW:
@@ -39,11 +21,28 @@ Cleanups:
     - Add f(..., gzip) as a metric.
 
 Other ideas:
+[ ] Swap to chat completions endpoint so as to allow for openai-style endpoint usage (enable other models, incl. reasoning). THIS IS NOT GOING TO SUPPORT OPENAI REASONING MODELS, WHICH DONT' DISCLOSE THE REASONING TRACE, AND SO YOU MUST USE THE RESPONSES API TO USE REASONING WITH OPENAI MODELS. OTHERS (CLAUDE, QWEN, GEMINI?, DEEPSEEK?) RESPOND WITH <think> TAGS.
 [ ] Use a code interpreter tool rather than running code from an extract code block.
 [ ] Overfitting checks are probably needed because sometimes all training problems are solved but then the test fails. Could just rotate or do simple checks like that.
 [ ] Allow the code environment to persist for a given task. [not relevant until we do the code sandbox locally.]
 
+Cleanups:
+  [x] Drop the MDL / compression calculation altogether from scripts here.
+  [x] Strip out "tools calls made" etc. as there are no tool calls. There are only turns used.
+  [x] Automatically support non-reasoning or reasoning models (no flags required).
+  [x] Improve logging:
+    [x] Manually inspect the prompt.
+    [x] Inspect how wrong grids are passed back to the model (or failed runs of the code produced).
+    [x] in our logging / logs, it would be best to save not just the final responses, but the ones before thta too - so I can inspect what the code output is and what is being passed back in.
+  [x] Run tests on low levels of reasoning effort.
+
 Completed:
+[x] Bringing the sandbox to be local:
+  [x] Just run the code locally each time, rather than use the remote code interpreter.
+    - Print, after each tool call, the result in terms of pixel match average on all training examples AND number of training examples solved out of those present.
+[x] Include the test grid, it adds information.
+[x] When providing code, also provide a summary of the rationale behind what is being done. (not in the reasoning). [Test this out in a clean test script to go in a tests folder.]
+[x] Check whether the code sandbox on openai is ephemeral or not. Yes, with `auto` the same container is used and variables persist.
 [x] prompt so that the model keeps reasoning until it finds a python program that solves (for the tool use case). don't include the test examples in the prompt.
 [x] **Simplified scoring**: Removed complex compression-based calculations and focused on core metrics.
 

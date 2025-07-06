@@ -324,8 +324,8 @@ def transform(grid):
         
         return ""
     
-    def create_success_result(self, task_id: str, program: str, response, test_score: Dict, total_cost: float, total_tokens: int, turns_used: int, task_data: Dict) -> Dict:
-        """Create a successful task result"""
+    def create_success_result(self, task_id: str, program: str, response, test_score: Dict, total_cost: float, total_tokens: int, turns_used: int, task_data: Dict, conversation_history: List = None, all_responses: List = None, turn_details: List = None) -> Dict:
+        """Create a successful task result with complete multi-turn data"""
 
         # Convert response to JSON-serializable format
         response_dict = None
@@ -358,6 +358,63 @@ def transform(grid):
             except Exception as e:
                 response_dict = {'error': f'Failed to serialize response: {str(e)}'}
 
+        # Convert all responses to JSON-serializable format
+        all_responses_dict = []
+        if all_responses:
+            for resp in all_responses:
+                try:
+                    output_items = []
+                    for item in resp.output:
+                        if item.type == 'message':
+                            content_texts = []
+                            if hasattr(item, 'content'):
+                                for content_item in item.content:
+                                    if hasattr(content_item, 'text'):
+                                        content_texts.append(content_item.text)
+                            output_items.append({'type': item.type, 'content': content_texts})
+                        else:
+                            output_items.append({'type': item.type, 'content': str(getattr(item, 'content', ''))})
+                    
+                    all_responses_dict.append({
+                        'id': resp.id,
+                        'model': resp.model,
+                        'usage': {
+                            'input_tokens': resp.usage.input_tokens,
+                            'output_tokens': resp.usage.output_tokens,
+                            'total_tokens': resp.usage.total_tokens
+                        },
+                        'output': output_items
+                    })
+                except Exception as e:
+                    all_responses_dict.append({'error': f'Failed to serialize response: {str(e)}'})
+
+        # Serialize conversation history (handle response objects)
+        conversation_history_dict = []
+        if conversation_history:
+            for item in conversation_history:
+                try:
+                    if hasattr(item, 'type'):  # Response object from API
+                        if item.type == 'message':
+                            content_texts = []
+                            if hasattr(item, 'content'):
+                                for content_item in item.content:
+                                    if hasattr(content_item, 'text'):
+                                        content_texts.append(content_item.text)
+                            conversation_history_dict.append({
+                                'type': item.type,
+                                'role': getattr(item, 'role', 'assistant'),
+                                'content': content_texts
+                            })
+                        else:
+                            conversation_history_dict.append({
+                                'type': item.type,
+                                'content': str(getattr(item, 'content', ''))
+                            })
+                    else:  # Regular dict message
+                        conversation_history_dict.append(item)
+                except Exception as e:
+                    conversation_history_dict.append({'error': f'Failed to serialize conversation item: {str(e)}'})
+
         return {
             'task_id': task_id,
             'model': self.model,
@@ -369,15 +426,22 @@ def transform(grid):
             'tokens_used': total_tokens,
             'request_cost': total_cost,
             'turns_used': turns_used,
-            'raw_response': response_dict,
+            'raw_response': response_dict,  # Final response only (for backward compatibility)
             'score': test_score,
             'predicted_output': test_score.get('predicted_output'),
             'actual_output': test_score.get('actual_output'),
-            'api_success': True
+            'api_success': True,
+            # NEW: Complete multi-turn conversation data
+            'multiturn_data': {
+                'conversation_history': conversation_history_dict,
+                'all_responses': all_responses_dict,
+                'turn_details': turn_details or [],
+                'total_turns': turns_used
+            }
         }
     
-    def create_failure_result(self, task_id: str, program: str, all_responses: List, total_cost: float, total_tokens: int, turns_used: int, task_data: Dict, error_msg: str) -> Dict:
-        """Create a failed task result"""
+    def create_failure_result(self, task_id: str, program: str, all_responses: List, total_cost: float, total_tokens: int, turns_used: int, task_data: Dict, error_msg: str, conversation_history: List = None, turn_details: List = None) -> Dict:
+        """Create a failed task result with complete multi-turn data"""
         # Get test output for pixel counting
         actual_output = task_data['test'][0]['output']
         total_pixels = len(actual_output) * len(actual_output[0]) if actual_output else 0
@@ -413,6 +477,63 @@ def transform(grid):
                 }
             except Exception as e:
                 response_dict = {'error': f'Failed to serialize response: {str(e)}'}
+
+        # Convert all responses to JSON-serializable format
+        all_responses_dict = []
+        if all_responses:
+            for resp in all_responses:
+                try:
+                    output_items = []
+                    for item in resp.output:
+                        if item.type == 'message':
+                            content_texts = []
+                            if hasattr(item, 'content'):
+                                for content_item in item.content:
+                                    if hasattr(content_item, 'text'):
+                                        content_texts.append(content_item.text)
+                            output_items.append({'type': item.type, 'content': content_texts})
+                        else:
+                            output_items.append({'type': item.type, 'content': str(getattr(item, 'content', ''))})
+                    
+                    all_responses_dict.append({
+                        'id': resp.id,
+                        'model': resp.model,
+                        'usage': {
+                            'input_tokens': resp.usage.input_tokens,
+                            'output_tokens': resp.usage.output_tokens,
+                            'total_tokens': resp.usage.total_tokens
+                        },
+                        'output': output_items
+                    })
+                except Exception as e:
+                    all_responses_dict.append({'error': f'Failed to serialize response: {str(e)}'})
+
+        # Serialize conversation history (handle response objects)
+        conversation_history_dict = []
+        if conversation_history:
+            for item in conversation_history:
+                try:
+                    if hasattr(item, 'type'):  # Response object from API
+                        if item.type == 'message':
+                            content_texts = []
+                            if hasattr(item, 'content'):
+                                for content_item in item.content:
+                                    if hasattr(content_item, 'text'):
+                                        content_texts.append(content_item.text)
+                            conversation_history_dict.append({
+                                'type': item.type,
+                                'role': getattr(item, 'role', 'assistant'),
+                                'content': content_texts
+                            })
+                        else:
+                            conversation_history_dict.append({
+                                'type': item.type,
+                                'content': str(getattr(item, 'content', ''))
+                            })
+                    else:  # Regular dict message
+                        conversation_history_dict.append(item)
+                except Exception as e:
+                    conversation_history_dict.append({'error': f'Failed to serialize conversation item: {str(e)}'})
         
         return {
             'task_id': task_id,
@@ -425,7 +546,7 @@ def transform(grid):
             'tokens_used': total_tokens,
             'request_cost': total_cost,
             'turns_used': turns_used,
-            'raw_response': response_dict,
+            'raw_response': response_dict,  # Final response only (for backward compatibility)
             'score': {
                 'correct': False,
                 'pixel_accuracy': 0.0,
@@ -434,7 +555,14 @@ def transform(grid):
                 'error': error_msg
             },
             'actual_output': actual_output,
-            'api_success': True
+            'api_success': True,
+            # NEW: Complete multi-turn conversation data
+            'multiturn_data': {
+                'conversation_history': conversation_history_dict,
+                'all_responses': all_responses_dict,
+                'turn_details': turn_details or [],
+                'total_turns': turns_used
+            }
         }
     
 
@@ -456,6 +584,7 @@ def transform(grid):
         total_cost = 0.0
         total_tokens = 0
         all_responses = []
+        turn_details = []  # NEW: Collect detailed turn-by-turn data
         
         # Start conversation
         system_msg = {"role": "system", "content": "You are an expert at solving abstract reasoning puzzles. Write clean, efficient Python code."}
@@ -464,6 +593,7 @@ def transform(grid):
         
         try:
             for turn in range(self.max_turns):
+                turn_start_time = datetime.datetime.now()
                 if self.max_workers == 1:  # Only print detailed logs for sequential execution
                     print(f"  🔄 Turn {turn + 1}/{self.max_turns}...")
                 
@@ -486,14 +616,47 @@ def transform(grid):
                 # Extract code
                 program = self.extract_code_from_response(response)
                 
+                # Initialize turn detail
+                turn_detail = {
+                    'turn_number': turn + 1,
+                    'timestamp': turn_start_time.isoformat(),
+                    'input_tokens': input_tokens,
+                    'output_tokens': output_tokens,
+                    'turn_cost': turn_cost,
+                    'program_extracted': bool(program),
+                    'program': program,
+                    'training_feedback': None,
+                    'test_result': None,
+                    'status': 'in_progress'
+                }
+                
                 if not program:
                     if self.max_workers == 1:
                         print(f"     ❌ No code found in response")
+                    
+                    turn_detail['status'] = 'no_code_found'
+                    turn_details.append(turn_detail)
                     
                     # Stop if this is the last turn
                     if turn == self.max_turns - 1:
                         if self.max_workers == 1:
                             print(f"     ⏰ Max turns ({self.max_turns}) reached")
+                        
+                        # BUGFIX: Add final response to conversation history before breaking
+                        reasoning_item = None
+                        assistant_msg = None
+                        for item in response.output:
+                            if item.type == "reasoning":
+                                reasoning_item = item
+                            elif item.type == "message" and item.role == "assistant":
+                                assistant_msg = item
+                        
+                        # Add to conversation history
+                        if reasoning_item and assistant_msg:
+                            conversation_history.extend([reasoning_item, assistant_msg])
+                        elif assistant_msg:
+                            conversation_history.append(assistant_msg)
+                        
                         break
                     
                     # Continue conversation with request for code
@@ -525,6 +688,7 @@ def transform(grid):
 Make sure to include the function definition inside a proper code block."""
                     
                     conversation_history.append({"role": "user", "content": code_request})
+                    turn_detail['code_request_sent'] = True
                     if self.max_workers == 1:
                         print(f"     💬 Requesting code from model...")
                     continue
@@ -534,13 +698,25 @@ Make sure to include the function definition inside a proper code block."""
                 test_expected = task_data['test'][0]['output']
                 predicted_output, error, timed_out = self.executor.execute_program(program, test_input)
                 
+                # Get training feedback for this turn
+                training_feedback, solved_count, pixel_acc = self.create_training_feedback(program, task_data['train'])
+                turn_detail['training_feedback'] = {
+                    'feedback_text': training_feedback,
+                    'solved_count': solved_count,
+                    'total_training_examples': len(task_data['train']),
+                    'pixel_accuracy': pixel_acc
+                }
+                
                 if predicted_output is not None and not error and not timed_out:
                     # Check if test is correct
                     test_score = self.scorer.score_grid(predicted_output, test_expected)
+                    turn_detail['test_result'] = test_score
                     
                     if test_score['correct']:
-                        # SUCCESS! Also get training stats for logging
-                        training_feedback, solved_count, pixel_acc = self.create_training_feedback(program, task_data['train'])
+                        # SUCCESS! 
+                        turn_detail['status'] = 'success'
+                        turn_details.append(turn_detail)
+                        
                         if self.max_workers == 1:
                             print(f"     ✅ Perfect solution found! Training: {solved_count}/{len(task_data['train'])} solved, {pixel_acc:.1%} accuracy")
                         
@@ -551,10 +727,18 @@ Make sure to include the function definition inside a proper code block."""
                         test_score['predicted_output'] = predicted_output
                         test_score['actual_output'] = test_expected
                         
-                        return self.create_success_result(task_id, program, response, test_score, total_cost, total_tokens, turn + 1, task_data)
+                        return self.create_success_result(task_id, program, response, test_score, total_cost, total_tokens, turn + 1, task_data, conversation_history, all_responses, turn_details)
+                else:
+                    # Execution failed
+                    turn_detail['test_result'] = {
+                        'execution_error': error,
+                        'timed_out': timed_out,
+                        'predicted_output': predicted_output
+                    }
                 
-                # Not correct, get training feedback
-                training_feedback, solved_count, pixel_acc = self.create_training_feedback(program, task_data['train'])
+                turn_detail['status'] = 'failed_test'
+                turn_details.append(turn_detail)
+                
                 if self.max_workers == 1:
                     print(f"     📊 Training: {solved_count}/{len(task_data['train'])} solved, {pixel_acc:.1%} accuracy")
                 
@@ -562,6 +746,22 @@ Make sure to include the function definition inside a proper code block."""
                 if turn == self.max_turns - 1:
                     if self.max_workers == 1:
                         print(f"     ⏰ Max turns ({self.max_turns}) reached")
+                    
+                    # BUGFIX: Add final response to conversation history before breaking
+                    reasoning_item = None
+                    assistant_msg = None
+                    for item in response.output:
+                        if item.type == "reasoning":
+                            reasoning_item = item
+                        elif item.type == "message" and item.role == "assistant":
+                            assistant_msg = item
+                    
+                    # Add to conversation history
+                    if reasoning_item and assistant_msg:
+                        conversation_history.extend([reasoning_item, assistant_msg])
+                    elif assistant_msg:
+                        conversation_history.append(assistant_msg)
+                    
                     break
                 
                 # Continue conversation with feedback
@@ -583,17 +783,18 @@ Make sure to include the function definition inside a proper code block."""
                 # Add training feedback
                 feedback_prompt = self.create_prompt(task_data, is_first_turn=False) + "\n\n" + training_feedback
                 conversation_history.append({"role": "user", "content": feedback_prompt})
+                turn_detail['feedback_sent'] = True
             
             # Failed after max turns
             self._update_costs(total_cost, total_tokens)
             
-            return self.create_failure_result(task_id, program if 'program' in locals() else "", all_responses, total_cost, total_tokens, self.max_turns, task_data, "Max turns reached")
+            return self.create_failure_result(task_id, program if 'program' in locals() else "", all_responses, total_cost, total_tokens, self.max_turns, task_data, "Max turns reached", conversation_history, turn_details)
         
         except Exception as e:
             print(f"     ❌ Multi-turn execution failed: {e}")
             self._update_costs(total_cost, total_tokens)
             
-            return self.create_failure_result(task_id, "", all_responses, total_cost, total_tokens, 0, task_data, str(e))
+            return self.create_failure_result(task_id, "", all_responses, total_cost, total_tokens, len(turn_details), task_data, str(e), conversation_history, turn_details)
 
     def run_subset(self, subset_name: str, dataset: str = "arc-agi-1", limit: Optional[int] = None) -> List[Dict]:
         """Run all tasks in a subset with optional parallelization"""
