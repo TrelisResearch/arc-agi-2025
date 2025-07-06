@@ -513,8 +513,9 @@ def transform(grid):
                         conversation_history.append(assistant_msg)
                     
                     # Add request for code
-                    code_request = """I need you to provide Python code to solve this task. Please provide a complete solution in this format:
+                    code_request = """I need you to provide Python code to solve this task. You MUST end your response with the following exact format:
 
+Final answer:
 ```python
 def transform(grid):
     # Your transformation logic here
