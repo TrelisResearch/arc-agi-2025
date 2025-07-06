@@ -30,7 +30,7 @@ class MultiTurnReasoningTest:
         data = {
             "model": self.model,
             "input": messages,
-            "reasoning": {"effort": "medium"}
+            "reasoning": {"effort": "low"}
         }
         
         if use_tools:

@@ -21,7 +21,7 @@ load_dotenv()
 class ARCTaskRunner:
     """Run ARC tasks using the OpenAI Responses API (single-shot with tool execution)"""
     
-    def __init__(self, model: str = "gpt-4.1-nano", use_tools: bool = False, max_tool_calls: int = 64, reasoning_effort: str = "medium", max_workers: int = 1, rate_limit_delay: float = 0.0, max_turns: int = 3):
+    def __init__(self, model: str = "gpt-4.1-nano", use_tools: bool = False, max_tool_calls: int = 64, reasoning_effort: str = "low", max_workers: int = 1, rate_limit_delay: float = 0.0, max_turns: int = 3):
         self.model = model
         self.use_tools = use_tools
         self.max_tool_calls = max_tool_calls
@@ -360,13 +360,13 @@ Requirements:
         return {
             'task_id': task_id,
             'model': self.model,
+            'reasoning_effort': self.reasoning_effort,
             'use_tools': self.use_tools,
             'api_type': 'responses_api_multiturn',
             'program': program,
             'execution_error': '',
             'timed_out': False,
             'tokens_used': total_tokens,
-            'tool_calls_count': 0,
             'request_cost': total_cost,
             'turns_used': turns_used,
             'raw_response': response_dict,
@@ -417,13 +417,13 @@ Requirements:
         return {
             'task_id': task_id,
             'model': self.model,
+            'reasoning_effort': self.reasoning_effort,
             'use_tools': self.use_tools,
             'api_type': 'responses_api_multiturn',
             'program': program,
             'execution_error': error_msg,
             'timed_out': False,
             'tokens_used': total_tokens,
-            'tool_calls_count': 0,
             'request_cost': total_cost,
             'turns_used': turns_used,
             'raw_response': response_dict,
@@ -438,33 +438,7 @@ Requirements:
             'api_success': True
         }
     
-    def count_tool_calls(self, response_data: Dict) -> int:
-        """Count the number of tool calls made in the response"""
-        count = 0
-        
-        # For built-in tools in Responses API, count items in output array by type
-        for output_item in response_data.get('output', []):
-            output_type = output_item.get('type', '')
-            
-            # Built-in tools show up as their specific type in the output array
-            if output_type == 'code_interpreter_call':
-                count += 1
-            elif output_type == 'web_search_preview_call':
-                count += 1
-            elif output_type == 'image_generation_call':
-                count += 1
-            elif output_type == 'file_search_call':
-                count += 1
-            # Add other built-in tool types as needed
-            
-            # For custom function tools, they appear in message.tool_calls
-            elif output_type == 'message':
-                content_items = output_item.get('content', [])
-                for content_item in content_items:
-                    if content_item.get('type') == 'tool_call':
-                        count += 1
-        
-        return count
+
     
     def run_task(self, task_id: str, task_data: Dict, total_tasks: int = 1) -> Dict:
         """Run a single ARC task using multi-turn local code execution"""
@@ -871,15 +845,16 @@ Make sure to include the function definition inside a proper code block."""
         
 
         
-        # Calculate tool usage statistics
-        total_tool_calls = sum(r.get('tool_calls_count', 0) for r in results)
-        avg_tool_calls = total_tool_calls / total_tasks if total_tasks > 0 else 0
+        # Calculate turn usage statistics
+        total_turns_used = sum(r.get('turns_used', 1) for r in results)  # Default to 1 for single-shot
+        avg_turns_used = total_turns_used / total_tasks if total_tasks > 0 else 0
         
         summary = {
             'timestamp': timestamp,
             'dataset': dataset,
             'subset': subset_name,
             'model': self.model,
+            'reasoning_effort': self.reasoning_effort,
             'use_tools': self.use_tools,
             'api_type': 'responses_api',
             'total_tasks': total_tasks,
@@ -891,8 +866,8 @@ Make sure to include the function definition inside a proper code block."""
             'total_pixels': total_pixels,
             'correct_pixels': correct_pixels,
             'pixel_accuracy': correct_pixels / total_pixels if total_pixels > 0 else 0.0,
-            'total_tool_calls': total_tool_calls,
-            'avg_tool_calls': avg_tool_calls,
+            'total_turns_used': total_turns_used,
+            'avg_turns_used': avg_turns_used,
             'total_tokens': self.total_tokens,
             'total_cost': self.total_cost,
             'results': results
@@ -911,19 +886,23 @@ Make sure to include the function definition inside a proper code block."""
         print(f"Dataset: {dataset}")
         print(f"Subset: {subset_name}")
         print(f"Model: {self.model}")
+        # Only show reasoning effort for reasoning models
+        model_lower = self.model.lower()
+        if model_lower.startswith(('o3', 'o4', 'o1')):
+            print(f"Reasoning effort: {self.reasoning_effort}")
         if self.use_tools:
             print(f"API: Responses (multi-turn, max {self.max_turns} turns)")
         else:
             print(f"API: Responses (single-shot)")
-        print(f"Tools enabled: {self.use_tools}")
+        print(f"Multi-turn enabled: {self.use_tools}")
         print(f"Total tasks attempted: {total_tasks}")
         print(f"Successful API calls: {successful_api_calls}/{total_tasks} ({summary['success_rate']:.1%})")
         if failed_tasks > 0:
             print(f"Failed API calls: {failed_tasks}/{total_tasks} ({failed_tasks/total_tasks:.1%}) ❌")
         print(f"Tasks solved correctly: {correct_tasks}/{total_tasks} ({summary['task_accuracy']:.1%})")
         print(f"Pixel accuracy: {correct_pixels}/{total_pixels} ({summary['pixel_accuracy']:.1%})")
-        print(f"Total tool calls made: {total_tool_calls}")
-        print(f"Average tool calls per task: {avg_tool_calls:.1f}")
+        print(f"Total turns used: {total_turns_used}")
+        print(f"Average turns per task: {avg_turns_used:.1f}")
         print(f"Total tokens used: {self.total_tokens:,}")
         print(f"Total cost: ${self.total_cost:.6f}")
         
@@ -952,8 +931,8 @@ def main():
                        help="Limit number of tasks to run")
     parser.add_argument("--max_tool_calls", type=int, default=64,
                        help="Maximum number of tool calls allowed for the model (default: 64, legacy parameter)")
-    parser.add_argument("--reasoning_effort", type=str, default="medium", choices=["low", "medium", "high"],
-                       help="Reasoning effort for the model (default: medium)")
+    parser.add_argument("--reasoning_effort", type=str, default="low", choices=["low", "medium", "high"],
+                       help="Reasoning effort for the model (default: low)")
     parser.add_argument("--max_workers", type=int, default=1,
                        help="Maximum number of parallel workers (default: 1)")
     parser.add_argument("--rate_limit_delay", type=float, default=0.0,

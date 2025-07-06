@@ -14,18 +14,20 @@ Objective: Define a test that is a representative measure of performance while a
 [x] When providing code, also provide a summary of the rationale behind what is being done. (not in the reasoning). [Test this out in a clean test script to go in a tests folder.]
 [x] Check whether the code sandbox on openai is ephemeral or not. Yes, with `auto` the same container is used and variables persist.
 
+Cleanups:
+  [x] Drop the MDL / compression calculation altogether from scripts here.
+  [x] Strip out "tools calls made" etc. as there are no tool calls. There are only turns used.
+  [ ] Automatically support non-reasoning or reasoning models (no flags required).
+  [ ] Swap to chat completions endpoint so as to allow for openai-style endpoint usage (enable other models, incl. reasoning).
+  [ ] Improve logging:
+    [ ] Manually inspect the prompt
+    [ ] in our logging / logs, it would be best to save not just the final responses, but the ones before thta too - so I can inspect what the code output is and what is being passed back in.
+    [ ] Run tests on low levels of reasoning effort.
+
 - MEDIUM:
-[ ] Bringing the sandbox to be local:
+[x] Bringing the sandbox to be local:
   [x] Just run the code locally each time, rather than use the remote code interpreter.
     - Print, after each tool call, the result in terms of pixel match average on all training examples AND number of training examples solved out of those present.
-  [x] Drop the MDL / compression calculation altogether from scripts here.
-  [ ] Strip out "tools calls made" etc. as there are no tool calls. There are only turns used.
-  [ ] Automatically support non-reasoning or reasoning models (no flags required).
-  [ ] Improve logging:
-    - Manually inspect the prompt
-    - in our logging / logs, it would be best to save not just the final responses, but the ones before thta too - so I can inspect what the code output is and what is being passed back in.
-    - Run tests on low levels of reasoning effort.
-    - Swap to chat completions endpoint so as to allow for openai-style endpoint usage (enable other models, incl. reasoning).
 
 [ ] Try inputting images of the problem as well as just the problem itself.
 
@@ -105,7 +107,7 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_
 #   --tools: Enable multi-turn execution with local code testing and training feedback
 #   --limit: Limit number of tasks to run
 #   --max_turns: Maximum number of turns for multi-turn execution (default: 3, only applies if --tools is set)
-#   --reasoning_effort: Reasoning effort for the model (low, medium, high; default: medium, only applies to o3/o4/o1 models)
+#   --reasoning_effort: Reasoning effort for the model (low, medium, high; default: low, only applies to o3/o4/o1 models)
 #   --max_workers: Number of parallel workers (default: 1, max: 30)
 #   --rate_limit_delay: Delay between API calls in seconds (default: 0.0)
 ```
@@ -237,13 +239,13 @@ Each individual task log includes:
 - Both scoring metrics (binary correctness and pixel accuracy)
 - Predicted vs actual output grids for comparison
 - Token usage breakdown and estimated costs
-- Tool usage statistics (when tools are enabled)
+- Turn usage statistics (when multi-turn is enabled)
 - Full API response for detailed analysis
 
 Summary reports aggregate across all tasks and include:
 - Overall task solve rate and pixel accuracy across the subset
 - Total costs and token usage for the entire run
-- Tool usage patterns and performance comparisons
+- Turn usage patterns and performance comparisons
 
 ## Log File Formats
 
@@ -253,13 +255,14 @@ Summary reports aggregate across all tasks and include:
 {
   "task_id": "6150a2bd",
   "model": "o4-mini", 
+  "reasoning_effort": "low",
   "use_tools": true,
   "api_type": "responses_api",
   "program": "def transform(grid):\n    return [row[::-1] for row in grid[::-1]]",
   "execution_error": "",
   "timed_out": false,
   "tokens_used": 1189,
-  "tool_calls_count": 1,
+  "turns_used": 2,
   "request_cost": 0.004146,
   "raw_response": { /* Full API response */ },
   "score": {
@@ -282,6 +285,7 @@ Summary reports aggregate across all tasks and include:
   "dataset": "arc-agi-1",
   "subset": "shortest_10", 
   "model": "o4-mini",
+  "reasoning_effort": "low",
   "use_tools": true,
   "api_type": "responses_api",
   "total_tasks": 10,
@@ -290,8 +294,8 @@ Summary reports aggregate across all tasks and include:
   "total_pixels": 90,
   "correct_pixels": 85,
   "pixel_accuracy": 0.944,
-  "total_tool_calls": 12,
-  "avg_tool_calls": 1.2,
+  "total_turns_used": 15,
+  "avg_turns_used": 1.5,
   "total_tokens": 35847,
   "total_cost": 0.196734,
   "results": [ /* Array of individual task results */ ]
@@ -338,12 +342,13 @@ SUMMARY
 Dataset: arc-agi-1
 Subset: shortest_10
 Model: o4-mini
-API: Responses (single-shot)
-Tools enabled: True
+Reasoning effort: medium
+API: Responses (multi-turn, max 3 turns)
+Multi-turn enabled: True
 Tasks solved correctly: 4/10 (40.0%)
 Pixel accuracy: 85/90 (94.4%)
-Total tool calls made: 12
-Average tool calls per task: 1.2
+Total turns used: 15
+Average turns per task: 1.5
 Total tokens used: 35,847
 Total cost: $0.196734
 ```
@@ -351,7 +356,7 @@ Total cost: $0.196734
 This example shows:
 - **40% solve rate**: 4 out of 10 tasks solved perfectly
 - **94.4% pixel accuracy**: Very close to correct solutions on average
-- **Tool usage**: Model used code interpreter 1.2 times per task on average
+- **Turn usage**: Model used an average of 1.5 conversation turns per task
 - **Cost tracking**: Detailed token usage and cost calculation for budget management
 
 ## Analyzing Results
@@ -360,10 +365,12 @@ This example shows:
 
 **Individual Task Logs:**
 - `task_id`: ARC task identifier
+- `model`: OpenAI model used (e.g., "o4-mini", "gpt-4o-mini")
+- `reasoning_effort`: Reasoning effort level for reasoning models ("low", "medium", "high")
 - `program`: Generated Python code 
 - `execution_error`: Any runtime errors (empty if successful)
 - `request_cost`: Cost for this specific task in USD
-- `tool_calls_count`: Number of code interpreter calls made
+- `turns_used`: Number of conversation turns used for this task
 - `score.correct`: Boolean - whether output exactly matches expected
 - `score.pixel_accuracy`: Fraction of pixels that match (0.0 to 1.0)
 - `predicted_output` vs `actual_output`: Compare model's solution to ground truth
@@ -438,11 +445,11 @@ Current pricing (as of 2025, $/1M tokens):
 - **computer-use-preview**: Input $3.00, Output $12.00
 - **codex-mini**: Input $1.50, Output $6.00
 
-## Important: Tool Behavior
+## Important: Multi-Turn Behavior
 
 We use **only the Responses API** with two modes:
 
-**With `--tools` enabled**:
+**With `--tools` enabled (Multi-turn)**:
 - **Multi-turn local execution** with training feedback (up to `--max_turns`, default 3)
 - Model writes code, we test it locally on test input immediately  
 - If incorrect, we run it on training examples and provide detailed feedback
@@ -450,13 +457,13 @@ We use **only the Responses API** with two modes:
 - Uses encrypted reasoning traces to maintain context between turns
 - More expensive but potentially more accurate through iteration
 
-**Without `--tools` (default)**:
+**Without `--tools` (default - Single-turn)**:
 - **Single-shot mode**: Model outputs final code as text in one API call
 - We extract and execute the code locally using subprocess
 - Model cannot see execution results or iterate
 - Less expensive but requires model to write correct code in one shot
 
-**Key Point**: In both cases, we execute the final code locally to score it. The difference is whether the model gets multiple turns with training feedback to improve its solution.
+**Key Point**: In both cases, we execute the final code locally to score it. The difference is whether the model gets multiple conversation turns with training feedback to improve its solution.
 
 ## File Structure
 
@@ -504,8 +511,8 @@ uv run python cleanup_logs.py
 
 ## Additional Notes
 
-- You can control the maximum number of tool calls the model can make per task using --max_tool_calls (default: 64). This is especially useful for limiting cost and runaway tool loops when --tools is enabled.
-- You can also set the reasoning effort for the model using --reasoning_effort (choices: low, medium, high; default: medium). This may affect the model's thoroughness and cost.
+- You can control the maximum number of turns using --max_turns (default: 3). This is especially useful for limiting cost and runaway conversations when --tools is enabled.
+- You can also set the reasoning effort for the model using --reasoning_effort (choices: low, medium, high; default: low). This may affect the model's thoroughness and cost.
 - **Parallelization**: Use `--max_workers` (1-30) to run tasks in parallel. Start with 5 workers and increase gradually while monitoring for rate limit errors. Use `--rate_limit_delay` to add delays between requests if needed.
 - **Cost Control**: Parallel execution accumulates costs faster but maintains the same per-task costs. Monitor total spending especially when using expensive models like o3 with many workers.
 - **Thread Safety**: All file I/O, progress tracking, and cost accumulation is thread-safe. Individual task logs use unique filenames with thread IDs to prevent conflicts.
