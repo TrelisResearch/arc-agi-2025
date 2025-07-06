@@ -131,13 +131,15 @@ class ARCTaskRunner:
     def create_prompt(self, task_data: Dict, is_first_turn: bool = True) -> str:
         """Create a prompt for the model to solve an ARC task"""
         if not is_first_turn:
-            # For subsequent turns, just return a simple retry instruction
+            # For subsequent turns, encourage partial solutions
             return """Please analyze the training feedback and modify your approach. Write an improved transform function that handles the failing cases.
+
+**Important**: Even if you cannot find a perfect rule, please provide your best attempt at a transformation that captures some patterns you observe. Partial solutions that demonstrate understanding are valuable for learning and iteration.
 
 Final answer:
 ```python
 def transform(grid):
-    # Your improved transformation logic here
+    # Your improved transformation logic here (even if partial)
     return transformed_grid
 ```"""
         
@@ -147,33 +149,37 @@ def transform(grid):
         prompt = f"""You are solving an ARC (Abstraction and Reasoning Corpus) task. 
 I will show you training examples with input and output grids, plus a test input grid. Your task is to:
 
-1. **Analyze the training examples** to discover the transformation pattern that maps each input grid to its corresponding output grid
-2. **Write a Python program** that implements this transformation pattern  
+1. **Analyze the training examples** to discover patterns that map input grids to output grids
+2. **Write a Python program** that implements your best understanding of the transformation  
 3. **DO NOT predict or generate the test output** - your job is only to write the transformation program
-4. **Ensure your program generalizes** - it will be applied to the test input grid after you provide it
+4. **Attempt a solution** - even if the pattern isn't completely clear, provide your best hypothesis
 
-The test input is shown for context so you understand what type of grid your program will eventually process. Focus on learning the pattern from training examples and writing robust code that can handle the test case.
+The test input is shown for context so you understand what type of grid your program will eventually process. Focus on learning patterns from training examples and writing code that captures your understanding.
 
 {task_str}
 
-Analyze the pattern in the training examples and write a Python function that performs this transformation.
+Analyze the patterns in the training examples and write a Python function that performs this transformation.
 
-Your function should work correctly on all the training examples shown above and be robust enough to handle the test input.
+**Approach Guidelines:**
+- Look for patterns in shapes, colors, positions, sizes, rotations, reflections, etc.
+- Even if you can't solve all training examples perfectly, implement what patterns you do observe
+- A partial solution that captures some aspects is better than returning the input unchanged
+- If the pattern is unclear, make your best educated guess based on what you can see
 
 Requirements:
 - The function takes a 2D list (grid) where grid[row][col] gives the value at that position
 - Values are integers from 0-9
 - Return a new grid (2D list) with the transformation applied
 - You can use numpy if needed - just add 'import numpy as np' at the start of your function
-- Your function MUST produce the correct output for all training examples
-- Your function must be robust enough to work on the test input grid
+- Aim to handle the training examples as well as possible, even if not perfectly
+- Your function should attempt some meaningful transformation based on the patterns you observe
 
 You MUST end your response with the following exact format:
 
 Final answer:
 ```python
 def transform(grid):
-    # Your transformation logic here
+    # Your transformation logic here (implement your best understanding)
     return transformed_grid
 ```
 """
@@ -267,8 +273,18 @@ def transform(grid):
         # Calculate overall accuracy
         overall_accuracy = correct_pixels / total_pixels if total_pixels > 0 else 0.0
         
-        # Format feedback for LLM
-        feedback = f"Training results: {solved_count}/{len(training_examples)} examples solved, {overall_accuracy:.1%} pixel accuracy\n\n"
+        # Format feedback for LLM with encouraging language
+        feedback = f"Training results: {solved_count}/{len(training_examples)} examples solved, {overall_accuracy:.1%} pixel accuracy"
+        
+        # Add encouraging context for partial solutions
+        if solved_count == 0 and overall_accuracy > 0:
+            feedback += " - Good partial progress! Your approach is capturing some patterns.\n\n"
+        elif solved_count == 0 and overall_accuracy == 0:
+            feedback += " - Keep experimenting! Try a different approach to the pattern.\n\n"
+        elif solved_count > 0:
+            feedback += " - Great progress! You're on the right track.\n\n"
+        else:
+            feedback += "\n\n"
         
         for result in results:
             status = "✓" if result['solved'] else "✗"
@@ -676,12 +692,16 @@ def transform(grid):
                         conversation_history.append(assistant_msg)
                     
                     # Add request for code
-                    code_request = """I need you to provide Python code to solve this task. You MUST end your response with the following exact format:
+                    code_request = """I need you to provide Python code to attempt this task. Even if you're not completely certain about the pattern, please provide your best hypothesis as a working transformation function.
+
+**Remember**: A partial solution that captures some observed patterns is much more valuable than refusing to attempt the task. Your goal is to implement whatever understanding you have, even if incomplete.
+
+You MUST end your response with the following exact format:
 
 Final answer:
 ```python
 def transform(grid):
-    # Your transformation logic here
+    # Your transformation logic here (implement your best understanding)
     return transformed_grid
 ```
 

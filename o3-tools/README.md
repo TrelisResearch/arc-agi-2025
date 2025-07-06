@@ -10,7 +10,7 @@ Objective: Define a test that is a representative measure of performance while a
 
 **Levers:**
 - FAST:
-...
+[x] Test out having the model attempt a partial transformation, if it cannot determine a complete rule that solves the problem.
 
 - MEDIUM:
 [ ] Try inputting images of the problem as well as just the problem itself.
