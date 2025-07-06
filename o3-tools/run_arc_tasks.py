@@ -17,6 +17,17 @@ from scoring import GridScorer, ProgramExecutor
 
 load_dotenv()
 
+def execute_with_timeout(func, *args, timeout=300, **kwargs):
+    """Execute a function with timeout using ThreadPoolExecutor"""
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(func, *args, **kwargs)
+        try:
+            return future.result(timeout=timeout)
+        except Exception as e:
+            # Cancel the future if it's still running
+            future.cancel()
+            raise e
+
 class ARCTaskRunner:
     """Run ARC tasks using the OpenAI Responses API (single-shot with tool execution)"""
     
@@ -581,8 +592,100 @@ def transform(grid):
             }
         }
     
+    def create_timeout_failure_result(self, task_id: str, total_cost: float, total_tokens: int, turns_completed: int, task_data: Dict, conversation_history: List = None, all_responses: List = None, turn_details: List = None) -> Dict:
+        """Create a timeout failure result - separate from regular task failures"""
+        # Get test output for pixel counting
+        actual_output = task_data['test'][0]['output']
+        total_pixels = len(actual_output) * len(actual_output[0]) if actual_output else 0
+        
+        # Convert all responses to JSON-serializable format
+        all_responses_dict = []
+        if all_responses:
+            for resp in all_responses:
+                try:
+                    output_items = []
+                    for item in resp.output:
+                        if item.type == 'message':
+                            content_texts = []
+                            if hasattr(item, 'content'):
+                                for content_item in item.content:
+                                    if hasattr(content_item, 'text'):
+                                        content_texts.append(content_item.text)
+                            output_items.append({'type': item.type, 'content': content_texts})
+                        else:
+                            output_items.append({'type': item.type, 'content': str(getattr(item, 'content', ''))})
+                    
+                    all_responses_dict.append({
+                        'id': resp.id,
+                        'model': resp.model,
+                        'usage': {
+                            'input_tokens': resp.usage.input_tokens,
+                            'output_tokens': resp.usage.output_tokens,
+                            'total_tokens': resp.usage.total_tokens
+                        },
+                        'output': output_items
+                    })
+                except Exception as e:
+                    all_responses_dict.append({'error': f'Failed to serialize response: {str(e)}'})
 
-    
+        # Serialize conversation history (handle response objects)
+        conversation_history_dict = []
+        if conversation_history:
+            for item in conversation_history:
+                try:
+                    if hasattr(item, 'type'):  # Response object from API
+                        if item.type == 'message':
+                            content_texts = []
+                            if hasattr(item, 'content'):
+                                for content_item in item.content:
+                                    if hasattr(content_item, 'text'):
+                                        content_texts.append(content_item.text)
+                            conversation_history_dict.append({
+                                'type': item.type,
+                                'role': getattr(item, 'role', 'assistant'),
+                                'content': content_texts
+                            })
+                        else:
+                            conversation_history_dict.append({
+                                'type': item.type,
+                                'content': str(getattr(item, 'content', ''))
+                            })
+                    else:  # Regular dict message
+                        conversation_history_dict.append(item)
+                except Exception as e:
+                    conversation_history_dict.append({'error': f'Failed to serialize conversation item: {str(e)}'})
+        
+        return {
+            'task_id': task_id,
+            'model': self.model,
+            'reasoning_effort': self.reasoning_effort if self.is_reasoning_model() else "N/A",
+            'api_type': 'responses_api_multiturn',
+            'program': '',
+            'execution_error': 'API timeout after retries',
+            'timed_out': True,
+            'tokens_used': total_tokens,
+            'request_cost': total_cost,
+            'turns_used': turns_completed,
+            'raw_response': None,
+            'score': {
+                'correct': False,
+                'pixel_accuracy': 0.0,
+                'total_pixels': total_pixels,
+                'correct_pixels': 0,
+                'error': 'API timeout after retries'
+            },
+            'actual_output': actual_output,
+            'api_success': False,  # This is a timeout failure, not a regular failure
+            'timeout_failure': True,  # NEW: Mark as timeout failure
+            # NEW: Complete multi-turn conversation data
+            'multiturn_data': {
+                'conversation_history': conversation_history_dict,
+                'all_responses': all_responses_dict,
+                'turn_details': turn_details or [],
+                'total_turns': turns_completed
+            }
+        }
+
     def run_task(self, task_id: str, task_data: Dict, total_tasks: int = 1) -> Dict:
         """Run a single ARC task using multi-turn local code execution"""
         if self.max_workers == 1:  # Only print for sequential execution
@@ -613,8 +716,37 @@ def transform(grid):
                 if self.max_workers == 1:  # Only print detailed logs for sequential execution
                     print(f"  🔄 Turn {turn + 1}/{self.max_turns}...")
                 
-                # Make API call
-                response = self.call_responses_api(conversation_history)
+                # Make API call with timeout and retry logic
+                response = None
+                api_call_successful = False
+                
+                for attempt in range(3):  # 3 attempts total (initial + 2 retries)
+                    try:
+                        if self.max_workers == 1 and attempt > 0:
+                            print(f"     🔄 Turn {turn + 1} attempt {attempt + 1}/3...")
+                        
+                        response = execute_with_timeout(self.call_responses_api, conversation_history, timeout=150)
+                        api_call_successful = True
+                        break  # Success!
+                        
+                    except Exception as e:
+                        if attempt < 2:  # Can still retry
+                            if self.max_workers == 1:
+                                print(f"     ⏰ Turn {turn + 1} attempt {attempt + 1} timed out, retrying in 2s...")
+                            time.sleep(2)  # Brief backoff
+                            continue
+                        else:  # All retries exhausted
+                            if self.max_workers == 1:
+                                print(f"     ❌ Turn {turn + 1} failed after 3 attempts: {str(e)}")
+                            # Return timeout failure result
+                            self._update_costs(total_cost, total_tokens)
+                            return self.create_timeout_failure_result(task_id, total_cost, total_tokens, turn, task_data, conversation_history, all_responses, turn_details)
+                
+                if not api_call_successful or response is None:
+                    # This shouldn't happen, but just in case
+                    self._update_costs(total_cost, total_tokens)
+                    return self.create_timeout_failure_result(task_id, total_cost, total_tokens, turn, task_data, conversation_history, all_responses, turn_details)
+                
                 all_responses.append(response)
                 
                 # Track costs
@@ -926,10 +1058,12 @@ Make sure to include the function definition inside a proper code block."""
         total_tasks = len(results)
         correct_tasks = sum(1 for r in results if r.get('score', {}).get('correct', False))
         
-        # Separate successful API calls from complete failures
+        # Separate successful API calls from complete failures and timeout failures
         api_successes = [r for r in results if r.get('api_success', True)]  # Default True for backward compatibility
-        api_failures = [r for r in results if not r.get('api_success', True)]
+        api_failures = [r for r in results if not r.get('api_success', True) and not r.get('timeout_failure', False)]
+        timeout_failures = [r for r in results if r.get('timeout_failure', False)]
         failed_tasks = len(api_failures)
+        timeout_tasks = len(timeout_failures)
         successful_api_calls = len(api_successes)
         
         total_pixels = sum(r.get('score', {}).get('total_pixels', 0) for r in results)
@@ -951,6 +1085,7 @@ Make sure to include the function definition inside a proper code block."""
             'total_tasks': total_tasks,
             'successful_api_calls': successful_api_calls,
             'failed_api_calls': failed_tasks,
+            'timeout_failed_tasks': timeout_tasks,
             'correct_tasks': correct_tasks,
             'task_accuracy': correct_tasks / total_tasks if total_tasks > 0 else 0.0,
             'success_rate': successful_api_calls / total_tasks if total_tasks > 0 else 0.0,
@@ -985,6 +1120,8 @@ Make sure to include the function definition inside a proper code block."""
         print(f"Successful API calls: {successful_api_calls}/{total_tasks} ({summary['success_rate']:.1%})")
         if failed_tasks > 0:
             print(f"Failed API calls: {failed_tasks}/{total_tasks} ({failed_tasks/total_tasks:.1%}) ❌")
+        if timeout_tasks > 0:
+            print(f"Timeout failures: {timeout_tasks}/{total_tasks} ({timeout_tasks/total_tasks:.1%}) ⏰")
         print(f"Tasks solved correctly: {correct_tasks}/{total_tasks} ({summary['task_accuracy']:.1%})")
         print(f"Pixel accuracy: {correct_pixels}/{total_pixels} ({summary['pixel_accuracy']:.1%})")
         print(f"Total turns used: {total_turns_used}")
@@ -999,6 +1136,13 @@ Make sure to include the function definition inside a proper code block."""
                 task_id = result.get('task_id', 'unknown')
                 error = result.get('error', 'Unknown error')
                 print(f"  - {task_id}: {error}")
+        
+        if timeout_tasks > 0:
+            print(f"\n⏰ TIMEOUT FAILURES ({timeout_tasks}):")
+            for result in timeout_failures:
+                task_id = result.get('task_id', 'unknown')
+                turns_completed = result.get('turns_used', 0)
+                print(f"  - {task_id}: API timeout after {turns_completed} turns and 3 retries")
         
         print(f"\nResults saved to: {filepath}")
 

@@ -2,6 +2,32 @@
 
 ---
 
+## 2025-01-06
+
+### Experiment 1: Optimized Prompts with Partial Solutions (8 Max Turns)
+- **Experiment:** Run o3 model with enhanced prompts that encourage partial transformation solutions instead of model refusal
+- **Model:** o3
+- **Reasoning effort:** Low
+- **Max turns:** 8 (increased from default 3)
+- **Prompt optimizations:** 
+  - Softened language to reduce model refusal
+  - Explicitly encourage partial solutions when complete rules aren't clear
+  - Added validation examples showing good vs bad implementations
+  - Enhanced training feedback with encouraging language for partial progress
+- **Purpose:** Test whether optimized prompts reduce model refusal and improve solution attempts, even for partial transformations
+- **Status:** Running - results to be shared
+
+### Notes:
+- **Problem addressed:** Previous experiments showed models refusing to attempt solutions or providing placeholder code like `return transformed_grid`
+- **Prompt changes made:**
+  - Modified initial prompt to emphasize "attempt a solution" vs "solve perfectly"
+  - Updated code request prompt to discourage refusal
+  - Enhanced training feedback to be more encouraging about partial progress
+- **Expected improvement:** Reduce template/placeholder responses, increase actual transformation attempts
+- **Results:** TBD
+
+---
+
 ## 2025-07-05
 
 ### Experiment 1: Multi-turn with 8 max turns

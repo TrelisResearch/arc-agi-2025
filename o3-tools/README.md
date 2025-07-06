@@ -55,6 +55,7 @@ For Kaggle / low compute competition:
 - Run ARC-AGI tasks with OpenAI models (currently using gpt-4o-mini or o4-mini)
 - Support for reasoning models (o3, o4, o1)
 - Multi-turn execution with training examples feedback
+- **Robust timeout handling** with automatic retries (300s timeout, 3 attempts per turn)
 - Comprehensive scoring including pixel accuracy and binary correctness
 - Budget tracking with token usage and cost estimation
 - Detailed logging of all runs for analysis
@@ -196,6 +197,94 @@ OpenAI has rate limits that vary by model and tier. Recommended settings:
 - **Maximum**: `--max_workers 30` (only if you have high rate limits)
 
 **Note**: Start conservative and increase workers/reduce delays if you don't hit rate limits.
+
+## Timeout Handling
+
+The tool includes robust timeout handling to prevent hanging on API calls that take too long:
+
+### Key Features
+
+- **300-second timeout** per API call (5 minutes)
+- **3 retry attempts** per turn with 2-second backoff between retries
+- **Separate timeout failure tracking** - doesn't count as regular task failures
+- **Complete conversation preservation** during retries
+- **Detailed timeout logging** with clear failure reasons
+
+### How It Works
+
+For each turn in a multi-turn conversation:
+
+1. **Initial attempt**: API call with 300-second timeout
+2. **Retry 1**: If timeout, wait 2 seconds and retry
+3. **Retry 2**: If timeout again, wait 2 seconds and final retry
+4. **Timeout failure**: If all 3 attempts fail, mark as timeout failure
+
+### Console Output Examples
+
+```bash
+# Normal execution
+Turn 1/8...
+  💰 Turn cost: $0.004146 (input: 1089, output: 4321)
+
+# Timeout with retries
+Turn 2/8...
+  🔄 Turn 2 attempt 1/3...
+  ⏰ Turn 2 attempt 1 timed out, retrying in 2s...
+  🔄 Turn 2 attempt 2/3...
+  ✅ Turn 2 successful on attempt 2
+
+# Complete timeout failure
+Turn 3/8...
+  🔄 Turn 3 attempt 1/3...
+  ⏰ Turn 3 attempt 1 timed out, retrying in 2s...
+  🔄 Turn 3 attempt 2/3...
+  ⏰ Turn 3 attempt 2 timed out, retrying in 2s...
+  🔄 Turn 3 attempt 3/3...
+  ❌ Turn 3 failed after 3 attempts: TimeoutError
+```
+
+### Summary Statistics
+
+Timeout failures are tracked separately from regular failures:
+
+```bash
+==================================================
+SUMMARY
+==================================================
+Total tasks attempted: 30
+Successful API calls: 27/30 (90.0%)
+Failed API calls: 1/30 (3.3%) ❌
+Timeout failures: 2/30 (6.7%) ⏰
+Tasks solved correctly: 8/30 (26.7%)
+```
+
+### Why 300 Seconds?
+
+The timeout is set to 300 seconds (5 minutes) because:
+- **Medium reasoning effort** can take 2-4 minutes for complex tasks
+- **High reasoning effort** can take 4-8 minutes for difficult tasks
+- **Buffer time** accounts for network latency and API processing
+- **Balance** between patience and preventing indefinite hangs
+
+### Log File Structure
+
+Timeout failures are logged with special metadata:
+
+```json
+{
+  "task_id": "example_task",
+  "api_success": false,
+  "timeout_failure": true,
+  "execution_error": "API timeout after retries",
+  "turns_used": 3,
+  "multiturn_data": {
+    "conversation_history": [...],
+    "all_responses": [...],
+    "turn_details": [...],
+    "total_turns": 3
+  }
+}
+```
 
 ## Scoring Metrics
 
