@@ -19,10 +19,10 @@ Cleanups:
   [x] Strip out "tools calls made" etc. as there are no tool calls. There are only turns used.
   [x] Automatically support non-reasoning or reasoning models (no flags required).
   [ ] Improve logging:
-    [ ] Manually inspect the prompt.
-    [ ] Inspect how wrong grids are passed back to the model (or failed runs of the code produced).
+    [x] Manually inspect the prompt.
+    [x] Inspect how wrong grids are passed back to the model (or failed runs of the code produced).
     [ ] in our logging / logs, it would be best to save not just the final responses, but the ones before thta too - so I can inspect what the code output is and what is being passed back in.
-    [ ] Run tests on low levels of reasoning effort.
+  [x] Run tests on low levels of reasoning effort.
   [ ] Swap to chat completions endpoint so as to allow for openai-style endpoint usage (enable other models, incl. reasoning). THIS IS NOT GOING TO SUPPORT OPENAI REASONING MODELS, WHICH DONT' DISCLOSE THE REASONING TRACE, AND SO YOU MUST USE THE RESPONSES API TO USE REASONING WITH OPENAI MODELS. OTHERS (CLAUDE, QWEN, GEMINI?, DEEPSEEK?) RESPOND WITH <think> TAGS.
 
 - MEDIUM:

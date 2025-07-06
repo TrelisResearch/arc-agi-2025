@@ -30,7 +30,7 @@ class ARCTaskRunner:
         self.client = OpenAI()
         self.task_loader = TaskLoader()
         self.scorer = GridScorer()
-        self.executor = ProgramExecutor(timeout=0.1)
+        self.executor = ProgramExecutor(timeout=0.5)
         
         # Create logs directory
         self.logs_dir = Path("logs")
