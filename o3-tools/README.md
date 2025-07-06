@@ -13,6 +13,10 @@ Objective: Define a test that is a representative measure of performance while a
 [x] Test out having the model attempt a partial transformation, if it cannot determine a complete rule that solves the problem.
 
 - MEDIUM:
+[ ] Refine prompting:
+  [ ] Examine the correct tasks for what happened. Examine also some wrong tasks.
+  [ ] Start with strict prompt, only then fall back to partial attempt.
+  [ ] Examine and handle overfitting cases.
 [ ] Try inputting images of the problem as well as just the problem itself.
 [ ] Build a priority list based on # (or percentage) of training grids solved. Ideally you have an id and converstaion history for each candidate incomplete program (so you can reuse LLM cache).
 

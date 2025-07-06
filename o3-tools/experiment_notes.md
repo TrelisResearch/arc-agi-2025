@@ -15,16 +15,36 @@
   - Added validation examples showing good vs bad implementations
   - Enhanced training feedback with encouraging language for partial progress
 - **Purpose:** Test whether optimized prompts reduce model refusal and improve solution attempts, even for partial transformations
-- **Status:** Running - results to be shared
+- **Status:** Completed
+
+### Results (Low Reasoning Effort):
+- **Dataset:** arc-agi-2/shortest_evaluation_30
+- **Tasks attempted:** 30/30 (100.0% completion)
+- **Tasks solved correctly:** 1/30 (3.3%) - task 1ae2feb7 solved perfectly [a different task than correct yesterday.]
+- **Pixel accuracy:** 200/5439 (3.7%)
+- **Average turns per task:** 7.8 (close to max 8 turns limit)
+- **Total tokens used:** 4,505,039
+- **Total cost:** $17.01
+- **Execution:** Parallel with 10 workers
+- **API stability:** 100% successful API calls, no timeout failures
 
 ### Notes:
 - **Problem addressed:** Previous experiments showed models refusing to attempt solutions or providing placeholder code like `return transformed_grid`
+- **Key difference:** **Softened prompt approach** - model is explicitly encouraged to give its best attempt at a partial program if it can't find a transformation that satisfies all training examples
 - **Prompt changes made:**
   - Modified initial prompt to emphasize "attempt a solution" vs "solve perfectly"
   - Updated code request prompt to discourage refusal
   - Enhanced training feedback to be more encouraging about partial progress
-- **Expected improvement:** Reduce template/placeholder responses, increase actual transformation attempts
-- **Results:** TBD
+  - Added language encouraging partial solutions when complete rules aren't clear
+- **Timeout observations:** 300-second timeout appears to cause medium reasoning effort to timeout on o3 model
+- **Performance:** Very low solve rate (3.3%) but high turn usage (7.8 avg) suggests model is engaging but struggling with actual solutions
+- **Cost efficiency:** ~$0.57 per task average, similar to previous experiments but with more turns
+- **Behavioral change:** Model no longer refuses tasks but attempts partial transformations - however, these attempts still have very low accuracy
+- **Next steps:** May need to refine prompting strategy - start with strict requirements, then fall back to partial attempts
+
+Other note: There is a case where all training examples are correct, but the test is wrong...
+
+
 
 ---
 
