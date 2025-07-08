@@ -18,6 +18,7 @@
 - **Status:** Completed
 
 ### Results (Low Reasoning Effort):
+WARNING: THESE TESTS ARE ON THE SHORTEST 30, NOT THE EVENLY DISTRIBUTED 30 FROM THE PAST DAYS OF TESTING!!!
 - **Dataset:** arc-agi-2/shortest_evaluation_30
 - **Tasks attempted:** 30/30 (100.0% completion)
 - **Tasks solved correctly:** 1/30 (3.3%) - task 1ae2feb7 solved perfectly [a different task than correct yesterday.]
@@ -41,6 +42,7 @@
 - **Cost efficiency:** ~$0.57 per task average, similar to previous experiments but with more turns
 - **Behavioral change:** Model no longer refuses tasks but attempts partial transformations - however, these attempts still have very low accuracy
 - **Next steps:** May need to refine prompting strategy - start with strict requirements, then fall back to partial attempts
+- Quite a few problems have got one or a few training examples correct, so there is some sign of progress.
 
 Other note: There is a case where all training examples are correct, but the test is wrong...
 
