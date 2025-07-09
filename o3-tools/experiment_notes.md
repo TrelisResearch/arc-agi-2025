@@ -24,8 +24,23 @@ Objective: Does iteration / feedback help?
 Test #4:
 Objective: See if adding image information helps the score further.
 - Tested o4-mini on a low level of reasoning on mit-medium arc-agi-1.
-- Results: 
+- Results (3 runs): 
   - o4-mini scores 9/19 (one timeout failure) with feedback, 7/19 without feedback.
+- Tested o4-mini on a low level of reasoning on mit-medium arc-agi-1.
+- Results (3 runs) with images: 
+  - 9/19 with feedback, 7/19 without feedback.
+  - 6/19 (feedback), 3/19 without feedback. With one api failure.
+  - 8/19 (feedback), 6/19 without feedback. With one api failure.
+  - Averages WITH IMAGES:
+    - 28% +/- 11% without feedback.
+    - 40% +/- 8% with feedback. (although I have never seen a case where feedback scores lower).
+- Results with no images:
+  - 7/20 with feedback, 4/20 without feedback.
+  - 6/20 with feedback, 3/20 without feedback.
+  - 9/20 with feedback, 4/20 without feedback.
+  - Averages WITHOUT IMAGES:
+    - 18% +/- 3% without feedback.
+    - 37% +/- 8% with feedback.
 
 ---
 

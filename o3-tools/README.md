@@ -19,8 +19,9 @@ Objective: Define a test that is a representative measure of performance while a
   [x] Adjust the soft prompt so that it encourages finding an improvement! check that. Sometimes there is no attempt to improve when some training grids pass. Perhaps try a prompt that encourages generalisation to the other training grids.
   [x] Review prompts for when a training example is solved (at least one, but not all).
   [x] Add a note that if all training examples are solved, then the program is overfitting.
-[ ] Try inputting images of the problem as well as just the problem itself.
+[x] Try inputting images of the problem as well as just the problem itself.
 [ ] Try sampling on improved examples. Potentially building a priority list.
+[ ] Get the model to also describe the input grid and the output grid with code (so, return three code blocks), and provide feedback on those too.
 [ ] Build a priority list based on # (or percentage) of training grids solved. Ideally you have an id and converstaion history for each candidate incomplete program (so you can reuse LLM cache).
 
 - SLOW:
@@ -112,6 +113,12 @@ uv run python run_arc_tasks.py --dataset arc-agi-2 --subset shortest_training_30
 # Run tasks in parallel with rate limiting to respect API limits
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_10 --max_workers 5 --rate_limit_delay 0.5
 
+# Run with images disabled for faster execution (text-only mode)
+uv run python run_arc_tasks.py --dataset arc-agi-2 --subset shortest_training_10 --disable_images
+
+# Run with debug images saved to disk for analysis
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_1 --debug_images
+
 # Available options:
 #   --dataset: arc-agi-1 or arc-agi-2
 #   --subset: shortest_training_1, shortest_training_10, shortest_training_30, shortest_evaluation_1, shortest_evaluation_10, shortest_evaluation_30, etc.
@@ -121,6 +128,8 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_
 #   --reasoning_effort: Reasoning effort for the model (low, medium, high; default: low, only applies to o3/o4/o1 models)
 #   --max_workers: Number of parallel workers (default: 1, max: 30)
 #   --rate_limit_delay: Delay between API calls in seconds (default: 0.0)
+#   --disable_images: Disable visual image generation (text-only mode)
+#   --debug_images: Save debug images to debug_images/ directory
 ```
 
 ### Available Subsets
@@ -231,6 +240,7 @@ When using vision-capable models (o3, o4, gpt-4o variants), the script automatic
 ### Features
 
 - **Automatic detection**: Vision capabilities are auto-detected based on model name
+- **Manual control**: Use `--disable_images` for text-only mode or `--debug_images` to save images to disk
 - **Training images**: Visual representation of all training examples with input→output transformations
 - **Feedback images**: Side-by-side comparison of expected vs predicted outputs after each turn
 - **ARC color palette**: Proper 0-9 color mapping matching official ARC visualization
@@ -264,6 +274,7 @@ When using vision-capable models (o3, o4, gpt-4o variants), the script automatic
 
 ### Usage
 
+**Automatic Image Generation (Default):**
 Debug images are automatically generated when using vision models:
 
 ```bash
@@ -274,6 +285,20 @@ uv run python run_arc_tasks.py --model o4-mini
 uv run python run_arc_tasks.py --model o3-mini
 ```
 
+**Manual Control:**
+You can explicitly control image generation:
+
+```bash
+# Force text-only mode even for vision models (faster execution)
+uv run python run_arc_tasks.py --model o4-mini --disable_images
+
+# Save debug images to disk for analysis (requires vision model)
+uv run python run_arc_tasks.py --model o3 --debug_images
+
+# Combine: text-only mode with no debug images
+uv run python run_arc_tasks.py --model gpt-4o --disable_images
+```
+
 **Debug images are saved to:**
 ```
 o3-tools/debug_images/
@@ -281,6 +306,22 @@ o3-tools/debug_images/
 ├── 20250109_143035_abc123_turn2_feedback.png
 └── 20250109_143048_abc123_turn3_feedback.png
 ```
+
+### When to Use Each Mode
+
+**Default (Auto Images)**: Best for most use cases
+- Automatically uses images with vision models for better performance
+- No extra disk usage (images sent to API only)
+
+**Text-Only (`--disable_images`)**: Best for speed and cost optimization
+- Faster execution (no image generation)
+- Lower token usage (text-only prompts)
+- Useful for quick experiments or budget-conscious runs
+
+**Debug Images (`--debug_images`)**: Best for analysis and debugging
+- Saves visual representations to disk for manual inspection
+- Helps understand model behavior and pattern recognition
+- Useful for research and detailed performance analysis
 
 ### Example Debug Images
 

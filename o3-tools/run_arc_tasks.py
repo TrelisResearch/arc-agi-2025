@@ -315,13 +315,14 @@ def execute_with_timeout(func, *args, timeout=300, **kwargs):
 class ARCTaskRunner:
     """Run ARC tasks using the OpenAI Responses API (single-shot with tool execution)"""
     
-    def __init__(self, model: str = "gpt-4.1-nano", reasoning_effort: str = "low", max_workers: int = 1, rate_limit_delay: float = 0.0, max_turns: int = 3, debug_images: bool = False):
+    def __init__(self, model: str = "gpt-4.1-nano", reasoning_effort: str = "low", max_workers: int = 1, rate_limit_delay: float = 0.0, max_turns: int = 3, debug_images: bool = False, enable_images: bool = True):
         self.model = model
         self.reasoning_effort = reasoning_effort
         self.max_workers = max_workers
         self.rate_limit_delay = rate_limit_delay
         self.max_turns = max_turns
         self.debug_images = debug_images
+        self.enable_images = enable_images
         self.api_key = os.getenv('OPENAI_API_KEY')
         self.client = OpenAI()
         self.task_loader = TaskLoader()
@@ -329,14 +330,16 @@ class ARCTaskRunner:
         self.executor = ProgramExecutor(timeout=0.5)
         
         # Initialize visual capabilities
-        self.use_visuals = PIL_AVAILABLE and self.is_vision_model()
+        self.use_visuals = self.enable_images and PIL_AVAILABLE and self.is_vision_model()
         if self.use_visuals:
             self.visualizer = ARCGridVisualizer(debug_save=self.debug_images)
             debug_msg = " with debug image saving" if self.debug_images else ""
             print(f"🖼️  Visual mode enabled for {self.model} (PIL available: {PIL_AVAILABLE}){debug_msg}")
         else:
             self.visualizer = None
-            if not PIL_AVAILABLE:
+            if not self.enable_images:
+                print(f"📝 Text-only mode for {self.model} (images disabled by user)")
+            elif not PIL_AVAILABLE:
                 print("⚠️  PIL not available - install pillow for visual features")
             elif not self.is_vision_model():
                 print(f"📝 Text-only mode for {self.model} (no vision support)")
@@ -1539,6 +1542,10 @@ def main():
                        help="Maximum number of turns for multi-turn execution (default: 3)")
     parser.add_argument("--debug_images", action="store_true",
                        help="Save debug images to debug_images/ directory")
+    parser.add_argument("--enable_images", action="store_true", default=True,
+                       help="Enable visual image generation for vision models (default: True)")
+    parser.add_argument("--disable_images", action="store_true",
+                       help="Disable visual image generation (text-only mode)")
     
     args = parser.parse_args()
     
@@ -1552,8 +1559,11 @@ def main():
     if args.rate_limit_delay < 0:
         parser.error("--rate_limit_delay cannot be negative")
     
+    # Handle image enable/disable flags
+    enable_images = args.enable_images and not args.disable_images
+    
     # Create runner and run tasks
-    runner = ARCTaskRunner(model=args.model, reasoning_effort=args.reasoning_effort, max_workers=args.max_workers, rate_limit_delay=args.rate_limit_delay, max_turns=args.max_turns, debug_images=args.debug_images)
+    runner = ARCTaskRunner(model=args.model, reasoning_effort=args.reasoning_effort, max_workers=args.max_workers, rate_limit_delay=args.rate_limit_delay, max_turns=args.max_turns, debug_images=args.debug_images, enable_images=enable_images)
     runner.run_subset(args.subset, args.dataset, args.limit)
 
 
