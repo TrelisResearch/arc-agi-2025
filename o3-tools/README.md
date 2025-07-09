@@ -8,31 +8,19 @@ A tool for testing OpenAI o3/o4 models on ARC-AGI tasks with and without code in
 [Part 2: Part 2: Running code locally](https://share.descript.com/view/V9EjCb9cMZB)
 [Part 1: Running o3 with remote code interpreter tools](https://share.descript.com/view/RmRclePaxMP)
 
-**Todo**
-[x] Reorganize data so that training and evaluation problems are split, because they are so different in terms of difficulty.
-
 **Measuring Performance:**
-Objective: Define a test that is a representative measure of performance while also being fast to run.
+Objective: Define a test that is a representative measure of performance while also being fast to run. Currently using o4-mini on arc-agi-1 mit-medium. Will graduate to hard once we score 15+/20 consistently.
 
-**Levers:**
+**Levers/Tasks:**
 - FAST:
-[x] Test out having the model attempt a partial transformation, if it cannot determine a complete rule that solves the problem.
-[x] Run on ARC AGI 1 Eval set. MIT splits. Starting with Easy, then Medium, then Hard, then Expert (if needed). Answers the question of whether refinement helps.
+...
 
 - MEDIUM:
-[x] Refine prompting:
-  [x] Examine the correct tasks for what happened. Examine also some wrong tasks.
-  [x] Adjust the soft prompt so that it encourages finding an improvement! check that. Sometimes there is no attempt to improve when some training grids pass. Perhaps try a prompt that encourages generalisation to the other training grids.
-  [x] Review prompts for when a training example is solved (at least one, but not all).
-  [x] Add a note that if all training examples are solved, then the program is overfitting.
-[x] Try inputting images of the problem as well as just the problem itself.
-[ ] Try sampling on improved examples. Potentially building a priority list.
+[ ] Try sampling on improved examples. Potentially building a priority list. Build a priority list based on # (or percentage) of training grids solved. Ideally you have an id and converstaion history for each candidate incomplete program (so you can reuse LLM cache).
 [ ] Get the model to also describe the input grid and the output grid with code (so, return three code blocks), and provide feedback on those too.
-[ ] Build a priority list based on # (or percentage) of training grids solved. Ideally you have an id and converstaion history for each candidate incomplete program (so you can reuse LLM cache).
 
 - SLOW:
-[ ] Add pixel accuracy as a priority list metric (e.g. metric = f(pixel accuracy, training problems solved)).
-    - Add f(..., gzip) as a metric.
+...
 
 Other ideas:
 [ ] Put in simpler images (particularly relevant when we fine-tune because the model will know the format to expect).
@@ -54,6 +42,14 @@ Cleanups:
   [x] Run tests on low levels of reasoning effort.
 
 Completed:
+[x] Refine prompting:
+  [x] Examine the correct tasks for what happened. Examine also some wrong tasks.
+  [x] Adjust the soft prompt so that it encourages finding an improvement! check that. Sometimes there is no attempt to improve when some training grids pass. Perhaps try a prompt that encourages generalisation to the other training grids.
+  [x] Review prompts for when a training example is solved (at least one, but not all).
+  [x] Add a note that if all training examples are solved, then the program is overfitting.
+[x] Try inputting images of the problem as well as just the problem itself.
+[x] Test out having the model attempt a partial transformation, if it cannot determine a complete rule that solves the problem.
+[x] Run on ARC AGI 1 Eval set. MIT splits. Starting with Easy, then Medium, then Hard, then Expert (if needed). Answers the question of whether refinement helps.
 [x] Bringing the sandbox to be local:
   [x] Just run the code locally each time, rather than use the remote code interpreter.
     - Print, after each tool call, the result in terms of pixel match average on all training examples AND number of training examples solved out of those present.
