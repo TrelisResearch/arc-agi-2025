@@ -167,6 +167,7 @@ I will show you training examples with input and output grids, plus a test input
 2. **Write a Python program** that implements your best understanding of the transformation  
 3. **DO NOT predict or generate the test output** - your job is only to write the transformation program
 4. **Attempt a solution** - even if the pattern isn't completely clear, provide your best hypothesis
+5. **Do not repeat the same transformation** - if you have already tried a transformation, do not repeat it.
 
 The test input is shown for context so you understand what type of grid your program will eventually process. Focus on learning patterns from training examples and writing code that captures your understanding.
 

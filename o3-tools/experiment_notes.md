@@ -12,7 +12,11 @@ Test #1:
 
 Test #2:
 Objective: To try to get a better signal to noise ratio on o3, by using the arc agi 1 splits.
-- Run on mit-medium: 
+- Run on mit-medium: Getting roughly 10-15/20 correct, so now we have perhaps higher signal to noise?
+
+Test #3:
+Objective: Does iteration / feedback help?
+- Based on Test #2, we go on mit-medium arc-agi-1 from x/20 up to y/20 with o4-mini when going from single turn to more than one turn (max of eight).
 
 
 

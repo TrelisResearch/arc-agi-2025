@@ -32,6 +32,10 @@ class TaskEvolutionVisualizer:
     def __init__(self):
         self.task_loader = TaskLoader()
         self.executor = ProgramExecutor(timeout=2.0)
+        
+        # Create plots directory
+        self.plots_dir = Path("plots")
+        self.plots_dir.mkdir(exist_ok=True)
     
     def load_log_file(self, log_path: str) -> Dict:
         """Load and parse a log file"""
@@ -71,13 +75,13 @@ class TaskEvolutionVisualizer:
         except:
             return None
     
-    def plot_grid(self, ax, grid: List[List[int]], title: str):
+    def plot_grid(self, ax, grid: List[List[int]], title: str, title_color: str = 'black'):
         """Plot a single grid with ARC colors"""
         if grid is None:
             ax.text(0.5, 0.5, 'No Output\n(Program Failed)', 
                    ha='center', va='center', transform=ax.transAxes,
                    fontsize=12, color='red')
-            ax.set_title(title, fontweight='bold')
+            ax.set_title(title, fontweight='bold', color=title_color)
             ax.set_xticks([])
             ax.set_yticks([])
             return
@@ -98,7 +102,7 @@ class TaskEvolutionVisualizer:
             ax.axvline(j - 0.5, color='white', linewidth=1)
         
         # Set title and remove ticks
-        ax.set_title(title, fontweight='bold')
+        ax.set_title(title, fontweight='bold', color=title_color)
         ax.set_xticks([])
         ax.set_yticks([])
         
@@ -133,19 +137,108 @@ class TaskEvolutionVisualizer:
         accuracy = correct_pixels / total_pixels if total_pixels > 0 else 0.0
         return accuracy, correct_pixels, total_pixels
     
+    def create_turn_visualization(self, turn_number: int, program: str, task_data: Dict, 
+                                task_id: str, model: str, log_stem: str):
+        """Create a visualization for a single turn"""
+        training_examples = task_data['train']
+        test_input = task_data['test'][0]['input']
+        test_output = task_data['test'][0]['output']
+        
+        n_training = len(training_examples)
+        n_cols = 3  # Input, Expected Output, Predicted Output
+        n_rows = n_training + 1  # Training examples + test example
+        
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(12, 4*n_rows))
+        if n_rows == 1:
+            axes = axes.reshape(1, -1)
+        
+        # Training examples
+        train_solved = 0
+        train_total_accuracy = 0.0
+        
+        for i, example in enumerate(training_examples):
+            # Input
+            self.plot_grid(axes[i, 0], example['input'], f'Train {i+1} Input')
+            
+            # Expected output
+            self.plot_grid(axes[i, 1], example['output'], f'Train {i+1} Expected')
+            
+            # Predicted output
+            predicted = self.execute_program_on_test(program, example['input'])
+            accuracy, correct_px, total_px = self.calculate_accuracy(predicted, example['output'])
+            train_total_accuracy += accuracy
+            
+            if accuracy == 1.0:
+                train_solved += 1
+                title_color = 'green'
+                title = f'Train {i+1} Predicted\n✅ SOLVED'
+            else:
+                title_color = 'red'
+                title = f'Train {i+1} Predicted\n❌ {accuracy:.1%} ({correct_px}/{total_px})'
+                
+            self.plot_grid(axes[i, 2], predicted, title, title_color)
+        
+        # Test example
+        test_row = n_training
+        
+        # Test input
+        self.plot_grid(axes[test_row, 0], test_input, 'Test Input')
+        
+        # Test expected output
+        self.plot_grid(axes[test_row, 1], test_output, 'Test Expected')
+        
+        # Test predicted output
+        test_predicted = self.execute_program_on_test(program, test_input)
+        test_accuracy, test_correct_px, test_total_px = self.calculate_accuracy(test_predicted, test_output)
+        
+        if test_accuracy == 1.0:
+            test_title_color = 'green'
+            test_title = f'Test Predicted\n✅ SOLVED'
+        else:
+            test_title_color = 'red'
+            test_title = f'Test Predicted\n❌ {test_accuracy:.1%} ({test_correct_px}/{test_total_px})'
+            
+        self.plot_grid(axes[test_row, 2], test_predicted, test_title, test_title_color)
+        
+        # Calculate overall training accuracy
+        avg_train_accuracy = train_total_accuracy / n_training if n_training > 0 else 0.0
+        
+        # Add title
+        fig.suptitle(f'Task {task_id} - Turn {turn_number}\n'
+                    f'Model: {model}\n'
+                    f'Training: {train_solved}/{n_training} solved ({avg_train_accuracy:.1%} avg) | '
+                    f'Test: {test_accuracy:.1%}',
+                    fontsize=16, fontweight='bold')
+        
+        plt.tight_layout()
+        
+        # Save the plot in plots directory
+        output_path = self.plots_dir / f"turn_{turn_number}_{task_id}_{log_stem}.png"
+        plt.savefig(output_path, dpi=150, bbox_inches='tight')
+        plt.close()  # Close to free memory
+        
+        return {
+            'turn_number': turn_number,
+            'train_solved': train_solved,
+            'train_total': n_training,
+            'train_avg_accuracy': avg_train_accuracy,
+            'test_accuracy': test_accuracy,
+            'output_path': str(output_path)
+        }
+    
     def visualize_evolution(self, log_path: str, dataset: str = "arc-agi-1"):
-        """Create visualization of task evolution across turns"""
+        """Create individual visualization for each turn"""
         # Load log file
         log_data = self.load_log_file(log_path)
         task_id = log_data.get('task_id', 'unknown')
+        model = log_data.get('model', 'unknown')
+        log_stem = Path(log_path).stem
         
         print(f"Visualizing task evolution for: {task_id}")
         
         # Get ground truth data
         try:
             task_data = self.get_ground_truth(task_id, dataset)
-            test_input = task_data['test'][0]['input']
-            ground_truth = task_data['test'][0]['output']
         except Exception as e:
             print(f"Error loading ground truth: {e}")
             return
@@ -169,80 +262,42 @@ class TaskEvolutionVisualizer:
             return
         
         print(f"Found {len(valid_turns)} turns with valid programs")
+        print(f"Creating individual visualizations in {self.plots_dir}/...")
         
-        # Execute programs and collect results
-        turn_results = []
+        # Create visualization for each turn
+        results = []
         for turn in valid_turns:
+            turn_number = turn['turn_number']
             program = turn['program']
-            predicted = self.execute_program_on_test(program, test_input)
-            accuracy, correct_pixels, total_pixels = self.calculate_accuracy(predicted, ground_truth)
             
-            turn_results.append({
-                'turn_number': turn['turn_number'],
-                'predicted': predicted,
-                'accuracy': accuracy,
-                'correct_pixels': correct_pixels,
-                'total_pixels': total_pixels,
-                'program': program[:100] + "..." if len(program) > 100 else program
-            })
-        
-        # Create visualization
-        n_turns = len(turn_results)
-        n_cols = min(4, n_turns + 1)  # +1 for ground truth, max 4 columns
-        n_rows = (n_turns + n_cols) // n_cols
-        
-        fig, axes = plt.subplots(n_rows, n_cols, figsize=(4*n_cols, 4*n_rows))
-        if n_rows == 1:
-            axes = axes.reshape(1, -1)
-        
-        # Plot ground truth first
-        self.plot_grid(axes[0, 0], ground_truth, "Ground Truth\n(Target Output)")
-        
-        # Plot predictions for each turn
-        for i, result in enumerate(turn_results):
-            row = (i + 1) // n_cols
-            col = (i + 1) % n_cols
-            
-            turn_num = result['turn_number']
-            accuracy = result['accuracy']
-            correct_px = result['correct_pixels']
-            total_px = result['total_pixels']
-            
-            title = f"Turn {turn_num}\n{accuracy:.1%} accuracy ({correct_px}/{total_px})"
-            self.plot_grid(axes[row, col], result['predicted'], title)
-        
-        # Hide unused subplots
-        for i in range(n_turns + 1, n_rows * n_cols):
-            row = i // n_cols
-            col = i % n_cols
-            axes[row, col].set_visible(False)
-        
-        # Add overall title
-        final_accuracy = turn_results[-1]['accuracy'] if turn_results else 0.0
-        final_turn = turn_results[-1]['turn_number'] if turn_results else 0
-        model = log_data.get('model', 'unknown')
-        
-        fig.suptitle(f'Task Evolution: {task_id}\n'
-                    f'Model: {model} | Final: Turn {final_turn} ({final_accuracy:.1%} accuracy)',
-                    fontsize=16, fontweight='bold')
-        
-        plt.tight_layout()
-        
-        # Save the plot
-        output_path = f"task_evolution_{task_id}_{Path(log_path).stem}.png"
-        plt.savefig(output_path, dpi=150, bbox_inches='tight')
-        print(f"Visualization saved to: {output_path}")
+            print(f"  Creating visualization for Turn {turn_number}...")
+            result = self.create_turn_visualization(
+                turn_number, program, task_data, task_id, model, log_stem
+            )
+            results.append(result)
+            print(f"    Saved: {result['output_path']}")
         
         # Show summary
         print("\nEvolution Summary:")
-        print("-" * 50)
-        for result in turn_results:
-            turn_num = result['turn_number']
-            accuracy = result['accuracy']
-            status = "✅ SOLVED" if accuracy == 1.0 else f"❌ {accuracy:.1%}"
-            print(f"Turn {turn_num}: {status}")
+        print("-" * 70)
+        print(f"{'Turn':<6} {'Test Acc':<10} {'Train Solved':<12} {'Train Avg Acc':<12} {'File':<20}")
+        print("-" * 70)
         
-        plt.show()
+        for result in results:
+            turn_num = result['turn_number']
+            test_acc = result['test_accuracy']
+            train_solved = result['train_solved']
+            train_total = result['train_total']
+            train_avg_acc = result['train_avg_accuracy']
+            file_name = Path(result['output_path']).name
+            
+            test_status = "✅" if test_acc == 1.0 else f"{test_acc:.1%}"
+            train_status = f"{train_solved}/{train_total}"
+            
+            print(f"{turn_num:<6} {test_status:<10} {train_status:<12} {train_avg_acc:.1%}        {file_name}")
+        
+        print(f"\nCreated {len(results)} turn visualizations for task {task_id}")
+        print(f"All plots saved in: {self.plots_dir}/")
 
 def main():
     parser = argparse.ArgumentParser(description="Visualize ARC task evolution across turns")
