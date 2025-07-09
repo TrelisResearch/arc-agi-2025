@@ -28,6 +28,8 @@ Objective: Define a test that is a representative measure of performance while a
     - Add f(..., gzip) as a metric.
 
 Other ideas:
+[ ] Put in simpler images (particularly relevant when we fine-tune because the model will know the format to expect).
+[ ] Add guidance around output grid sizes, if wrong.
 [ ] Start with strict prompt, only then fall back to partial attempt. DELAY.
 [ ] Swap to chat completions endpoint so as to allow for openai-style endpoint usage (enable other models, incl. reasoning). THIS IS NOT GOING TO SUPPORT OPENAI REASONING MODELS, WHICH DONT' DISCLOSE THE REASONING TRACE, AND SO YOU MUST USE THE RESPONSES API TO USE REASONING WITH OPENAI MODELS. OTHERS (CLAUDE, QWEN, GEMINI?, DEEPSEEK?) RESPOND WITH <think> TAGS.
 [ ] Use a code interpreter tool rather than running code from an extract code block.

@@ -6,16 +6,300 @@ import argparse
 import datetime
 import time
 import threading
+import base64
+import io
 from pathlib import Path
 from typing import Dict, List, Optional
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from openai import OpenAI
 
+try:
+    from PIL import Image, ImageDraw, ImageFont
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+
 from task_loader import TaskLoader
 from scoring import GridScorer, ProgramExecutor
 
 load_dotenv()
+
+class ARCGridVisualizer:
+    """Create visual representations of ARC grids for use with vision models"""
+    
+    def __init__(self, pixel_size=20, grid_spacing=5, section_spacing=30, debug_save=False):
+        self.pixel_size = pixel_size
+        self.grid_spacing = grid_spacing
+        self.section_spacing = section_spacing
+        self.debug_save = debug_save
+        
+        # Create debug directory if debug mode is enabled
+        if self.debug_save:
+            self.debug_dir = Path("debug_images")
+            self.debug_dir.mkdir(exist_ok=True)
+        
+        # ARC color palette
+        self.colors = {
+            0: (0, 0, 0),         # Black
+            1: (0, 116, 217),     # Blue  
+            2: (255, 65, 54),     # Red
+            3: (46, 204, 64),     # Green
+            4: (255, 220, 0),     # Yellow
+            5: (170, 170, 170),   # Gray
+            6: (240, 18, 190),    # Magenta
+            7: (255, 133, 27),    # Orange
+            8: (127, 219, 255),   # Sky Blue
+            9: (135, 12, 37)      # Dark Red
+        }
+    
+    def grid_to_image(self, grid):
+        """Convert a single grid to PIL Image"""
+        if not grid or not grid[0]:
+            return Image.new('RGB', (20, 20), 'white')
+            
+        height, width = len(grid), len(grid[0])
+        img_width = width * self.pixel_size
+        img_height = height * self.pixel_size
+        
+        img = Image.new('RGB', (img_width, img_height), 'white')
+        draw = ImageDraw.Draw(img)
+        
+        for row in range(height):
+            for col in range(width):
+                value = grid[row][col]
+                color = self.colors.get(value, (128, 128, 128))
+                
+                x1 = col * self.pixel_size
+                y1 = row * self.pixel_size
+                x2 = x1 + self.pixel_size
+                y2 = y1 + self.pixel_size
+                
+                draw.rectangle([x1, y1, x2, y2], fill=color)
+                draw.rectangle([x1, y1, x2, y2], outline=(80, 80, 80), width=1)
+        
+        return img
+    
+    def add_label(self, img, text, position='top'):
+        """Add a text label to an image"""
+        label_height = 25
+        if position == 'top':
+            new_img = Image.new('RGB', (img.width, img.height + label_height), 'white')
+            new_img.paste(img, (0, label_height))
+            text_y = 12
+        else:  # bottom
+            new_img = Image.new('RGB', (img.width, img.height + label_height), 'white')
+            new_img.paste(img, (0, 0))
+            text_y = img.height + 12
+        
+        draw = ImageDraw.Draw(new_img)
+        try:
+            font = ImageFont.truetype("/System/Library/Fonts/Arial.ttf", 14)
+        except:
+            font = ImageFont.load_default()
+        
+        # Center the text
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_x = (new_img.width - text_width) // 2
+        
+        draw.text((text_x, text_y), text, fill='black', font=font)
+        return new_img
+    
+    def create_training_examples_image(self, task_data, task_id=None, turn=None):
+        """Create image showing all training examples with input->output pairs"""
+        train_examples = task_data['train']
+        example_pairs = []
+        
+        for i, example in enumerate(train_examples):
+            input_grid = example['input']
+            output_grid = example['output']
+            
+            input_img = self.grid_to_image(input_grid)
+            output_img = self.grid_to_image(output_grid)
+            
+            # Add labels
+            input_img = self.add_label(input_img, f"Input {i+1}")
+            output_img = self.add_label(output_img, f"Output {i+1}")
+            
+            # Create arrow
+            arrow_width = 50
+            arrow_height = max(input_img.height, output_img.height)
+            arrow_img = Image.new('RGB', (arrow_width, arrow_height), 'white')
+            draw = ImageDraw.Draw(arrow_img)
+            
+            mid_y = arrow_height // 2
+            draw.line([(15, mid_y), (35, mid_y)], fill='black', width=3)
+            draw.polygon([(30, mid_y-6), (35, mid_y), (30, mid_y+6)], fill='black')
+            
+            # Combine into pair
+            pair_width = input_img.width + arrow_width + output_img.width + 2 * self.grid_spacing
+            pair_height = max(input_img.height, output_img.height)
+            pair_img = Image.new('RGB', (pair_width, pair_height), 'white')
+            
+            x_offset = 0
+            pair_img.paste(input_img, (x_offset, 0))
+            x_offset += input_img.width + self.grid_spacing
+            pair_img.paste(arrow_img, (x_offset, 0))
+            x_offset += arrow_width + self.grid_spacing  
+            pair_img.paste(output_img, (x_offset, 0))
+            
+            example_pairs.append(pair_img)
+        
+        # Test input section
+        test_input = task_data['test'][0]['input']
+        test_img = self.grid_to_image(test_input)
+        test_img = self.add_label(test_img, "Test Input")
+        
+        # Layout everything vertically with section headers
+        max_width = max([pair.width for pair in example_pairs] + [test_img.width])
+        
+        # Calculate total height
+        total_height = 40  # Training section header
+        for pair in example_pairs:
+            total_height += pair.height + self.section_spacing
+        total_height += 40  # Test section header
+        total_height += test_img.height
+        
+        # Create final image
+        final_img = Image.new('RGB', (max_width + 40, total_height), 'white')
+        draw = ImageDraw.Draw(final_img)
+        
+        try:
+            title_font = ImageFont.truetype("/System/Library/Fonts/Arial.ttf", 18)
+        except:
+            title_font = ImageFont.load_default()
+        
+        y_offset = 10
+        
+        # Training section
+        draw.text((20, y_offset), "TRAINING EXAMPLES:", fill='black', font=title_font)
+        y_offset += 40
+        
+        for pair in example_pairs:
+            x_center = (final_img.width - pair.width) // 2
+            final_img.paste(pair, (x_center, y_offset))
+            y_offset += pair.height + self.section_spacing
+        
+        # Test section
+        draw.text((20, y_offset), "TEST INPUT:", fill='black', font=title_font)
+        y_offset += 40
+        
+        x_center = (final_img.width - test_img.width) // 2
+        final_img.paste(test_img, (x_center, y_offset))
+        
+        # Debug: Save image if debug mode is enabled
+        if self.debug_save and task_id:
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            turn_info = f"_turn{turn}" if turn is not None else ""
+            filename = f"{timestamp}_{task_id}{turn_info}_training.png"
+            debug_path = self.debug_dir / filename
+            final_img.save(debug_path)
+            print(f"🐛 Debug: Saved training image to {debug_path}")
+        
+        return final_img
+    
+    def create_feedback_image(self, training_examples, predicted_outputs, training_results, task_id=None, turn=None):
+        """Create visual feedback showing expected vs predicted outputs"""
+        feedback_rows = []
+        
+        for i, (example, predicted, result) in enumerate(zip(training_examples, predicted_outputs, training_results)):
+            expected_grid = example['output']
+            predicted_grid = predicted
+            
+            expected_img = self.grid_to_image(expected_grid)
+            predicted_img = self.grid_to_image(predicted_grid)
+            
+            # Add labels
+            expected_img = self.add_label(expected_img, f"Expected {i+1}")
+            predicted_img = self.add_label(predicted_img, f"Predicted {i+1}")
+            
+            # Create status indicator
+            status_size = 50
+            status_img = Image.new('RGB', (status_size, status_size), 'white')
+            draw = ImageDraw.Draw(status_img)
+            
+            if result['solved']:
+                # Green circle with checkmark
+                draw.ellipse([5, 5, 45, 45], fill='green')
+                draw.text((25, 25), "✓", fill='white', anchor="mm")
+            else:
+                # Red circle with X
+                draw.ellipse([5, 5, 45, 45], fill='red')
+                draw.text((25, 25), "✗", fill='white', anchor="mm")
+            
+            # Add accuracy text below status
+            status_with_text = Image.new('RGB', (status_size, status_size + 30), 'white')
+            status_with_text.paste(status_img, (0, 0))
+            draw_text = ImageDraw.Draw(status_with_text)
+            acc_text = f"{result['pixel_accuracy']:.1%}"
+            draw_text.text((status_size//2, status_size + 15), acc_text, fill='black', anchor="mm")
+            
+            # Create "vs" separator
+            vs_width = 30
+            vs_height = max(expected_img.height, predicted_img.height)
+            vs_img = Image.new('RGB', (vs_width, vs_height), 'white')
+            draw_vs = ImageDraw.Draw(vs_img)
+            draw_vs.text((vs_width//2, vs_height//2), "vs", fill='black', anchor="mm")
+            
+            # Combine into row
+            row_width = expected_img.width + vs_width + predicted_img.width + status_with_text.width + 3 * self.grid_spacing
+            row_height = max(expected_img.height, predicted_img.height, status_with_text.height)
+            row_img = Image.new('RGB', (row_width, row_height), 'white')
+            
+            x_offset = 0
+            row_img.paste(expected_img, (x_offset, 0))
+            x_offset += expected_img.width + self.grid_spacing
+            row_img.paste(vs_img, (x_offset, (row_height - vs_height) // 2))
+            x_offset += vs_width + self.grid_spacing
+            row_img.paste(predicted_img, (x_offset, 0))
+            x_offset += predicted_img.width + self.grid_spacing
+            row_img.paste(status_with_text, (x_offset, (row_height - status_with_text.height) // 2))
+            
+            feedback_rows.append(row_img)
+        
+        # Combine all rows with title
+        max_width = max(row.width for row in feedback_rows) if feedback_rows else 400
+        total_height = 40  # Title space
+        for row in feedback_rows:
+            total_height += row.height + self.section_spacing
+        
+        final_img = Image.new('RGB', (max_width + 40, total_height), 'white')
+        draw = ImageDraw.Draw(final_img)
+        
+        try:
+            title_font = ImageFont.truetype("/System/Library/Fonts/Arial.ttf", 18)
+        except:
+            title_font = ImageFont.load_default()
+        
+        # Title
+        y_offset = 10
+        draw.text((20, y_offset), "TRAINING FEEDBACK:", fill='black', font=title_font)
+        y_offset += 40
+        
+        # Feedback rows
+        for row in feedback_rows:
+            x_center = (final_img.width - row.width) // 2
+            final_img.paste(row, (x_center, y_offset))
+            y_offset += row.height + self.section_spacing
+        
+        # Debug: Save image if debug mode is enabled
+        if self.debug_save and task_id:
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            turn_info = f"_turn{turn}" if turn is not None else ""
+            filename = f"{timestamp}_{task_id}{turn_info}_feedback.png"
+            debug_path = self.debug_dir / filename
+            final_img.save(debug_path)
+            print(f"🐛 Debug: Saved feedback image to {debug_path}")
+        
+        return final_img
+    
+    def image_to_base64(self, img):
+        """Convert PIL Image to base64 string"""
+        buffer = io.BytesIO()
+        img.save(buffer, format='PNG')
+        img_str = base64.b64encode(buffer.getvalue()).decode()
+        return img_str
 
 def execute_with_timeout(func, *args, timeout=300, **kwargs):
     """Execute a function with timeout using ThreadPoolExecutor"""
@@ -31,17 +315,31 @@ def execute_with_timeout(func, *args, timeout=300, **kwargs):
 class ARCTaskRunner:
     """Run ARC tasks using the OpenAI Responses API (single-shot with tool execution)"""
     
-    def __init__(self, model: str = "gpt-4.1-nano", reasoning_effort: str = "low", max_workers: int = 1, rate_limit_delay: float = 0.0, max_turns: int = 3):
+    def __init__(self, model: str = "gpt-4.1-nano", reasoning_effort: str = "low", max_workers: int = 1, rate_limit_delay: float = 0.0, max_turns: int = 3, debug_images: bool = False):
         self.model = model
         self.reasoning_effort = reasoning_effort
         self.max_workers = max_workers
         self.rate_limit_delay = rate_limit_delay
         self.max_turns = max_turns
+        self.debug_images = debug_images
         self.api_key = os.getenv('OPENAI_API_KEY')
         self.client = OpenAI()
         self.task_loader = TaskLoader()
         self.scorer = GridScorer()
         self.executor = ProgramExecutor(timeout=0.5)
+        
+        # Initialize visual capabilities
+        self.use_visuals = PIL_AVAILABLE and self.is_vision_model()
+        if self.use_visuals:
+            self.visualizer = ARCGridVisualizer(debug_save=self.debug_images)
+            debug_msg = " with debug image saving" if self.debug_images else ""
+            print(f"🖼️  Visual mode enabled for {self.model} (PIL available: {PIL_AVAILABLE}){debug_msg}")
+        else:
+            self.visualizer = None
+            if not PIL_AVAILABLE:
+                print("⚠️  PIL not available - install pillow for visual features")
+            elif not self.is_vision_model():
+                print(f"📝 Text-only mode for {self.model} (no vision support)")
         
         # Create logs directory
         self.logs_dir = Path("logs")
@@ -82,6 +380,18 @@ class ARCTaskRunner:
         model_to_check = model or self.model
         model_lower = model_to_check.lower()
         return model_lower.startswith(('o3', 'o4', 'o1'))
+    
+    def is_vision_model(self, model: str = None) -> bool:
+        """Check if the model supports vision/image inputs"""
+        model_to_check = model or self.model
+        model_lower = model_to_check.lower()
+        # o4-mini and o3 (but not o3-mini) support vision
+        # Also gpt-4o and gpt-4.1 series support vision
+        return (model_lower.startswith('o4-mini') or 
+                (model_lower.startswith('o3') and not model_lower.startswith('o3-mini')) or
+                model_lower.startswith('gpt-4o') or 
+                model_lower.startswith('gpt-4.1') or
+                model_lower.startswith('gpt-image'))
     
     def get_model_pricing(self, model: str) -> tuple[float, float]:
         """Get input and output pricing rates for a model in $/1M tokens"""
@@ -127,23 +437,15 @@ class ARCTaskRunner:
         elif model_lower.startswith('gpt-4o'):
             return (2.50, 10.00)
         
-        # Other models
-        elif model_lower.startswith('codex-mini'):
-            return (1.50, 6.00)
-        elif model_lower.startswith('computer-use-preview'):
-            return (3.00, 12.00)
-        elif model_lower.startswith('gpt-image-1'):
-            return (5.00, 0.00)  # No output pricing for image model
-        
         # Default fallback (gpt-4o-mini pricing)
         else:
             return (0.15, 0.60)
     
-    def create_prompt(self, task_data: Dict, is_first_turn: bool = True) -> str:
-        """Create a prompt for the model to solve an ARC task"""
+    def create_prompt(self, task_data: Dict, is_first_turn: bool = True, task_id: str = None, turn: int = None) -> List:
+        """Create a prompt for the model to solve an ARC task (returns messages for responses API)"""
         if not is_first_turn:
             # For subsequent turns, encourage partial solutions
-            return """Please analyze the training feedback and programs from all prior turns, and write an improved transformation.
+            return [{"type": "input_text", "text": """Please analyze the training feedback and programs from all prior turns, and write an improved transformation.
 
 **Important**:
 1. Always start by attempting to find a complete rule that solves all training examples and should generalize to the test input.
@@ -155,12 +457,12 @@ Final answer:
 def transform(grid):
     # Your improved transformation logic here (even if partial)
     return transformed_grid
-```"""
+```"""}]
         
-        # Include test input in the prompt for context
+        # Create the text content
         task_str = self.task_loader.format_task_for_prompt(task_data, include_test=True)
         
-        prompt = f"""You are solving an ARC (Abstraction and Reasoning Corpus) task. 
+        text_content = f"""You are solving an ARC (Abstraction and Reasoning Corpus) task. 
 I will show you training examples with input and output grids, plus a test input grid. Your task is to:
 
 1. **Analyze the training examples** to discover patterns that map input grids to output grids
@@ -199,7 +501,31 @@ def transform(grid):
 ```
 """
         
-        return prompt
+        # Create message content
+        messages = []
+        messages.append({"type": "input_text", "text": text_content})
+        
+        # Add visual representation if available
+        if self.use_visuals and self.visualizer:
+            try:
+                training_image = self.visualizer.create_training_examples_image(task_data, task_id, turn)
+                image_base64 = self.visualizer.image_to_base64(training_image)
+                
+                messages.append({
+                    "type": "input_image",
+                    "image_url": f"data:image/png;base64,{image_base64}"
+                })
+                
+                # Add explanation of the visual
+                messages.append({
+                    "type": "input_text", 
+                    "text": "Above is a visual representation of all the training examples and the test input. Each grid cell is colored according to its value (0-9), with clear labels and arrows showing input→output transformations. Use both the textual and visual information to understand the pattern."
+                })
+                
+            except Exception as e:
+                print(f"⚠️  Failed to create visual representation: {e}")
+        
+        return messages
     
     def call_responses_api(self, input_messages: List[Dict]) -> Dict:
         """Call the OpenAI Responses API for multi-turn local execution"""
@@ -224,9 +550,10 @@ def transform(grid):
         except Exception as e:
             raise Exception(f"API call failed: {e}")
     
-    def create_training_feedback(self, program: str, training_examples: List[Dict], test_correct: bool = None) -> tuple[str, int, float]:
-        """Generate detailed training feedback with stats and actual outputs for LLM"""
+    def create_training_feedback(self, program: str, training_examples: List[Dict], test_correct: bool = None, task_id: str = None, turn: int = None) -> tuple[List, int, float]:
+        """Generate detailed training feedback with stats, actual outputs, and optional visuals for LLM"""
         results = []
+        predicted_outputs = []
         total_pixels = 0
         correct_pixels = 0
         solved_count = 0
@@ -234,6 +561,7 @@ def transform(grid):
         for i, example in enumerate(training_examples):
             predicted_output, error, timed_out = self.executor.execute_program(program, example['input'])
             expected_output = example['output']
+            predicted_outputs.append(predicted_output)
             
             if predicted_output is not None and not error and not timed_out:
                 # Calculate pixel accuracy for this example
@@ -289,36 +617,60 @@ def transform(grid):
         overall_accuracy = correct_pixels / total_pixels if total_pixels > 0 else 0.0
         
         # Format feedback for LLM with encouraging language
-        feedback = f"Training results: {solved_count}/{len(training_examples)} examples solved, {overall_accuracy:.1%} pixel accuracy"
+        feedback_text = f"Training results: {solved_count}/{len(training_examples)} examples solved, {overall_accuracy:.1%} pixel accuracy"
         
         # Add encouraging context for partial solutions
         if solved_count == len(training_examples) and test_correct is False:
-            feedback += " - Perfect training accuracy but test failed! Your transformation is overfitting to the training examples. Try to generalize your approach - look for broader patterns that work across all cases, not just the specific training examples.\n\n"
+            feedback_text += " - Perfect training accuracy but test failed! Your transformation is overfitting to the training examples. Try to generalize your approach - look for broader patterns that work across all cases, not just the specific training examples.\n\n"
         elif solved_count == 0 and overall_accuracy > 0:
-            feedback += " - Good partial progress! Your approach is capturing some patterns. Next, try to identify a transformation that solves at least one of the training examples.\n\n"
+            feedback_text += " - Good partial progress! Your approach is capturing some patterns. Next, try to identify a transformation that solves at least one of the training examples.\n\n"
         elif solved_count == 0 and overall_accuracy == 0:
-            feedback += " - Keep experimenting! Try a different approach to the transformation.\n\n"
+            feedback_text += " - Keep experimenting! Try a different approach to the transformation.\n\n"
         elif solved_count > 0:
-            feedback += f" - Great progress! You're on the right track. Next, try to identify a transformation that solves more than {solved_count} of the training examples.\n\n"
+            feedback_text += f" - Great progress! You're on the right track. Next, try to identify a transformation that solves more than {solved_count} of the training examples.\n\n"
         else:
-            feedback += "\n\n"
+            feedback_text += "\n\n"
         
         for result in results:
             status = "✓" if result['solved'] else "✗"
-            feedback += f"Training Example {result['index']} {status}:\n"
-            feedback += f"Expected: {result['expected']}\n"
+            feedback_text += f"Training Example {result['index']} {status}:\n"
+            feedback_text += f"Expected: {result['expected']}\n"
             
             if result['error']:
-                feedback += f"Error: {result['error']}\n"
+                feedback_text += f"Error: {result['error']}\n"
             elif result['timed_out']:
-                feedback += f"Error: Code execution timed out\n"
+                feedback_text += f"Error: Code execution timed out\n"
             else:
-                feedback += f"Your output: {result['predicted']}\n"
+                feedback_text += f"Your output: {result['predicted']}\n"
                 if not result['solved']:
-                    feedback += f"Pixel accuracy: {result['pixel_accuracy']:.1%}\n"
-            feedback += "\n"
+                    feedback_text += f"Pixel accuracy: {result['pixel_accuracy']:.1%}\n"
+            feedback_text += "\n"
         
-        return feedback, solved_count, overall_accuracy
+        # Create message list with text and optional visual feedback
+        feedback_messages = []
+        feedback_messages.append({"type": "input_text", "text": feedback_text})
+        
+        # Add visual feedback if available
+        if self.use_visuals and self.visualizer:
+            try:
+                # Create visual feedback showing expected vs predicted
+                feedback_image = self.visualizer.create_feedback_image(training_examples, predicted_outputs, results, task_id, turn)
+                image_base64 = self.visualizer.image_to_base64(feedback_image)
+                
+                feedback_messages.append({
+                    "type": "input_image",
+                    "image_url": f"data:image/png;base64,{image_base64}"
+                })
+                
+                feedback_messages.append({
+                    "type": "input_text",
+                    "text": "Above is a visual comparison of expected vs predicted outputs for each training example. Green circles indicate correct solutions, red circles show errors. Use this visual feedback along with the textual analysis to improve your approach."
+                })
+                
+            except Exception as e:
+                print(f"⚠️  Failed to create visual feedback: {e}")
+        
+        return feedback_messages, solved_count, overall_accuracy
     
     def extract_code_from_response(self, response) -> str:
         """Extract Python code from the Responses API result using simple regex"""
@@ -713,8 +1065,8 @@ def transform(grid):
         
         # Start conversation
         system_msg = {"role": "system", "content": "You are an expert at solving abstract reasoning puzzles. Write clean, efficient Python code."}
-        initial_prompt = self.create_prompt(task_data, is_first_turn=True)
-        conversation_history = [system_msg, {"role": "user", "content": initial_prompt}]
+        initial_prompt_messages = self.create_prompt(task_data, is_first_turn=True, task_id=task_id, turn=1)
+        conversation_history = [system_msg, {"role": "user", "content": initial_prompt_messages}]
         
         try:
             for turn in range(self.max_turns):
@@ -865,9 +1217,9 @@ Make sure to include the function definition inside a proper code block."""
                     test_correct = False
                 
                 # Get training feedback for this turn (including test result context)
-                training_feedback, solved_count, pixel_acc = self.create_training_feedback(program, task_data['train'], test_correct)
+                training_feedback_messages, solved_count, pixel_acc = self.create_training_feedback(program, task_data['train'], test_correct, task_id, turn + 1)
                 turn_detail['training_feedback'] = {
-                    'feedback_text': training_feedback,
+                    'feedback_messages': training_feedback_messages,
                     'solved_count': solved_count,
                     'total_training_examples': len(task_data['train']),
                     'pixel_accuracy': pixel_acc
@@ -946,9 +1298,10 @@ Make sure to include the function definition inside a proper code block."""
                 elif assistant_msg:
                     conversation_history.append(assistant_msg)
                 
-                # Add training feedback
-                feedback_prompt = self.create_prompt(task_data, is_first_turn=False) + "\n\n" + training_feedback
-                conversation_history.append({"role": "user", "content": feedback_prompt})
+                # Add training feedback - combine prompt messages with feedback messages
+                subsequent_prompt_messages = self.create_prompt(task_data, is_first_turn=False, task_id=task_id, turn=turn + 2)
+                combined_feedback_content = subsequent_prompt_messages + training_feedback_messages
+                conversation_history.append({"role": "user", "content": combined_feedback_content})
                 turn_detail['feedback_sent'] = True
             
             # Failed after max turns
@@ -1181,6 +1534,8 @@ def main():
                        help="Delay between API calls in seconds (default: 0.0)")
     parser.add_argument("--max_turns", type=int, default=3,
                        help="Maximum number of turns for multi-turn execution (default: 3)")
+    parser.add_argument("--debug_images", action="store_true",
+                       help="Save debug images to debug_images/ directory")
     
     args = parser.parse_args()
     
@@ -1195,7 +1550,7 @@ def main():
         parser.error("--rate_limit_delay cannot be negative")
     
     # Create runner and run tasks
-    runner = ARCTaskRunner(model=args.model, reasoning_effort=args.reasoning_effort, max_workers=args.max_workers, rate_limit_delay=args.rate_limit_delay, max_turns=args.max_turns)
+    runner = ARCTaskRunner(model=args.model, reasoning_effort=args.reasoning_effort, max_workers=args.max_workers, rate_limit_delay=args.rate_limit_delay, max_turns=args.max_turns, debug_images=args.debug_images)
     runner.run_subset(args.subset, args.dataset, args.limit)
 
 
