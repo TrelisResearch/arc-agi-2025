@@ -1365,7 +1365,8 @@ Make sure to include the function definition inside a proper code block."""
                 if self.max_workers > 1:
                     status = "✅ SOLVED" if result.get('score', {}).get('correct', False) else "❌ FAILED"
                     cost = result.get('request_cost', 0.0)
-                    print(f"[{task_id}] {status} (${cost:.6f})")
+                    turns = result.get('turns_used', 1)
+                    print(f"[{task_id}] {status} (${cost:.6f}, {turns} turns)")
                 return result
             
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
@@ -1382,6 +1383,8 @@ Make sure to include the function definition inside a proper code block."""
                         result = future.result()
                         results.append(result)
                         status = "✅ COMPLETED" if result.get('score', {}).get('correct', False) else "❌ FAILED"
+                        turns = result.get('turns_used', 1)
+                        status_with_turns = f"{status} ({turns} turns)"
                     except Exception as e:
                         print(f"[{task_id}] ❌ SAVE FAILED: {e}")
                         # Create a minimal error result
@@ -1391,11 +1394,11 @@ Make sure to include the function definition inside a proper code block."""
                             'score': {'correct': False, 'pixel_accuracy': 0.0, 'total_pixels': 0, 'correct_pixels': 0}
                         }
                         results.append(error_result)
-                        status = "❌ SAVE FAILED"
+                        status_with_turns = "❌ SAVE FAILED"
                     
                     # Show overall progress
                     progress_pct = (completed / total_tasks) * 100
-                    print(f"Progress: {completed}/{total_tasks} tasks processed ({progress_pct:.1f}%) - {status}")
+                    print(f"Progress: {completed}/{total_tasks} tasks processed ({progress_pct:.1f}%) - {status_with_turns}")
             
             # Sort results by task_id to maintain consistent order
             results.sort(key=lambda x: x.get('task_id', ''))

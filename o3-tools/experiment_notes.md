@@ -9,8 +9,7 @@ Test #1:
 - GPT 4.1 mini
   - Quick test of new prompting.
   - Seems like model oscillates between the same responses.
-  - Fixed prompt to say don't repeat the same transformation... need to re-run.
-
+  - Fixed prompt to say don't repeat the same transformation... need to re-run. Seems not to repeat any more now (although re-run was with images).
 
 Test #2:
 Objective: To try to get a better signal to noise ratio on o3, by using the arc agi 1 splits.
@@ -24,6 +23,9 @@ Objective: Does iteration / feedback help?
 
 Test #4:
 Objective: See if adding image information helps the score further.
+- Tested o4-mini on a low level of reasoning on mit-medium arc-agi-1.
+- Results: 
+  - o4-mini scores 9/19 (one timeout failure) with feedback, 7/19 without feedback.
 
 ---
 

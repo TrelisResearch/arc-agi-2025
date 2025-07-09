@@ -224,6 +224,78 @@ All plots saved in: plots/
 - **Visual analysis**: Compare predicted vs expected outputs side-by-side
 - **Progress tracking**: Monitor training vs test performance across turns
 
+## Debug Images for Vision Models
+
+When using vision-capable models (o3, o4, gpt-4o variants), the script automatically generates debug images alongside the regular text-based prompts. This provides visual feedback to help understand model performance.
+
+### Features
+
+- **Automatic detection**: Vision capabilities are auto-detected based on model name
+- **Training images**: Visual representation of all training examples with input→output transformations
+- **Feedback images**: Side-by-side comparison of expected vs predicted outputs after each turn
+- **ARC color palette**: Proper 0-9 color mapping matching official ARC visualization
+- **Clear labeling**: Arrows, dimensions, and accuracy indicators for easy interpretation
+
+### Debug Image Generation
+
+**Training Phase (Turn 1):**
+- Shows all training examples as input→output pairs
+- Includes grid dimensions and clear visual arrows
+- Saved as `debug_images/[timestamp]_[task_id]_turn1_training.png`
+
+**Feedback Phase (Turn 2+):**
+- Compares expected outputs with model predictions
+- Shows accuracy percentages and pixel-level differences
+- Color-coded: green borders for correct, red for incorrect
+- Saved as `debug_images/[timestamp]_[task_id]_turn[N]_feedback.png`
+
+### Model Support
+
+**Vision-enabled models:**
+- `o3` (full OpenAI o3)
+- `o4` and `o4-mini` 
+- `gpt-4o`, `gpt-4o-mini`
+- `gpt-4-vision-preview`
+
+**Text-only models:**
+- `o3-mini` (reasoning without vision)
+- `gpt-4`, `gpt-3.5-turbo`
+- All other non-vision models
+
+### Usage
+
+Debug images are automatically generated when using vision models:
+
+```bash
+# This will generate debug images (o4 supports vision)
+uv run python run_arc_tasks.py --model o4-mini
+
+# This will NOT generate debug images (o3-mini is text-only)
+uv run python run_arc_tasks.py --model o3-mini
+```
+
+**Debug images are saved to:**
+```
+o3-tools/debug_images/
+├── 20250109_143022_abc123_turn1_training.png
+├── 20250109_143035_abc123_turn2_feedback.png
+└── 20250109_143048_abc123_turn3_feedback.png
+```
+
+### Example Debug Images
+
+**Training Image (Turn 1):**
+- Visual grid representations of all training examples
+- Input grids on the left, output grids on the right
+- Arrows showing transformations
+- Grid dimensions displayed clearly
+
+**Feedback Image (Turn 2+):**
+- Three columns: Input | Expected | Predicted
+- Visual comparison of model predictions vs ground truth
+- Accuracy percentages for each example
+- Color-coded borders indicating success/failure
+
 ## Parallelization
 
 The tool supports parallel execution to dramatically reduce wall-clock time for large task sets:
