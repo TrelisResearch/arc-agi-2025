@@ -212,8 +212,12 @@ class TaskEvolutionVisualizer:
         
         plt.tight_layout()
         
-        # Save the plot in plots directory
-        output_path = self.plots_dir / f"turn_{turn_number}_{task_id}_{log_stem}.png"
+        # Create subdirectory for this log file
+        log_plots_dir = self.plots_dir / log_stem
+        log_plots_dir.mkdir(exist_ok=True)
+        
+        # Save the plot in log-specific subdirectory
+        output_path = log_plots_dir / f"turn_{turn_number}_{task_id}_{log_stem}.png"
         plt.savefig(output_path, dpi=150, bbox_inches='tight')
         plt.close()  # Close to free memory
         
@@ -262,7 +266,7 @@ class TaskEvolutionVisualizer:
             return
         
         print(f"Found {len(valid_turns)} turns with valid programs")
-        print(f"Creating individual visualizations in {self.plots_dir}/...")
+        print(f"Creating individual visualizations in {self.plots_dir}/{log_stem}/...")
         
         # Create visualization for each turn
         results = []
@@ -297,7 +301,7 @@ class TaskEvolutionVisualizer:
             print(f"{turn_num:<6} {test_status:<10} {train_status:<12} {train_avg_acc:.1%}        {file_name}")
         
         print(f"\nCreated {len(results)} turn visualizations for task {task_id}")
-        print(f"All plots saved in: {self.plots_dir}/")
+        print(f"All plots saved in: {self.plots_dir}/{log_stem}/")
 
 def main():
     parser = argparse.ArgumentParser(description="Visualize ARC task evolution across turns")

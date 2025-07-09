@@ -8,7 +8,8 @@ Actions:
 Test #1:
 - GPT 4.1 mini
   - Quick test of new prompting.
-  - ...
+  - Seems like model oscillates between the same responses.
+  - Fixed prompt to say don't repeat the same transformation... need to re-run.
 
 Test #2:
 Objective: To try to get a better signal to noise ratio on o3, by using the arc agi 1 splits.
@@ -16,10 +17,10 @@ Objective: To try to get a better signal to noise ratio on o3, by using the arc 
 
 Test #3:
 Objective: Does iteration / feedback help?
-- Based on Test #2, we go on mit-medium arc-agi-1 from x/20 up to y/20 with o4-mini when going from single turn to more than one turn (max of eight).
+- Based on Test #2, we go on mit-medium arc-agi-1 from 4/20 up to 7/20 with o4-mini when going from single turn to more than one turn (max of eight).
 
-
-
+Test #4:
+Objective: See if adding image information helps the score further.
 
 ---
 
