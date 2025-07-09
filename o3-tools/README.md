@@ -15,11 +15,11 @@ Objective: Define a test that is a representative measure of performance while a
 
 - MEDIUM:
 [ ] Refine prompting:
-  [ ] Examine the correct tasks for what happened. Examine also some wrong tasks.
-  [ ] Start with strict prompt, only then fall back to partial attempt.
-  [ ] Add a note that if all training examples are solved, then the program is overfitting.
+  [x] Examine the correct tasks for what happened. Examine also some wrong tasks.
   [ ] Adjust the soft prompt so that it encourages finding an improvement! check that. Sometimes there is no attempt to improve when some training grids pass. Perhaps try a prompt that encourages generalisation to the other training grids.
-  [ ] Examine and handle overfitting cases.
+  [ ] Review prompts for when a training example is solved (at least one, but not all).
+  [ ] Add a note that if all training examples are solved, then the program is overfitting.
+  [ ] Start with strict prompt, only then fall back to partial attempt.
 [ ] Try sampling on improved examples. Potentially building a priority list.
 [ ] Try inputting images of the problem as well as just the problem itself.
 [ ] Build a priority list based on # (or percentage) of training grids solved. Ideally you have an id and converstaion history for each candidate incomplete program (so you can reuse LLM cache).
