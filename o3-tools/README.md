@@ -14,12 +14,11 @@ Objective: Define a test that is a representative measure of performance while a
 [ ] Run on ARC AGI 1 Eval set. MIT splits. Starting with Easy, then Medium, then Hard, then Expert (if needed). Answers the question of whether refinement helps.
 
 - MEDIUM:
-[ ] Refine prompting:
+[x] Refine prompting:
   [x] Examine the correct tasks for what happened. Examine also some wrong tasks.
-  [ ] Adjust the soft prompt so that it encourages finding an improvement! check that. Sometimes there is no attempt to improve when some training grids pass. Perhaps try a prompt that encourages generalisation to the other training grids.
-  [ ] Review prompts for when a training example is solved (at least one, but not all).
-  [ ] Add a note that if all training examples are solved, then the program is overfitting.
-  [ ] Start with strict prompt, only then fall back to partial attempt.
+  [x] Adjust the soft prompt so that it encourages finding an improvement! check that. Sometimes there is no attempt to improve when some training grids pass. Perhaps try a prompt that encourages generalisation to the other training grids.
+  [x] Review prompts for when a training example is solved (at least one, but not all).
+  [x] Add a note that if all training examples are solved, then the program is overfitting.
 [ ] Try sampling on improved examples. Potentially building a priority list.
 [ ] Try inputting images of the problem as well as just the problem itself.
 [ ] Build a priority list based on # (or percentage) of training grids solved. Ideally you have an id and converstaion history for each candidate incomplete program (so you can reuse LLM cache).
@@ -29,6 +28,7 @@ Objective: Define a test that is a representative measure of performance while a
     - Add f(..., gzip) as a metric.
 
 Other ideas:
+[ ] Start with strict prompt, only then fall back to partial attempt. DELAY.
 [ ] Swap to chat completions endpoint so as to allow for openai-style endpoint usage (enable other models, incl. reasoning). THIS IS NOT GOING TO SUPPORT OPENAI REASONING MODELS, WHICH DONT' DISCLOSE THE REASONING TRACE, AND SO YOU MUST USE THE RESPONSES API TO USE REASONING WITH OPENAI MODELS. OTHERS (CLAUDE, QWEN, GEMINI?, DEEPSEEK?) RESPOND WITH <think> TAGS.
 [ ] Use a code interpreter tool rather than running code from an extract code block.
 [ ] Overfitting checks are probably needed because sometimes all training problems are solved but then the test fails. Could just rotate or do simple checks like that.

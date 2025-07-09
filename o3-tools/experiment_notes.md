@@ -1,8 +1,25 @@
 # Experiment Notes
 
+## 2025 9th July
+
+Actions:
+- Adjusted the prompts to encourage a more step by step approach based on training examples correct.
+
+Test #1:
+- GPT 4.1 mini
+  - Quick test of new prompting.
+  - ...
+
+Test #2:
+Objective: To try to get a better signal to noise ratio on o3, by using the arc agi 1 splits.
+- Run on mit-medium: 
+
+
+
+
 ---
 
-## 2025-01-06
+## 2025-07-06
 
 ### Experiment 1: Optimized Prompts with Partial Solutions (8 Max Turns)
 - **Experiment:** Run o3 model with enhanced prompts that encourage partial transformation solutions instead of model refusal

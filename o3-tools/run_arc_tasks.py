@@ -143,9 +143,12 @@ class ARCTaskRunner:
         """Create a prompt for the model to solve an ARC task"""
         if not is_first_turn:
             # For subsequent turns, encourage partial solutions
-            return """Please analyze the training feedback and modify your approach. Write an improved transform function that handles the failing cases.
+            return """Please analyze the training feedback and programs from all prior turns, and write an improved transformation.
 
-**Important**: Even if you cannot find a perfect rule, please provide your best attempt at a transformation that captures some patterns you observe. Partial solutions that demonstrate understanding are valuable for learning and iteration.
+**Important**:
+1. Always start by attempting to find a complete rule that solves all training examples and should generalize to the test input.
+2. If you cannot find a perfect solution, provide your best attempt at a transformation that solves as many training examples as possible - ideally more than in the best previous turn.
+3. Even if your solution doesn't solve all examples perfectly, ensure it demonstrates meaningful pattern recognition and provides reasonable outputs that minimize pixel-level errors.
 
 Final answer:
 ```python
@@ -220,7 +223,7 @@ def transform(grid):
         except Exception as e:
             raise Exception(f"API call failed: {e}")
     
-    def create_training_feedback(self, program: str, training_examples: List[Dict]) -> tuple[str, int, float]:
+    def create_training_feedback(self, program: str, training_examples: List[Dict], test_correct: bool = None) -> tuple[str, int, float]:
         """Generate detailed training feedback with stats and actual outputs for LLM"""
         results = []
         total_pixels = 0
@@ -288,12 +291,14 @@ def transform(grid):
         feedback = f"Training results: {solved_count}/{len(training_examples)} examples solved, {overall_accuracy:.1%} pixel accuracy"
         
         # Add encouraging context for partial solutions
-        if solved_count == 0 and overall_accuracy > 0:
-            feedback += " - Good partial progress! Your approach is capturing some patterns.\n\n"
+        if solved_count == len(training_examples) and test_correct is False:
+            feedback += " - Perfect training accuracy but test failed! Your transformation is overfitting to the training examples. Try to generalize your approach - look for broader patterns that work across all cases, not just the specific training examples.\n\n"
+        elif solved_count == 0 and overall_accuracy > 0:
+            feedback += " - Good partial progress! Your approach is capturing some patterns. Next, try to identify a transformation that solves at least one of the training examples.\n\n"
         elif solved_count == 0 and overall_accuracy == 0:
-            feedback += " - Keep experimenting! Try a different approach to the pattern.\n\n"
+            feedback += " - Keep experimenting! Try a different approach to the transformation.\n\n"
         elif solved_count > 0:
-            feedback += " - Great progress! You're on the right track.\n\n"
+            feedback += f" - Great progress! You're on the right track. Next, try to identify a transformation that solves more than {solved_count} of the training examples.\n\n"
         else:
             feedback += "\n\n"
         
@@ -850,8 +855,16 @@ Make sure to include the function definition inside a proper code block."""
                 test_expected = task_data['test'][0]['output']
                 predicted_output, error, timed_out = self.executor.execute_program(program, test_input)
                 
-                # Get training feedback for this turn
-                training_feedback, solved_count, pixel_acc = self.create_training_feedback(program, task_data['train'])
+                # Determine test correctness for training feedback
+                test_correct = None
+                if predicted_output is not None and not error and not timed_out:
+                    test_score = self.scorer.score_grid(predicted_output, test_expected)
+                    test_correct = test_score['correct']
+                else:
+                    test_correct = False
+                
+                # Get training feedback for this turn (including test result context)
+                training_feedback, solved_count, pixel_acc = self.create_training_feedback(program, task_data['train'], test_correct)
                 turn_detail['training_feedback'] = {
                     'feedback_text': training_feedback,
                     'solved_count': solved_count,
