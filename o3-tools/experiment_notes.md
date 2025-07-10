@@ -1,5 +1,14 @@
 # Experiment Notes
 
+## 2025 10th July
+
+### Notes on o4-mini (low) run from yesterday:
+- It seems that task 27a77e38 in the arc-agi-1 mit-medium split can be fluked?!?
+- There's some, very limited, evidence that higher pixel match results in a better chance of the next iteration with feedback being correct.
+- Re oscillation: There is evidence of oscillation, even with prompting - with o4-mini. BTW, maybe this doesn't happen with o3?
+- Open Q: When is it good to refine versus when good to search?
+- There is a strong correlation between pixel accuracy on the training tasks and the test tasks ![image train-v-test-pixel-accuracy](image train-v-test-pixel-accuracy.png)
+
 ## 2025 9th July
 
 Actions:
