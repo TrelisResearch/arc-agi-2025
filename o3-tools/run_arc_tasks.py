@@ -8,6 +8,7 @@ import time
 import threading
 import base64
 import io
+import numpy as np
 from pathlib import Path
 from typing import Dict, List, Optional
 from dotenv import load_dotenv
@@ -315,7 +316,7 @@ def execute_with_timeout(func, *args, timeout=300, **kwargs):
 class ARCTaskRunner:
     """Run ARC tasks using the OpenAI Responses API (single-shot with tool execution)"""
     
-    def __init__(self, model: str = "gpt-4.1-nano", reasoning_effort: str = "low", max_workers: int = 1, rate_limit_delay: float = 0.0, max_turns: int = 3, debug_images: bool = False, enable_images: bool = True):
+    def __init__(self, model: str = "gpt-4.1-nano", reasoning_effort: str = "low", max_workers: int = 1, rate_limit_delay: float = 0.0, max_turns: int = 3, debug_images: bool = False, enable_images: bool = True, run_number: int = 0):
         self.model = model
         self.reasoning_effort = reasoning_effort
         self.max_workers = max_workers
@@ -323,6 +324,7 @@ class ARCTaskRunner:
         self.max_turns = max_turns
         self.debug_images = debug_images
         self.enable_images = enable_images
+        self.run_number = run_number  # NEW: Track run number for repeated runs
         self.api_key = os.getenv('OPENAI_API_KEY')
         self.client = OpenAI()
         self.task_loader = TaskLoader()
@@ -1442,7 +1444,13 @@ Make sure to include the function definition inside a proper code block."""
         # Add microseconds and thread ID to ensure unique filenames in parallel execution
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         thread_id = threading.get_ident()
-        filename = f"{timestamp}_{thread_id}_{result['task_id']}.json"
+        
+        # Include run number in filename when doing repeated runs
+        if self.run_number > 0:
+            filename = f"{timestamp}_{thread_id}_{result['task_id']}_run{self.run_number}.json"
+        else:
+            filename = f"{timestamp}_{thread_id}_{result['task_id']}.json"
+        
         filepath = self.logs_dir / filename
         
         with open(filepath, 'w') as f:
@@ -1480,6 +1488,7 @@ Make sure to include the function definition inside a proper code block."""
             'model': self.model,
             'reasoning_effort': self.reasoning_effort if self.is_reasoning_model() else "N/A",
             'api_type': 'responses_api',
+            'run_number': self.run_number,  # NEW: Include run number
             'total_tasks': total_tasks,
             'successful_api_calls': successful_api_calls,
             'failed_api_calls': failed_tasks,
@@ -1497,15 +1506,21 @@ Make sure to include the function definition inside a proper code block."""
             'results': results
         }
         
-        filename = f"{timestamp}_summary_{dataset}_{subset_name}.json"
+        # Include run number in filename when doing repeated runs
+        if self.run_number > 0:
+            filename = f"{timestamp}_summary_{dataset}_{subset_name}_run{self.run_number}.json"
+        else:
+            filename = f"{timestamp}_summary_{dataset}_{subset_name}.json"
+        
         filepath = self.logs_dir / filename
         
         with open(filepath, 'w') as f:
             json.dump(summary, f, indent=2)
         
         # Print summary
+        run_info = f" (Run {self.run_number})" if self.run_number > 0 else ""
         print("\n" + "="*50)
-        print("SUMMARY")
+        print(f"SUMMARY{run_info}")
         print("="*50)
         print(f"Dataset: {dataset}")
         print(f"Subset: {subset_name}")
@@ -1544,6 +1559,173 @@ Make sure to include the function definition inside a proper code block."""
         
         print(f"\nResults saved to: {filepath}")
 
+    def run_repeated_subset(self, subset_name: str, dataset: str = "arc-agi-1", limit: Optional[int] = None, repeat_runs: int = 3) -> List[List[Dict]]:
+        """Run the same subset multiple times and calculate aggregate statistics"""
+        print(f"\nRunning {repeat_runs} repeated tests of {dataset}/{subset_name}")
+        print(f"Model: {self.model}")
+        if self.is_reasoning_model():
+            print(f"Reasoning effort: {self.reasoning_effort}")
+        print(f"API: Responses API (multi-turn, max {self.max_turns} turns)")
+        if self.max_workers > 1:
+            print(f"Parallelization: ENABLED ({self.max_workers} workers)")
+        else:
+            print(f"Parallelization: DISABLED (sequential execution)")
+        print("="*70)
+        
+        all_run_results = []
+        
+        # Run the subset multiple times
+        for run_num in range(1, repeat_runs + 1):
+            print(f"\n🚀 STARTING RUN {run_num}/{repeat_runs}")
+            print("-" * 50)
+            
+            # Create a new runner for this run to ensure clean state
+            runner = ARCTaskRunner(
+                model=self.model,
+                reasoning_effort=self.reasoning_effort,
+                max_workers=self.max_workers,
+                rate_limit_delay=self.rate_limit_delay,
+                max_turns=self.max_turns,
+                debug_images=self.debug_images,
+                enable_images=self.enable_images,
+                run_number=run_num
+            )
+            
+            # Run the subset
+            results = runner.run_subset(subset_name, dataset, limit)
+            all_run_results.append(results)
+            
+            print(f"\n✅ COMPLETED RUN {run_num}/{repeat_runs}")
+        
+        # Calculate and display aggregate statistics
+        self._calculate_and_display_aggregate_stats(all_run_results, subset_name, dataset, repeat_runs)
+        
+        return all_run_results
+    
+    def _calculate_and_display_aggregate_stats(self, all_run_results: List[List[Dict]], subset_name: str, dataset: str, repeat_runs: int):
+        """Calculate and display mean and standard deviation across multiple runs"""
+        
+        # Calculate statistics for each run
+        run_stats = []
+        
+        for run_num, results in enumerate(all_run_results, 1):
+            # Filter out API failures (timeout failures)
+            successful_api_results = [r for r in results if r.get('api_success', True)]
+            
+            if not successful_api_results:
+                # Handle case where all API calls failed
+                run_stats.append({
+                    'run_number': run_num,
+                    'attempted_tasks': 0,
+                    'turn1_solved': 0,
+                    'all_turns_solved': 0,
+                    'turn1_success_rate': 0.0,
+                    'all_turns_success_rate': 0.0
+                })
+                continue
+            
+            attempted_tasks = len(successful_api_results)
+            
+            # Count tasks solved on turn 1 only
+            turn1_solved = sum(1 for r in successful_api_results 
+                             if r.get('score', {}).get('correct', False) and r.get('turns_used', 1) == 1)
+            
+            # Count tasks solved by end of all turns
+            all_turns_solved = sum(1 for r in successful_api_results 
+                                 if r.get('score', {}).get('correct', False))
+            
+            # Calculate success rates
+            turn1_success_rate = turn1_solved / attempted_tasks if attempted_tasks > 0 else 0.0
+            all_turns_success_rate = all_turns_solved / attempted_tasks if attempted_tasks > 0 else 0.0
+            
+            run_stats.append({
+                'run_number': run_num,
+                'attempted_tasks': attempted_tasks,
+                'turn1_solved': turn1_solved,
+                'all_turns_solved': all_turns_solved,
+                'turn1_success_rate': turn1_success_rate,
+                'all_turns_success_rate': all_turns_success_rate
+            })
+        
+        # Calculate aggregate statistics
+        if run_stats:
+            turn1_rates = [s['turn1_success_rate'] for s in run_stats]
+            all_turns_rates = [s['all_turns_success_rate'] for s in run_stats]
+            
+            turn1_mean = np.mean(turn1_rates)
+            turn1_std = np.std(turn1_rates, ddof=1) if len(turn1_rates) > 1 else 0.0
+            
+            all_turns_mean = np.mean(all_turns_rates)
+            all_turns_std = np.std(all_turns_rates, ddof=1) if len(all_turns_rates) > 1 else 0.0
+            
+            # Save aggregate summary
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            aggregate_summary = {
+                'timestamp': timestamp,
+                'dataset': dataset,
+                'subset': subset_name,
+                'model': self.model,
+                'reasoning_effort': self.reasoning_effort if self.is_reasoning_model() else "N/A",
+                'repeat_runs': repeat_runs,
+                'run_statistics': run_stats,
+                'turn1_success_rate_mean': turn1_mean,
+                'turn1_success_rate_std': turn1_std,
+                'all_turns_success_rate_mean': all_turns_mean,
+                'all_turns_success_rate_std': all_turns_std
+            }
+            
+            filename = f"{timestamp}_aggregate_summary_{dataset}_{subset_name}_{repeat_runs}runs.json"
+            filepath = self.logs_dir / filename
+            
+            with open(filepath, 'w') as f:
+                json.dump(aggregate_summary, f, indent=2)
+            
+            # Display results
+            print("\n" + "="*70)
+            print("AGGREGATE STATISTICS ACROSS MULTIPLE RUNS")
+            print("="*70)
+            print(f"Dataset: {dataset}")
+            print(f"Subset: {subset_name}")
+            print(f"Model: {self.model}")
+            if self.is_reasoning_model():
+                print(f"Reasoning effort: {self.reasoning_effort}")
+            print(f"Number of runs: {repeat_runs}")
+            print(f"API failures excluded from analysis: YES")
+            print("")
+            
+            # Individual run results
+            print("INDIVIDUAL RUN RESULTS:")
+            print("-" * 70)
+            print(f"{'Run':<4} {'Attempted':<10} {'Turn 1 Only':<12} {'All Turns':<12} {'Turn 1 Rate':<12} {'All Turns Rate':<12}")
+            print("-" * 70)
+            
+            for stats in run_stats:
+                run_num = stats['run_number']
+                attempted = stats['attempted_tasks']
+                turn1_solved = stats['turn1_solved']
+                all_turns_solved = stats['all_turns_solved']
+                turn1_rate = stats['turn1_success_rate']
+                all_turns_rate = stats['all_turns_success_rate']
+                
+                print(f"{run_num:<4} {attempted:<10} {turn1_solved:<12} {all_turns_solved:<12} {turn1_rate:<12.1%} {all_turns_rate:<12.1%}")
+            
+            print("")
+            print("AGGREGATE STATISTICS:")
+            print("-" * 70)
+            print(f"Turn 1 Only Success Rate:")
+            print(f"  Mean: {turn1_mean:.1%}")
+            print(f"  Std Dev: {turn1_std:.1%}")
+            print(f"  95% CI: [{turn1_mean - 1.96*turn1_std:.1%}, {turn1_mean + 1.96*turn1_std:.1%}]")
+            print("")
+            print(f"All Turns Success Rate:")
+            print(f"  Mean: {all_turns_mean:.1%}")
+            print(f"  Std Dev: {all_turns_std:.1%}")
+            print(f"  95% CI: [{all_turns_mean - 1.96*all_turns_std:.1%}, {all_turns_mean + 1.96*all_turns_std:.1%}]")
+            print("")
+            print(f"Aggregate results saved to: {filepath}")
+        else:
+            print("\n❌ No valid run statistics to aggregate")
+
 
 def main():
     parser = argparse.ArgumentParser(description="Run ARC tasks with OpenAI o3/o4 models")
@@ -1571,6 +1753,8 @@ def main():
                        help="Enable visual image generation for vision models (default: True)")
     parser.add_argument("--disable_images", action="store_true",
                        help="Disable visual image generation (text-only mode)")
+    parser.add_argument("--repeat-runs", type=int, default=1,
+                       help="Number of times to repeat the entire test (default: 1)")
     
     args = parser.parse_args()
     
@@ -1584,12 +1768,32 @@ def main():
     if args.rate_limit_delay < 0:
         parser.error("--rate_limit_delay cannot be negative")
     
+    # Validate repeat_runs
+    if args.repeat_runs < 1:
+        parser.error("--repeat-runs must be at least 1")
+    if args.repeat_runs > 10:
+        parser.error("--repeat-runs cannot exceed 10 (practical limit)")
+    
     # Handle image enable/disable flags
     enable_images = args.enable_images and not args.disable_images
     
     # Create runner and run tasks
-    runner = ARCTaskRunner(model=args.model, reasoning_effort=args.reasoning_effort, max_workers=args.max_workers, rate_limit_delay=args.rate_limit_delay, max_turns=args.max_turns, debug_images=args.debug_images, enable_images=enable_images)
-    runner.run_subset(args.subset, args.dataset, args.limit)
+    runner = ARCTaskRunner(
+        model=args.model, 
+        reasoning_effort=args.reasoning_effort, 
+        max_workers=args.max_workers, 
+        rate_limit_delay=args.rate_limit_delay, 
+        max_turns=args.max_turns, 
+        debug_images=args.debug_images, 
+        enable_images=enable_images
+    )
+    
+    if args.repeat_runs > 1:
+        # Run repeated tests with aggregate statistics
+        runner.run_repeated_subset(args.subset, args.dataset, args.limit, args.repeat_runs)
+    else:
+        # Single run (original behavior)
+        runner.run_subset(args.subset, args.dataset, args.limit)
 
 
 if __name__ == "__main__":

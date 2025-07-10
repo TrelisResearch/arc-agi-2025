@@ -18,7 +18,7 @@ Objective: Define a test that is a representative measure of performance while a
 - MEDIUM:
 [x] Review of some samples.
 [x] Add guidance around output grid sizes, if wrong. (Enhanced: now tells model target dimensions upfront + general reminders)
-[ ] Create a script that automatically will do a run three times and calculate the mean and std dev (for the number correct on one turn, and the number correct on more than one turn).
+[x] Create a script that automatically will do a run three times and calculate the mean and std dev (for the number correct on one turn, and the number correct on more than one turn).
 [ ] Ablate feedback of max 8 turns versus sampling for max 8 turns.
 [ ] Try sampling on improved examples. Potentially building a priority list. Build a priority list based on # (or percentage) of training grids solved. Ideally you have an id and converstaion history for each candidate incomplete program (so you can reuse LLM cache).
 [ ] Get the model to also describe the input grid and the output grid with code (so, return three code blocks), and provide feedback on those too.
@@ -126,6 +126,9 @@ uv run python run_arc_tasks.py --dataset arc-agi-2 --subset shortest_training_10
 # Run with debug images saved to disk for analysis
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_1 --debug_images
 
+# Run the same test 3 times and calculate mean/std dev statistics
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 3
+
 # Available options:
 #   --dataset: arc-agi-1 or arc-agi-2
 #   --subset: shortest_training_1, shortest_training_10, shortest_training_30, shortest_evaluation_1, shortest_evaluation_10, shortest_evaluation_30, etc.
@@ -137,6 +140,7 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_
 #   --rate_limit_delay: Delay between API calls in seconds (default: 0.0)
 #   --disable_images: Disable visual image generation (text-only mode)
 #   --debug_images: Save debug images to debug_images/ directory
+#   --repeat-runs: Number of times to repeat the entire test (default: 1, max: 10)
 ```
 
 ### Available Subsets
@@ -343,6 +347,77 @@ o3-tools/debug_images/
 - Visual comparison of model predictions vs ground truth
 - Accuracy percentages for each example
 - Color-coded borders indicating success/failure
+
+## Repeated Runs with Statistical Analysis
+
+The tool supports running the same test multiple times to calculate robust performance statistics with mean and standard deviation calculations.
+
+### Key Features
+
+- **Automatic repeated execution**: Run the same subset 1-10 times
+- **Individual run logging**: Each run saves separately with run identifiers
+- **Two success metrics**: Statistics for both "Turn 1 Only" and "All Turns" success rates
+- **API failure handling**: Excludes timeout failures from statistical calculations
+- **Comprehensive output**: Individual run results plus aggregate statistics with confidence intervals
+
+### Usage Examples
+
+```bash
+# Run the same test 3 times with statistical analysis
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 3
+
+# Run 5 times with parallelization for faster execution
+uv run python run_arc_tasks.py --dataset arc-agi-2 --subset shortest_evaluation_10 --repeat-runs 5 --max_workers 10
+
+# Test model consistency with many runs
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_30 --repeat-runs 10 --model o4-mini
+```
+
+### Statistical Output
+
+**Individual Run Results:**
+```
+Run  Attempted  Turn 1 Only  All Turns   Turn 1 Rate   All Turns Rate
+1    10         3            6           30.0%         60.0%
+2    10         2            7           20.0%         70.0%
+3    10         4            5           40.0%         50.0%
+```
+
+**Aggregate Statistics:**
+```
+Turn 1 Only Success Rate:
+  Mean: 30.0%
+  Std Dev: 10.0%
+  95% CI: [10.4%, 49.6%]
+
+All Turns Success Rate:
+  Mean: 60.0%
+  Std Dev: 10.0%
+  95% CI: [40.4%, 79.6%]
+```
+
+### Success Metrics Explained
+
+- **Turn 1 Only**: Tasks solved correctly on the first conversation turn (`turns_used == 1`)
+- **All Turns**: Tasks solved correctly by the end of all turns (any `turns_used`)
+- **API Failures Excluded**: Timeout failures are removed from both numerator and denominator
+- **Confidence Intervals**: 95% CI calculated using ±1.96 standard deviations
+
+### File Outputs
+
+**Individual Runs:**
+- Task logs: `{timestamp}_{thread_id}_{task_id}_run{N}.json`
+- Run summaries: `{timestamp}_summary_{dataset}_{subset}_run{N}.json`
+
+**Aggregate Results:**
+- Combined statistics: `{timestamp}_aggregate_summary_{dataset}_{subset}_{N}runs.json`
+
+### Use Cases
+
+- **Model evaluation**: Assess consistency and reliability across multiple runs
+- **Performance benchmarking**: Get statistically robust performance estimates
+- **A/B testing**: Compare different models, reasoning efforts, or configurations
+- **Confidence intervals**: Understand the uncertainty in your performance measurements
 
 ## Parallelization
 
