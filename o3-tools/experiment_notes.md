@@ -7,14 +7,23 @@ Run two times - once with independent attempts, and once with feedback.
 
 **Baseline scoring is ~8/20 (40% +/-8% with feedback, 28% +/- 11% without feedback) from yesterday.**
 
+**Commentary:**
+- These results are showing that there is a HUGE amount of noise. Because the “Attempt 1 Only Success Rate” and “Turn 1 Only Success Rate” should be equivalent, and they are falling outside their 95% confidence bounds, indicating that just doing 3 runs is not capturing the mean of the distribution…
+
 **Results:**
 
 gpt-4.1-mini:
+Re-run this time with 30 runs of each.
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset mit-easy --repeat-runs 3 --max_workers 10 --max_turns 8 --model gpt-4.1-mini [--independent-attempts]
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset mit-easy --repeat-runs 10 --max_workers 10 --max_turns 8 --model gpt-4.1-mini --independent-attempts
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset mit-easy --repeat-runs 10 --max_workers 10 --max_turns 8 --model gpt-4.1-mini
 ```
+
 AGGREGATE STATISTICS - with independent attempts (i.e. sampling):
 ----------------------------------------------------------------------
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset mit-easy --repeat-runs 3 --max_workers 10 --max_turns 8 --model gpt-4.1-mini --independent-attempts
+```
 Attempt 1 Only Success Rate:
   Mean: 33.3%
   Std Dev: 2.9%
@@ -25,19 +34,53 @@ All Attempts Success Rate:
   Std Dev: 2.9%
   95% CI: [32.7%, 44.0%]
 
-o4-mini:
-```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset mit-medium --repeat-runs 3 --max_workers 10 --max_turns 8 --model o4-mini [--independent-attempts]
-```
-- Independent attempts: .../20
-- Feedback: .../20
-
-Full script
+AGGREGATE STATISTICS - with feedback:
+----------------------------------------------------------------------
 ```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset mit-easy --repeat-runs 3 --max_workers 10 --max_turns 8 --model gpt-4.1-mini
+```
+Turn 1 Only Success Rate:
+  Mean: 26.7%
+  Std Dev: 2.9%
+  95% CI: [21.0%, 32.3%]
+
+All Turns Success Rate:
+  Mean: 31.7%
+  Std Dev: 2.9%
+  95% CI: [26.0%, 37.3%]
+
+o4-mini:
+
+AGGREGATE STATISTICS - with independent attempts (i.e. sampling):
+----------------------------------------------------------------------
+```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset mit-medium --repeat-runs 3 --max_workers 10 --max_turns 8 --model o4-mini --independent-attempts
+```
+Attempt 1 Only Success Rate:
+  Mean: 13.3%
+  Std Dev: 5.8%
+  95% CI: [2.0%, 24.6%]
+
+All Attempts Success Rate:
+  Mean: 43.3%
+  Std Dev: 2.9%
+  95% CI: [37.7%, 49.0%]
+
+AGGREGATE STATISTICS - with feedback:
+----------------------------------------------------------------------
+```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset mit-medium --repeat-runs 3 --max_workers 10 --max_turns 8 --model o4-mini
 ```
+Turn 1 Only Success Rate:
+  Mean: 22.9%
+  Std Dev: 4.2%
+  95% CI: [14.7%, 31.2%]
+
+All Turns Success Rate:
+  Mean: 38.8%
+  Std Dev: 5.0%
+  95% CI: [28.9%, 48.6%]
+
 
 **Notes:**
 ...
