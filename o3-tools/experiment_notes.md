@@ -2,12 +2,46 @@
 
 ## 2025 10th July
 
-### Repeat of the feedbacck versus sampling experiment
+### Repeat of the feedback versus sampling experiment, with a better dataset
+
+**Commentary:**
+- The error on running the shortest 100 arc-agi-1 evaluation problems appears a bit lower than just running MIT-easy, although the single turn results aren't within each other's confidence bounds suggesting that 3 runs is too few.
+- Sampling is within error of feedback, but the cost is 3x higher for feedback (traces are longer per task, as they are accumulated)... suggesting that feedback is currently no better than sampling from scratch.
+- IDEA: To improve, perhaps it's worth running the full 400 arc-agi-1 evaluation problems on gpt-4.1 and saving the ones that a) are correct in one turn and b) are correct in multiple turns. That larger subset might then be suitable for running ablations on gpt-4.1-mini and allow for a stronger signal. The cost of that is probably about $15, and I'm guessing would generate about 50-100 correct tasks. To further augment this dataset, we could remove tasks that are solved with a single attempt of gpt-4.1-nano. This should give a range of difficulty that is roughly calibrated to gpt-4.1-mini.
+
+**Results:**
+
+AGGREGATE STATISTICS - with independent attempts (i.e. sampling):
+----------------------------------------------------------------------
 ```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_100 --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini --independent-attempts
+```
+Attempt 1 Only Success Rate:
+  Mean: 11.7%
+  Std Dev: 0.6%
+  95% CI: [10.5%, 12.8%]
 
+All Attempts Success Rate:
+  Mean: 22.3%
+  Std Dev: 2.1%
+  95% CI: [18.3%, 26.4%]
+Note that cost of the entire run is about $1.70 per run.
+
+AGGREGATE STATISTICS - with feedback:
+----------------------------------------------------------------------
+```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_100 --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini
 ```
+Turn 1 Only Success Rate:
+  Mean: 13.0%
+  Std Dev: 1.7%
+  95% CI: [9.6%, 16.4%]
+
+All Turns Success Rate:
+  Mean: 18.7%
+  Std Dev: 2.9%
+  95% CI: [13.0%, 24.3%]
+Note that the cost of the entire run is about $4.50 per run, 3x the cost of search.
 
 ### Figuring out how to get error down on measurement
 
@@ -49,7 +83,6 @@ Total attempts used: 780
 Average attempts per task: 7.8
 Total tokens used: 2,498,011
 Total cost: $0.442855
-
 
 ### Ablating sampling versus feedback (depth of 8).
 Run two times - once with independent attempts, and once with feedback.
