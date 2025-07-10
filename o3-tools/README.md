@@ -3,7 +3,7 @@
 A tool for testing OpenAI o3/o4 models on ARC-AGI tasks with and without code interpreter tools.
 
 **Videos**
-[Part 4 - Visualistion + Testing out Feedback and Images](https://share.descript.com/view/zfBfDlP20uA)
+[Part 4 - Visualisation + Testing out Feedback and Images](https://share.descript.com/view/zfBfDlP20uA)
 [Part 3: o3-tools - inspecting the prompts (day 3)](https://share.descript.com/view/eEJtRvt1XlM)
 [Part 2: Part 2: Running code locally](https://share.descript.com/view/V9EjCb9cMZB)
 [Part 1: Running o3 with remote code interpreter tools](https://share.descript.com/view/RmRclePaxMP)
@@ -17,7 +17,7 @@ Objective: Define a test that is a representative measure of performance while a
 
 - MEDIUM:
 [x] Review of some samples.
-[ ] Add guidance around output grid sizes, if wrong.
+[x] Add guidance around output grid sizes, if wrong. (Enhanced: now tells model target dimensions upfront + general reminders)
 [ ] Create a script that automatically will do a run three times and calculate the mean and std dev (for the number correct on one turn, and the number correct on more than one turn).
 [ ] Ablate feedback of max 8 turns versus sampling for max 8 turns.
 [ ] Try sampling on improved examples. Potentially building a priority list. Build a priority list based on # (or percentage) of training grids solved. Ideally you have an id and converstaion history for each candidate incomplete program (so you can reuse LLM cache).

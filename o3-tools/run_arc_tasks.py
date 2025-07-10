@@ -465,6 +465,15 @@ def transform(grid):
         # Create the text content
         task_str = self.task_loader.format_task_for_prompt(task_data, include_test=True)
         
+        # Get the consistent output grid dimensions from the first training example
+        if task_data['train'] and task_data['train'][0]['output']:
+            output_grid = task_data['train'][0]['output']
+            output_height = len(output_grid)
+            output_width = len(output_grid[0]) if output_grid else 0
+            grid_size_info = f"\n**IMPORTANT: Your transformation must always produce a {output_height}×{output_width} output grid.**\n"
+        else:
+            grid_size_info = ""
+        
         text_content = f"""You are solving an ARC (Abstraction and Reasoning Corpus) task. 
 I will show you training examples with input and output grids, plus a test input grid. Your task is to:
 
@@ -473,7 +482,7 @@ I will show you training examples with input and output grids, plus a test input
 3. **DO NOT predict or generate the test output** - your job is only to write the transformation program
 4. **Attempt a solution** - even if the pattern isn't completely clear, provide your best hypothesis
 5. **Do not repeat the same transformation** - if you have already tried a transformation, do not repeat it.
-
+{grid_size_info}
 The test input is shown for context so you understand what type of grid your program will eventually process. Focus on learning patterns from training examples and writing code that captures your understanding.
 
 {task_str}
@@ -560,6 +569,7 @@ def transform(grid):
         total_pixels = 0
         correct_pixels = 0
         solved_count = 0
+        has_grid_size_mismatch = False
         
         for i, example in enumerate(training_examples):
             predicted_output, error, timed_out = self.executor.execute_program(program, example['input'])
@@ -605,6 +615,13 @@ def transform(grid):
                     
             if is_solved:
                 solved_count += 1
+            
+            # Check for grid size mismatch
+            if predicted_output and expected_output:
+                predicted_shape = (len(predicted_output), len(predicted_output[0]) if predicted_output else 0)
+                expected_shape = (len(expected_output), len(expected_output[0]) if expected_output else 0)
+                if predicted_shape != expected_shape:
+                    has_grid_size_mismatch = True
                 
             results.append({
                 'index': i + 1,
@@ -648,6 +665,14 @@ def transform(grid):
                 if not result['solved']:
                     feedback_text += f"Pixel accuracy: {result['pixel_accuracy']:.1%}\n"
             feedback_text += "\n"
+        
+        # Add general grid size reminder if there were any mismatches
+        if has_grid_size_mismatch and training_examples:
+            expected_output = training_examples[0]['output']
+            if expected_output:
+                expected_height = len(expected_output)
+                expected_width = len(expected_output[0]) if expected_output else 0
+                feedback_text += f"⚠️  GRID SIZE ERROR: One or more of your output grids are incorrect in size. They should ALL be {expected_height}×{expected_width} for this task.\n\n"
         
         # Create message list with text and optional visual feedback
         feedback_messages = []

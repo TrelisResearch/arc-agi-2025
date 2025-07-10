@@ -2,6 +2,19 @@
 
 ## 2025 10th July
 
+### Ablating sampling versus feedback (depth of 8).
+...
+
+### Investigating how to improve output grid sizes
+Note that this is a problem with gpt-4.1-mini but also o4-mini (and maybe o3?).
+
+In the feedback loop, prompting has been improved to give feedback if grid sizes are wrong. Also, the first turn prompt now explicitly says what size output grid should be produced.
+
+Wasn't able to get a clear ablation improvement. But seems reasonable the prompts won't hurt.
+
+>[!TIP]
+>Note that `arc-agi-2/shortest_evaluation_1` has an output grid size different than the input and is good for testing.
+
 ### Notes on o4-mini (low) run from yesterday:
 - It seems that task 27a77e38 in the arc-agi-1 mit-medium split can be fluked?!?
 - There's some, very limited, evidence that higher pixel match results in a better chance of the next iteration with feedback being correct.
