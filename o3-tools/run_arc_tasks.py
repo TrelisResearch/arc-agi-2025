@@ -1900,7 +1900,10 @@ Make sure to include the function definition inside a proper code block."""
             # Individual run results
             print("INDIVIDUAL RUN RESULTS:")
             print("-" * 70)
-            print(f"{'Run':<4} {'Attempted':<10} {'Turn 1 Only':<12} {'All Turns':<12} {'Turn 1 Rate':<12} {'All Turns Rate':<12}")
+            if self.independent_attempts:
+                print(f"{'Run':<4} {'Attempted':<10} {'Attempt 1 Only':<14} {'All Attempts':<14} {'Attempt 1 Rate':<14} {'All Attempts Rate':<14}")
+            else:
+                print(f"{'Run':<4} {'Attempted':<10} {'Turn 1 Only':<12} {'All Turns':<12} {'Turn 1 Rate':<12} {'All Turns Rate':<12}")
             print("-" * 70)
             
             for stats in run_stats:
@@ -1911,20 +1914,34 @@ Make sure to include the function definition inside a proper code block."""
                 turn1_rate = stats['turn1_success_rate']
                 all_turns_rate = stats['all_turns_success_rate']
                 
-                print(f"{run_num:<4} {attempted:<10} {turn1_solved:<12} {all_turns_solved:<12} {turn1_rate:<12.1%} {all_turns_rate:<12.1%}")
+                if self.independent_attempts:
+                    print(f"{run_num:<4} {attempted:<10} {turn1_solved:<14} {all_turns_solved:<14} {turn1_rate:<14.1%} {all_turns_rate:<14.1%}")
+                else:
+                    print(f"{run_num:<4} {attempted:<10} {turn1_solved:<12} {all_turns_solved:<12} {turn1_rate:<12.1%} {all_turns_rate:<12.1%}")
             
             print("")
             print("AGGREGATE STATISTICS:")
             print("-" * 70)
-            print(f"Turn 1 Only Success Rate:")
-            print(f"  Mean: {turn1_mean:.1%}")
-            print(f"  Std Dev: {turn1_std:.1%}")
-            print(f"  95% CI: [{turn1_mean - 1.96*turn1_std:.1%}, {turn1_mean + 1.96*turn1_std:.1%}]")
-            print("")
-            print(f"All Turns Success Rate:")
-            print(f"  Mean: {all_turns_mean:.1%}")
-            print(f"  Std Dev: {all_turns_std:.1%}")
-            print(f"  95% CI: [{all_turns_mean - 1.96*all_turns_std:.1%}, {all_turns_mean + 1.96*all_turns_std:.1%}]")
+            if self.independent_attempts:
+                print(f"Attempt 1 Only Success Rate:")
+                print(f"  Mean: {turn1_mean:.1%}")
+                print(f"  Std Dev: {turn1_std:.1%}")
+                print(f"  95% CI: [{turn1_mean - 1.96*turn1_std:.1%}, {turn1_mean + 1.96*turn1_std:.1%}]")
+                print("")
+                print(f"All Attempts Success Rate:")
+                print(f"  Mean: {all_turns_mean:.1%}")
+                print(f"  Std Dev: {all_turns_std:.1%}")
+                print(f"  95% CI: [{all_turns_mean - 1.96*all_turns_std:.1%}, {all_turns_mean + 1.96*all_turns_std:.1%}]")
+            else:
+                print(f"Turn 1 Only Success Rate:")
+                print(f"  Mean: {turn1_mean:.1%}")
+                print(f"  Std Dev: {turn1_std:.1%}")
+                print(f"  95% CI: [{turn1_mean - 1.96*turn1_std:.1%}, {turn1_mean + 1.96*turn1_std:.1%}]")
+                print("")
+                print(f"All Turns Success Rate:")
+                print(f"  Mean: {all_turns_mean:.1%}")
+                print(f"  Std Dev: {all_turns_std:.1%}")
+                print(f"  95% CI: [{all_turns_mean - 1.96*all_turns_std:.1%}, {all_turns_mean + 1.96*all_turns_std:.1%}]")
             print("")
             print(f"Aggregate results saved to: {filepath}")
         else:

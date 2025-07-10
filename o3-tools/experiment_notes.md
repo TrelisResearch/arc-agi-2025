@@ -13,8 +13,17 @@ gpt-4.1-mini:
 ```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset mit-easy --repeat-runs 3 --max_workers 10 --max_turns 8 --model gpt-4.1-mini [--independent-attempts]
 ```
-- Independent attempts: .../20
-- Feedback: .../20
+AGGREGATE STATISTICS - with independent attempts (i.e. sampling):
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 33.3%
+  Std Dev: 2.9%
+  95% CI: [27.7%, 39.0%]
+
+All Attempts Success Rate:
+  Mean: 38.3%
+  Std Dev: 2.9%
+  95% CI: [32.7%, 44.0%]
 
 o4-mini:
 ```bash
@@ -25,7 +34,7 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset mit-medium --repeat-
 
 Full script
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset mit-easy --repeat-runs 3 --max_workers 10 --max_turns 8 --model gpt-4.1-mini --independent-attempts
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset mit-easy --repeat-runs 3 --max_workers 10 --max_turns 8 --model gpt-4.1-mini
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset mit-medium --repeat-runs 3 --max_workers 10 --max_turns 8 --model o4-mini --independent-attempts
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset mit-medium --repeat-runs 3 --max_workers 10 --max_turns 8 --model o4-mini
 ```
