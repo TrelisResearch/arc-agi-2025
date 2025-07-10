@@ -20,8 +20,9 @@ Objective: Define a test that is a representative measure of performance while a
 [x] Review of some samples.
 [x] Add guidance around output grid sizes, if wrong. (Enhanced: now tells model target dimensions upfront + general reminders)
 [x] Create a script that automatically will do a run three times and calculate the mean and std dev (for the number correct on one turn, and the number correct on more than one turn).
-[ ] Ablate feedback of max 8 turns versus sampling for max 8 turns.
-[ ] Try sampling on improved examples. Potentially building a priority list. Build a priority list based on # (or percentage) of training grids solved. Ideally you have an id and converstaion history for each candidate incomplete program (so you can reuse LLM cache).
+[x] Ablate feedback of max 8 turns versus sampling for max 8 turns.
+[ ] Fix the cheating issue whereby there is more sampling/turns if the training examples are all correct, but the test is wrong.
+[ ] Sample for half of the max_turns, and then feedback for the other remaining turns (stop of course if the test is solved).
 [ ] Get the model to also describe the input grid and the output grid with code (so, return three code blocks), and provide feedback on those too.
 [ ] Ablate the costs of solving if we do o4-mini (low) versus o4-mini (high). Is it possibly better to use o4-mini (low) with 8 max turns versus o4-mini (high) with 4 max turns? Consider costs across three runs. (best to develop a script for doing this that calculates means etc.).
 
@@ -30,6 +31,7 @@ Objective: Define a test that is a representative measure of performance while a
 
 Other ideas:
 [ ] Swap to chat completions endpoint so as to allow for openai-style endpoint usage (enable other models, incl. reasoning). THIS IS NOT GOING TO SUPPORT OPENAI REASONING MODELS, WHICH DONT' DISCLOSE THE REASONING TRACE, AND SO YOU MUST USE THE RESPONSES API TO USE REASONING WITH OPENAI MODELS. OTHERS (CLAUDE, QWEN, GEMINI?, DEEPSEEK?) RESPOND WITH <think> TAGS.
+[ ] PROBLEM: WE ARE CHEATING BY ALLOWING THE MODEL TO CONTINUE IF THE TRAINING EXAMPLES ARE ALL CORRECT, BUT THE TEST IS WRONG. THERE'S AN ABLATION TO TEST FOR THE CASE WHERE WE - BEFORE STOPPING - ASK THE MODEL TO SEE IF IT SHOULD MAKE THE PROGRAM MORE GENERAL.
 [ ] Apply a limit to oscillation within feedback roll-outs.
 [ ] Put in simpler images (particularly relevant when we fine-tune because the model will know the format to expect).
 [ ] Start with strict prompt, only then fall back to partial attempt. DELAY.

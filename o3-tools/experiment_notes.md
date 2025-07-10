@@ -23,6 +23,13 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset mit-medium --repeat-
 - Independent attempts: .../20
 - Feedback: .../20
 
+Full script
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset mit-easy --repeat-runs 3 --max_workers 10 --max_turns 8 --model gpt-4.1-mini --independent-attempts
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset mit-medium --repeat-runs 3 --max_workers 10 --max_turns 8 --model o4-mini --independent-attempts
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset mit-medium --repeat-runs 3 --max_workers 10 --max_turns 8 --model o4-mini
+```
+
 **Notes:**
 ...
 
