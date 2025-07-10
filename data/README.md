@@ -14,45 +14,53 @@ data/
 │   └── evaluation/         # 120 evaluation tasks
 └── subsets/                # Predefined subsets for both datasets
     ├── arc-agi-1/
-    │   ├── shortest_1.txt              # Task ID of the shortest task
-    │   ├── shortest_10.txt             # Task IDs of 10 shortest tasks
-    │   ├── shortest_100.txt            # Task IDs of 100 shortest tasks
-    │   ├── shortest_1_details.json     # Detailed info for shortest task
-    │   ├── shortest_10_details.json    # Detailed info for 10 shortest tasks
-    │   ├── shortest_100_details.json   # Detailed info for 100 shortest tasks
-    │   ├── middle_1.txt                # Task ID of the median task
-    │   ├── middle_10.txt               # Task IDs of 10 median tasks
-    │   ├── middle_100.txt              # Task IDs of 100 median tasks
-    │   ├── middle_1_details.json       # Detailed info for median task
-    │   ├── middle_10_details.json      # Detailed info for 10 median tasks
-    │   ├── middle_100_details.json     # Detailed info for 100 median tasks
-    │   ├── longest_1.txt               # Task ID of the longest task
-    │   ├── longest_10.txt              # Task IDs of 10 longest tasks
-    │   ├── longest_100.txt             # Task IDs of 100 longest tasks
-    │   ├── longest_1_details.json      # Detailed info for longest task
-    │   ├── longest_10_details.json     # Detailed info for 10 longest tasks
-    │   ├── longest_100_details.json    # Detailed info for 100 longest tasks
-    │   └── tasks_with_multiple_tests.json  # Tasks with >1 test example
+    │   ├── shortest_evaluation_1.txt           # Task ID of the shortest evaluation task
+    │   ├── shortest_evaluation_10.txt          # Task IDs of 10 shortest evaluation tasks
+    │   ├── shortest_evaluation_30.txt          # Task IDs of 30 shortest evaluation tasks
+    │   ├── shortest_evaluation_100.txt         # Task IDs of 100 shortest evaluation tasks
+    │   ├── shortest_training_1.txt             # Task ID of the shortest training task
+    │   ├── shortest_training_10.txt            # Task IDs of 10 shortest training tasks
+    │   ├── shortest_training_30.txt            # Task IDs of 30 shortest training tasks
+    │   ├── shortest_training_100.txt           # Task IDs of 100 shortest training tasks
+    │   ├── middle_evaluation_1.txt             # Task ID of the median evaluation task
+    │   ├── middle_evaluation_10.txt            # Task IDs of 10 median evaluation tasks
+    │   ├── middle_evaluation_30.txt            # Task IDs of 30 median evaluation tasks
+    │   ├── middle_training_1.txt               # Task ID of the median training task
+    │   ├── middle_training_10.txt              # Task IDs of 10 median training tasks
+    │   ├── middle_training_30.txt              # Task IDs of 30 median training tasks
+    │   ├── longest_evaluation_1.txt            # Task ID of the longest evaluation task
+    │   ├── longest_evaluation_10.txt           # Task IDs of 10 longest evaluation tasks
+    │   ├── longest_evaluation_30.txt           # Task IDs of 30 longest evaluation tasks
+    │   ├── longest_training_1.txt              # Task ID of the longest training task
+    │   ├── longest_training_10.txt             # Task IDs of 10 longest training tasks
+    │   ├── longest_training_30.txt             # Task IDs of 30 longest training tasks
+    │   ├── grid_size_distributed_30_evaluation.txt # 30 evaluation tasks evenly distributed by grid size
+    │   ├── grid_size_distributed_30_training.txt   # 30 training tasks evenly distributed by grid size
+    │   ├── *_details.json files                # Corresponding detailed info files for each subset
+    │   └── tasks_with_multiple_tests.json      # Tasks with >1 test example
     └── arc-agi-2/
-        ├── shortest_1.txt              # Task ID of the shortest task
-        ├── shortest_10.txt             # Task IDs of 10 shortest tasks
-        ├── shortest_100.txt            # Task IDs of 100 shortest tasks
-        ├── shortest_1_details.json     # Detailed info for shortest task
-        ├── shortest_10_details.json    # Detailed info for 10 shortest tasks
-        ├── shortest_100_details.json   # Detailed info for 100 shortest tasks
-        ├── middle_1.txt                # Task ID of the median task
-        ├── middle_10.txt               # Task IDs of 10 median tasks
-        ├── middle_100.txt              # Task IDs of 100 median tasks
-        ├── middle_1_details.json       # Detailed info for median task
-        ├── middle_10_details.json      # Detailed info for 10 median tasks
-        ├── middle_100_details.json     # Detailed info for 100 median tasks
-        ├── longest_1.txt               # Task ID of the longest task
-        ├── longest_10.txt              # Task IDs of 10 longest tasks
-        ├── longest_100.txt             # Task IDs of 100 longest tasks
-        ├── longest_1_details.json      # Detailed info for longest task
-        ├── longest_10_details.json     # Detailed info for 10 longest tasks
-        ├── longest_100_details.json    # Detailed info for 100 longest tasks
-        └── tasks_with_multiple_tests.json  # Tasks with >1 test example
+        ├── shortest_evaluation_1.txt           # Task ID of the shortest evaluation task
+        ├── shortest_evaluation_10.txt          # Task IDs of 10 shortest evaluation tasks
+        ├── shortest_evaluation_30.txt          # Task IDs of 30 shortest evaluation tasks
+        ├── shortest_training_1.txt             # Task ID of the shortest training task
+        ├── shortest_training_10.txt            # Task IDs of 10 shortest training tasks
+        ├── shortest_training_30.txt            # Task IDs of 30 shortest training tasks
+        ├── middle_evaluation_1.txt             # Task ID of the median evaluation task
+        ├── middle_evaluation_10.txt            # Task IDs of 10 median evaluation tasks
+        ├── middle_evaluation_30.txt            # Task IDs of 30 median evaluation tasks
+        ├── middle_training_1.txt               # Task ID of the median training task
+        ├── middle_training_10.txt              # Task IDs of 10 median training tasks
+        ├── middle_training_30.txt              # Task IDs of 30 median training tasks
+        ├── longest_evaluation_1.txt            # Task ID of the longest evaluation task
+        ├── longest_evaluation_10.txt           # Task IDs of 10 longest evaluation tasks
+        ├── longest_evaluation_30.txt           # Task IDs of 30 longest evaluation tasks
+        ├── longest_training_1.txt              # Task ID of the longest training task
+        ├── longest_training_10.txt             # Task IDs of 10 longest training tasks
+        ├── longest_training_30.txt             # Task IDs of 30 longest training tasks
+        ├── grid_size_distributed_30_evaluation.txt # 30 evaluation tasks evenly distributed by grid size
+        ├── grid_size_distributed_30_training.txt   # 30 training tasks evenly distributed by grid size
+        ├── *_details.json files                # Corresponding detailed info files for each subset
+        └── tasks_with_multiple_tests.json      # Tasks with >1 test example
 ```
 
 ## File Naming Convention
@@ -114,9 +122,9 @@ Each task file is a JSON object with the following structure:
 ## Subset Naming Convention (2025+)
 
 Subsets are now split by training and evaluation for each dataset:
-- `shortest_training_1`, `shortest_training_10`, `shortest_training_30`
-- `shortest_evaluation_1`, `shortest_evaluation_10`, `shortest_evaluation_30`
-- ... and similarly for `middle` and `longest`
+- `shortest_training_1`, `shortest_training_10`, `shortest_training_30`, `shortest_training_100` (arc-agi-1 only)
+- `shortest_evaluation_1`, `shortest_evaluation_10`, `shortest_evaluation_30`, `shortest_evaluation_100` (arc-agi-1 only)
+- ... and similarly for `middle` and `longest` (up to 30 tasks)
 - `grid_size_distributed_30_training`: 30 training tasks evenly distributed by grid size
 - `grid_size_distributed_30_evaluation`: 30 evaluation tasks evenly distributed by grid size
 
@@ -137,6 +145,11 @@ Run the 30 longest training tasks from ARC-AGI-1:
 uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset longest_training_30
 ```
 
+Run the 100 shortest evaluation tasks from ARC-AGI-1:
+```bash
+uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_100
+```
+
 Run 30 grid size distributed evaluation tasks from ARC-AGI-2:
 ```bash
 uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-2 --subset grid_size_distributed_30_evaluation
@@ -150,18 +163,33 @@ uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-2 --subset grid_size_d
 
 ### Available Subsets
 
-The following subset files are available for each dataset in `data/subsets/arc-agi-1/` and `data/subsets/arc-agi-2/`:
+The following subset files are available:
 
-- **shortest_1.txt**: Single shortest task
-- **shortest_10.txt**: 10 shortest tasks
-- **shortest_100.txt**: 100 shortest tasks
-- **middle_1.txt**: Single median task
-- **middle_10.txt**: 10 median tasks
-- **middle_100.txt**: 100 median tasks
-- **longest_1.txt**: Single longest task
-- **longest_10.txt**: 10 longest tasks
-- **longest_100.txt**: 100 longest tasks
-- **grid_size_distributed_30.txt**: 30 tasks evenly distributed by grid size (see below)
+**For arc-agi-1 (in `data/subsets/arc-agi-1/`):**
+- **shortest_training_1.txt**: Single shortest training task
+- **shortest_training_10.txt**: 10 shortest training tasks  
+- **shortest_training_30.txt**: 30 shortest training tasks
+- **shortest_training_100.txt**: 100 shortest training tasks
+- **shortest_evaluation_1.txt**: Single shortest evaluation task
+- **shortest_evaluation_10.txt**: 10 shortest evaluation tasks
+- **shortest_evaluation_30.txt**: 30 shortest evaluation tasks
+- **shortest_evaluation_100.txt**: 100 shortest evaluation tasks
+- Similar files for **middle** and **longest** (up to 30 tasks each)
+- **grid_size_distributed_30_training.txt**: 30 training tasks evenly distributed by grid size
+- **grid_size_distributed_30_evaluation.txt**: 30 evaluation tasks evenly distributed by grid size
+
+**For arc-agi-2 (in `data/subsets/arc-agi-2/`):**
+- **shortest_training_1.txt**: Single shortest training task
+- **shortest_training_10.txt**: 10 shortest training tasks  
+- **shortest_training_30.txt**: 30 shortest training tasks
+- **shortest_evaluation_1.txt**: Single shortest evaluation task
+- **shortest_evaluation_10.txt**: 10 shortest evaluation tasks
+- **shortest_evaluation_30.txt**: 30 shortest evaluation tasks
+- Similar files for **middle** and **longest** (up to 30 tasks each)
+- **grid_size_distributed_30_training.txt**: 30 training tasks evenly distributed by grid size
+- **grid_size_distributed_30_evaluation.txt**: 30 evaluation tasks evenly distributed by grid size
+
+**For both datasets:**
 - **tasks_with_multiple_tests.json**: Tasks with more than one test example (JSON, not a subset for evaluation)
 
 Each `.txt` file contains one task ID per line. The corresponding `_details.json` files include additional metadata like the computed size and which split (training/evaluation) the task belongs to.

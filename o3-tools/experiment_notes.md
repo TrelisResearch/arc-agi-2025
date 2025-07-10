@@ -2,6 +2,16 @@
 
 ## 2025 10th July
 
+### Figuring out how to get error down on measurement
+
+Plan is first to see how gpt-4.1-mini and nano score on the shortest arc-agi-1 tasks, 100 of them.
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_100 --repeat-runs 1 --max_workers 10 --max_turns 8 --model gpt-4.1-mini --independent-attempts
+
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_100 --repeat-runs 1 --max_workers 10 --max_turns 8 --model gpt-4.1-nano --independent-attempts
+```
+
+
 ### Ablating sampling versus feedback (depth of 8).
 Run two times - once with independent attempts, and once with feedback.
 
