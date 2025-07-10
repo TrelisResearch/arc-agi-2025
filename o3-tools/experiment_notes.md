@@ -2,14 +2,53 @@
 
 ## 2025 10th July
 
+### Repeat of the feedbacck versus sampling experiment
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_100 --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini --independent-attempts
+
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_100 --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini
+```
+
 ### Figuring out how to get error down on measurement
 
 Plan is first to see how gpt-4.1-mini and nano score on the shortest arc-agi-1 tasks, 100 of them.
+==================================================
+SUMMARY
+==================================================
 ```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_100 --repeat-runs 1 --max_workers 10 --max_turns 8 --model gpt-4.1-mini --independent-attempts
+```
+Dataset: arc-agi-1
+Subset: shortest_evaluation_100
+Model: gpt-4.1-mini
+API: Responses (independent attempts, max 8 attempts)
+Total tasks attempted: 100
+Successful API calls: 100/100 (100.0%)
+Tasks solved correctly: 24/100 (24.0%)
+Pixel accuracy: 722/5676 (12.7%)
+Total attempts used: 654
+Average attempts per task: 6.5
+Total tokens used: 2,086,479
+Total cost: $1.700422
 
+==================================================
+SUMMARY
+==================================================
+```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_100 --repeat-runs 1 --max_workers 10 --max_turns 8 --model gpt-4.1-nano --independent-attempts
 ```
+Dataset: arc-agi-1
+Subset: shortest_evaluation_100
+Model: gpt-4.1-nano
+API: Responses (independent attempts, max 8 attempts)
+Total tasks attempted: 100
+Successful API calls: 100/100 (100.0%)
+Tasks solved correctly: 5/100 (5.0%)
+Pixel accuracy: 111/5676 (2.0%)
+Total attempts used: 780
+Average attempts per task: 7.8
+Total tokens used: 2,498,011
+Total cost: $0.442855
 
 
 ### Ablating sampling versus feedback (depth of 8).
@@ -122,6 +161,46 @@ All Turns Success Rate:
 
 **Notes:**
 ...
+
+### MIT Difficulty vs Task Size Analysis
+
+Analyzed overlap between MIT difficulty splits (easy/medium/hard) and shortest evaluation tasks in arc-agi-1 to understand the relationship between task difficulty and task size.
+
+**Key Findings:**
+
+1. **MIT-Easy tasks correlate strongly with smallest tasks**
+   - **30%** of MIT-easy tasks are in the 100 shortest evaluation tasks
+   - The **single shortest task** (`66e6c45b`) is classified as MIT-easy
+   - **20%** of the 10 shortest tasks are MIT-easy
+
+2. **MIT-Hard tasks also appear in shortest tasks** 
+   - **35%** of MIT-hard tasks are in the 100 shortest evaluation tasks (highest percentage!)
+   - But **no overlap** with the 10 shortest tasks
+   - This suggests some hard tasks are small but not the smallest
+
+3. **MIT-Medium has moderate overlap**
+   - **20%** of MIT-medium tasks in shortest_evaluation_100
+   - **No overlap** with the 10 shortest tasks
+   - Overlaps start appearing at the 30-task level
+
+**Key Insights:**
+
+🔍 **Task difficulty ≠ Task size**: The MIT difficulty classification doesn't directly correlate with grid size. Some hard tasks are actually quite compact.
+
+🎯 **The shortest task is easy**: Task `66e6c45b` (96 total cells) is both the shortest and classified as MIT-easy.
+
+📈 **Overlap increases with subset size**: 
+- shortest_1: Only MIT-easy overlap
+- shortest_10: Only MIT-easy overlap  
+- shortest_30: MIT-easy + MIT-medium + MIT-hard
+- shortest_100: All three MIT categories well represented
+
+**Implications:**
+- **Small tasks can still be hard** - complexity isn't just about size
+- **MIT-easy tasks tend to be smaller** - but not exclusively
+- **Good test sets**: The shortest evaluation tasks provide a mix of difficulties, making them useful for testing across complexity levels
+
+This analysis shows that task size and cognitive difficulty are orthogonal dimensions in ARC-AGI tasks!
 
 ### Investigating how to improve output grid sizes
 Note that this is a problem with gpt-4.1-mini but also o4-mini (and maybe o3?).
