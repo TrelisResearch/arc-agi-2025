@@ -9,15 +9,43 @@ Run two times - once with independent attempts, and once with feedback.
 
 **Commentary:**
 - These results are showing that there is a HUGE amount of noise. Because the “Attempt 1 Only Success Rate” and “Turn 1 Only Success Rate” should be equivalent, and they are falling outside their 95% confidence bounds, indicating that just doing 3 runs is not capturing the mean of the distribution…
+- I re-ran the tests with 10 runs of each, and now the results are within each other's confidence bounds for single turn/attempt, which is good. However, the error is so high that distinguishing the two runs is very difficult.
+- IMPLICATION: Ablating some kind of MCTS will be almost impossible to see in the noise...
 
 **Results:**
 
 gpt-4.1-mini:
-Re-run this time with 30 runs of each.
+Re-run this time with 10 runs of each.
+
+AGGREGATE STATISTICS - with independent attempts (i.e. sampling):
+----------------------------------------------------------------------
 ```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset mit-easy --repeat-runs 10 --max_workers 10 --max_turns 8 --model gpt-4.1-mini --independent-attempts
+```
+Attempt 1 Only Success Rate:
+  Mean: 23.0%
+  Std Dev: 6.7%
+  95% CI: [9.8%, 36.2%]
+
+All Attempts Success Rate:
+  Mean: 35.0%
+  Std Dev: 4.1%
+  95% CI: [27.0%, 43.0%]
+
+AGGREGATE STATISTICS - with feedback:
+----------------------------------------------------------------------
+```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset mit-easy --repeat-runs 10 --max_workers 10 --max_turns 8 --model gpt-4.1-mini
 ```
+Turn 1 Only Success Rate:
+  Mean: 22.5%
+  Std Dev: 4.2%
+  95% CI: [14.2%, 30.8%]
+
+All Turns Success Rate:
+  Mean: 32.5%
+  Std Dev: 4.9%
+  95% CI: [23.0%, 42.0%]
 
 AGGREGATE STATISTICS - with independent attempts (i.e. sampling):
 ----------------------------------------------------------------------
