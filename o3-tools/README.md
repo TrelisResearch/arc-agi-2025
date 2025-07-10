@@ -3,7 +3,7 @@
 A tool for testing OpenAI o3/o4 models on ARC-AGI tasks with and without code interpreter tools.
 
 **Videos**
-[Part 5: Comments on discrete vs continuous + Ablating Sampling vs Feedback](...)
+[Part 5: Comments on discrete vs continuous + Ablating Sampling vs Feedback](https://share.descript.com/view/W3OEzy9PW9A)
 [Part 4 - Visualisation + Testing out Feedback and Images](https://share.descript.com/view/zfBfDlP20uA)
 [Part 3: o3-tools - inspecting the prompts (day 3)](https://share.descript.com/view/eEJtRvt1XlM)
 [Part 2: Part 2: Running code locally](https://share.descript.com/view/V9EjCb9cMZB)
