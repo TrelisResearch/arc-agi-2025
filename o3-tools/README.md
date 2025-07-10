@@ -22,8 +22,10 @@ Objective: Define a test that is a representative measure of performance while a
 [x] Create a script that automatically will do a run three times and calculate the mean and std dev (for the number correct on one turn, and the number correct on more than one turn).
 [x] Ablate feedback of max 8 turns versus sampling for max 8 turns.
 [ ] Fix the cheating issue whereby there is more sampling/turns if the training examples are all correct, but the test is wrong.
-[ ] Sample for half of the max_turns, and then feedback for the other remaining turns (stop of course if the test is solved).
-[ ] Get the model to also describe the input grid and the output grid with code (so, return three code blocks), and provide feedback on those too.
+[ ] MCTS-type ablation: Sample for half of the max_turns, and then feedback for the other remaining turns (stop of course if the test is solved).
+[ ] Describing grids ablation: Get the model to also describe the input grid and the output grid with code (so, return three code blocks), and provide feedback on those too.
+  [ ] Do this all in one go.
+  [ ] Do the description in separate calls to the LLM.
 [ ] Ablate the costs of solving if we do o4-mini (low) versus o4-mini (high). Is it possibly better to use o4-mini (low) with 8 max turns versus o4-mini (high) with 4 max turns? Consider costs across three runs. (best to develop a script for doing this that calculates means etc.).
 
 - SLOW:
