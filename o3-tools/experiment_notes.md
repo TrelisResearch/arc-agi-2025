@@ -3,6 +3,15 @@
 ## 2025 10th July
 
 ### Ablating sampling versus feedback (depth of 8).
+Run two times - once with independent attempts, and once with feedback.
+
+**Baseline scoring is ~8/20 from yesterday.**
+
+**Results:**
+- Independent attempts: .../20
+- Feedback: .../20
+
+**Notes:**
 ...
 
 ### Investigating how to improve output grid sizes

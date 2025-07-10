@@ -316,7 +316,7 @@ def execute_with_timeout(func, *args, timeout=300, **kwargs):
 class ARCTaskRunner:
     """Run ARC tasks using the OpenAI Responses API (single-shot with tool execution)"""
     
-    def __init__(self, model: str = "gpt-4.1-nano", reasoning_effort: str = "low", max_workers: int = 1, rate_limit_delay: float = 0.0, max_turns: int = 3, debug_images: bool = False, enable_images: bool = True, run_number: int = 0):
+    def __init__(self, model: str = "gpt-4.1-nano", reasoning_effort: str = "low", max_workers: int = 1, rate_limit_delay: float = 0.0, max_turns: int = 3, debug_images: bool = False, enable_images: bool = True, run_number: int = 0, independent_attempts: bool = False):
         self.model = model
         self.reasoning_effort = reasoning_effort
         self.max_workers = max_workers
@@ -325,6 +325,7 @@ class ARCTaskRunner:
         self.debug_images = debug_images
         self.enable_images = enable_images
         self.run_number = run_number  # NEW: Track run number for repeated runs
+        self.independent_attempts = independent_attempts  # NEW: Track independent attempts mode
         self.api_key = os.getenv('OPENAI_API_KEY')
         self.client = OpenAI()
         self.task_loader = TaskLoader()
@@ -739,7 +740,7 @@ def transform(grid):
         
         return ""
     
-    def create_success_result(self, task_id: str, program: str, response, test_score: Dict, total_cost: float, total_tokens: int, turns_used: int, task_data: Dict, conversation_history: List = None, all_responses: List = None, turn_details: List = None) -> Dict:
+    def create_success_result(self, task_id: str, program: str, response, test_score: Dict, total_cost: float, total_tokens: int, turns_used: int, task_data: Dict, conversation_history: List = None, all_responses: List = None, turn_details: List = None, is_independent_attempts: bool = False) -> Dict:
         """Create a successful task result with complete multi-turn data"""
 
         # Convert response to JSON-serializable format
@@ -830,11 +831,17 @@ def transform(grid):
                 except Exception as e:
                     conversation_history_dict.append({'error': f'Failed to serialize conversation item: {str(e)}'})
 
-        return {
+        # Determine API type and data structure based on mode
+        api_type = 'responses_api_independent_attempts' if is_independent_attempts else 'responses_api_multiturn'
+        data_key = 'independent_attempts_data' if is_independent_attempts else 'multiturn_data'
+        details_key = 'attempt_details' if is_independent_attempts else 'turn_details'
+        total_key = 'total_attempts' if is_independent_attempts else 'total_turns'
+        
+        result = {
             'task_id': task_id,
             'model': self.model,
             'reasoning_effort': self.reasoning_effort if self.is_reasoning_model() else "N/A",
-            'api_type': 'responses_api_multiturn',
+            'api_type': api_type,
             'program': program,
             'execution_error': '',
             'timed_out': False,
@@ -846,16 +853,28 @@ def transform(grid):
             'predicted_output': test_score.get('predicted_output'),
             'actual_output': test_score.get('actual_output'),
             'api_success': True,
-            # NEW: Complete multi-turn conversation data
-            'multiturn_data': {
-                'conversation_history': conversation_history_dict,
-                'all_responses': all_responses_dict,
-                'turn_details': turn_details or [],
-                'total_turns': turns_used
-            }
         }
+        
+        # Add mode-specific data structure
+        result[data_key] = {
+            details_key: turn_details or [],
+            total_key: turns_used
+        }
+        
+        # Add conversation history only for multi-turn mode
+        if not is_independent_attempts:
+            result[data_key]['conversation_history'] = conversation_history_dict
+            
+        # Always add all_responses
+        result[data_key]['all_responses'] = all_responses_dict
+        
+        # Add mode indicator for independent attempts
+        if is_independent_attempts:
+            result[data_key]['mode'] = 'independent_attempts'
+            
+        return result
     
-    def create_failure_result(self, task_id: str, program: str, all_responses: List, total_cost: float, total_tokens: int, turns_used: int, task_data: Dict, error_msg: str, conversation_history: List = None, turn_details: List = None) -> Dict:
+    def create_failure_result(self, task_id: str, program: str, all_responses: List, total_cost: float, total_tokens: int, turns_used: int, task_data: Dict, error_msg: str, conversation_history: List = None, turn_details: List = None, is_independent_attempts: bool = False) -> Dict:
         """Create a failed task result with complete multi-turn data"""
         # Get test output for pixel counting
         actual_output = task_data['test'][0]['output']
@@ -950,11 +969,17 @@ def transform(grid):
                 except Exception as e:
                     conversation_history_dict.append({'error': f'Failed to serialize conversation item: {str(e)}'})
         
-        return {
+        # Determine API type and data structure based on mode
+        api_type = 'responses_api_independent_attempts' if is_independent_attempts else 'responses_api_multiturn'
+        data_key = 'independent_attempts_data' if is_independent_attempts else 'multiturn_data'
+        details_key = 'attempt_details' if is_independent_attempts else 'turn_details'
+        total_key = 'total_attempts' if is_independent_attempts else 'total_turns'
+        
+        result = {
             'task_id': task_id,
             'model': self.model,
             'reasoning_effort': self.reasoning_effort if self.is_reasoning_model() else "N/A",
-            'api_type': 'responses_api_multiturn',
+            'api_type': api_type,
             'program': program,
             'execution_error': error_msg,
             'timed_out': False,
@@ -971,14 +996,26 @@ def transform(grid):
             },
             'actual_output': actual_output,
             'api_success': True,
-            # NEW: Complete multi-turn conversation data
-            'multiturn_data': {
-                'conversation_history': conversation_history_dict,
-                'all_responses': all_responses_dict,
-                'turn_details': turn_details or [],
-                'total_turns': turns_used
-            }
         }
+        
+        # Add mode-specific data structure
+        result[data_key] = {
+            details_key: turn_details or [],
+            total_key: turns_used
+        }
+        
+        # Add conversation history only for multi-turn mode
+        if not is_independent_attempts:
+            result[data_key]['conversation_history'] = conversation_history_dict
+            
+        # Always add all_responses
+        result[data_key]['all_responses'] = all_responses_dict
+        
+        # Add mode indicator for independent attempts
+        if is_independent_attempts:
+            result[data_key]['mode'] = 'independent_attempts'
+            
+        return result
     
     def create_timeout_failure_result(self, task_id: str, total_cost: float, total_tokens: int, turns_completed: int, task_data: Dict, conversation_history: List = None, all_responses: List = None, turn_details: List = None) -> Dict:
         """Create a timeout failure result - separate from regular task failures"""
@@ -1083,8 +1120,152 @@ def transform(grid):
         if self.rate_limit_delay > 0:
             time.sleep(self.rate_limit_delay)
         
-        return self.run_task_multiturn(task_id, task_data, total_tasks)
+        # Choose execution mode based on independent_attempts flag
+        if self.independent_attempts:
+            return self.run_task_independent_attempts(task_id, task_data, total_tasks)
+        else:
+            return self.run_task_multiturn(task_id, task_data, total_tasks)
     
+    def run_task_independent_attempts(self, task_id: str, task_data: Dict, total_tasks: int = 1) -> Dict:
+        """Run independent attempts without feedback - multiple fresh starts with the same initial prompt"""
+        total_cost = 0.0
+        total_tokens = 0
+        all_responses = []
+        attempt_details = []  # Track details of each attempt
+        
+        try:
+            for attempt in range(self.max_turns):
+                attempt_start_time = datetime.datetime.now()
+                if self.max_workers == 1:  # Only print detailed logs for sequential execution
+                    print(f"  🔄 Attempt {attempt + 1}/{self.max_turns}...")
+                
+                # Create fresh conversation for each attempt
+                system_msg = {"role": "system", "content": "You are an expert at solving abstract reasoning puzzles. Write clean, efficient Python code."}
+                initial_prompt_messages = self.create_prompt(task_data, is_first_turn=True, task_id=task_id, turn=attempt + 1)
+                conversation_history = [system_msg, {"role": "user", "content": initial_prompt_messages}]
+                
+                # Make API call with timeout and retry logic
+                response = None
+                api_call_successful = False
+                
+                for retry_attempt in range(3):  # 3 attempts total (initial + 2 retries)
+                    try:
+                        if self.max_workers == 1 and retry_attempt > 0:
+                            print(f"     🔄 Attempt {attempt + 1} retry {retry_attempt + 1}/3...")
+                        
+                        response = execute_with_timeout(self.call_responses_api, conversation_history, timeout=150)
+                        api_call_successful = True
+                        break  # Success!
+                        
+                    except Exception as e:
+                        if retry_attempt < 2:  # Can still retry
+                            if self.max_workers == 1:
+                                print(f"     ⏰ Attempt {attempt + 1} retry {retry_attempt + 1} timed out, retrying in 2s...")
+                            time.sleep(2)  # Brief backoff
+                            continue
+                        else:  # All retries exhausted
+                            if self.max_workers == 1:
+                                print(f"     ❌ Attempt {attempt + 1} failed after 3 retries: {str(e)}")
+                            # Return timeout failure result
+                            self._update_costs(total_cost, total_tokens)
+                            return self.create_timeout_failure_result(task_id, total_cost, total_tokens, attempt, task_data, conversation_history, all_responses, attempt_details)
+                
+                if not api_call_successful or response is None:
+                    # This shouldn't happen, but just in case
+                    self._update_costs(total_cost, total_tokens)
+                    return self.create_timeout_failure_result(task_id, total_cost, total_tokens, attempt, task_data, conversation_history, all_responses, attempt_details)
+                
+                all_responses.append(response)
+                
+                # Track costs
+                usage = response.usage
+                input_rate, output_rate = self.get_model_pricing(self.model)
+                input_tokens = usage.input_tokens
+                output_tokens = usage.output_tokens
+                attempt_cost = (input_tokens / 1_000_000) * input_rate + (output_tokens / 1_000_000) * output_rate
+                total_cost += attempt_cost
+                total_tokens += usage.total_tokens
+                
+                if self.max_workers == 1:
+                    print(f"     💰 Attempt cost: ${attempt_cost:.6f} (input: {input_tokens}, output: {output_tokens})")
+                
+                # Extract code
+                program = self.extract_code_from_response(response)
+                
+                # Initialize attempt detail
+                attempt_detail = {
+                    'attempt_number': attempt + 1,
+                    'timestamp': attempt_start_time.isoformat(),
+                    'input_tokens': input_tokens,
+                    'output_tokens': output_tokens,
+                    'attempt_cost': attempt_cost,
+                    'program_extracted': bool(program),
+                    'program': program,
+                    'test_result': None,
+                    'status': 'in_progress'
+                }
+                
+                if not program:
+                    if self.max_workers == 1:
+                        print(f"     ❌ No code found in response")
+                    
+                    attempt_detail['status'] = 'no_code_found'
+                    attempt_details.append(attempt_detail)
+                    
+                    # Continue to next attempt (no feedback in independent mode)
+                    continue
+                
+                # Test on test input
+                test_input = task_data['test'][0]['input']
+                test_expected = task_data['test'][0]['output']
+                predicted_output, error, timed_out = self.executor.execute_program(program, test_input)
+                
+                if predicted_output is not None and not error and not timed_out:
+                    # Check if test is correct
+                    test_score = self.scorer.score_grid(predicted_output, test_expected)
+                    attempt_detail['test_result'] = test_score
+                    
+                    if test_score['correct']:
+                        # SUCCESS! 
+                        attempt_detail['status'] = 'success'
+                        attempt_details.append(attempt_detail)
+                        
+                        if self.max_workers == 1:
+                            print(f"     ✅ Perfect solution found on attempt {attempt + 1}!")
+                        
+                        # Update costs only (progress handled by parallel executor)
+                        self._update_costs(total_cost, total_tokens)
+                        
+                        # Add actual outputs to test_score for logging
+                        test_score['predicted_output'] = predicted_output
+                        test_score['actual_output'] = test_expected
+                        
+                        return self.create_success_result(task_id, program, response, test_score, total_cost, total_tokens, attempt + 1, task_data, None, all_responses, attempt_details, is_independent_attempts=True)
+                else:
+                    # Execution failed
+                    attempt_detail['test_result'] = {
+                        'execution_error': error,
+                        'timed_out': timed_out,
+                        'predicted_output': predicted_output
+                    }
+                
+                attempt_detail['status'] = 'failed_test'
+                attempt_details.append(attempt_detail)
+                
+                if self.max_workers == 1:
+                    print(f"     📊 Attempt {attempt + 1} failed test")
+            
+            # Failed after all attempts
+            self._update_costs(total_cost, total_tokens)
+            
+            return self.create_failure_result(task_id, program if 'program' in locals() else "", all_responses, total_cost, total_tokens, self.max_turns, task_data, "All attempts failed", None, attempt_details, is_independent_attempts=True)
+        
+        except Exception as e:
+            print(f"     ❌ Independent attempts execution failed: {e}")
+            self._update_costs(total_cost, total_tokens)
+            
+            return self.create_failure_result(task_id, "", all_responses, total_cost, total_tokens, len(attempt_details), task_data, str(e), None, attempt_details, is_independent_attempts=True)
+
     def run_task_multiturn(self, task_id: str, task_data: Dict, total_tasks: int = 1) -> Dict:
         """Run multi-turn conversation with local code execution"""
         conversation_history = []
@@ -1357,8 +1538,15 @@ Make sure to include the function definition inside a proper code block."""
         # Print configuration info
         print(f"\nRunning {total_tasks} tasks from {dataset}/{subset_name}")
         print(f"Model: {self.model}")
-        print(f"API: Responses API (multi-turn, max {self.max_turns} turns)")
-        print("Tools: ENABLED (multi-turn local execution with training examples feedback)")
+        
+        # Show execution mode
+        if self.independent_attempts:
+            print(f"API: Responses API (independent attempts, max {self.max_turns} attempts)")
+            print("Mode: Independent attempts - multiple fresh starts, no feedback")
+        else:
+            print(f"API: Responses API (multi-turn, max {self.max_turns} turns)")
+            print("Mode: Multi-turn feedback - conversation with training examples")
+        
         if self.max_workers > 1:
             print(f"Parallelization: ENABLED ({self.max_workers} workers)")
             if self.rate_limit_delay > 0:
@@ -1565,7 +1753,15 @@ Make sure to include the function definition inside a proper code block."""
         print(f"Model: {self.model}")
         if self.is_reasoning_model():
             print(f"Reasoning effort: {self.reasoning_effort}")
-        print(f"API: Responses API (multi-turn, max {self.max_turns} turns)")
+        
+        # Show execution mode
+        if self.independent_attempts:
+            print(f"API: Responses API (independent attempts, max {self.max_turns} attempts)")
+            print("Mode: Independent attempts - multiple fresh starts, no feedback")
+        else:
+            print(f"API: Responses API (multi-turn, max {self.max_turns} turns)")
+            print("Mode: Multi-turn feedback - conversation with training examples")
+        
         if self.max_workers > 1:
             print(f"Parallelization: ENABLED ({self.max_workers} workers)")
         else:
@@ -1588,7 +1784,8 @@ Make sure to include the function definition inside a proper code block."""
                 max_turns=self.max_turns,
                 debug_images=self.debug_images,
                 enable_images=self.enable_images,
-                run_number=run_num
+                run_number=run_num,
+                independent_attempts=self.independent_attempts
             )
             
             # Run the subset
@@ -1726,7 +1923,6 @@ Make sure to include the function definition inside a proper code block."""
         else:
             print("\n❌ No valid run statistics to aggregate")
 
-
 def main():
     parser = argparse.ArgumentParser(description="Run ARC tasks with OpenAI o3/o4 models")
     parser.add_argument("--dataset", default="arc-agi-1", choices=["arc-agi-1", "arc-agi-2"],
@@ -1755,6 +1951,8 @@ def main():
                        help="Disable visual image generation (text-only mode)")
     parser.add_argument("--repeat-runs", type=int, default=1,
                        help="Number of times to repeat the entire test (default: 1)")
+    parser.add_argument("--independent-attempts", action="store_true",
+                       help="Use independent attempts mode instead of multi-turn feedback")
     
     args = parser.parse_args()
     
@@ -1785,7 +1983,8 @@ def main():
         rate_limit_delay=args.rate_limit_delay, 
         max_turns=args.max_turns, 
         debug_images=args.debug_images, 
-        enable_images=enable_images
+        enable_images=enable_images,
+        independent_attempts=args.independent_attempts
     )
     
     if args.repeat_runs > 1:

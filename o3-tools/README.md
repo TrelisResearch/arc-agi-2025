@@ -3,6 +3,7 @@
 A tool for testing OpenAI o3/o4 models on ARC-AGI tasks with and without code interpreter tools.
 
 **Videos**
+[Part 5: Comments on discrete vs continuous + Ablating Sampling vs Feedback](...)
 [Part 4 - Visualisation + Testing out Feedback and Images](https://share.descript.com/view/zfBfDlP20uA)
 [Part 3: o3-tools - inspecting the prompts (day 3)](https://share.descript.com/view/eEJtRvt1XlM)
 [Part 2: Part 2: Running code locally](https://share.descript.com/view/V9EjCb9cMZB)
@@ -28,10 +29,10 @@ Objective: Define a test that is a representative measure of performance while a
 ...
 
 Other ideas:
+[ ] Swap to chat completions endpoint so as to allow for openai-style endpoint usage (enable other models, incl. reasoning). THIS IS NOT GOING TO SUPPORT OPENAI REASONING MODELS, WHICH DONT' DISCLOSE THE REASONING TRACE, AND SO YOU MUST USE THE RESPONSES API TO USE REASONING WITH OPENAI MODELS. OTHERS (CLAUDE, QWEN, GEMINI?, DEEPSEEK?) RESPOND WITH <think> TAGS.
 [ ] Apply a limit to oscillation within feedback roll-outs.
 [ ] Put in simpler images (particularly relevant when we fine-tune because the model will know the format to expect).
 [ ] Start with strict prompt, only then fall back to partial attempt. DELAY.
-[ ] Swap to chat completions endpoint so as to allow for openai-style endpoint usage (enable other models, incl. reasoning). THIS IS NOT GOING TO SUPPORT OPENAI REASONING MODELS, WHICH DONT' DISCLOSE THE REASONING TRACE, AND SO YOU MUST USE THE RESPONSES API TO USE REASONING WITH OPENAI MODELS. OTHERS (CLAUDE, QWEN, GEMINI?, DEEPSEEK?) RESPOND WITH <think> TAGS.
 [ ] Use a code interpreter tool rather than running code from an extract code block.
 [ ] Overfitting checks are probably needed because sometimes all training problems are solved but then the test fails. Could just rotate or do simple checks like that.
 [ ] Allow the code environment to persist for a given task. [not relevant until we do the code sandbox locally.]
@@ -129,6 +130,9 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_
 # Run the same test 3 times and calculate mean/std dev statistics
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 3
 
+# Use independent attempts mode instead of multi-turn feedback
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --max_turns 3 --independent-attempts
+
 # Available options:
 #   --dataset: arc-agi-1 or arc-agi-2
 #   --subset: shortest_training_1, shortest_training_10, shortest_training_30, shortest_evaluation_1, shortest_evaluation_10, shortest_evaluation_30, etc.
@@ -141,6 +145,7 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10
 #   --disable_images: Disable visual image generation (text-only mode)
 #   --debug_images: Save debug images to debug_images/ directory
 #   --repeat-runs: Number of times to repeat the entire test (default: 1, max: 10)
+#   --independent-attempts: Use independent attempts mode instead of multi-turn feedback
 ```
 
 ### Available Subsets
@@ -418,6 +423,91 @@ All Turns Success Rate:
 - **Performance benchmarking**: Get statistically robust performance estimates
 - **A/B testing**: Compare different models, reasoning efforts, or configurations
 - **Confidence intervals**: Understand the uncertainty in your performance measurements
+
+## Independent Attempts Mode
+
+The tool supports two distinct execution strategies for solving tasks, allowing you to compare multi-turn feedback versus independent sampling approaches.
+
+### Execution Modes
+
+**Multi-turn Feedback (Default):**
+- Single conversation with up to `--max_turns` turns
+- Model receives training feedback between turns
+- Can iteratively improve solutions based on training examples
+- Maintains conversation context across turns
+
+**Independent Attempts (`--independent-attempts`):**
+- Multiple independent single-turn attempts
+- Each attempt starts fresh with the same initial prompt
+- No feedback or conversation history between attempts
+- Stops as soon as one attempt succeeds
+- Number of attempts controlled by `--max_turns` parameter
+
+### Usage Examples
+
+```bash
+# Default: Multi-turn feedback mode
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --max_turns 3
+
+# Independent attempts mode - 3 fresh attempts per task
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --max_turns 3 --independent-attempts
+
+# Compare both modes with repeated runs
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --max_turns 3 --repeat-runs 5
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --max_turns 3 --repeat-runs 5 --independent-attempts
+```
+
+### Mode Comparison
+
+| Aspect | Multi-turn Feedback | Independent Attempts |
+|--------|-------------------|-------------------|
+| **Conversation** | Continuous conversation | Fresh start each attempt |
+| **Training feedback** | Yes, between turns | No feedback |
+| **Context retention** | Maintains context | No context between attempts |
+| **Cost efficiency** | Potentially higher per task | Lower per attempt |
+| **Success strategy** | Iterative improvement | Multiple diverse tries |
+| **Best for** | Complex reasoning, debugging | Sampling different approaches |
+
+### Console Output Examples
+
+**Multi-turn Feedback:**
+```
+Processing task: abc123
+  🔄 Turn 1/3...
+    💰 Turn cost: $0.004146 (input: 1089, output: 4321)
+    📊 Training: 2/3 solved, 85.0% accuracy
+  🔄 Turn 2/3...
+    💰 Turn cost: $0.003891 (input: 1156, output: 3247)
+    ✅ Perfect solution found!
+```
+
+**Independent Attempts:**
+```
+Processing task: abc123
+  🔄 Attempt 1/3...
+    💰 Attempt cost: $0.004146 (input: 1089, output: 4321)
+    📊 Attempt 1 failed test
+  🔄 Attempt 2/3...
+    💰 Attempt cost: $0.004089 (input: 1087, output: 4298)
+    ✅ Perfect solution found on attempt 2!
+```
+
+### File Outputs
+
+**Multi-turn Mode:**
+- API type: `responses_api_multiturn`
+- Data field: `multiturn_data` with conversation history and turn details
+
+**Independent Attempts Mode:**
+- API type: `responses_api_independent_attempts`
+- Data field: `independent_attempts_data` with attempt details
+
+### Use Cases
+
+- **Multi-turn feedback**: Best for tasks requiring iterative refinement and learning from training examples
+- **Independent attempts**: Best for comparing diverse solution approaches without bias from previous attempts
+- **A/B testing**: Compare which strategy works better for different types of problems
+- **Sampling research**: Study solution diversity and consistency across multiple attempts
 
 ## Parallelization
 
