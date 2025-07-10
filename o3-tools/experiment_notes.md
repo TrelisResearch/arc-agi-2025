@@ -5,9 +5,21 @@
 ### Ablating sampling versus feedback (depth of 8).
 Run two times - once with independent attempts, and once with feedback.
 
-**Baseline scoring is ~8/20 from yesterday.**
+**Baseline scoring is ~8/20 (40% +/-8% with feedback, 28% +/- 11% without feedback) from yesterday.**
 
 **Results:**
+
+gpt-4.1-mini:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset mit-easy --repeat-runs 3 --max_workers 10 --max_turns 8 --model gpt-4.1-mini [--independent-attempts]
+```
+- Independent attempts: .../20
+- Feedback: .../20
+
+o4-mini:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset mit-medium --repeat-runs 3 --max_workers 10 --max_turns 8 --model o4-mini [--independent-attempts]
+```
 - Independent attempts: .../20
 - Feedback: .../20
 

@@ -1584,7 +1584,8 @@ Make sure to include the function definition inside a proper code block."""
                     status = "✅ SOLVED" if result.get('score', {}).get('correct', False) else "❌ FAILED"
                     cost = result.get('request_cost', 0.0)
                     turns = result.get('turns_used', 1)
-                    print(f"[{task_id}] {status} (${cost:.6f}, {turns} turns)")
+                    units = "attempts" if self.independent_attempts else "turns"
+                    print(f"[{task_id}] {status} (${cost:.6f}, {turns} {units})")
                 return result
             
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
@@ -1602,7 +1603,8 @@ Make sure to include the function definition inside a proper code block."""
                         results.append(result)
                         status = "✅ COMPLETED" if result.get('score', {}).get('correct', False) else "❌ FAILED"
                         turns = result.get('turns_used', 1)
-                        status_with_turns = f"{status} ({turns} turns)"
+                        units = "attempts" if self.independent_attempts else "turns"
+                        status_with_turns = f"{status} ({turns} {units})"
                     except Exception as e:
                         print(f"[{task_id}] ❌ SAVE FAILED: {e}")
                         # Create a minimal error result
@@ -1716,7 +1718,10 @@ Make sure to include the function definition inside a proper code block."""
         # Only show reasoning effort for reasoning models
         if self.is_reasoning_model():
             print(f"Reasoning effort: {self.reasoning_effort}")
-        print(f"API: Responses (multi-turn, max {self.max_turns} turns)")
+        if self.independent_attempts:
+            print(f"API: Responses (independent attempts, max {self.max_turns} attempts)")
+        else:
+            print(f"API: Responses (multi-turn, max {self.max_turns} turns)")
         print(f"Total tasks attempted: {total_tasks}")
         print(f"Successful API calls: {successful_api_calls}/{total_tasks} ({summary['success_rate']:.1%})")
         if failed_tasks > 0:
@@ -1725,8 +1730,9 @@ Make sure to include the function definition inside a proper code block."""
             print(f"Timeout failures: {timeout_tasks}/{total_tasks} ({timeout_tasks/total_tasks:.1%}) ⏰")
         print(f"Tasks solved correctly: {correct_tasks}/{total_tasks} ({summary['task_accuracy']:.1%})")
         print(f"Pixel accuracy: {correct_pixels}/{total_pixels} ({summary['pixel_accuracy']:.1%})")
-        print(f"Total turns used: {total_turns_used}")
-        print(f"Average turns per task: {avg_turns_used:.1f}")
+        units = "attempts" if self.independent_attempts else "turns"
+        print(f"Total {units} used: {total_turns_used}")
+        print(f"Average {units} per task: {avg_turns_used:.1f}")
         print(f"Total tokens used: {self.total_tokens:,}")
         print(f"Total cost: ${self.total_cost:.6f}")
         
@@ -1743,7 +1749,8 @@ Make sure to include the function definition inside a proper code block."""
             for result in timeout_failures:
                 task_id = result.get('task_id', 'unknown')
                 turns_completed = result.get('turns_used', 0)
-                print(f"  - {task_id}: API timeout after {turns_completed} turns and 3 retries")
+                units = "attempts" if self.independent_attempts else "turns"
+                print(f"  - {task_id}: API timeout after {turns_completed} {units} and 3 retries")
         
         print(f"\nResults saved to: {filepath}")
 

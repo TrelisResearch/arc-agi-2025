@@ -138,7 +138,7 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10
 #   --subset: shortest_training_1, shortest_training_10, shortest_training_30, shortest_evaluation_1, shortest_evaluation_10, shortest_evaluation_30, etc.
 #   --model: OpenAI model name (default: gpt-4.1-mini)
 #   --limit: Limit number of tasks to run
-#   --max_turns: Maximum number of turns for multi-turn execution (default: 3)
+#   --max_turns: Maximum number of turns/attempts (default: 3) - turns for multi-turn mode, attempts for independent mode
 #   --reasoning_effort: Reasoning effort for the model (low, medium, high; default: low, only applies to o3/o4/o1 models)
 #   --max_workers: Number of parallel workers (default: 1, max: 30)
 #   --rate_limit_delay: Delay between API calls in seconds (default: 0.0)
@@ -441,15 +441,15 @@ The tool supports two distinct execution strategies for solving tasks, allowing 
 - Each attempt starts fresh with the same initial prompt
 - No feedback or conversation history between attempts
 - Stops as soon as one attempt succeeds
-- Number of attempts controlled by `--max_turns` parameter
+- Number of attempts controlled by `--max_turns` parameter (same flag, different meaning)
 
 ### Usage Examples
 
 ```bash
-# Default: Multi-turn feedback mode
+# Default: Multi-turn feedback mode (3 conversation turns)
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --max_turns 3
 
-# Independent attempts mode - 3 fresh attempts per task
+# Independent attempts mode - 3 fresh attempts per task (same --max_turns flag)
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --max_turns 3 --independent-attempts
 
 # Compare both modes with repeated runs
