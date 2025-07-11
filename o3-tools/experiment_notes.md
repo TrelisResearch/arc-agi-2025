@@ -4,17 +4,18 @@
 
 ### Rerunning feedback vs sampling on the gpt-4.1-mini-calib dataset with gpt-4.1-mini
 
-
 **Prelude**
 In running this, I'm hoping there are maybe ~40 correct on single attempt, although probably that's ambitious and we'll only see about 25 correct, in which case we may have to try and run some of the arc-agi-1 training tasks to get more correct that gpt-4.1-mini can solve. I say this because gpt-4.1 got 22/400 on the arc-agi-1 evaluation split, while gpt-4.1-mini gets about 12/100 on the shortest 100 (so probably no more than 15 on the full 400).
 
 BTW the whole motivation is to try and remove problems that are too easy and also too hard. This means we should see a better measurement of skill.
 
-```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini --independent-attempts
+**Commentary:**
+- The noise situation is improved. The single turn results for the both approaches are within each other's 95% confidence bounds!!! This is good.
+- Interestingly, there is quite a lot less noise in the feedback approach than the sampling approach, which probably makes some sense intuitively.
+- Also, it seems like sampling is statistically better than feedback! Especially given sampling is 3x cheaper! Basically, feedback doesn't seem to work on these models. It's interesting to ask whether that changes on reasoning models (hard to know, to some degree the feedback is probably within the reasoning of the first turn, whether there is turn to turn reasoning is less clear as models may not have been trained on that.)
+- I think, for now, I can skip doing an MCTS type approach - because it probably won't outperform sampling, if feedback is weak. I'll move instead to having the model write out programs for grid input and grid output.
 
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini
-```
+**Results:**
 
 AGGREGATE STATISTICS - independent attempts:
 ----------------------------------------------------------------------
@@ -30,9 +31,23 @@ All Attempts Success Rate:
   Mean: 34.4%
   Std Dev: 3.2%
   95% CI: [28.1%, 40.7%]
+Cost per run about $1.70.
 
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini
+```
+Turn 1 Only Success Rate:
+  Mean: 15.1%
+  Std Dev: 2.2%
+  95% CI: [10.8%, 19.4%]
 
-
+All Turns Success Rate:
+  Mean: 27.0%
+  Std Dev: 0.6%
+  95% CI: [25.8%, 28.2%]
+Cost per run of about $5.30.
 
 ### Creating a dataset targeted towards gpt-4.1-mini testing
 
