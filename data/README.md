@@ -194,6 +194,48 @@ The following subset files are available:
 
 Each `.txt` file contains one task ID per line. The corresponding `_details.json` files include additional metadata like the computed size and which split (training/evaluation) the task belongs to.
 
+## Model Performance Subsets (ARC-AGI-1)
+
+These subsets contain task IDs that were successfully solved by specific models, useful for performance analysis and creating calibration sets:
+
+**In `data/subsets/arc-agi-1/`:**
+
+- **all_evaluation.txt**: Complete list of all 400 evaluation task IDs from ARC-AGI-1
+- **gpt_4_1.txt**: 22 tasks solved correctly by gpt-4.1 (original baseline)
+- **o4-mini.txt**: 94 tasks solved correctly by o4-mini (independent attempts, single shot)
+- **gpt-4.1-nano.txt**: 3 tasks solved correctly by gpt-4.1-nano (when tested on gpt-4.1-o4-mini subset)
+- **gpt-4.1-o4-mini.txt**: 98 tasks solved by either gpt-4.1 OR o4-mini (union/combined set)
+  - Contains 18 tasks solved by both models (overlap)
+  - Contains 4 tasks solved only by gpt-4.1 
+  - Contains 76 tasks solved only by o4-mini
+- **gpt-4.1-mini-calib.txt**: 95 task calibration subset for testing gpt-4.1-mini
+  - Created by removing gpt-4.1-nano solved tasks from gpt-4.1-o4-mini subset
+  - Excludes the 3 "easy" tasks that gpt-4.1-nano could solve
+  - Designed for more challenging evaluation of gpt-4.1-mini capabilities
+
+### Model Performance Summary:
+- **gpt-4.1**: 22/400 tasks solved (5.5%)
+- **o4-mini**: 94/400 tasks solved (23.5%) 
+- **gpt-4.1-nano**: 3/98 tasks solved (3.1% on combined subset)
+- **Combined coverage**: 98/400 unique tasks solved by either gpt-4.1 or o4-mini (24.5%)
+
+### Usage Examples:
+
+Test gpt-4.1-mini on the calibration subset:
+```bash
+uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib
+```
+
+Test a model on tasks that o4-mini solved:
+```bash
+uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset o4-mini
+```
+
+Compare model performance on the combined challenging subset:
+```bash
+uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-o4-mini
+```
+
 ## Working with Tasks
 
 ### Loading a Single Task

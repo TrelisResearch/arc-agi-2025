@@ -1,5 +1,18 @@
 # Experiment Notes
 
+## 2025 11th July
+
+### Creating a dataset targeted towards gpt-4.1-mini testing
+
+The base is the arc-agi-1 dataset, evaluation split.
+- I tested gpt-4.1 and it only got 22/400 correct.
+- I tested o4-mini and it got 94/400 correct. 
+  - 4 tasks that gpt-4.1 got but o4-mini missed
+  - 76 tasks that o4-mini got but gpt-4.1 missed
+- I merged them to create a combined set.
+- I ran gpt-4.1-nano on it and it got 3/98 of those correct.
+- Made a `gpt-4.1-mini-calib` subset by taking those correct on o4-mini (low) with gpt-4.1 and then removing the nano split.
+
 ## 2025 10th July
 
 ### Repeat of the feedback versus sampling experiment, with a better dataset
