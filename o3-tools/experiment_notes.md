@@ -2,6 +2,38 @@
 
 ## 2025 11th July
 
+### Rerunning feedback vs sampling on the gpt-4.1-mini-calib dataset with gpt-4.1-mini
+
+
+**Prelude**
+In running this, I'm hoping there are maybe ~40 correct on single attempt, although probably that's ambitious and we'll only see about 25 correct, in which case we may have to try and run some of the arc-agi-1 training tasks to get more correct that gpt-4.1-mini can solve. I say this because gpt-4.1 got 22/400 on the arc-agi-1 evaluation split, while gpt-4.1-mini gets about 12/100 on the shortest 100 (so probably no more than 15 on the full 400).
+
+BTW the whole motivation is to try and remove problems that are too easy and also too hard. This means we should see a better measurement of skill.
+
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini --independent-attempts
+
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini
+```
+
+AGGREGATE STATISTICS - independent attempts:
+----------------------------------------------------------------------
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini --independent-attempts
+```
+Attempt 1 Only Success Rate:
+  Mean: 16.5%
+  Std Dev: 1.6%
+  95% CI: [13.3%, 19.6%]
+
+All Attempts Success Rate:
+  Mean: 34.4%
+  Std Dev: 3.2%
+  95% CI: [28.1%, 40.7%]
+
+
+
+
 ### Creating a dataset targeted towards gpt-4.1-mini testing
 
 The base is the arc-agi-1 dataset, evaluation split.
