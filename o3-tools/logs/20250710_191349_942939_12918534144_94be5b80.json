@@ -1,0 +1,433 @@
+{
+  "task_id": "94be5b80",
+  "model": "gpt-4.1",
+  "reasoning_effort": "N/A",
+  "api_type": "responses_api_multiturn",
+  "program": "import numpy as np\n\ndef transform(grid):\n    grid = np.array(grid)\n    h, w = grid.shape\n\n    # Always output 17x13\n    out_h, out_w = 17, 13\n    out = np.zeros((out_h, out_w), dtype=int)\n\n    # 1. Find the 2x2 color block (topmost, leftmost nonzero 2x2 region)\n    found = False\n    for r in range(h - 1):\n        for c in range(w - 1):\n            block = grid[r:r+2, c:c+2]\n            unique = np.unique(block)\n            if 0 in unique:\n                nonzero = unique[unique != 0]\n                if len(nonzero) >= 2:\n                    cb_row, cb_col = r, c\n                    found = True\n                    break\n        if found:\n            break\n    else:\n        # Fallback: look for any nonzero 2x2 in top-left 6x6\n        cb_row, cb_col = 0, 0\n        block = grid[cb_row:cb_row+2, cb_col:cb_col+2]\n\n    color_block = grid[cb_row:cb_row+2, cb_col:cb_col+2]\n    colors = [color_block[0,0], color_block[0,1],\n              color_block[1,0], color_block[1,1]]\n    color_indices = [c for c in colors if c != 0]\n\n    # 2. Find the main shape template (the geometry of the large shapes below color block)\n    # We'll find the next nonzero blob in the bottom two-thirds, left-aligned\n    from scipy.ndimage import label, find_objects\n\n    # Search the lower part of the image\n    search_area = grid[cb_row+2:]\n    labeled, num = label(search_area != 0)\n    # Iterate through the blobs, pick the largest one\n    if num >= 1:\n        # Find the largest shape (by size)\n        max_sz = 0\n        main_shape_slices = None\n        for i in range(1, num+1):\n            slc = find_objects(labeled==i)\n            if not slc:\n                continue\n            sz = np.sum(labeled[slc[0]] == i)\n            if sz > max_sz:\n                max_sz = sz\n                main_shape_slices = slc[0]\n                main_shape_label = i\n        # Get the shape (mask) and geometry\n        ms = labeled[main_shape_slices] == main_shape_label\n        ms_shape = ms.shape\n        # Find the bounding box coordinates in grid\n        start_row = main_shape_slices[0].start + cb_row + 2\n        start_col = main_shape_slices[1].start\n        # Use this geometry for the colored shapes\n        shape_mask = ms\n        shape_h, shape_w = ms.shape\n    else:\n        # Fallback: If no shape, just use a 4x4 centered\n        shape_h, shape_w = 4, 4\n        shape_mask = np.ones((shape_h, shape_w), dtype=bool)\n        start_row, start_col = 3, 4\n\n    # 3. Compose output: vertically stack copies, color with color block\n    N = len(color_indices)\n    total_shape_height = N * shape_h\n    # leave possibly 1 empty row between shapes if they don't fit exactly\n    available_rows = out_h\n    pad_top = max((out_h - N*shape_h)//2, 0)\n    pad_left = max((out_w - shape_w)//2, 0)\n    for i, col in enumerate(color_indices):\n        y = pad_top + i*shape_h\n        x = pad_left\n        for dr in range(shape_h):\n            for dc in range(shape_w):\n                if shape_mask[dr, dc]:\n                    out[y + dr, x + dc] = col\n\n    return out.tolist()",
+  "execution_error": "Max turns reached",
+  "timed_out": false,
+  "tokens_used": 5535,
+  "request_cost": 0.019824,
+  "turns_used": 1,
+  "raw_response": {
+    "id": "resp_687002b3701881a390b50dd2f0c8e9d400bbcf7495547f0b",
+    "model": "gpt-4.1-2025-04-14",
+    "usage": {
+      "input_tokens": 4076,
+      "output_tokens": 1459,
+      "total_tokens": 5535
+    },
+    "output": [
+      {
+        "type": "message",
+        "content": [
+          "Analysis:\n\nLet's break down what happens in training example 1 and 2.\n\n## Training Example 1\n- **Input:** \n  - Top: a 2x2 yellow and magenta block\n  - Middle: a blue shape\n  - Bottom: a magenta shape (similar style as blue, different color, \"downwards\")\n- **Output:**\n  - A *yellow ring/shape* \"built out\" of the yellow+magenta block, now expanded and structure-matched to the blue shape below\n  - The blue shape is unchanged and maintains its position\n  - The magenta shape is unchanged\n\n## Training Example 2\n- **Input:**\n  - Top: 2x2 block (orange, green, blue, red)\n  - Middle: red shape, blue shape\n- **Output:**\n  - 4 shapes, stacked top-to-bottom: (orange shape matching 'red shape geometry'), (red shape unchanged), (blue shape unchanged), (green shape matching the red/blue shape)\n\n## Core Observations:\n1. **The top-left 2x2 block serves as a color source**: Its colors are mapped in the order (row-major) onto shapes elsewhere.\n2. **The color block is not directly copied, but used to \"repaint\" versions of the repeated shape.**\n3. **Shapes are stacked vertically in the output grid, with each shape painted with a color from the top 2x2 color block, matching the geometry of the main shape(s) in the lower part of input.**\n4. **Output grid is always much taller (so sufficient vertical space to stack 4 shapes). Output width always 13 (maybe always 13 in problem).**\n\n## Hypothesis for transformation algorithm:\n1. **Identify the 2x2 color block** (usually in the upper left)\n2. **Identify the \"repeated main shape\"** further down - both its geometry, and number of color blocks (=number of stacked outputs)\n3. **Stack the main shape vertically, colored with the colors from the color block (in order).**\n   - So, first stack: color 1, then color 2, etc.\n   - The first shape is topmost, next one below, etc.\n4. **The output grid is always 17 rows tall and 13 columns wide (from problem statement).**\n\n## To do for implementation:\n- Locate the 2x2 color block (search for the first nonzero 2x2).\n- Find the first shape that is repeated (which set the geometry to be colored for all).\n- For each color in the color block (row-major order), stack a version of the shape painted with that color vertically.\n- Place them with vertical spacing if needed, so all fits in 17 rows.\n- Place the stacks centered horizontally in the 13-column output.\n\n## Let's implement this.\n\nFinal answer:\n```python\nimport numpy as np\n\ndef transform(grid):\n    grid = np.array(grid)\n    h, w = grid.shape\n\n    # Always output 17x13\n    out_h, out_w = 17, 13\n    out = np.zeros((out_h, out_w), dtype=int)\n\n    # 1. Find the 2x2 color block (topmost, leftmost nonzero 2x2 region)\n    found = False\n    for r in range(h - 1):\n        for c in range(w - 1):\n            block = grid[r:r+2, c:c+2]\n            unique = np.unique(block)\n            if 0 in unique:\n                nonzero = unique[unique != 0]\n                if len(nonzero) >= 2:\n                    cb_row, cb_col = r, c\n                    found = True\n                    break\n        if found:\n            break\n    else:\n        # Fallback: look for any nonzero 2x2 in top-left 6x6\n        cb_row, cb_col = 0, 0\n        block = grid[cb_row:cb_row+2, cb_col:cb_col+2]\n\n    color_block = grid[cb_row:cb_row+2, cb_col:cb_col+2]\n    colors = [color_block[0,0], color_block[0,1],\n              color_block[1,0], color_block[1,1]]\n    color_indices = [c for c in colors if c != 0]\n\n    # 2. Find the main shape template (the geometry of the large shapes below color block)\n    # We'll find the next nonzero blob in the bottom two-thirds, left-aligned\n    from scipy.ndimage import label, find_objects\n\n    # Search the lower part of the image\n    search_area = grid[cb_row+2:]\n    labeled, num = label(search_area != 0)\n    # Iterate through the blobs, pick the largest one\n    if num >= 1:\n        # Find the largest shape (by size)\n        max_sz = 0\n        main_shape_slices = None\n        for i in range(1, num+1):\n            slc = find_objects(labeled==i)\n            if not slc:\n                continue\n            sz = np.sum(labeled[slc[0]] == i)\n            if sz > max_sz:\n                max_sz = sz\n                main_shape_slices = slc[0]\n                main_shape_label = i\n        # Get the shape (mask) and geometry\n        ms = labeled[main_shape_slices] == main_shape_label\n        ms_shape = ms.shape\n        # Find the bounding box coordinates in grid\n        start_row = main_shape_slices[0].start + cb_row + 2\n        start_col = main_shape_slices[1].start\n        # Use this geometry for the colored shapes\n        shape_mask = ms\n        shape_h, shape_w = ms.shape\n    else:\n        # Fallback: If no shape, just use a 4x4 centered\n        shape_h, shape_w = 4, 4\n        shape_mask = np.ones((shape_h, shape_w), dtype=bool)\n        start_row, start_col = 3, 4\n\n    # 3. Compose output: vertically stack copies, color with color block\n    N = len(color_indices)\n    total_shape_height = N * shape_h\n    # leave possibly 1 empty row between shapes if they don't fit exactly\n    available_rows = out_h\n    pad_top = max((out_h - N*shape_h)//2, 0)\n    pad_left = max((out_w - shape_w)//2, 0)\n    for i, col in enumerate(color_indices):\n        y = pad_top + i*shape_h\n        x = pad_left\n        for dr in range(shape_h):\n            for dc in range(shape_w):\n                if shape_mask[dr, dc]:\n                    out[y + dr, x + dc] = col\n\n    return out.tolist()\n```\n"
+        ]
+      }
+    ]
+  },
+  "score": {
+    "correct": false,
+    "pixel_accuracy": 0.0,
+    "total_pixels": 270,
+    "correct_pixels": 0,
+    "error": "Max turns reached"
+  },
+  "actual_output": [
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      2,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      2,
+      0,
+      0,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      3,
+      3,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      3,
+      0,
+      0,
+      3,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      8,
+      8,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      8,
+      0,
+      0,
+      8,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      7,
+      7,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      7,
+      0,
+      0,
+      7,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  ],
+  "api_success": true,
+  "multiturn_data": {
+    "turn_details": [
+      {
+        "turn_number": 1,
+        "timestamp": "2025-07-10T19:13:07.328323",
+        "input_tokens": 4076,
+        "output_tokens": 1459,
+        "turn_cost": 0.019824,
+        "program_extracted": true,
+        "program": "import numpy as np\n\ndef transform(grid):\n    grid = np.array(grid)\n    h, w = grid.shape\n\n    # Always output 17x13\n    out_h, out_w = 17, 13\n    out = np.zeros((out_h, out_w), dtype=int)\n\n    # 1. Find the 2x2 color block (topmost, leftmost nonzero 2x2 region)\n    found = False\n    for r in range(h - 1):\n        for c in range(w - 1):\n            block = grid[r:r+2, c:c+2]\n            unique = np.unique(block)\n            if 0 in unique:\n                nonzero = unique[unique != 0]\n                if len(nonzero) >= 2:\n                    cb_row, cb_col = r, c\n                    found = True\n                    break\n        if found:\n            break\n    else:\n        # Fallback: look for any nonzero 2x2 in top-left 6x6\n        cb_row, cb_col = 0, 0\n        block = grid[cb_row:cb_row+2, cb_col:cb_col+2]\n\n    color_block = grid[cb_row:cb_row+2, cb_col:cb_col+2]\n    colors = [color_block[0,0], color_block[0,1],\n              color_block[1,0], color_block[1,1]]\n    color_indices = [c for c in colors if c != 0]\n\n    # 2. Find the main shape template (the geometry of the large shapes below color block)\n    # We'll find the next nonzero blob in the bottom two-thirds, left-aligned\n    from scipy.ndimage import label, find_objects\n\n    # Search the lower part of the image\n    search_area = grid[cb_row+2:]\n    labeled, num = label(search_area != 0)\n    # Iterate through the blobs, pick the largest one\n    if num >= 1:\n        # Find the largest shape (by size)\n        max_sz = 0\n        main_shape_slices = None\n        for i in range(1, num+1):\n            slc = find_objects(labeled==i)\n            if not slc:\n                continue\n            sz = np.sum(labeled[slc[0]] == i)\n            if sz > max_sz:\n                max_sz = sz\n                main_shape_slices = slc[0]\n                main_shape_label = i\n        # Get the shape (mask) and geometry\n        ms = labeled[main_shape_slices] == main_shape_label\n        ms_shape = ms.shape\n        # Find the bounding box coordinates in grid\n        start_row = main_shape_slices[0].start + cb_row + 2\n        start_col = main_shape_slices[1].start\n        # Use this geometry for the colored shapes\n        shape_mask = ms\n        shape_h, shape_w = ms.shape\n    else:\n        # Fallback: If no shape, just use a 4x4 centered\n        shape_h, shape_w = 4, 4\n        shape_mask = np.ones((shape_h, shape_w), dtype=bool)\n        start_row, start_col = 3, 4\n\n    # 3. Compose output: vertically stack copies, color with color block\n    N = len(color_indices)\n    total_shape_height = N * shape_h\n    # leave possibly 1 empty row between shapes if they don't fit exactly\n    available_rows = out_h\n    pad_top = max((out_h - N*shape_h)//2, 0)\n    pad_left = max((out_w - shape_w)//2, 0)\n    for i, col in enumerate(color_indices):\n        y = pad_top + i*shape_h\n        x = pad_left\n        for dr in range(shape_h):\n            for dc in range(shape_w):\n                if shape_mask[dr, dc]:\n                    out[y + dr, x + dc] = col\n\n    return out.tolist()",
+        "training_feedback": {
+          "feedback_messages": [
+            {
+              "type": "input_text",
+              "text": "Training results: 0/2 examples solved, 0.0% pixel accuracy - Keep experimenting! Try a different approach to the transformation.\n\nTraining Example 1 \u2717:\nExpected: [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0], [0, 0, 0, 4, 0, 0, 4, 0, 0, 0, 0, 0, 0], [0, 4, 4, 4, 0, 0, 4, 4, 4, 0, 0, 0, 0], [0, 0, 4, 4, 0, 0, 4, 4, 0, 0, 0, 0, 0], [0, 0, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0], [0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0], [0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0], [0, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0], [0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0], [0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0], [0, 0, 0, 6, 6, 6, 6, 0, 0, 0, 0, 0, 0], [0, 0, 0, 6, 0, 0, 6, 0, 0, 0, 0, 0, 0], [0, 6, 6, 6, 0, 0, 6, 6, 6, 0, 0, 0, 0], [0, 0, 6, 6, 0, 0, 6, 6, 0, 0, 0, 0, 0], [0, 0, 6, 6, 6, 6, 6, 6, 0, 0, 0, 0, 0]]\nError: Traceback (most recent call last):\n  File \"/var/folders/v5/23nssdts27qd26t6dc53v2g40000gn/T/tmpdbbuu8c4.py\", line 120, in <module>\n    output = transform(test_input)\n             ^^^^^^^^^^^^^^^^^^^^^\n  File \"/var/folders/v5/23nssdts27qd26t6dc53v2g40000gn/T/tmpdbbuu8c4.py\", line 65, in transform\n    from scipy.ndimage import label, find_objects\nModuleNotFoundError: No module named 'scipy'\n\n\nTraining Example 2 \u2717:\nExpected: [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 7, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0], [0, 0, 7, 7, 7, 7, 7, 7, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 7, 7, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 2, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0], [0, 0, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0], [0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 3, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0], [0, 0, 3, 3, 3, 3, 3, 3, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]\nError: Traceback (most recent call last):\n  File \"/var/folders/v5/23nssdts27qd26t6dc53v2g40000gn/T/tmpag6reop_.py\", line 120, in <module>\n    output = transform(test_input)\n             ^^^^^^^^^^^^^^^^^^^^^\n  File \"/var/folders/v5/23nssdts27qd26t6dc53v2g40000gn/T/tmpag6reop_.py\", line 65, in transform\n    from scipy.ndimage import label, find_objects\nModuleNotFoundError: No module named 'scipy'\n\n\n"
+            },
+            {
+              "type": "input_image",
+              "image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAbMAAANSCAIAAABgCLfeAAAoxUlEQVR4nO3de5BU9Zn44dPcr4IQg1yjgoCp8YKsKIhGhKpFEB0EjEZlwRtGUQTjJQnRdUvEBBcTtXRdFZAgwegKeIuLlooYJaKQKIJKABUQCQIDIuMwQP/KTO3U/F5gHGAu3czzlH8MZ/rbfeZ087HPnGHeVDqdTgAooUbJPwCgjAB7oIwAkTICRMoIECkjQKSMAJEyAkTKCBApI0CkjACRMgJEyghQrmUcOXJkau8uvvjiPd6mTp06hx9++DnnnLNw4cLd7/Oll15KpVLNmjX75ptvwqeeeuqpVCr1yCOPFP1x2LBhqVRqwoQJ4WarV69OpVJjx449kFVFvvnmm4ceeqhXr16tWrWqW7duq1athgwZMm/evFKOydixY/d2QBYvXlz6QevTp893Htji21x++eUltxft3qBBg956662S+5ObmxtuduSRR1533XWbNm3ap4Nf5Msvv7zjjju6dOnSpEmThg0bduvW7ZFHHin565qKHi4sf/fddw877LDGjRu/+uqrpRw6qNbvGQsLC9etW/fss8/26tVrxYoV4bOTJk1KkmTTpk1PPPFEWe7t1ltv/fDDD/d1H8qy6pNPPunevftVV1312muvrV27dvv27WvXrn3qqadOP/30iRMnJhmmaPeefvrpnj17Pv7446Xc7JNPPrnvvvv69u27a9eufTr4b7311vHHH/+rX/3qr3/965YtW7Zt27ZgwYIrrrjisssuK2XHXnnllV69eu3cufPll1/u1avXAXyJkCVlvP/++9P/58knn0ySZPLkycVbpk2bVnzLlStXFm//5ptvli5d+pOf/GTLli0PPvhgyTvMy8ubNWvWkCFDmjVr9l//9V9l2Yft27cPGzZs586d+7Tn37mqsLBw8ODBf/3rX3v06PHMM898+eWXhYWFn3322QMPPNCsWbObbrqp6A3g3ixatCi9m5ycnD0ekGIvv/xyyTspy23Wrl1btD0/P//vf//7Lbfckk6nL7300k8//bTkzfLz80se/D59+rz99tsvvfRS2Q/+P/7xj4EDB37++ecXXnjh/Pnzt2zZsnHjxlmzZh111FGTJ09+6KGH9ngcZs6c2a9fvwYNGrz22msnn3xyKUcMqvt7xrp163bu3PnXv/51kiThPeP06dO/+eabESNGDB8+fP78+e+999533tu11177l7/85T//8z/3aR++c9Vjjz327rvv9unT5/XXXx8wYEDz5s1r1arVtm3bn/70p08//fTOnTv/8Ic/JJmkXr167du3Hz9+/K233rp9+/bf/va3pRz866+/vqiqZT/4EydOXLdu3ejRo6dPn37yySc3btz40EMPPffcc+fOnduwYcOJEyfu/iuQH3300SFDhnz/+9+fN2/ecccdV7x9ypQpqVTq/vvvL9cDAFlexoKCgg8++GDMmDFJknTs2LHkpyZPnnzMMceceeaZP/3pT2vWrFmWt4133nlnhw4dbr311qVLl5Z9H75z1fTp01Op1H//93/XrFkzfOpHP/rRkiVL7rjjjiQj3XDDDQ0aNPjf//3fPX62sLDw448/vvfee2vVqvWjH/2o7Af/j3/8Y/369f/jP/4j3GGbNm3eeOON1157LZVKldz+m9/85vLLLz/qqKPeeOONo48+uvy+PjiIynjkkUcWXwSoV69eTk7Ok08++b3vfW/UqFHFt1m8ePE777xz4403plKp9u3bDxky5PHHH9+6dWvp99ygQYPJkycXFhbu0zn1d65atGjRMcccc+SRR+5x+THHHBNCEHTp0iVcOXnjjTf2dkCKvfbaa/t6m901btz46KOPDm/G69evX7S8Tp06nTp1+vOf//zYY4+V/OpKP/iFhYWffPJJt27dGjVqtPsjnnDCCS1btiy55aabbrr55puTJDnttNPatWsXbj9s2LB0Oj1y5MjSvxCodj+107p160svvfRvf/vb4YcfXrxx0qRJrVu3vuiii4r++POf//yrr74qy0lrz549r7vuurfffvvuu+8u+z6UsqqwsDAvL69FixYlN4brxUcccUSSqZo3b17wT3u7wc6dO+fPn19YWFjGg5+Xl5dOp5s3b17GHbjvvvu6d+/ep0+fSZMmPf300wf21cDBW8aiiwnbt2+fMWNG0Zuau+66q1WrVsU3KCwsnDZt2po1a+rWrVuUnuOPPz6dTpfxOsydd9559NFH33bbbUuWLCn7Xu1tVe3atRs3brx+/fpkf+1+BaZnz57feXXljDPO2Nfb7NGmTZtq165dt27d3a/AbN++fcWKFddcc8199933s5/9rIwHv1mzZjVq1Cj7ARk+fPhrr702derUZs2aXXHFFWvWrCnjQqiO7xlr16794x//+Iknnpg7d27fvn1L/tTbc889t8e/eAsXLlywYMF33nP9+vX345y6lFXHHnvskiVLPvvssz1eiO/atWuSqbZu3bp48eJjjjlmj5+tXbv2kUceeffdd+fk5EyZMqWMB79mzZrHHHPMO++8s23btt1vNn78+KFDh37++efFWx544IE6deq0bNny/vvv37hx49ChQ3f/CSHIZFVwNn3WWWdde+21CxcuLH7PUnQ2V69evc2bN5d8f/Tmm28mSbK3nwgJTj311FGjRi1YsGD3n+Lej1UXXXTRrl27rr766j12NpNH0d5zzz2FhYV9+/Yt/WY1atTYunXrjh07ynjwc3Nz8/Pz//3f/z3czyeffPKb3/zmueee2+O59oUXXjh48OBXXnlln77RAdX0+4x33nlnu3btHnzwwb/85S9JknzxxRcvvvjigAEDDjnkkJI36969e6dOnf7whz9s3ry5LHc7bty4o48++oEHHtinndnjqssvv7xr167PP/98t27d/vjHP37xxReFhYVFP+ndv3//hQsX1qiRWf+wsqCg4KOPPho7duztt9/eoEGDvV3fSKfTq1evvvHGG997770uXbrUqlWrjAd/9OjRzZs3nzBhwtChQ9955538/Px169ZNnz79jDPOyMvLu/HGG0uevJf04IMPtmjRYuzYse+++27FfOlQ/qrmr3fDhg3vu+++Xbt2jRgxYseOHVOnTt2xY0fxt/9L+rd/+7dt27b9/ve/L/vZcelXjcu4qk6dOrNmzerevfvChQt//OMft2zZsk6dOkX/OvCFF17o1KlTGf+Jzt7s8bpzKpUqeS2+LLdp2bJl8RX/zp07jxs3ruifQrZt2zZ8jUU3q1GjRtu2be++++4aNWoU/eBRGQ9+8+bNn3jiicaNG//+978/6aSTGjRocPjhh1900UWffvrpwIEDb7rppr19pd/73vcefvjhwsLCn/zkJ19//bWfZyQrVNkbn3POOSc3N/dvf/vbb3/72ylTphx66KFnnXXW7jcbOnRojRo1ynhCXXR2XPRjzPtkj6vatGkzb968adOm9evXr02bNnXq1GnRokW/fv0ee+yxxYsXn3TSSUkmqV27dtu2bS+44II///nPF1544d5uVrNmze9///v9+/d/6aWXis64y37we/fuvWjRouuuu65z586NGjWqX7/+ySef/Mgjj/zP//zP7j/1WdKAAQOGDRv28ccfl/whLchkqUz+lhlAlcisb5YBZAJlBIiUESBSRoBIGQEiZQSIlBEgUkaASBkBImUEiJQRIFJGgEgZASJlBIiUESBSRoBIGQEiZQSIlBEgUkaASBkBImUEiJQRIFJGgEgZASJlBIiUESBSRoBIGQEiZQSIlBEgUkaASBkBImUEiJQRIFJGgEgZq5ENGzZ8+OGHVb0XZCgvj5KUsWq0adMmtZtp06ZV6IP26dNn/vz5Zb/93Xfffcopp+zts3l5eUcdddQ+3SGVr/hJzMvLS6VSpbRvX18eB7daVb0D1dc999xz/fXXV+Yj5ufnl9ddrVq1auDAgStXriyvO6SiNW3aNJ1OV87L4yDgPWNmefTRR+vWrbtq1aokSdavX3/IIYdMnjz5yy+/TKVSjz76aJs2bZo0aXLZZZcVv4jXrl07ePDgRo0atW3bdsyYMcXb16xZM3DgwMaNGx922GFXX311QUHBGWec8dFHHw0fPvzyyy8vZeEHH3xw2mmn1a9fv0ePHnsL3/PPP5+Tk9O1a9fKOirsp5JPYsn3jGV5eSTVXJqq0Lp163vuuWePnzrzzDOvvvrqdDo9atSoXr16pdPp9evXJ0nSsWPH999/f/ny5ccff/yll15adOPu3bsPGzZs/fr1y5cv79mz54gRI9Lp9I4dO4499tjzzz9/3bp1y5Yt69mz580335xOpzt16jR58uRSFubn57dr1+6aa67ZuHHjM888U79+/ZNPPnn3PXzppZfefvvtwsLCJEneeuutijxOHJCST+KmTZuSJFm6dGkZXx7p6k0Zq0br1q3D/6Jq1qxZ9Klly5Y1bdp04sSJTZo0WbZsWXEZZ86cWXSDOXPm1KlTZ+vWrXPnzm3QoEFBQUHR9gULFtSoUSM/P3/u3Ll16tTZsGFDeNDil/7eFs6aNatJkybbtm0r2n7llVfusYxFlDErFD+JxWUs48sjXb05m64y4T3jjh07irZ36NDhxhtvHDNmzA033NChQ4fi2xdfDDnhhBO2b9++fPnyJUuWbNu2rW7dukUXcE466aRdu3atWLHigw8+aNOmTbNmzfb20HtbuGTJkvbt29evX7/oZl26dKngY0CF2/1JLOPLI6nelDETLV68OEmShQsXltxYu3btog927tz57bWzWrV27NjRoUOH8P+6H/7wh7Vr106lUqXc/94WhpsVPyLZa/cnsYwvj6R6U8aM86c//emJJ56YMGHC7NmzZ82aVbz9vffeK/pg0aJFjRo1at++fefOnVeuXLl69epwDx07dly1alXR2VNJxX8f9rYwJydn2bJlX3/9ddEf33///fL+4qhsuz+JZXx5JNWbMmaWrVu3XnXVVdddd93PfvazK664YuTIkV999VXRp2666aaVK1cuW7bs5ptvvvLKK+vWrXvmmWced9xxw4cPX7Vq1Zo1a66//vp27doVFBScdtppOTk511577ZdffvnJJ58MGjTowgsvTJKkYcOGn3/++VdffbW3hf/6r//asmXLUaNGbdy48eWXX540aVJVHw8OyB6fxDK+PJJqruK/lUmZrsAkSTJixIhrr732iCOO2Lp1azqd3rx5c9u2bUeOHFl0BeaWW275wQ9+cOihh44ZM2b79u1F9/Ppp5+ee+65DRs2POSQQ/r27bt06dKi7StXrjzrrLPq1avXvHnzYcOGbd68OZ1OP/zww40aNRo0aFApC5cvX967d+969erl5OSMGTPGFZisVvJJLL4CU8aXR7p6S5X+w58HYuDAgRV0z9XN9u3bX3jhhd69ezdu3Liq94X9MXPmzKreBfZRxUU3Nzc32V/WWnswra24v2VUEN9nBIiUESBSRoBIGQEiZQSIlBEgUkaASBkBImUEiJQRIFJGgEgZASJlBIiUESBSRoBIGQEiZQSIlBEgMgcGKpw5MNmnosYomANjrbUV/7eMCuJsGiBSRoBIGQEiZQSIlBEgUkaASBkBImUEiJQRIFJGgEgZASJlBIiUESBSRoBIGQEiZQSIlBEgUkaAyBwYqHDmwGSdWhV677Nmzdq/hbm5uVW1dubd+7l24M+ycm02PkdZt5as42waIFJGgEgZASJlBIiUESBSRoBIGQEiZQSIlBEgUkaASBkBImUEiJQRIFJGgEgZASJlBIiUESBSRoDIHBiocObAZJ90hcnNzd3vvarCtem/J/v3n322tvL/llFBnE0DRMoIECkjQKSMAJEyAkTKCBApI0CkjACRMgJEyggQKSNApIwAkTICRMoIECkjQKSMAJEyAkTKCBCZAwMVzhyYrFOrQu991qxZ+7cwNzd35t37uXbgz6ps7YF8vY5V5RyrKllL1nE2DRApI0CkjACRMgJEyggQKSNApIwAkTIC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abJt27ai7VdeeWXpZczLyzvyyCNvu+228j48VJLip7i4jGV88aQPds6mq0x4z7hjx46i7R06dLjxxhvHjBlzww03dOjQofj2xRdDTjjhhO3bty9fvnzJkiXbtm2rW7du0QWck046adeuXStWrPjggw/atGnTrFmzvT303hYuWbKkffv29evXL7pZly5dStn/r7/+esCAATk5OWPHji2nQ0Jl2/0pLuOLJznYKWMmWrx4cZIkCxcuLLmxdu3aRR/s3LkzSZJatWrt2LGjQ4cO4f91P/zhD2vXrp1KpUq5/70tDDcrfsTdbdiwoXfv3m3atHnqqadq1ap1YF8uVWb3p7iML57kYKeMGedPf/rTE088MWHChNmzZ8+aNat4+3vvvVf0waJFixo1atS+ffvOnTuvXLly9erV4R46duy4atWqovOjkopf8XtbmJOTs2zZsq+//rroj++///4e93D16tU9e/Y8/fTTH3/88Tp16hzYl0tV2v0pLuOLJznoVfwJO/twBearr75q167d9ddfX/Q9oNatW2/ZsqXo+4z/8i//smLFio8//vjYY48dM2ZMOp3euXNnly5d+vTp89lnn61evXrUqFFt27b95ptvdu3adeKJJ1500UXr169fuXLleeedd8EFF6TT6a5du44bN27Lli17W1hQUNCxY8fLLrtsw4YNL730UuPGjXf/PuOmTZuOPvrom266qbIOFRWl5FNc/H3GMr540gc7ZcyUKzBJkowYMeLaa6894ogjtm7dmk6nN2/e3LZt25EjRxaV8ZZbbvnBD35w6KGHjhkzZvv27UX38+mnn5577rkNGzY85JBD+vbtu3Tp0qLtK1euPOuss+rVq9e8efNhw4Zt3rw5nU4//PDDjRo1GjRoUCkLly9f3rt373r16uXk5IwZM2b3Mo4fP373Pf/qq68q9/hRDko+xcVlLOOLJ32wSx3IT6INHDhwv9dSdtu3b3/hhRd69+7duHHjqt4Xyt/MmTOrehfYzYFkNTc3N9lf1pZdv379quRxra2cteX3Rody4woMQKSMWcD1X6hkyggQKSNApIwAkTICRMoIECkjQKSMAJEyAkTKCBApI0CkjACRMgJEyggQKSNApIwAkTICRObAQBUzByYTHciohGycuWGttZm2tvyGl1BunE0DRMoIECkjQKSMAJEyAkTKCBApI0CkjACR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"
+            },
+            {
+              "type": "input_text",
+              "text": "Above is a visual comparison of expected vs predicted outputs for each training example. Green circles indicate correct solutions, red circles show errors. Use this visual feedback along with the textual analysis to improve your approach."
+            }
+          ],
+          "solved_count": 0,
+          "total_training_examples": 2,
+          "pixel_accuracy": 0.0
+        },
+        "test_result": {
+          "execution_error": "Traceback (most recent call last):\n  File \"/var/folders/v5/23nssdts27qd26t6dc53v2g40000gn/T/tmpapvzuahk.py\", line 120, in <module>\n    output = transform(test_input)\n             ^^^^^^^^^^^^^^^^^^^^^\n  File \"/var/folders/v5/23nssdts27qd26t6dc53v2g40000gn/T/tmpapvzuahk.py\", line 65, in transform\n    from scipy.ndimage import label, find_objects\nModuleNotFoundError: No module named 'scipy'\n",
+          "timed_out": false,
+          "predicted_output": null
+        },
+        "status": "failed_test"
+      }
+    ],
+    "total_turns": 1,
+    "conversation_history": [
+      {
+        "role": "system",
+        "content": "You are an expert at solving abstract reasoning puzzles. Write clean, efficient Python code."
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "You are solving an ARC (Abstraction and Reasoning Corpus) task. \nI will show you training examples with input and output grids, plus a test input grid. Your task is to:\n\n1. **Analyze the training examples** to discover patterns that map input grids to output grids\n2. **Write a Python program** that implements your best understanding of the transformation  \n3. **DO NOT predict or generate the test output** - your job is only to write the transformation program\n4. **Attempt a solution** - even if the pattern isn't completely clear, provide your best hypothesis\n5. **Do not repeat the same transformation** - if you have already tried a transformation, do not repeat it.\n\n**IMPORTANT: Your transformation must always produce a 17\u00d713 output grid.**\n\nThe test input is shown for context so you understand what type of grid your program will eventually process. Focus on learning patterns from training examples and writing code that captures your understanding.\n\nTraining Examples:\n\nExample 1:\nInput:\n0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 4 1 6 0 0 0 0 0 0 0 0\n0 0 4 1 6 0 0 0 0 0 0 0 0\n0 0 4 1 6 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 1 1 1 1 0 0 0 0 0 0\n0 0 0 1 0 0 1 0 0 0 0 0 0\n0 1 1 1 0 0 1 1 1 0 0 0 0\n0 0 1 1 0 0 1 1 0 0 0 0 0\n0 0 1 1 1 1 1 1 0 0 0 0 0\n0 0 0 6 6 6 6 0 0 0 0 0 0\n0 0 0 6 0 0 6 0 0 0 0 0 0\n0 6 6 6 0 0 6 6 6 0 0 0 0\n0 0 6 6 0 0 6 6 0 0 0 0 0\n0 0 6 6 6 6 6 6 0 0 0 0 0\nOutput:\n0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 4 4 4 4 0 0 0 0 0 0\n0 0 0 4 0 0 4 0 0 0 0 0 0\n0 4 4 4 0 0 4 4 4 0 0 0 0\n0 0 4 4 0 0 4 4 0 0 0 0 0\n0 0 4 4 4 4 4 4 0 0 0 0 0\n0 0 0 1 1 1 1 0 0 0 0 0 0\n0 0 0 1 0 0 1 0 0 0 0 0 0\n0 1 1 1 0 0 1 1 1 0 0 0 0\n0 0 1 1 0 0 1 1 0 0 0 0 0\n0 0 1 1 1 1 1 1 0 0 0 0 0\n0 0 0 6 6 6 6 0 0 0 0 0 0\n0 0 0 6 0 0 6 0 0 0 0 0 0\n0 6 6 6 0 0 6 6 6 0 0 0 0\n0 0 6 6 0 0 6 6 0 0 0 0 0\n0 0 6 6 6 6 6 6 0 0 0 0 0\n\nExample 2:\nInput:\n0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 7 2 1 3 0 0 0\n0 0 0 0 0 0 0 7 2 1 3 0 0 0\n0 0 0 0 0 0 0 7 2 1 3 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 2 0 0 2 0 0 0 0 0 0 0\n0 0 2 2 2 2 2 2 0 0 0 0 0 0\n0 0 0 0 2 2 0 0 0 0 0 0 0 0\n0 0 0 1 0 0 1 0 0 0 0 0 0 0\n0 0 1 1 1 1 1 1 0 0 0 0 0 0\n0 0 0 0 1 1 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0\nOutput:\n0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 7 0 0 7 0 0 0 0 0 0 0\n0 0 7 7 7 7 7 7 0 0 0 0 0 0\n0 0 0 0 7 7 0 0 0 0 0 0 0 0\n0 0 0 2 0 0 2 0 0 0 0 0 0 0\n0 0 2 2 2 2 2 2 0 0 0 0 0 0\n0 0 0 0 2 2 0 0 0 0 0 0 0 0\n0 0 0 1 0 0 1 0 0 0 0 0 0 0\n0 0 1 1 1 1 1 1 0 0 0 0 0 0\n0 0 0 0 1 1 0 0 0 0 0 0 0 0\n0 0 0 3 0 0 3 0 0 0 0 0 0 0\n0 0 3 3 3 3 3 3 0 0 0 0 0 0\n0 0 0 0 3 3 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0\n\nTest Input:\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 1 1 0 0 0 0 0 0 0 0\n0 0 0 0 1 0 0 1 0 0 0 0 0 0 0\n0 0 0 1 1 1 1 1 1 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 2 3 1 8 7 0 0\n0 0 0 0 0 0 0 0 2 3 1 8 7 0 0\n0 0 0 0 0 0 0 0 2 3 1 8 7 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n\nAnalyze the patterns in the training examples and write a Python function that performs this transformation.\n\n**Approach Guidelines:**\n- Look for patterns in shapes, colors, positions, sizes, rotations, reflections, etc.\n- Even if you can't solve all training examples perfectly, implement what patterns you do observe\n- A partial solution that captures some aspects is better than returning the input unchanged\n- If the pattern is unclear, make your best educated guess based on what you can see\n\nRequirements:\n- The function takes a 2D list (grid) where grid[row][col] gives the value at that position\n- Values are integers from 0-9\n- Return a new grid (2D list) with the transformation applied\n- You can use numpy if needed - just add 'import numpy as np' at the start of your function\n- Aim to handle the training examples as well as possible, even if not perfectly\n- Your function should attempt some meaningful transformation based on the patterns you observe\n\nYou MUST end your response with the following exact format:\n\nFinal answer:\n```python\ndef transform(grid):\n    # Your transformation logic here (implement your best understanding)\n    return transformed_grid\n```\n"
+          },
+          {
+            "type": "input_image",
+            "image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAApQAAAT7CAIAAACv37feAAA6LklEQVR4nO3df5iVdZ34/3Nk+C2CZKlgOQzjIoWhEv7KTAWzLPW+N9T8sduYpJakrBpUl9luKQpYbf4MQ8HC3673ubK83MIu0nYzSU1TREExRSgFxZ8hA9zfa3e+n7lYFBzOjNznNfN4XP4BZ87r3O+5Z97nybk5g+U8z0sAQBzbFL0AAGDLiDcABCPeABCMeANAMOINAMGINwAEI94AEIx4A0Aw4g0AwYg3AAQj3gAQjHgDQDDiDQBdKd4TJkwob9pJJ530jvfp0aPHTjvtdNRRRz344INvf8xf//rX5XJ54MCBq1ev3uhDt912W7lcnjlzZstvm5qayuXy9OnTN7rb0qVLy+Xyeeed156pFqtXr54xY8YhhxwyaNCgnj17Dho06Jhjjrn33nurOydjx44tlUorV64cNGjQ9ttvv3Tp0o1m//Ef/7FHjx5//OMf23hCvvCFL5TL5bq6uhdffPHtKxkxYkS5XG5qamr57fjx4zdcTLdu3bbbbrt99933mmuuaR1JkqRcLr/9QG381FqsWLFi0qRJu+++e+/evQcMGHDAAQdcddVV69at28xJA6DWX3k3Nzf/7W9/u+OOOw455JCnn356o49ee+21pVLp5Zdfvvnmm9vyaOeff/7ChQu3dA1tmXrmmWf233//008/fd68ecuXL1+zZs3y5ctvu+22gw466Ac/+EGpWu973/uuvfbaVatWnXzyyRv+/1ivuOKKLMumTJnysY99bItOyLp1626//faNbvzzn//82GOPbWYZ69evf+211+6///7x48dPmzat1EFefPHF0aNHT58+/Yknnli9evUrr7zy+9///qtf/eoxxxzjfz4LUBPxvvzyy/P/59Zbby2VSrNmzWq9Zc6cOa33XLJkSevtq1evfvzxx0844YRXX331qquu2vABV61aValUjjnmmIEDB/74xz9uyxrWrFnT1NS0pS/s3nWqubl53Lhxf/rTnw444ICf//znK1asaG5ufvbZZ6+88sqBAwdOmjTp0Ucf3czjb/j5tpo7d27LRz/96U+fccYZc+fOvfzyy1tuefjhh88555xPfepT55xzzhadkG7dug0bNuyWW27Z6PabbrrpIx/5yNvvv3z58pbFrF+//vXXX7/hhht69ep14YUXvvXWW5s9YW391C699NJnnnlm3LhxDz/88BtvvLFq1arf/OY3e+21V5Zld9xxRxsPAUDNvfLu2bPn7rvvPnXq1FKptNEr7xtuuGH16tWnnXbaySeffN999z3yyCPv+mhf+9rX/vCHP3z/+9/fojW869R11133wAMPjB079p577jnyyCPf97731dXVffCDH/zKV75y++23r1u37sYbbyy1w/Tp03fffffJkyc/8cQTr7/++rHHHtu/f/+f/vSn5XJ5S0/Iscce+9vf/vaFF17Y8Mabb775uOOO28wCyuVy3759jz/++C984Quvvvrqk08+WeoICxcurKurmzNnzkc/+tE+ffr079//kEMOabkwcNddd7XcZ/bs2eVyufUPLgAEiPdbb7312GOPnX322aVS6R/+4R82/NCsWbOGDx9+6KGHfuUrX+nWrVtbXnxPmTKlsbHx/PPPf/zxx9u+hneduuGGG8rl8tVXX92tW7eNPvTJT35ywYIFF1xwQakdevfuff31169du/akk046/fTTFy1a9NOf/nTHHXfc6G5tOSHHHnvsRlfO77///qeeeurYY49ty0paXnO//dOszsiRI9euXZtl2YY31tfX53l+5ZVXdsghANhK8R4yZEjrm5t69eo1YsSIW2+9dYcddjjrrLNa7/Poo4/+8Y9//PrXv14ul4cOHXrMMcdcf/31r7/++uYfuU+fPrNmzWpubt6ii+fvOvXQQw8NHz58yJAh7zg+fPjwjV4ib+bzbTVv3rwN77P33nv/67/+6x//+Mfrr7/+7LPPPvzwwzd6kDaekBEjRnz4wx9u+WuLFjfddNPHPvaxoUOHbmaF69atW7Zs2Y9+9KNbbrnlAx/4wLBhwzZz57Z/ahMnTjzwwAOPP/74hoaG8ePHX3311W//q/empqY8zydMmNDGIwJQEz8qNnjw4C996UsPP/zwTjvt1HrjtddeO3jw4BNPPLHlt9/85jdfe+21tlydPvDAA88888z777//kksuafsaNjPV3Ny8atWqjV4Hb/Re6/r6+lK7HX300S1/CDjwwAPf/tG2n5ANr5zneX7LLbds6pr5zjvv3LL+urq6wYMHT5w4cd26dVOmTOmoV97bbrvtvHnz5syZM3LkyEqlctppp40YMWLIkCHXXXddhzw+AFsv3i3vclqzZs1NN93Ur1+/3Xbb7eKLLx40aFDrHZqbm+fMmfP888/37NmzpS4jR47M87yNb1ubMmXKbrvt9p3vfGfBggVtX9Wmprp3796vX793/Pmr9ryr6+CDD97wPqtXrz7hhBP69+/fr1+/0047baO/tN6iE3Lccce1Xjm/5557li1b9q7XzLfZZpuBAweOGTOmUqmccsopHfipdevW7cQTT8yybMWKFYsWLZo1a9aOO+7Y1NT0wx/+sO1HAaBWXnl37979uOOOu/nmm3/7299++tOf3vDniX/xi1+8YywffPDB+fPnv+sj9+7du4qL55uZ2mOPPRYsWPDss8++41vrR40aVWq3iRMnPvLII5f+rxdeeOFLX/rShh/dohOy++6777HHHi3vOb/55pv322+/D33oQ+940NZ3m69bt27lypVz5849+uijS++ZxsbGpqam3/3ud3vttVc73yUAQJGXzT/zmc987Wtfe/DBB88999zWG6+99tpevXq98sorG76e++///u9SqTRjxoy2POzHP/7xs846a/78+W//B1iqmDrxxBPXr1//1a9+9R3/KND+H1m+9dZbZ8yYccIJJ/zTP/1TU1PT5z//+V/+8pcb/uDclp6Q44477p577mn5SfTNv8/8vfP888+Xy+Xx48dvdHtdXd0ee+yxatWqNWvWFLIwgE6mmL/znjJlyoc+9KGrrrrqD3/4Q6lU+utf/3rXXXcdeeSR22233YZ323///YcNG3bjjTe+8sorbXnYCy+8cLfddtvSdzW/49T48eNHjRr1y1/+cp999rnlllv++te/Njc3t6Txs5/97IMPPrjNNtWfuiVLlnz5y18eMmRIa61nzJix8847n3POOS3/dEwVJ6TlyvnEiRNXrFhxzDHHlIowePDgvffe+9prr50wYcLvf//7v/3tb6tXr37qqaeuvPLKW2+9dZ999unRo0chCwPoZIqJd9++fS+77LL169efdtppa9eu/elPf7p27drWd2Zt6Itf/OKbb775s5/9rO2XwTf/PvA2TvXo0aNSqey///4PPvjgcccdt/POO/fo0aPln0e98847hw0btvl/AO4d35JdLpdff/315ubm44477o033rj++utb2/y+971v9uzZq1evPvHEE5ubm6s4IY2NjXvttdctt9zyiU98YsM3E1Shd+/eGy179uzZbfnUWi4YDBgw4IorrjjggAN22mmn3r17NzY2nnHGGXV1da0/2O3nvAGi/o9JjjrqqCRJHn744X//93+fPXv29ttv/5nPfObtd/vnf/7nbbbZpo1Xzlsug0+cOHFLF/OOU7vsssu99947Z86cI444YpdddunRo8eOO+54xBFHXHfddY8++ujo0aNLVfnGN74xf/7873znO/vvv/+Gt3/qU5+aMGHCgw8+eN5551V3Qlqulrfxx7vfIyNHjnzsscfOOeecESNGbLfddj169Kivrz/11FP//Oc/d8gbBQD4n39oy784DQCx+F+CAkAw4g0AwYg3AAQj3gAQjHgDQDDiDQDBiDcABCPeABCMeANAMOINAMGINwAEI94AEIx4A0Aw4g0AwYg3AAQj3gAQjHgDQDDiDQDBiDcABCPeABCMeANAMOINAMGINwAEI94AEIx4A0Aw4g0AwYg3AAQj3gAQjHgDQDDiDQDBiDcABCPeABCMeANAMOINAMGINwAEI94AEIx4s7GVK1cuXLiw6FUAHbAlbefOSrxjS5KkqampYx9z7Nix991336Y+umrVqoaGhs3cAdiU55577stf/vLgwYN79erV0NBw7rnnvvTSS+3cku2ZtZ3jEm829ve//31TH3ruuefGjh27ZMmSrbsi6AyefPLJUaNGvfzyy3feeedLL710++23P/7446NGjVq+fHnVW/Jd2c6dlXh3EitWrCiXy1dccUV9fX2vXr0OP/zw559/vvX2a665Zpdddunfv/8pp5zSspmXLl1aLpefeeaZlvFLLrlkv/32K5VKBx988BNPPHHyySePHz9+o0P88pe/HDFixKhRo4r4/CC88ePHf/KTn7zttttGjhzZp0+fPffc84477thpp53OPPPMNm5J25lW4t2pXHfddXfffffChQuXLVv23e9+t/X2adOm3XXXXQ899NADDzwwYcKEzTzCvHnzhg0bNmvWrJkzZ270oZ49e86dO/eKK654z5YPndZf/vKXe++9d6Pdt80220ycOLFSqbz88stt35K2M+Ld2Xz7298eOnRofX19U1PT/PnzW2+fOnXqiBEjGhoapk+fPmfOnDfeeKOKBx87duzo0aM7dL3QVSxYsKBUKg0fPnyj20eOHLl27drFixe3/aFsZ8S7s6mvr2/5Rd++fZubm1tvb7mGViqV9txzzzVr1jz11FMFLRC6qHK5XCqV1q1bt9Htb7311pY+lO2M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VJxKpVLdYJIk7Zmdfc+Z1c02HXSp2bbPFvX1DTcblP3buWfD7aOutn9dNgeAYMQbAIIRbwAIRrwBIBjxBoBgxBsAghFvAAhGvAEgGPEGgGDEGwCCEW8ACEa8ASAY8QaAYMQbAIIRbwAIRrwBIBjxBoBgxBsAginneV70GgCALeCVNwAEI94AEIx4A0Aw4g0AwYg3AAQj3gAQjHgDQDDiDQDBiDcABCPeABCMeANAMOINAMGINwAEI94AEIx4A0Aw4g0AwYg3AAQj3gAQjHgDQDDiDQDBiDcABCPeABCMeANAMOINAMGINwAEI94AEIx4A0Aw4g0AwYg3AAQj3gAQjHgDQDDiDQDBiDcABCPeABCMeANAMOINAMGINwAEI94AEIx4A0Aw4g0AwYg3AAQj3gAQjHgDQDDi3RWtXLly4cKFRa8CKHg7eyqIS7xrXZIkTU1NHfuYY8eOve+++95++6JFiz73uc8NGDBg5513Pu2001599dWOPS6wGc8999yXv/zlwYMH9+rVq6Gh4dxzz33ppZeq3s5t4akgLvHuiv7+97+//cbm5ubPfe5z9fX1S5Ysuffeex944IHTTz+9iNVBV/Tkk0+OGjXq5ZdfvvPOO1966aXbb7/98ccfHzVq1PLly6vYzm3kqSCwnNp29NFHf/GLX8zz/MUXXyyVSpdffvmuu+7as2fPT33qU0uXLm29febMmYMHD95uu+2+9KUvvfnmm3meP/fcc6VSacmSJS2PM3369H333TfP809+8pMtX/pTTjllwwP913/9V11d3VtvvdXy25///Od9+vRZv359EZ80dDmf+MQnxo0bt+Et69at22+//VpubMt29lTQpXjlHcx111139913L1y4cNmyZd/97ndbb582bdpdd9310EMPPfDAAxMmTNjMI8ybN2/YsGGzZs2aOXPmhrcfcMABzc3NPXr0aPnt8uXLBw4cWC6X37NPBfj//eUvf7n33ns32rnbbLPNxIkTK5XKyy+/3Pbt7KmgixDvYL797W8PHTq0vr6+qalp/vz5rbdPnTp1xIgRDQ0N06dPnzNnzhtvvNGeo7zyyisXX3zxKaec0hFLBt7FggULSqXS8OHDN7p95MiRa9euXbx4cdsfylNBFyHewdTX17f8om/fvs3Nza2377fffi2/2HPPPdesWfPUU09VfYg33njjyCOPHDFixHnnndfu9QLvruV17bp16za6/a233trSh/JU0EWIdzDdu3dv/XWe52+/vWX/19XVbXSZ6+3PC+9o5cqVY8aM2WWXXW677ba6urqOWziwSS2vuVtef29o4cKFdXV1jY2Nbd/Ongq6CPHuJB555JGWXzz00EPbbrvt0KFDW/7KqvWi2bPPPtt650399dXSpUsPPPDAgw466Prrr2/9Gy/gvbbrrruOGTPm4osv3vDG9evXT5s27aijjtp+++3bvp09FXQR4t1JTJo0acmSJYsWLZo8efKpp57as2fPHXbYYciQITNmzHjzzTfnzp174403tt65b9++y5Yte+211zZ8hFWrVh166KFHHXXUtGnTvDkFtrKrr776scceO+mkk5588snm5uYFCxaMGzfuhRdeuOyyy0qlUtu3s6eCrqLot7uzZT8q9vjjj7fcftVVV33kIx9pvf0b3/jGrrvuuv3225999tlr1qxpuc/dd989fPjwnj17HnTQQa0/H5Ln+U9+8pNtt93285///IYHuuiii97+7fHaa69t9c8Yuqjly5efccYZH/rQh3r27FlfXz9x4sQVK1a0fvRdt7Ongi6lvOHfm26pNE2rnqWjrFmz5s477xwzZky/fv2KXgvVyLKsFI29X4M8FXStvd+e8idJUvVxzZo12yIPKOJ5Nmu2M+19f+cNAMGINwAEI94AEIx4A0Aw4g0AwYg3AAQj3gAQjHgDQDDiDQDBiDcABCPeABCMeANAMOINAMGINwAEI94AEIx4A0Aw4g0AwYg3AARTzvO86uE0TTt0MdAVZVlWisbeh2L3fl07j12pVKobTJLE7NaZzUbPr242nT86e2VZlbP9B1Uap1Y3myye/PR5q6qbbbhgQLivUVDhzrNZs51p77tsDgDBiDcABCPeABCMeANAMOINAMGINwAEI94AEIx4A0Aw4g0AwYg3AAQj3gAQjHgDQDDiDQDBiDcABCPeABCMeANAMOINAMGINwAEU87zvOrhNE07dDHQFWVZVorG3odi935dO49dqVSqG0ySxOzWmc1Gz69uNp0/OntlWZWz/QdVGqdWN5ssnvz0eauqm224YEC4r1FQ4c6zWbOdae+7bA4AwYg3AAQj3gAQjHgDQDDiDQDBiDcABCPeABCMeANAMOINAMGINwAEI94AEIx4A0Aw4g0AwYg3AAQj3gAQjHgD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yLVr12ZZtuGN9fX1eZ5feeWVHXigKVOmNDY2nn/++Y8//vgWDba85u7WrVsHLgYAajreQ4YMefv7tubNm9fy0YkTJx544IHHH398Q0PD+PHjr7766scee+y9WEafPn1mzZrV3NzclovnpVJp3bp1y5Yt+9GPfnTLLbd84AMfGDZsWAcupqmpKc/zCRMmdOBjAtAV1MQr72233XbevHlz5swZOXJkpVI57bTTRowYMWTIkOuuu67Dj3XggQeeeeaZ999//yWXXLKp++y8884tf7yoq6sbPHjwxIkT161bN2XKFK+8AehC8X7HN6wdfPDBrXfo1q3biSeemGXZihUrFi1aNGvWrB133LGpqemHP/xhhy9mypQpu+2223e+850FCxZs/p7bbLPNwIEDx4wZU6lUTjnllJYb6+r+5y36zc3NG9255ZaWjwJAJ3/lvZHGxsampqbf/e53e+211wUXXNDhj9+7d+/NXzxvfbf5unXrVq5cOXfu3KOPPrr1o/379y+VSi+88MJGU3/9619bPwoAnTnezz//fLlcHj9+/Ea319XV7bHHHqtWrVqzZk2HH/TjH//4WWedNX/+/Lf/sy3vasiQIe/4NviWWxoaGjpumQDwDoq/xjt48OC999772muv7dWr14knntjQ0NC/f//nn3/+P//zP2+99dZ99tmnR48e78VxL7zwwl/84hdVvJv9sMMO6969+7Rp0/r373/iiSe+//3v/9vf/nbTTTdddtllffr0OfTQQ9+L1QJATbzbvFwuv/7666VS6dprrx0wYMAVV1xxwAEH7LTTTr17925sbDzjjDPq6ureux+Dbrl4XsU/3zZ48OB/+7d/W7Nmzde//vVBgwZ17959l112Offcc9euXfuDH/zg/e9/fxsfx895AxD757wfe+yxc845Z8SIEdttt12PHj3q6+tPPfXUP//5z6NGjXrvjvvxj3984sSJVQx+85vfrFQqhx9++I477ti9e/edd975yCOPnDt37mmnnfYeLBMA/o9ynuf/9xYAoKbVxCtvAKDtxBsAghFvAAhGvAEgGPEGgGDEGwCCEW8ACEa8ASAY8QaAYMQbAIIRbwAIRrwBIBjxBoBgxBsAghFvAAhGvAEgGPEGgGDEGwCCEW8ACEa8ASAY8QaAYMQbAIIRbwAIRrwBIBjxBoBgxBsAghFvAAhGvAEgGPEGgGDEGwCCEW8ACEa8ASAY8QaAYMQbAIIRbwAIRrwBIBjxhs5g5cqVCxcu7HzHAt6ReENhxo0bV34nc+fO3dKHGjt27H333ff225MkaWpq6qD1vsuxgK1GvKEwt912W/6/Zs2a1bdv35Zf53k+duzYLX2ov//97+/NGgs+FvCOxBtq1PLly8eNG7ftttt+8IMfPPvss1uT+eMf/7ihoaFfv36jR4++/fbbS6XSwQcf/MQTT5x88snjx4/f1KOtWLGiXC5fccUV9fX1vXr1Ovzww59//vnW26+55ppddtmlf//+p5xySsuBli5dWi6Xn3nmmZbxSy65ZL/99mvjsYD3mnhDjfr85z/fr1+/Z5555re//e38+fP/5V/+pVQqPfLII5MmTbrttttWrFhx1llnnXDCCS+//PK8efOGDRs2a9asmTNnbv4xr7vuurvvvnvhwoXLli377ne/23r7tGnT7rrrroceeuiBBx6YMGHCZh6h7ccC3jviDbXonnvuefjhh2fMmLHDDjs0NDT88Ic//MlPfrJ69eq//OUvpVKpb9++PXv2POmkk1avXr399tu3/WG//e1vDx06tL6+vqmpaf78+a23T506dcSIEQ0NDdOnT58zZ84bb7zx3nxaQMcQb6hFCxYsePPNN3v27NnyFrbRo0evX7/+6aefPuyww/bZZ5/hw4fvs88+3/ve95YuXbpFD1tfX9/yi759+zY3N7fe3nJJvFQq7bnnnmvWrHnqqac69LMBOph4Qy1au3ZtY2Nj/n99+MMf7tWr169//evf/e53Y8aM+dnPfrbXXnstWrSo7Q/bvXv31l/nef7229etW1cqlerq6srl8oaDLbcDNUK8oRbtvvvuS5YseccX1uVy+YADDrjooosWLFjQp0+fX/3qVy03tudwjzzySMsvHnrooW233Xbo0KE9evQolUqt18+fffbZDRfQnmMB7SfeUIsOPfTQj370oyeffPJzzz33/PPPT5w48UMf+tBbb731s5/9rL6+/tFHH12zZs299977wgsv7L333i2XwZctW/baa69Vd7hJkyYtWbJk0aJFkydPPvXUU3v27LnDDjsMGTJkxowZb7755ty5c2+88cbWO7fzWED7iTfUom222aZSqfTt23f48OEf/vCHn3jiiV/96lctb1L74he/eMQRR/Tr1+/UU0+98sor999//1KpdPrpp1900UUnn3xydYcbO3bsIYccsu+++x522GEXX3xxy8vrmTNnzp07d+DAgd/73ve+9a1vtd65nccC2q+84d97wYbSNC16Cbzn1qxZc+edd44ZM6Zfv35Fr4WNZVlW9BKoVRu9IwZaJUlS9feVWbNm2z9b9HMAtctlcwAIRrwBIBjxBoBgxBsAghFvAAhGvAEgGPEGgGDEGwCCEW8ACEa8ASAY8QaAYMQbAIIRbwAIRrwBIBjxBoBgxBsAghFvAAhGvAEgmHKe50WvgRqVpmnRS4AuLcuyopdArcphE5Ikqfr7yqxZs+2fLfo5gNrlsjkABCPeABCMeANAMOINAMGINwAEI94AEIx4A0Aw4g0AwYg3AAQj3gAQjHgDQDDiDQDBiDcABCPeABCMeANAMOINAMGINwAEI94AEEw5z/Oi10CNStO06CVAl5ZlWdFLoFblsAlJklT9fWXWrNn2zxb9HEDtctkcAIIRbwAIRrwBIBjxBoBgxBsAghFvAAhGvAEgGPEGgGDEGwCCEW8ACEa8ASAY8QaAYMQbAIIRbwAIRrwBIBjxBoBgxBsAghFvAAimnOd50WugRqVpWvQSoEvLsqzoJVCrctiEJEmq/r4ya9Zs+2eLfg6gdrlsDgDBiDcABCPeABCMeANAMOINAMGINwAEI94AEIx4A0Aw4g0AwYg3AAQj3gAQjHgDQDDiDQDBiDcABCPeABCMeANAMOINAMGINwAEU87zvOg1UKPSNC16CdClZVlW9BKoVTlsQpIkVX9fmTVrtv2zRT8HULtcNgeAYMQbAIIRbwAIRrwBIBjxBoBgxBsAghFvAAhGvAEgGPEGgGDEGwCCEW8ACEa8ASAY8QaAYMQbAIIRbwAIRrwBIBjxBoBgxBsAginneV70GqhRaZoWvQTo0rIsK3oJ1KocNiFJkqq/r8yaNdv+2aKfA6hdLpsDQDDiDQDBiDcABCPeABCMeANAMOINAMGINwAEI94AEIx4A0Aw4g0AwYg3AAQj3gAQjHgDQDDiDQDBiDcABCPeABCMeANAMOINAMGU8zwveg3UqDRNi14CdGlZlhW9BGpUXdELoKZVKpXqBpMk6XKzjVOrnF08uV2zEc+VWWgfl80BIBjxBoBgxBsAghFvAAhGvAEgGPEGgGDEGwCCEW8ACEa8ASAY8QaAYMQbAIIRbwAIRrwBIBjxBoBgxBsAghFvAAhGvAEgGPEGgGDKeZ4XvQZqVJqmRS8BurQsy4peAjWqrugFUNMqlUp1g0mShJxtnFrl7OLJ1my2w2dhU1w2B4BgxBsAghFvAAhGvAEgGPEGgGDEGwCCEW8ACEa8ASAY8QaAYMQbAIIRbwAIRrwBIBjxBoBgxBsAghFvAAhGvAEgGPEGgGDEGwCCKed5XvQaqFFpmha9BOjSsiwregnUqLqiF0BNq1Qq1Q0mSVLYbOPUKmcXTza7BbMRvzeizcKmuGwOAMGINwAEI94AEIx4A0Aw4g0AwYg3AAQj3gAQjHgDQDDiDQDBiDcABCPeABCMeANAMOINAMGINwAEI94AEIx4A0Aw4g0AwYg3AARTzvO86DVQo9I0LXoJ0KVlWVb0EqhVOWxCkiRVf1+ZNWu2/bNFPwdQu1w2B4BgxBsAghFvAAhGvAEgGPEGgGDEGwCCEW8ACEa8ASAY8QaAYMQbAIIRbwAIRrwBIBjxBoBgxBsAghFvAAhGvAEgGPEGgGDEGwCCKed5XvQaqFFpmha9BOjSsiwregnUqhw2IUmSqr+vzJo12/7Zop8DqF0umwNAMOINAMGINwAEI94AEIx4A0Aw4g0AwYg3AAQj3gAQjHgDQDDiDQDBiDcABCPeABCMeANAMOINAMGINwAEI94AEIx4A0Aw4g0AwZTzPC96DdSoNE2LXgJ0aVmWFb0EalUOm5AkSdXfV2bNmm3/bNHPAdQul80BIBjxBoBgxBsAghFvAAhGvAEgGPEGgGDEGwCCEW8ACEa8ASAY8QaAYMQbAIIRbwAIRrwBIBjxBoBgxBsAghFvAAhGvAEgGPEGgGDKeZ4XvQZqVJqmRS8BurQsy4peArUqh01IkqTq7yuzZs22f7bo5wBql8vmABCMeANAMOINAMGINwAEI94AEIx4A0Aw4g0AwYg3AAQj3gAQjHgDQDDiDQDBiDcABCPeABCMeANAMOINAMGINwAEI94AEIx4A0Aw5TzPi14DNSpN06KXAF1almVFL4FalcMmJElS9feVWbNm2z9b9HMAtctlcwAIRrwBIBjxBoBgxBsAghFvAAhGvAEgGPEGgGDEGwCCEW8ACEa8ASAY8QaAYMQbAIIRbwAIRrwBIBjxBoBgxBsAghFvAAhGvAEgmHKe50WvgRqVpmnRS4AuLcuyopdAjaoregHUtEqlUt1gkiRma382e2VZdbNp/0FPn7equtmGCwZUGqdWN5ssnjxyepU9e/jraTZ6fnWz6fzRhXyNYFNcNgeAYMQbAIIRbwAIRrwBIBjxBoBgxBsAghFvAAhGvAEgGPEGgGDEGwCCEW8ACEa8ASAY8QaAYMQbAIIRbwAIRrwBIBjxBoBgxBsAginneV70GqhRaZoWvQTo0rIsK3oJ1Ki6ohdATatUKtUNJklitvZns1eWVTeb9h/09HmrqpttuGBApXFqdbPJ4skjp1fZs4e/nmaj51c3m84fXcjXCDbFZXMACEa8ASAY8QaAYMQbAIIRbwAIRrwBIBjxBoBgxBsAghFvAAhGvAEgGPEGgGDEGwCCEW8ACEa8ASAY8QaAYMQbAIIRbwAIRrwBIJhynudFr4EalaZp0UuALi3LsqKXQI2qK3oB1LRKpVLdYJIkZmt/NntlWXWzaf9BT5+3qrrZhgsGVBqnVjebLJ48cnqVPXv462k2en51s+n80YV8jWBTXDYHgGDEGwCCEW8ACEa8ASAY8QaAYMQbAIIRbwAIRrwBIBjxBoBgxBsAghFvAAhGvAEgGPEGgGDEGwCCEW8ACEa8ASAY8QaAYMQbAIIp53le9BqoUWmaFr0E6NKyLCt6CdSqHDYhSZKqv6/MmjXb/tminwOoXS6bA0Aw4g0AwYg3AAQj3gAQjHgDQDDiDQDBiDcABCPeAFCK5f8DHISE0hFEUlQAAAAASUVORK5CYII="
+          },
+          {
+            "type": "input_text",
+            "text": "Above is a visual representation of all the training examples and the test input. Each grid cell is colored according to its value (0-9), with clear labels and arrows showing input\u2192output transformations. Use both the textual and visual information to understand the pattern."
+          }
+        ]
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          "Analysis:\n\nLet's break down what happens in training example 1 and 2.\n\n## Training Example 1\n- **Input:** \n  - Top: a 2x2 yellow and magenta block\n  - Middle: a blue shape\n  - Bottom: a magenta shape (similar style as blue, different color, \"downwards\")\n- **Output:**\n  - A *yellow ring/shape* \"built out\" of the yellow+magenta block, now expanded and structure-matched to the blue shape below\n  - The blue shape is unchanged and maintains its position\n  - The magenta shape is unchanged\n\n## Training Example 2\n- **Input:**\n  - Top: 2x2 block (orange, green, blue, red)\n  - Middle: red shape, blue shape\n- **Output:**\n  - 4 shapes, stacked top-to-bottom: (orange shape matching 'red shape geometry'), (red shape unchanged), (blue shape unchanged), (green shape matching the red/blue shape)\n\n## Core Observations:\n1. **The top-left 2x2 block serves as a color source**: Its colors are mapped in the order (row-major) onto shapes elsewhere.\n2. **The color block is not directly copied, but used to \"repaint\" versions of the repeated shape.**\n3. **Shapes are stacked vertically in the output grid, with each shape painted with a color from the top 2x2 color block, matching the geometry of the main shape(s) in the lower part of input.**\n4. **Output grid is always much taller (so sufficient vertical space to stack 4 shapes). Output width always 13 (maybe always 13 in problem).**\n\n## Hypothesis for transformation algorithm:\n1. **Identify the 2x2 color block** (usually in the upper left)\n2. **Identify the \"repeated main shape\"** further down - both its geometry, and number of color blocks (=number of stacked outputs)\n3. **Stack the main shape vertically, colored with the colors from the color block (in order).**\n   - So, first stack: color 1, then color 2, etc.\n   - The first shape is topmost, next one below, etc.\n4. **The output grid is always 17 rows tall and 13 columns wide (from problem statement).**\n\n## To do for implementation:\n- Locate the 2x2 color block (search for the first nonzero 2x2).\n- Find the first shape that is repeated (which set the geometry to be colored for all).\n- For each color in the color block (row-major order), stack a version of the shape painted with that color vertically.\n- Place them with vertical spacing if needed, so all fits in 17 rows.\n- Place the stacks centered horizontally in the 13-column output.\n\n## Let's implement this.\n\nFinal answer:\n```python\nimport numpy as np\n\ndef transform(grid):\n    grid = np.array(grid)\n    h, w = grid.shape\n\n    # Always output 17x13\n    out_h, out_w = 17, 13\n    out = np.zeros((out_h, out_w), dtype=int)\n\n    # 1. Find the 2x2 color block (topmost, leftmost nonzero 2x2 region)\n    found = False\n    for r in range(h - 1):\n        for c in range(w - 1):\n            block = grid[r:r+2, c:c+2]\n            unique = np.unique(block)\n            if 0 in unique:\n                nonzero = unique[unique != 0]\n                if len(nonzero) >= 2:\n                    cb_row, cb_col = r, c\n                    found = True\n                    break\n        if found:\n            break\n    else:\n        # Fallback: look for any nonzero 2x2 in top-left 6x6\n        cb_row, cb_col = 0, 0\n        block = grid[cb_row:cb_row+2, cb_col:cb_col+2]\n\n    color_block = grid[cb_row:cb_row+2, cb_col:cb_col+2]\n    colors = [color_block[0,0], color_block[0,1],\n              color_block[1,0], color_block[1,1]]\n    color_indices = [c for c in colors if c != 0]\n\n    # 2. Find the main shape template (the geometry of the large shapes below color block)\n    # We'll find the next nonzero blob in the bottom two-thirds, left-aligned\n    from scipy.ndimage import label, find_objects\n\n    # Search the lower part of the image\n    search_area = grid[cb_row+2:]\n    labeled, num = label(search_area != 0)\n    # Iterate through the blobs, pick the largest one\n    if num >= 1:\n        # Find the largest shape (by size)\n        max_sz = 0\n        main_shape_slices = None\n        for i in range(1, num+1):\n            slc = find_objects(labeled==i)\n            if not slc:\n                continue\n            sz = np.sum(labeled[slc[0]] == i)\n            if sz > max_sz:\n                max_sz = sz\n                main_shape_slices = slc[0]\n                main_shape_label = i\n        # Get the shape (mask) and geometry\n        ms = labeled[main_shape_slices] == main_shape_label\n        ms_shape = ms.shape\n        # Find the bounding box coordinates in grid\n        start_row = main_shape_slices[0].start + cb_row + 2\n        start_col = main_shape_slices[1].start\n        # Use this geometry for the colored shapes\n        shape_mask = ms\n        shape_h, shape_w = ms.shape\n    else:\n        # Fallback: If no shape, just use a 4x4 centered\n        shape_h, shape_w = 4, 4\n        shape_mask = np.ones((shape_h, shape_w), dtype=bool)\n        start_row, start_col = 3, 4\n\n    # 3. Compose output: vertically stack copies, color with color block\n    N = len(color_indices)\n    total_shape_height = N * shape_h\n    # leave possibly 1 empty row between shapes if they don't fit exactly\n    available_rows = out_h\n    pad_top = max((out_h - N*shape_h)//2, 0)\n    pad_left = max((out_w - shape_w)//2, 0)\n    for i, col in enumerate(color_indices):\n        y = pad_top + i*shape_h\n        x = pad_left\n        for dr in range(shape_h):\n            for dc in range(shape_w):\n                if shape_mask[dr, dc]:\n                    out[y + dr, x + dc] = col\n\n    return out.tolist()\n```\n"
+        ]
+      }
+    ],
+    "all_responses": [
+      {
+        "id": "resp_687002b3701881a390b50dd2f0c8e9d400bbcf7495547f0b",
+        "model": "gpt-4.1-2025-04-14",
+        "usage": {
+          "input_tokens": 4076,
+          "output_tokens": 1459,
+          "total_tokens": 5535
+        },
+        "output": [
+          {
+            "type": "message",
+            "content": [
+              "Analysis:\n\nLet's break down what happens in training example 1 and 2.\n\n## Training Example 1\n- **Input:** \n  - Top: a 2x2 yellow and magenta block\n  - Middle: a blue shape\n  - Bottom: a magenta shape (similar style as blue, different color, \"downwards\")\n- **Output:**\n  - A *yellow ring/shape* \"built out\" of the yellow+magenta block, now expanded and structure-matched to the blue shape below\n  - The blue shape is unchanged and maintains its position\n  - The magenta shape is unchanged\n\n## Training Example 2\n- **Input:**\n  - Top: 2x2 block (orange, green, blue, red)\n  - Middle: red shape, blue shape\n- **Output:**\n  - 4 shapes, stacked top-to-bottom: (orange shape matching 'red shape geometry'), (red shape unchanged), (blue shape unchanged), (green shape matching the red/blue shape)\n\n## Core Observations:\n1. **The top-left 2x2 block serves as a color source**: Its colors are mapped in the order (row-major) onto shapes elsewhere.\n2. **The color block is not directly copied, but used to \"repaint\" versions of the repeated shape.**\n3. **Shapes are stacked vertically in the output grid, with each shape painted with a color from the top 2x2 color block, matching the geometry of the main shape(s) in the lower part of input.**\n4. **Output grid is always much taller (so sufficient vertical space to stack 4 shapes). Output width always 13 (maybe always 13 in problem).**\n\n## Hypothesis for transformation algorithm:\n1. **Identify the 2x2 color block** (usually in the upper left)\n2. **Identify the \"repeated main shape\"** further down - both its geometry, and number of color blocks (=number of stacked outputs)\n3. **Stack the main shape vertically, colored with the colors from the color block (in order).**\n   - So, first stack: color 1, then color 2, etc.\n   - The first shape is topmost, next one below, etc.\n4. **The output grid is always 17 rows tall and 13 columns wide (from problem statement).**\n\n## To do for implementation:\n- Locate the 2x2 color block (search for the first nonzero 2x2).\n- Find the first shape that is repeated (which set the geometry to be colored for all).\n- For each color in the color block (row-major order), stack a version of the shape painted with that color vertically.\n- Place them with vertical spacing if needed, so all fits in 17 rows.\n- Place the stacks centered horizontally in the 13-column output.\n\n## Let's implement this.\n\nFinal answer:\n```python\nimport numpy as np\n\ndef transform(grid):\n    grid = np.array(grid)\n    h, w = grid.shape\n\n    # Always output 17x13\n    out_h, out_w = 17, 13\n    out = np.zeros((out_h, out_w), dtype=int)\n\n    # 1. Find the 2x2 color block (topmost, leftmost nonzero 2x2 region)\n    found = False\n    for r in range(h - 1):\n        for c in range(w - 1):\n            block = grid[r:r+2, c:c+2]\n            unique = np.unique(block)\n            if 0 in unique:\n                nonzero = unique[unique != 0]\n                if len(nonzero) >= 2:\n                    cb_row, cb_col = r, c\n                    found = True\n                    break\n        if found:\n            break\n    else:\n        # Fallback: look for any nonzero 2x2 in top-left 6x6\n        cb_row, cb_col = 0, 0\n        block = grid[cb_row:cb_row+2, cb_col:cb_col+2]\n\n    color_block = grid[cb_row:cb_row+2, cb_col:cb_col+2]\n    colors = [color_block[0,0], color_block[0,1],\n              color_block[1,0], color_block[1,1]]\n    color_indices = [c for c in colors if c != 0]\n\n    # 2. Find the main shape template (the geometry of the large shapes below color block)\n    # We'll find the next nonzero blob in the bottom two-thirds, left-aligned\n    from scipy.ndimage import label, find_objects\n\n    # Search the lower part of the image\n    search_area = grid[cb_row+2:]\n    labeled, num = label(search_area != 0)\n    # Iterate through the blobs, pick the largest one\n    if num >= 1:\n        # Find the largest shape (by size)\n        max_sz = 0\n        main_shape_slices = None\n        for i in range(1, num+1):\n            slc = find_objects(labeled==i)\n            if not slc:\n                continue\n            sz = np.sum(labeled[slc[0]] == i)\n            if sz > max_sz:\n                max_sz = sz\n                main_shape_slices = slc[0]\n                main_shape_label = i\n        # Get the shape (mask) and geometry\n        ms = labeled[main_shape_slices] == main_shape_label\n        ms_shape = ms.shape\n        # Find the bounding box coordinates in grid\n        start_row = main_shape_slices[0].start + cb_row + 2\n        start_col = main_shape_slices[1].start\n        # Use this geometry for the colored shapes\n        shape_mask = ms\n        shape_h, shape_w = ms.shape\n    else:\n        # Fallback: If no shape, just use a 4x4 centered\n        shape_h, shape_w = 4, 4\n        shape_mask = np.ones((shape_h, shape_w), dtype=bool)\n        start_row, start_col = 3, 4\n\n    # 3. Compose output: vertically stack copies, color with color block\n    N = len(color_indices)\n    total_shape_height = N * shape_h\n    # leave possibly 1 empty row between shapes if they don't fit exactly\n    available_rows = out_h\n    pad_top = max((out_h - N*shape_h)//2, 0)\n    pad_left = max((out_w - shape_w)//2, 0)\n    for i, col in enumerate(color_indices):\n        y = pad_top + i*shape_h\n        x = pad_left\n        for dr in range(shape_h):\n            for dc in range(shape_w):\n                if shape_mask[dr, dc]:\n                    out[y + dr, x + dc] = col\n\n    return out.tolist()\n```\n"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

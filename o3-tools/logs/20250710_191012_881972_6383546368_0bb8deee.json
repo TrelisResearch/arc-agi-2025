@@ -1,0 +1,420 @@
+{
+  "task_id": "0bb8deee",
+  "model": "gpt-4.1",
+  "reasoning_effort": "N/A",
+  "api_type": "responses_api_multiturn",
+  "program": "import numpy as np\n\ndef transform(grid):\n    grid = np.array(grid)\n    h, w = grid.shape\n\n    # Find the center row and col (the \"+\" lines)\n    # The center bar is always a solid line of non-zero values\n    center_row = None\n    center_col = None\n    for r in range(h):\n        # The central row must have a run of non-zero values across a full 'bar'\n        if np.count_nonzero(grid[r,:]) > w // 2:\n            center_row = r\n            break\n\n    for c in range(w):\n        if np.count_nonzero(grid[:,c]) > h // 2:\n            center_col = c\n            break\n\n    # Split into 4 quadrants, excluding the center row/col\n    q_tl = grid[:center_row, :center_col]\n    q_tr = grid[:center_row, center_col+1:]\n    q_bl = grid[center_row+1:, :center_col]\n    q_br = grid[center_row+1:, center_col+1:]\n\n    quads = [q_tl, q_tr, q_bl, q_br]\n\n    # For each quadrant: get bounding box of the nonzero object\n    quad_imgs = []\n    for quad in quads:\n        coords = np.argwhere(quad > 0)\n        if coords.shape[0] == 0:\n            # No object, leave blank\n            img = np.zeros((3,3), dtype=int)\n        else:\n            y0,x0 = coords.min(axis=0)\n            y1,x1 = coords.max(axis=0) + 1\n            obj = quad[y0:y1, x0:x1]\n            # Place in top-left of a 3x3 block\n            img = np.zeros((3,3), dtype=int)\n            h_, w_ = obj.shape\n            img[:h_, :w_] = obj\n        quad_imgs.append(img)\n\n    # Build the 6x6 output\n    out = np.zeros((6,6), dtype=int)\n    # Top-left\n    out[:3, :3]   = quad_imgs[0]\n    # Top-right\n    out[:3, 3:]   = quad_imgs[1]\n    # Bottom-left\n    out[3:, :3]   = quad_imgs[2]\n    # Bottom-right\n    out[3:, 3:]   = quad_imgs[3]\n\n    return out.tolist()",
+  "execution_error": "",
+  "timed_out": false,
+  "tokens_used": 3951,
+  "request_cost": 0.014759999999999999,
+  "turns_used": 1,
+  "raw_response": {
+    "id": "resp_687001e9297881a082aba17f5f263c4801ec59b323cdce92",
+    "model": "gpt-4.1-2025-04-14",
+    "usage": {
+      "input_tokens": 2808,
+      "output_tokens": 1143,
+      "total_tokens": 3951
+    },
+    "output": [
+      {
+        "type": "message",
+        "content": [
+          "Let's analyze the transformation step by step:\n\n### Observations\n\n#### 1. Output grid is always 6x6.\n- Each input is a bigger grid, output is a central/cropped 6x6 region, not just the upper-left corner but a composite of specific regions.\n\n#### 2. Each quadrant is taken from the four colored quadrants in the input.\n- In each input, there's a \"+\" shape (a vertical and a horizontal line), splitting the grid into 4 quadrants.\n- Each quadrant contains a colored cluster (or empty/black).\n- The output 6x6 grid appears to have its quadrants filled with the colored object from the respective input quadrant, tightly packed.\n\n#### 3. STRUCTURE of output grid:\n- Output upper left: Object from input top left\n- Output upper right: Object from input top right\n- Output lower left: Object from input bottom left\n- Output lower right: Object from input bottom right\n\n#### 4. Each output quadrant is a tight bounding box of the object from the corresponding input quadrant, packed into a 3x3 region (sometimes as small as 2x2 or 2x3), but output cells are always packed as tightly as possible.\n\n#### 5. The \"+\" separating lines are absent in the output.\n\n#### 6. Arrangement:\n- Output:\n    - Top-left 3x3: extract object from input top-left\n    - Top-right 3x3: extract object from input top-right\n    - Bottom-left 3x3: extract object from input bottom-left\n    - Bottom-right 3x3: extract object from input bottom-right\n\n#### 7. Colors and shapes are preserved; only position changes.\n\n#### 8. For input grids that aren't perfectly divisible by 2, figure out the dividing row/col.\n- Vertical line (center vertical bar) divides the grid (from center col).\n- Horizontal line (center horizontal bar) divides the grid horizontally.\n\n## Plan\n\n1. Identify center row and col (locations of the \"+\" separator).\n2. For each quadrant:\n    - Crop that area (exclude the central lines).\n    - Find the tightest bounding box around nonzero pixels in the quadrant.\n    - Copy the cropped region into a 3x3 block in the 6x6 output grid (top left, top right, bottom left, bottom right).\n    - If the object is smaller than 3x3, align to top left of the 3x3 region (as in output samples).\n3. All output not set by object pixels is 0.\n\n---\n\n## Implementation Steps\n\n- Assume grid is at least 7x7 (from samples).\n- Find the horz and vert bars by finding rows/cols where a nonzero value appears in *all* columns or rows (the center of the \"+\").\n- Define quadrants (exclude the center line).\n- For each quadrant: extract, bounding box, and insert into its 3x3 position in the output.\n---\n\nFinal answer:\n```python\nimport numpy as np\n\ndef transform(grid):\n    grid = np.array(grid)\n    h, w = grid.shape\n\n    # Find the center row and col (the \"+\" lines)\n    # The center bar is always a solid line of non-zero values\n    center_row = None\n    center_col = None\n    for r in range(h):\n        # The central row must have a run of non-zero values across a full 'bar'\n        if np.count_nonzero(grid[r,:]) > w // 2:\n            center_row = r\n            break\n\n    for c in range(w):\n        if np.count_nonzero(grid[:,c]) > h // 2:\n            center_col = c\n            break\n\n    # Split into 4 quadrants, excluding the center row/col\n    q_tl = grid[:center_row, :center_col]\n    q_tr = grid[:center_row, center_col+1:]\n    q_bl = grid[center_row+1:, :center_col]\n    q_br = grid[center_row+1:, center_col+1:]\n\n    quads = [q_tl, q_tr, q_bl, q_br]\n\n    # For each quadrant: get bounding box of the nonzero object\n    quad_imgs = []\n    for quad in quads:\n        coords = np.argwhere(quad > 0)\n        if coords.shape[0] == 0:\n            # No object, leave blank\n            img = np.zeros((3,3), dtype=int)\n        else:\n            y0,x0 = coords.min(axis=0)\n            y1,x1 = coords.max(axis=0) + 1\n            obj = quad[y0:y1, x0:x1]\n            # Place in top-left of a 3x3 block\n            img = np.zeros((3,3), dtype=int)\n            h_, w_ = obj.shape\n            img[:h_, :w_] = obj\n        quad_imgs.append(img)\n\n    # Build the 6x6 output\n    out = np.zeros((6,6), dtype=int)\n    # Top-left\n    out[:3, :3]   = quad_imgs[0]\n    # Top-right\n    out[:3, 3:]   = quad_imgs[1]\n    # Bottom-left\n    out[3:, :3]   = quad_imgs[2]\n    # Bottom-right\n    out[3:, 3:]   = quad_imgs[3]\n\n    return out.tolist()\n```"
+        ]
+      }
+    ]
+  },
+  "score": {
+    "correct": true,
+    "pixel_accuracy": 1.0,
+    "total_pixels": 36,
+    "correct_pixels": 36,
+    "error": null,
+    "predicted_output": [
+      [
+        0,
+        2,
+        2,
+        3,
+        3,
+        3
+      ],
+      [
+        0,
+        2,
+        0,
+        0,
+        3,
+        3
+      ],
+      [
+        2,
+        0,
+        2,
+        3,
+        0,
+        0
+      ],
+      [
+        0,
+        6,
+        6,
+        0,
+        4,
+        0
+      ],
+      [
+        6,
+        0,
+        6,
+        4,
+        0,
+        4
+      ],
+      [
+        6,
+        6,
+        0,
+        0,
+        4,
+        0
+      ]
+    ],
+    "actual_output": [
+      [
+        0,
+        2,
+        2,
+        3,
+        3,
+        3
+      ],
+      [
+        0,
+        2,
+        0,
+        0,
+        3,
+        3
+      ],
+      [
+        2,
+        0,
+        2,
+        3,
+        0,
+        0
+      ],
+      [
+        0,
+        6,
+        6,
+        0,
+        4,
+        0
+      ],
+      [
+        6,
+        0,
+        6,
+        4,
+        0,
+        4
+      ],
+      [
+        6,
+        6,
+        0,
+        0,
+        4,
+        0
+      ]
+    ]
+  },
+  "predicted_output": [
+    [
+      0,
+      2,
+      2,
+      3,
+      3,
+      3
+    ],
+    [
+      0,
+      2,
+      0,
+      0,
+      3,
+      3
+    ],
+    [
+      2,
+      0,
+      2,
+      3,
+      0,
+      0
+    ],
+    [
+      0,
+      6,
+      6,
+      0,
+      4,
+      0
+    ],
+    [
+      6,
+      0,
+      6,
+      4,
+      0,
+      4
+    ],
+    [
+      6,
+      6,
+      0,
+      0,
+      4,
+      0
+    ]
+  ],
+  "actual_output": [
+    [
+      0,
+      2,
+      2,
+      3,
+      3,
+      3
+    ],
+    [
+      0,
+      2,
+      0,
+      0,
+      3,
+      3
+    ],
+    [
+      2,
+      0,
+      2,
+      3,
+      0,
+      0
+    ],
+    [
+      0,
+      6,
+      6,
+      0,
+      4,
+      0
+    ],
+    [
+      6,
+      0,
+      6,
+      4,
+      0,
+      4
+    ],
+    [
+      6,
+      6,
+      0,
+      0,
+      4,
+      0
+    ]
+  ],
+  "api_success": true,
+  "multiturn_data": {
+    "turn_details": [
+      {
+        "turn_number": 1,
+        "timestamp": "2025-07-10T19:09:40.999480",
+        "input_tokens": 2808,
+        "output_tokens": 1143,
+        "turn_cost": 0.014759999999999999,
+        "program_extracted": true,
+        "program": "import numpy as np\n\ndef transform(grid):\n    grid = np.array(grid)\n    h, w = grid.shape\n\n    # Find the center row and col (the \"+\" lines)\n    # The center bar is always a solid line of non-zero values\n    center_row = None\n    center_col = None\n    for r in range(h):\n        # The central row must have a run of non-zero values across a full 'bar'\n        if np.count_nonzero(grid[r,:]) > w // 2:\n            center_row = r\n            break\n\n    for c in range(w):\n        if np.count_nonzero(grid[:,c]) > h // 2:\n            center_col = c\n            break\n\n    # Split into 4 quadrants, excluding the center row/col\n    q_tl = grid[:center_row, :center_col]\n    q_tr = grid[:center_row, center_col+1:]\n    q_bl = grid[center_row+1:, :center_col]\n    q_br = grid[center_row+1:, center_col+1:]\n\n    quads = [q_tl, q_tr, q_bl, q_br]\n\n    # For each quadrant: get bounding box of the nonzero object\n    quad_imgs = []\n    for quad in quads:\n        coords = np.argwhere(quad > 0)\n        if coords.shape[0] == 0:\n            # No object, leave blank\n            img = np.zeros((3,3), dtype=int)\n        else:\n            y0,x0 = coords.min(axis=0)\n            y1,x1 = coords.max(axis=0) + 1\n            obj = quad[y0:y1, x0:x1]\n            # Place in top-left of a 3x3 block\n            img = np.zeros((3,3), dtype=int)\n            h_, w_ = obj.shape\n            img[:h_, :w_] = obj\n        quad_imgs.append(img)\n\n    # Build the 6x6 output\n    out = np.zeros((6,6), dtype=int)\n    # Top-left\n    out[:3, :3]   = quad_imgs[0]\n    # Top-right\n    out[:3, 3:]   = quad_imgs[1]\n    # Bottom-left\n    out[3:, :3]   = quad_imgs[2]\n    # Bottom-right\n    out[3:, 3:]   = quad_imgs[3]\n\n    return out.tolist()",
+        "training_feedback": {
+          "feedback_messages": [
+            {
+              "type": "input_text",
+              "text": "Training results: 3/3 examples solved, 100.0% pixel accuracy - Great progress! You're on the right track. Next, try to identify a transformation that solves more than 3 of the training examples.\n\nTraining Example 1 \u2713:\nExpected: [[1, 1, 0, 0, 3, 3], [0, 1, 0, 3, 3, 0], [0, 1, 1, 0, 3, 0], [0, 4, 0, 5, 5, 0], [4, 0, 4, 0, 5, 0], [0, 4, 0, 0, 0, 5]]\nYour output: [[1, 1, 0, 0, 3, 3], [0, 1, 0, 3, 3, 0], [0, 1, 1, 0, 3, 0], [0, 4, 0, 5, 5, 0], [4, 0, 4, 0, 5, 0], [0, 4, 0, 0, 0, 5]]\n\nTraining Example 2 \u2713:\nExpected: [[0, 2, 2, 3, 0, 0], [2, 2, 2, 0, 3, 3], [0, 2, 0, 0, 3, 0], [0, 0, 5, 8, 0, 8], [5, 5, 5, 0, 8, 0], [0, 5, 0, 8, 0, 0]]\nYour output: [[0, 2, 2, 3, 0, 0], [2, 2, 2, 0, 3, 3], [0, 2, 0, 0, 3, 0], [0, 0, 5, 8, 0, 8], [5, 5, 5, 0, 8, 0], [0, 5, 0, 8, 0, 0]]\n\nTraining Example 3 \u2713:\nExpected: [[0, 2, 2, 0, 1, 1], [2, 0, 2, 1, 0, 0], [0, 2, 0, 0, 1, 0], [4, 0, 0, 0, 5, 0], [4, 4, 4, 5, 0, 5], [0, 4, 0, 5, 5, 5]]\nYour output: [[0, 2, 2, 0, 1, 1], [2, 0, 2, 1, 0, 0], [0, 2, 0, 0, 1, 0], [4, 0, 0, 0, 5, 0], [4, 4, 4, 5, 0, 5], [0, 4, 0, 5, 5, 5]]\n\n"
+            },
+            {
+              "type": "input_image",
+              "image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAXcAAAI1CAIAAACi2i1TAAAvXUlEQVR4nO3deVgUV77/8Wq0G1GgUUxQWeKCoHkwirgHjQb+UBAFRce4DS6j0WgUjIkmRn+ZR6ITuDoxizc3KsYQRkdvEOM26h3XGKJRE8UlEkAFRCRog8gO9XsydacfLtAEgdOb79df9Ok6VYf6th+rTncfVLIsSwAgjI24XQMAKQNAOFIGgFikDACxSBkAYpEyAMQiZQCIRcoAEIuUASAWKQNALFIGgFikDACxSBkAZpwyixYtUhk2ffr0erfRaDSdOnUaN27cxYsX6+7z6NGjKpWqQ4cOpaWltZ7as2ePSqXasmWL8jAiIkKlUsXExNTaLCsrS6VSrVq1qjm9FKWlpZ999tmoUaO6dOlia2vbpUuXSZMmnT59uoFzsmrVKkMnJCUlpeGTFhgY+LsnVr/N3Llza7Yrw5s4ceJ3331XczyhoaG1NuvWrdvrr7/+8OHDJzr5il9//XXt2rW+vr5arbZdu3aDBg3asmVLza/1K4er1f3ChQvPPPOMg4PD8ePHGzh1sFYmuJapqKjIzc395ptvRo0alZ6eXuvZbdu2SZL08OHDXbt2NWZvq1evvnHjxpOOoTG9bt26NXTo0FdfffXEiRM5OTnl5eU5OTl79uwZMWLEhg0bJDOjDO/rr7/29/f/6quvGtjs1q1bH3300ejRo6urq5/o5H/33Xd9+/Z99913f/zxx8LCwuLi4vPnz//pT3+aM2dOAwP75z//OWrUqKqqqmPHjo0aNaoZvyKeypT5+OOP5X/bvXu3JElxcXH6lvj4eP2WGRkZ+vbS0tLr169PnTq1sLBw8+bNNXeo0+n27t07adKkDh06/Od//mdjxlBeXh4REVFVVfVEI//dXhUVFeHh4T/++OOwYcP27dv366+/VlRU3Llz59NPP+3QocObb76pXJgYcunSJbkOHx+fek+I3rFjx2rupDHb5OTkKO0lJSW//PLLihUrZFmePXv27du3a25WUlJS8+QHBgaeO3fu6NGjjT/59+/fDwsLu3v37iuvvJKcnFxYWPjgwYO9e/d27949Li7us88+q/c8JCYmBgUFtW3b9sSJE4MHD27gjMGKmeBaxtbWtlevXn/5y18kSap1LZOQkFBaWjp//vxZs2YlJydfvnz5d/e2ePHi77///j/+4z+eaAy/2+uLL764cOFCYGDgqVOnQkJCnJ2dW7du7e7uvmDBgq+//rqqqupvf/ubZE7atGnTo0ePdevWrV69ury8/K9//WsDJ3/p0qVKQjX+5G/YsCE3NzcyMjIhIWHw4MEODg7t27cfP378yZMn27Vrt2HDhrrLoW3dunXSpEnPPvvs6dOnX3jhBX379u3bVSrVxx9/3KInAObLBClTVlZ29erVqKgoSZK8vLxqPhUXF9e7d++XX355wYIFrVq1aszlzPvvv+/p6bl69err1683fgy/2yshIUGlUv3Xf/1Xq1ataj310ksvXbt2be3atZJZWrZsWdu2bf/xj3/U+2xFRcXNmzc3bdrUunXrl156qfEn/+9//7udnd2f//znWjt0c3M7c+bMiRMnVCpVzfYPPvhg7ty53bt3P3PmTM+ePVvu94PlMVLKdOvWTT8B2aZNGx8fn927d3fs2HHJkiX6bVJSUn744Yfly5erVKoePXpMmjTpq6++KioqanjPbdu2jYuLq6ioeKL7pt/tdenSpd69e3fr1q3e7r179671j6oWX1/fWrO2Z86cMXRC9E6cOPGk29Tl4ODQs2fPWheJdnZ2SneNRuPt7f3tt99+8cUXNX+7hk9+RUXFrVu3Bg0aZG9vX/eI/fr169y5c82WN99886233pIkafjw4R4eHrW2j4iIkGV50aJFDf8isBqmeSfb1dV19uzZP/30U6dOnfSN27Ztc3V1nTZtmvJw5cqVjx49asyNib+//+uvv37u3LnY2NjGj6GBXhUVFTqdzsXFpWZjrfd9unbtKpkrZ2fnsn8xtEFVVVVycnJFRUUjT75Op5Nl2dnZuZED+Oijj4YOHRoYGLht27avv/66eb8NLJ6RUkaZyCwvL9+5c6fyn+369eu7dOmi36CioiI+Pj47O9vW1lb5Z9y3b19Zlhs5B/z+++/37NlzzZo1165da/yoDPVSq9UODg55eXlSU9Wd/fX39//dmd2RI0c+6Tb1evjwoVqttrW1rTv7W15enp6e/tprr3300UdvvPFGI09+hw4dbGxsGn9CZs2adeLEiR07dnTo0OFPf/pTdnZ2IzvCKhn1WkatVv/hD3/YtWvXyZMnR48eXfNTFfv376/3RXzx4sXz58//7p7t7OyacN/UQK8+ffpcu3btzp079b6h5ufnJ5mroqKilJSU3r17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"
+            },
+            {
+              "type": "input_text",
+              "text": "Above is a visual comparison of expected vs predicted outputs for each training example. Green circles indicate correct solutions, red circles show errors. Use this visual feedback along with the textual analysis to improve your approach."
+            }
+          ],
+          "solved_count": 3,
+          "total_training_examples": 3,
+          "pixel_accuracy": 1.0
+        },
+        "test_result": {
+          "correct": true,
+          "pixel_accuracy": 1.0,
+          "total_pixels": 36,
+          "correct_pixels": 36,
+          "error": null,
+          "predicted_output": [
+            [
+              0,
+              2,
+              2,
+              3,
+              3,
+              3
+            ],
+            [
+              0,
+              2,
+              0,
+              0,
+              3,
+              3
+            ],
+            [
+              2,
+              0,
+              2,
+              3,
+              0,
+              0
+            ],
+            [
+              0,
+              6,
+              6,
+              0,
+              4,
+              0
+            ],
+            [
+              6,
+              0,
+              6,
+              4,
+              0,
+              4
+            ],
+            [
+              6,
+              6,
+              0,
+              0,
+              4,
+              0
+            ]
+          ],
+          "actual_output": [
+            [
+              0,
+              2,
+              2,
+              3,
+              3,
+              3
+            ],
+            [
+              0,
+              2,
+              0,
+              0,
+              3,
+              3
+            ],
+            [
+              2,
+              0,
+              2,
+              3,
+              0,
+              0
+            ],
+            [
+              0,
+              6,
+              6,
+              0,
+              4,
+              0
+            ],
+            [
+              6,
+              0,
+              6,
+              4,
+              0,
+              4
+            ],
+            [
+              6,
+              6,
+              0,
+              0,
+              4,
+              0
+            ]
+          ]
+        },
+        "status": "success"
+      }
+    ],
+    "total_turns": 1,
+    "conversation_history": [
+      {
+        "role": "system",
+        "content": "You are an expert at solving abstract reasoning puzzles. Write clean, efficient Python code."
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "You are solving an ARC (Abstraction and Reasoning Corpus) task. \nI will show you training examples with input and output grids, plus a test input grid. Your task is to:\n\n1. **Analyze the training examples** to discover patterns that map input grids to output grids\n2. **Write a Python program** that implements your best understanding of the transformation  \n3. **DO NOT predict or generate the test output** - your job is only to write the transformation program\n4. **Attempt a solution** - even if the pattern isn't completely clear, provide your best hypothesis\n5. **Do not repeat the same transformation** - if you have already tried a transformation, do not repeat it.\n\n**IMPORTANT: Your transformation must always produce a 6\u00d76 output grid.**\n\nThe test input is shown for context so you understand what type of grid your program will eventually process. Focus on learning patterns from training examples and writing code that captures your understanding.\n\nTraining Examples:\n\nExample 1:\nInput:\n0 0 1 1 0 0 0 2 0 0 0 3 3\n0 0 0 1 0 0 0 2 0 0 3 3 0\n0 0 0 1 1 0 0 2 0 0 0 3 0\n2 2 2 2 2 2 2 2 2 2 2 2 2\n0 0 0 0 0 0 0 2 0 0 0 0 0\n0 0 0 0 0 0 0 2 0 0 0 0 0\n0 0 0 0 0 0 0 2 0 0 0 0 0\n0 0 4 0 0 0 0 2 0 0 0 0 0\n0 4 0 4 0 0 0 2 0 5 5 0 0\n0 0 4 0 0 0 0 2 0 0 5 0 0\n0 0 0 0 0 0 0 2 0 0 0 5 0\n0 0 0 0 0 0 0 2 0 0 0 0 0\nOutput:\n1 1 0 0 3 3\n0 1 0 3 3 0\n0 1 1 0 3 0\n0 4 0 5 5 0\n4 0 4 0 5 0\n0 4 0 0 0 5\n\nExample 2:\nInput:\n0 0 0 0 1 0 0 0 0 0 0 0 0\n0 0 0 0 1 0 0 0 0 0 0 0 0\n0 0 0 0 1 0 0 3 0 0 0 0 0\n0 0 0 0 1 0 0 0 3 3 0 0 0\n0 0 0 0 1 0 0 0 3 0 0 0 0\n0 2 2 0 1 0 0 0 0 0 0 0 0\n2 2 2 0 1 0 0 0 0 0 0 0 0\n0 2 0 0 1 0 0 0 0 0 0 0 0\n0 0 0 0 1 0 0 0 0 0 0 0 0\n1 1 1 1 1 1 1 1 1 1 1 1 1\n0 0 0 0 1 0 0 0 0 0 0 0 0\n0 0 5 0 1 0 0 0 0 0 0 0 0\n5 5 5 0 1 0 0 8 0 8 0 0 0\n0 5 0 0 1 0 0 0 8 0 0 0 0\n0 0 0 0 1 0 0 8 0 0 0 0 0\nOutput:\n0 2 2 3 0 0\n2 2 2 0 3 3\n0 2 0 0 3 0\n0 0 5 8 0 8\n5 5 5 0 8 0\n0 5 0 8 0 0\n\nExample 3:\nInput:\n0 0 0 0 0 0 3 0 0 1 1 0\n0 0 2 2 0 0 3 0 1 0 0 0\n0 2 0 2 0 0 3 0 0 1 0 0\n0 0 2 0 0 0 3 0 0 0 0 0\n3 3 3 3 3 3 3 3 3 3 3 3\n0 0 0 0 0 0 3 0 0 0 0 0\n0 0 0 0 0 0 3 0 0 0 5 0\n0 0 0 0 0 0 3 0 0 5 0 5\n0 0 0 0 0 0 3 0 0 5 5 5\n0 0 0 0 0 0 3 0 0 0 0 0\n0 0 0 0 0 0 3 0 0 0 0 0\n0 0 0 0 0 0 3 0 0 0 0 0\n4 0 0 0 0 0 3 0 0 0 0 0\n4 4 4 0 0 0 3 0 0 0 0 0\n0 4 0 0 0 0 3 0 0 0 0 0\n0 0 0 0 0 0 3 0 0 0 0 0\nOutput:\n0 2 2 0 1 1\n2 0 2 1 0 0\n0 2 0 0 1 0\n4 0 0 0 5 0\n4 4 4 5 0 5\n0 4 0 5 5 5\n\nTest Input:\n0 0 0 0 0 0 1 0 0 0 0 0 0\n0 0 0 0 0 0 1 0 0 0 0 0 0\n0 0 0 0 0 0 1 0 0 3 3 3 0\n0 0 2 2 0 0 1 0 0 0 3 3 0\n0 0 2 0 0 0 1 0 0 3 0 0 0\n0 2 0 2 0 0 1 0 0 0 0 0 0\n0 0 0 0 0 0 1 0 0 0 0 0 0\n1 1 1 1 1 1 1 1 1 1 1 1 1\n0 0 0 0 0 0 1 0 0 0 0 0 0\n0 0 0 0 0 0 1 0 0 0 0 0 0\n0 0 0 0 0 0 1 0 0 0 4 0 0\n0 0 6 6 0 0 1 0 0 4 0 4 0\n0 6 0 6 0 0 1 0 0 0 4 0 0\n0 6 6 0 0 0 1 0 0 0 0 0 0\n\nAnalyze the patterns in the training examples and write a Python function that performs this transformation.\n\n**Approach Guidelines:**\n- Look for patterns in shapes, colors, positions, sizes, rotations, reflections, etc.\n- Even if you can't solve all training examples perfectly, implement what patterns you do observe\n- A partial solution that captures some aspects is better than returning the input unchanged\n- If the pattern is unclear, make your best educated guess based on what you can see\n\nRequirements:\n- The function takes a 2D list (grid) where grid[row][col] gives the value at that position\n- Values are integers from 0-9\n- Return a new grid (2D list) with the transformation applied\n- You can use numpy if needed - just add 'import numpy as np' at the start of your function\n- Aim to handle the training examples as well as possible, even if not perfectly\n- Your function should attempt some meaningful transformation based on the patterns you observe\n\nYou MUST end your response with the following exact format:\n\nFinal answer:\n```python\ndef transform(grid):\n    # Your transformation logic here (implement your best understanding)\n    return transformed_grid\n```\n"
+          },
+          {
+            "type": "input_image",
+            "image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAeAAAAWCCAIAAABDxaOAAAA5hklEQVR4nO3de3hU9Z348RkIhPtNWxWshIALtCgqVdFab6C2tiqsqBXYNSiCrbSyitj2UbtrFRVsu623YhGkRbyxJE9tedgW+lDpblWqVCoQQQXlVpGbIggJIb9nO7/NL7+ANCSTzGcyr9df4WS+c84MJ2+PJ6OfZGVlZQKAeJpl+gAAODiBBghKoAGCEmiAoAQaICiBBghKoAGCEmiAoAQaICiBBghKoAGCEmiAoAQaoCkGety4cclPNnLkyIM+pmXLlkcfffSll1766quvHvicv/3tb5PJZJcuXfbs2VPjW3PmzEkmk9OmTUv9saioKJlMTpkypcbD1q9fn0wmb7/99vqsStmzZ8/UqVPPO++8rl275ufnd+3a9Yorrli8eHHd3pPBgwcnEomtW7d27dq1c+fO69evr7H2H//xH1u2bPmnP/2plm/I1772tWQymZeX9/777x94JP369Usmk0VFRak/jh49uvrBNG/evEOHDqeffvrjjz9etWTIkCHJZPLAHdXypaVs2bJl4sSJffr0ad26dadOnc4888xHH320oqLiEG8aEOUKury8/L333nv++efPO++8t99+u8Z3p0+fnkgktm/f/swzz9Tm2e68887S0tLDPYbarFq7du0ZZ5xxww03LFq0aNOmTWVlZZs2bZozZ87ZZ5/9wx/+MFFXRxxxxPTp03fs2DFq1Kjq/6/Xhx9+uLi4eNKkSZ///OcP6w2pqKiYO3dujY1/+ctfli9ffojD2L9//86dO19++eXRo0dPnjw5kSbvv//+qaeeOmXKlDfeeGPPnj0ffPDBH//4x2984xtXXHGF/7EtNGqgH3roocr/9dxzzyUSiRkzZlRtmTVrVtUj16xZU7V9z549K1euHD58+Icffvjoo49Wf8IdO3aUlJRcccUVXbp0+elPf1qbYygrKysqKjrcC7S/u6q8vHzYsGF//vOfzzzzzF/+8pdbtmwpLy9/9913H3nkkS5dukycOPH1118/xPNXf71VFixYkPrul770pRtvvHHBggUPPfRQastrr712yy23XHjhhbfccsthvSHNmzfv3bv3s88+W2P7008//bnPfe7Ax2/atCl1MPv37//oo49mz57dqlWre+65Z+/evYd8w2r70n7yk5+sXbt22LBhr7322q5du3bs2PG73/3u5JNPLi4ufv7552u5CyBjV9D5+fl9+vS5//77E4lEjSvo2bNn79mzZ+zYsaNGjXrxxReXLVv2d5/tm9/85ksvvfSDH/zgsI7h766aOXPmK6+8Mnjw4BdeeOGSSy454ogj8vLyPvOZz3z961+fO3duRUXFU089laiHKVOm9OnT57bbbnvjjTc++uijK6+8smPHjj//+c+TyeThviFXXnnl73//+82bN1ff+Mwzz1x11VWHOIBkMtm2bdurr776a1/72ocffrhq1apEOpSWlubl5c2aNevEE09s06ZNx44dzzvvvNQF/vz581OPeeKJJ5LJZNU/nIBAgd67d+/y5ctvvvnmRCLxD//wD9W/NWPGjL59+55//vlf//rXmzdvXpuL6EmTJvXq1evOO+9cuXJl7Y/h766aPXt2Mpl87LHHmjdvXuNb55xzzooVK+6+++5EPbRu3frJJ5/ct2/fyJEjb7jhhtWrV//85z8/6qijajysNm/IlVdeWeMux8svv/zWW29deeWVtTmS1LXzgS+zbvr3779v377i4uLqGwsKCiorKx955JG07AJyRyMFukePHlW/UGrVqlW/fv2ee+65I4888qabbqp6zOuvv/6nP/3p1ltvTSaTPXv2vOKKK5588smPPvro0M/cpk2bGTNmlJeXH9aNjr+7aunSpX379u3Ro8dBl/ft27fGpe4hXm+VRYsWVX/MKaec8q//+q9/+tOfnnzyyZtvvvmiiy6q8SS1fEP69ev32c9+NnWLKeXpp5/+/Oc/37Nnz0McYUVFxcaNG3/84x8/++yzn/70p3v37n2IB9f+pY0fP/6ss866+uqrCwsLR48e/dhjjx14K7yoqKiysnLcuHG13CPkrMx8zK5bt27XXnvta6+9dvTRR1dtnD59erdu3UaMGJH643e+852dO3fW5k7CWWed9a1vfevll19+4IEHan8Mh1hVXl6+Y8eOGtezNT7DUFBQkKi3yy67LBX6s84668Dv1v4NqX6Xo7Ky8tlnn/2k+xvHHHNM6vjz8vK6des2fvz4ioqKSZMmpesKul27dosWLZo1a1b//v1LSkrGjh3br1+/Hj16zJw5My3PDzmlkQKd+s1SWVnZ008/3b59++OPP/6+++7r2rVr1QPKy8tnzZq1YcOG/Pz8VEH69+9fWVlZy18VTpo06fjjj//e9763YsWK2h/VJ61q0aJF+/btD/rZtfr8Ju3cc8+t/pg9e/YMHz68Y8eO7du3Hzt2bI2byIf1hlx11VVVdzleeOGFjRs3/t37G82aNevSpcugQYNKSkquu+66NL605s2bjxgxori4eMuWLatXr54xY8ZRRx1VVFT0ox/9qPZ7ARr7CrpFixZXXXXVM8888/vf//5LX/pS9c/b/upXvzpoEF999dUlS5b83Wdu3bp1HW50HGLVCSecsGLFinffffegH1kZMGBAot7Gjx+/bNmyn/zN5s2br7322urfPaw3pE+fPieccELqsxzPPPPMwIEDjzvuuIPutOpTHBUVFVu3bl2wYMFll12WaDC9evUqKir6wx/+cPLJJ9fzrj3koAzc4vjyl7/8zW9+89VXX50wYULVxunTp7dq1eqDDz6ofl323//934lEYurUqbV52i984Qs33XTTkiVLDvyPUOqwasSIEfv37//GN75x0NzX/yO9zz333NSpU4cPH/5P//RPRUVFl19++a9//evqHzo83DfkqquueuGFF1Kf1D705zcazoYNG5LJ5OjRo2tsz8vLO+GEE3bs2FFWVpaRA4MslZl70JMmTTruuOMeffTRl156KZFI/PWvf50/f/4ll1zSoUOH6g8744wzevfu/dRTT33wwQe1edp77rnn+OOPP9xPCxx01ejRowcMGPDrX//6tNNOe/bZZ//617+Wl5en8veVr3zl1Vdfbdas7m/dmjVrrr/++h49elQVeerUqcccc8wtt9yS+s9n6vCGpO5yjB8/fsuWLVdccUUiE7p163bKKadMnz593Lhxf/zjH9977709e/a89dZbjzzyyHPPPXfaaae1bNkyIwcGWSozgW7btu2DDz64f//+sWPH7tu37+c///m+ffuqfhtW3TXXXLN79+5f/OIXtb9lcejPV9RyVcuWLUtKSs4444xXX331qquuOuaYY1q2bJn6T73nzZvXu3fvQ/+Hjgf9qEMymfzoo4/Ky8uvuuqqXbt2Pfnkk1X9PeKII5544ok9e/aMGDGivLy8Dm9Ir169Tj755GefffaLX/xi9Zv7ddC6desah/3EE0/U5qWlLvw7der08MMPn3nmmUcffXTr1q179ep144035uXlVX3w2eegIfr/LOnSSy8dMmTIa6+99u///u9PPPFE586dv/zlLx/4sH/+539u1qxZLe9ypG5ZjB8//nAP5qCrjj322MWLF8+aNeviiy8+9thjW7ZsedRRR1188cUzZ858/fXXTz311ESdfPvb316yZMn3vve9M844o/r2Cy+8cNy4ca+++urtt99etzckdWejlh9/biD9+/dfvnz5Lbfc0q9fvw4dOrRs2bKgoGDMmDF/+ctf0nLjHnJK0v8hASAm/7tRgKAEGiAogQYISqABghJogKAEGiAogQYISqABghJogKAEGiAogQYISqABghJogKAEGiAogQYISqABghJogKAEGiAogQYISqABghJogKAEGiAogQYISqABghJogKAEGiAogQYISqABghJogKAEGiAogQYISqABghJogKAEGiAogQYISqABghLopmnr1q2lpaWZPgrIwAm8tQmd/AKdeUOGDCkqKkrvcw4ePPjFF1/8pO/u2LGjsLDwEA+AdFm3bt3111/frVu3Vq1aFRYWTpgwYdu2bfU8gXPn5Bfopunjjz/+pG+tW7du8ODBa9asadwjIhetWrVqwIAB27dvnzdv3rZt2+bOnbty5coBAwZs2rSpzidwTp38Ah3Ili1bksnkww8/XFBQ0KpVq4suumjDhg1V2x9//PFjjz22Y8eO1113XeoUXL9+fTKZXLt2bWr5Aw88MHDgwEQice65577xxhujRo0aPXp0jV38+te/7tev34ABAzLx+sg5o0ePPuecc+bMmdO/f/82bdqcdNJJzz///NFHH/2tb32rlifwltw++QU6nJkzZy5cuLC0tHTjxo133XVX1fbJkyfPnz9/6dKlr7zyyrhx4w7xDIsWLerdu/eMGTOmTZtW41v5+fkLFix4+OGHG+zw4f965513Fi9eXONcbdas2fjx40tKSrZv3177E3hyrp78Ah3OHXfc0bNnz4KCgqKioiVLllRtv//++/v161dYWDhlypRZs2bt2rWrDk8+ePDgU089Na3HCwe3YsWKRCLRt2/fGtv79++/b9++N998s/ZPdX+unvwCHU5BQUHqi7Zt25aXl1dtT/0bXCKROOmkk8rKyt56660MHSDUSjKZTCQSFRUVNbbv3bv3cJ9qYK6e/AIdTosWLaq+rqysPHB76ozPy8tL/QBUOfAnATIode2cuo6urrS0NC8vr1evXrU/gVvk6skv0Flj2bJlqS+WLl3arl27nj17tmzZ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3pAhQ4qKitL7nIMHD37xxRcP3L569eqvfvWrnTp1OuaYY8aOHfvhhx+md79Qw7p1666//vpu3bq1atWqsLBwwoQJ27Ztq/MJnGsnv0A3TR9//PGBG8vLy7/61a8WFBSsWbNm8eLFr7zyyg033JCJoyNXrFq1asCAAdu3b583b962bdvmzp27cuXKAQMGbNq0qQ4ncC6e/JVk2mWXXXbNNddUVla+//77iUTioYce6t69e35+/oUXXrh+/fqq7dOmTevWrVuHDh2uvfba3bt3V1ZWrlu3LpFIrFmzJvU8U6ZMOf300ysrK88555zUX+51111XfUf/9V//lZeXt3fv3tQff/nLX7Zp02b//v2ZeNHkhC9+8YvDhg2rvqWiomLgwIGpjbU5gd/P7ZPfFXQ4M2fOXLhwYWlp6caNG++6666q7ZMnT54/f/7SpUtfeeWVcePGHeIZFi1a1Lt37xkzZkybNq369jPPPLO8vLxly5apP27atKlLly7JZLLBXgo57Z133lm8eHGNc7VZs2bjx48vKSnZvn177U/gybl68gt0OHfccUfPnj0LCgqKioqWLFlStf3+++/v169fYWHhlClTZs2atWvXrvrs5YMPPrjvvvuuu+66dBwyHMSKFSsSiUTfvn1rbO/fv/++ffvefPPN2j/V/bl68gt0OAUFBakv2rZtW15eXrV94MCBqS9OOumksrKyt956q8672LVr1yWXXNKvX7/bb7+93scLB5e6Pq2oqKixfe/evYf7VANz9eQX6HBatGhR9XVlZeWB21NnfF5eXo1/QTvwJ+Ggtm7dOmjQoGOPPXbOnDl5eXnpO3D4/6SunVPX0dWVlpbm5eX16tWr9idwi1w9+QU6ayxbtiz1xdKlS9u1a9ezZ8/UDbWqf9179913qx78STfX1q9ff9ZZZ5199tlPPvlk1f04aAjdu3cfNGjQfffdV33j/v37J0+efOmll3bu3Ln2J/CyXD35BTprTJw4cc2aNatXr77tttvGjBmTn59/5JFH9ujRY+rUqbt3716wYMFTTz1V9eC2bdtu3Lhx586d1Z9hx44d559//qWXXjp58uT4vx6hCXjssceWL18+cuTIVatWlZeXr1ixYtiwYZs3b37wwQcTiUTtT+CJOXvyZ/pjJNT8mN3KlStT2x999NHPfe5zVdu//e1vd+/evXPnzjfffHNZ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gQYISqABghJogKAEGiAogQYISqABghJogKAEGiAogQYISqABghJogKAEGiAogQYISqABghJogKAEGiAogQYISqABghJogKAEGiAogQYISqABghJogKAEGiAogQYISqABghJogKAEGiAogQYISqABghJogKAEGiAogQYISqABghJogKAEGiAogW6atm7dWlpamumjgAY5RbfmzOkt0Jk3ZMiQoqKi9D7n4MGDX3zxxQO3v/fee8OGDevQocNnPvOZu+++O707JTetW7fu+uuv79atW6tWrQoLCydMmLBt27Y6n6K1MThnTm+Bbpo+/vjjg24fPnx4+/bt161bV1xc/OMf/3jatGmNfmg0KatWrRowYMD27dvnzZu3bdu2uXPnrly5csCAAZs2barbKVobH+fO6V1Jpl122WXXXHNNZWXl+++/n0gkHnrooe7du+fn51944YXr16+v2j5t2rRu3bp16NDh2muv3b17d2Vl5bp16xKJxJo1a1LPM2XKlNNPP72ysvKcc85J/eVed9111Xf05ptvJpPJLVu2pP54xRVXjBo1KhOvmKbji1/84rBhw6pvqaioGDhwYGpjbU5Rp/chuIIOZ+bMmQsXLiwtLd24ceNdd91VtX3y5Mnz589funTpK6+8Mm7cuEM8w6JFi3r37j1jxowaVxA9e/bcv3//EUccsW/fvoV/M3To0IZ8KTRx77zzzuLFi2ucjc2aNRs/fnxJScn27dtrf4o6vQ9KoMO54447evbsWVBQUFRUtGTJkqrt999/f79+/QoLC6dMmTJr1qxdu3bVeRf9+vX7yle+cuKJJ55xxhlpOmpy0YoVKxKJRN++fWts79+//759+958883aP5XT+6AEOpyCgoLUF23bti0vL6/aPnDgwNQXJ510UllZ2VtvvVXnXZSWlm7durVNmzZf/epX63285K5kMplIJCoqKmps37t37+E+ldP7oAQ6nBYtWlR9XVlZeeD21M9DXl5e6sejyoE/J4fQtm3b22+//aWXXtq4cWM6jppclLp2Tl1HV1daWpqXl9erV6/an6JO74MS6KyxbNmy1BdLly5t165dz549W7ZsmUgkqv5l8N133616cI2TO2X+/PkdO3asurrZtm1b8+bNO3Xq1CiHTxPUvXv3QYMG3XfffdU37t+/f/LkyZdeemnnzp1rf4o6vQ9KoLPGxIkT16xZs3r16ttuu23MmDH5+flHHnlkjx49pk6dunv37gULFjz11FNVD27btu3GjRt37txZ/RnOPffco48++uabb/7ggw+WLVt26623jho1qk2bNpl4NTQRjz322PLly0eOHLlq1ary8vIVK1YMGzZs8+bNDz74YCKRqP0p6vQ+uEN9xINMfMxu5cqVqe2PPvro5z73uart3/72t7t37965c+ebb765rKws9ZiFCxf27ds3Pz//7LPPrvocUmVl5c9+9rN27dpdfvnlNfb15ptvXnzxxR06dDjuuOO+853vfPzxx437WmmCNm3adOONNx533HH5+fkFBQXjx4+v+qxbbU5Rp/chJKvf5UyvJvAZlyDKysrmzZs3aNCg9u3bZ/pYcldxcXEi22TFz2ATOL2LG+zcyEs0pJKSkrotHDJkiLU1LFy48JPWvn37jrrtt/DuThl7vb3ur+PaN2+r19q6HnOWqs/fUfEHdfwN29COXWu/dkv5vk8lEg999H6f/f9zy2Jox65Zd141HPegAYJq2CtogEM7skVe5XmnZfoognIFDRCUQAMEJdAAQQk0QFACDRCUQAMEJdAAQQk0QFACDRCUQAMEJdAAQQk0QFACDRCUQAMEJdAAQQk0QFBmEkKtmEnIJzGTMOIstQPXZur1ZmwmYSZmA2ZqbmSWytT5XK/9Ztt51XDc4gAISqABghJogKAEGiAogQYISqABghJogKAEGiAogQYISqABghJogKAEGiAogQYISqABghJogKAEGiAogQYISqABgjKTEGrFTEI+SS7OJMzKWWq5NpMwl+YZZqlc+1koycR51XDc4gAISqABghJogKAEGiAogQYISqABghJogKAEGiAogQYISqABghJogKAEGiAogQYISqABghJogKAEGiAogQYISqABgjKTEGrFTEI+SS7OJMy5WWq5NpMw29ZmqeIH6vh6h07Ivr+jIUOGDB8+vG5rZ8+eHfDccIsDICiBBghKoAGCEmiAoAQaICiBBghKoAGCEmiAoAQaICiBBghKoAGCEmiAoAQaICiBBghKoAGCEmiAoAQaICiBBgjKTEKoFTMJaWozCeszK89aa0OtzcGZhJlam5G5gkPqMc+w4bjFARCUQAMEJdAAQQk0QFACDRCUQAMEJdAAQQk0QFACDRCUQAMEJdAAQQk0QFACDRCUQAMEJdAAQQk0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tWp10UUXbdiwoWr7448/fuyxx3bs2PG6665L7Wj9+vXJZHLt2rWp5Q888MDAgQNruS9oCAJNIJdffnn79u3Xrl37+9//fsmSJf/yL/+SSCSWLVs2ceLEOXPmbNmy5aabbho+fPj27dsXLVrUu3fvGTNmTJs27dDPOXPmzIULF5aWlm7cuPGuu+6q2j558uT58+cvXbr0lVdeGTdu3CGeofb7gvQSaKJ44YUXXnvttalTpx555JGFhYU/+tGPfvazn+3Zs+edd95JJBJt27bNz88fOXLknj17OnfuXPunveOOO3r27FlQUFBUVLRkyZKq7ffff3+/fv0KCwunTJkya9asXbt2NczLgroTaKJYsWLF7t278/PzU782PPXUU/fv3//2229fcMEFp512Wt++fU877bTvf//769evP6ynLSgoSH3Rtm3b8vLyqu2p2xeJROKkk04qKyt766230vpqIA0Emij27dvXq1evyv/fZz/72VatWv32t7/9wx/+MGjQoF/84hcnn3zy6tWra/+0LVq0qPq6srLywO0VFRWJRCIvLy+ZTFZfmNoOGSTQRNGnT581a9Yc9AI5mUyeeeaZ995774oVK9q0afOb3/wmtbE+u1u2bFnqi6VLl7Zr165nz54tW7ZMJBJV9zrefffd6gdQn31B3Qg0UZx//vknnnjiqFGj1q1bt2HDhvHjxx933HF79+79xS9+UVBQ8Prrr5eVlS1evHjz5s2nnHJK6pbFxo0bd+7cWbfdTZw4cc2aNatXr77tttvGjBmTn59/5JFH9ujRY+rUqbt3716wYMFTTz1V9eB67gvqRqCJolmzZiUlJW3btu3bt+9nP/vZN9544ze/+U3qF4PXXHPNxRdf3L59+zFjxjzyyCNnnHFGIpG44YYb7r333lGjRtVtd4MHDz7vvPNOP/30Cy644L777ktdJk+bNm3BggVdunT5/ve//93vfrfqwfXcF9RNsvpdOepj6NChmT4EaqWsrGzevHmDBg1q3759po+laSouLs70ITQReZk+gCalpKSkbguHDBli7WGs7XV/Hde+eVvVfhcuXJgT71Um1pIubnEABCXQAEEJNEBQAg0QlEADBCXQAEEJNEBQAg0QlEADBCXQAEEJNEBQAg0QlEADBCXQAEEJNEBQAg0QlEADBCXQAEGZSZg2ZhJCipmE6WImYTpl3ey4XJ5JWJf9WkvjcosDICiBBghKoAGCEmiAoAQaICiBBghKoAGCEmiAoAQaICiBBghKoAGCEmiAoAQaICiBBghKoAGCEmiAoAQaICiBBgjKTMK0MZMQUswkTBczCdMp62bHZevaLJxJ+PbtO+q2tvDuTplaayZhxrnFARCUQAMEJdAAQQk0QFACDRCUQAMEJdAAQQk0QFACDRCUQAMEJdAAQQk0QFACDRCUQAMEJdAAQQk0QFACDRCUQAMEZSZh2phJCClmEqaLmYTplKl5d8UfbKzb2qEdu9ZnrZmEjbPWTMKc5RYHQFACDRCUQAMEJdAAQQk0QFACDRCUQAMEJdAAQQk0QFACDRCUQAMEJdAAQQk0QFACDRCUQAMEJdAAQQk0QFACDRCUmYRpYyYhpJhJmC5mEub6TMJsnNGXjTMJMzIbMFN/R6SLWxwAQQk0QFACDRCUQAMEJdAAQQk0QFACDRCUQAMEJdAAQQk0QFACDRCUQAMEJdAAQQk0QFACDRCUQAMEJdAAQQk0QFBmEqaNmYSQYiZhuphJmE7ZOFcwK+cZZuFMwpxaS7q4xQEQlEADBCXQAEEJNEBQAg0QlEADBCXQAEEJNEBQAg0QlEADBCXQAEEJNEBQAg0QlEADBCXQAEEJNEBQAg0QlEADBGUmYdqYSQgpZhKmi5mE6ZR1s+Oyda2ZhLHXki5ucQAEJdAAQQk0QFACDRCUQAMEJdAAQQk0QFACDRCUQAMEJdAAQQk0QFACDRCUQAMEJdAAQQk0QFACDRCUQAMEJdAAQZlJmDZmEkKKmYTpYiZhOtVrVp611jaVtaSLWxwAQQk0QFACDRCUQAMEJdAAQQk0QFACDRCUQAMEJdAAQQk0QFACDRCUQAMEJdAAQQk0QFACDRCUQAMEJdAAQQk0QFBmEqaNmYSQYiZhuphJmE4lJSV1WzhkyBBrD2NtfebsZePrzba1pItbHABBCTRAUAINEJRAAwQl0ABBCTRAUAINEJRAAwQl0ABBCTRAUAINEJRAAwQl0ABBCTRAUAINEJRAAwQl0ABBCTRAUGYSpo2ZhJBiJmG6mEmYTlk3Oy5b15pJGHst6eIWB0BQAg0QlEADBCXQAEEJNEBQAg0QlEADBCXQAEEJNEBQAg0QlEADBCXQAEEJNEBQAg0QlEADBCXQAEEJNEBQAg0QlJmEaWMmIaSYSZguZhKmU9bNjsvWtTk2k7D4gTquHTrBTMLs5hYHQFACDRCUQAMEJdAAQQk0QFACDRCUQAMEJdAAQQk0QFACDRCUQAMEJdAAQQk0QFACDRCUQAMEJdAAQQk0QFACDRCUmYRpYyYhpJhJmC5mEqZTpmbWPfHCt+q2tujsn9RnrZmE8ecKZmS/pItbHABBCTRAUAINEJRAAwQl0ABBCTRAUAINEJRAAwQl0ABBCTRAUAINEJRAAwQl0ABBCTRAUAINEJRAAwQl0ABBCTRAUGYSpo2ZhJBiJmG6mEmYTpmaK5iN+821mYRZN1ewPsdMurjFARCUQAMEJdAAQQk0QFACDRCUQAMEJdAAQQk0QFACDRCUQAMEJdAAQQk0QFACDRCUQAMEJdAAQQk0QFACDRCUQAMEZSZh2phJCClmEqaLmYTplKnZgFk5V9BMwqa7lnRxiwMgKIEGCEqgAYISaICgBBogKIEGCEqgAYISaIBETP8H7782mnHa+sEAAAAASUVORK5CYII="
+          },
+          {
+            "type": "input_text",
+            "text": "Above is a visual representation of all the training examples and the test input. Each grid cell is colored according to its value (0-9), with clear labels and arrows showing input\u2192output transformations. Use both the textual and visual information to understand the pattern."
+          }
+        ]
+      }
+    ],
+    "all_responses": [
+      {
+        "id": "resp_687001e9297881a082aba17f5f263c4801ec59b323cdce92",
+        "model": "gpt-4.1-2025-04-14",
+        "usage": {
+          "input_tokens": 2808,
+          "output_tokens": 1143,
+          "total_tokens": 3951
+        },
+        "output": [
+          {
+            "type": "message",
+            "content": [
+              "Let's analyze the transformation step by step:\n\n### Observations\n\n#### 1. Output grid is always 6x6.\n- Each input is a bigger grid, output is a central/cropped 6x6 region, not just the upper-left corner but a composite of specific regions.\n\n#### 2. Each quadrant is taken from the four colored quadrants in the input.\n- In each input, there's a \"+\" shape (a vertical and a horizontal line), splitting the grid into 4 quadrants.\n- Each quadrant contains a colored cluster (or empty/black).\n- The output 6x6 grid appears to have its quadrants filled with the colored object from the respective input quadrant, tightly packed.\n\n#### 3. STRUCTURE of output grid:\n- Output upper left: Object from input top left\n- Output upper right: Object from input top right\n- Output lower left: Object from input bottom left\n- Output lower right: Object from input bottom right\n\n#### 4. Each output quadrant is a tight bounding box of the object from the corresponding input quadrant, packed into a 3x3 region (sometimes as small as 2x2 or 2x3), but output cells are always packed as tightly as possible.\n\n#### 5. The \"+\" separating lines are absent in the output.\n\n#### 6. Arrangement:\n- Output:\n    - Top-left 3x3: extract object from input top-left\n    - Top-right 3x3: extract object from input top-right\n    - Bottom-left 3x3: extract object from input bottom-left\n    - Bottom-right 3x3: extract object from input bottom-right\n\n#### 7. Colors and shapes are preserved; only position changes.\n\n#### 8. For input grids that aren't perfectly divisible by 2, figure out the dividing row/col.\n- Vertical line (center vertical bar) divides the grid (from center col).\n- Horizontal line (center horizontal bar) divides the grid horizontally.\n\n## Plan\n\n1. Identify center row and col (locations of the \"+\" separator).\n2. For each quadrant:\n    - Crop that area (exclude the central lines).\n    - Find the tightest bounding box around nonzero pixels in the quadrant.\n    - Copy the cropped region into a 3x3 block in the 6x6 output grid (top left, top right, bottom left, bottom right).\n    - If the object is smaller than 3x3, align to top left of the 3x3 region (as in output samples).\n3. All output not set by object pixels is 0.\n\n---\n\n## Implementation Steps\n\n- Assume grid is at least 7x7 (from samples).\n- Find the horz and vert bars by finding rows/cols where a nonzero value appears in *all* columns or rows (the center of the \"+\").\n- Define quadrants (exclude the center line).\n- For each quadrant: extract, bounding box, and insert into its 3x3 position in the output.\n---\n\nFinal answer:\n```python\nimport numpy as np\n\ndef transform(grid):\n    grid = np.array(grid)\n    h, w = grid.shape\n\n    # Find the center row and col (the \"+\" lines)\n    # The center bar is always a solid line of non-zero values\n    center_row = None\n    center_col = None\n    for r in range(h):\n        # The central row must have a run of non-zero values across a full 'bar'\n        if np.count_nonzero(grid[r,:]) > w // 2:\n            center_row = r\n            break\n\n    for c in range(w):\n        if np.count_nonzero(grid[:,c]) > h // 2:\n            center_col = c\n            break\n\n    # Split into 4 quadrants, excluding the center row/col\n    q_tl = grid[:center_row, :center_col]\n    q_tr = grid[:center_row, center_col+1:]\n    q_bl = grid[center_row+1:, :center_col]\n    q_br = grid[center_row+1:, center_col+1:]\n\n    quads = [q_tl, q_tr, q_bl, q_br]\n\n    # For each quadrant: get bounding box of the nonzero object\n    quad_imgs = []\n    for quad in quads:\n        coords = np.argwhere(quad > 0)\n        if coords.shape[0] == 0:\n            # No object, leave blank\n            img = np.zeros((3,3), dtype=int)\n        else:\n            y0,x0 = coords.min(axis=0)\n            y1,x1 = coords.max(axis=0) + 1\n            obj = quad[y0:y1, x0:x1]\n            # Place in top-left of a 3x3 block\n            img = np.zeros((3,3), dtype=int)\n            h_, w_ = obj.shape\n            img[:h_, :w_] = obj\n        quad_imgs.append(img)\n\n    # Build the 6x6 output\n    out = np.zeros((6,6), dtype=int)\n    # Top-left\n    out[:3, :3]   = quad_imgs[0]\n    # Top-right\n    out[:3, 3:]   = quad_imgs[1]\n    # Bottom-left\n    out[3:, :3]   = quad_imgs[2]\n    # Bottom-right\n    out[3:, 3:]   = quad_imgs[3]\n\n    return out.tolist()\n```"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

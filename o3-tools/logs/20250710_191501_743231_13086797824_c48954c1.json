@@ -1,0 +1,726 @@
+{
+  "task_id": "c48954c1",
+  "model": "gpt-4.1",
+  "reasoning_effort": "N/A",
+  "api_type": "responses_api_multiturn",
+  "program": "def transform(grid):\n    import numpy as np\n    grid = np.array(grid)\n    out = np.zeros((9,9), dtype=int)\n    for i in range(9):\n        for j in range(9):\n            block_row = i // 3\n            block_col = j // 3\n            inner_row = i % 3\n            inner_col = j % 3\n            # Decide transformation based on block position\n            if block_row % 2 == 0 and block_col % 2 == 0:\n                val = grid[inner_row, inner_col]\n            elif block_row % 2 == 0 and block_col % 2 == 1:\n                val = grid[inner_row, 2-inner_col]  # Flip horizontally\n            elif block_row % 2 == 1 and block_col % 2 == 0:\n                val = grid[2-inner_row, inner_col]  # Flip vertically\n            else: # both odd: rotate 180\u00b0\n                val = grid[2-inner_row, 2-inner_col]\n            out[i, j] = val\n    return out.tolist()",
+  "execution_error": "",
+  "timed_out": false,
+  "tokens_used": 3568,
+  "request_cost": 0.019364,
+  "turns_used": 1,
+  "raw_response": {
+    "id": "resp_687002f5590081a39de80b3c3e0f36a007127399379ade0f",
+    "model": "gpt-4.1-2025-04-14",
+    "usage": {
+      "input_tokens": 1530,
+      "output_tokens": 2038,
+      "total_tokens": 3568
+    },
+    "output": [
+      {
+        "type": "message",
+        "content": [
+          "Let's analyze the examples step by step.\n\n#### Step 1: Training Data Analysis\n\nEach input is a 3x3 grid.  \nEach output is a 9x9 grid. \n\nLet's look for a mapping between the positions and output values.\n\n##### Example 1\nInput:\n```\n7 6 7\n2 7 6\n1 2 7\n```\nOutput (top left 3x3):\n```\n7 2 1\n6 7 2\n7 6 7\n```\nNotice: The top-left 3x3 output is the **input grid flipped horizontally**.\n\nBut let's check if that holds for others...\n\n##### Example 2\nInput:\n```\n6 1 7\n1 6 7\n4 7 4\n```\nOutput (top-left 3x3):\n```\n4 7 4\n7 6 1\n7 1 6\n```\nThis is the **input rotated 180 degrees**.\n\n##### Example 3\nInput:\n```\n1 9 4\n9 1 6\n6 9 4\n```\nOutput (top-left 3x3):\n```\n4 9 6\n6 1 9\n4 9 1\n```\nThis is the **input rotated 90 degrees** and flipped vertically? No, that's not a basic transform.\n\nAlternatively, let's check for repeating blocks.\nLooking at full output, it appears each row of the output contains three repeated strips -- for example, in Example 1, the first row is \"7 2 1 1 2 7 7 2 1\": \"7 2 1\", then shifted, then repeated.\n\nBut more accurately, let's look for what 3x3 block is at output grid position (i,j):\n\n##### Let's index an output cell (i, j).\nFor input cell (xr, xc), let's consider various symmetries:\n- Input[ xr, xc ]\n- Input[ xc, xr ]\n- Input[ 2-xr, xc ]\n- Input[ xr, 2-xc ]\n- etc. (rotations and flips)\n\nAre these subgrids tilings of the input, but permuted/flipped/rotated?\n\nLook at how the first 3 rows are, for example, for Example 1:\n\n```\n7 2 1  1 2 7  7 2 1\n6 7 2  2 7 6  6 7 2\n7 6 7  7 6 7  7 6 7\n```\n\n\"7 2 1\"   <--- row 0\n\"1 2 7\"   <--- row 1 (circular shift left)\n\"7 2 1\"   <--- row 2 (repeat)\n\nAha! Each 3x3 is a transformation/rotation/flip of the input.\n\n#### Row/column pattern:\n\nLet's look at block indices.\n\n- grid is 3x3; output is 9x9\n- Output is tiled with 3x3 blocks, but tiles are variously flipped/rotated.\n\nLet's look at block positions:\n- row_block = i // 3\n- col_block = j // 3\n- in-block offset: i % 3, j % 3\n\nLet's see the transformation for each block.\n\nFrom the patterns, it looks like:\n\n- Top-left 3x3 block is the input L-R reversed\n- Next block is something else\n- There is a periodic repeating pattern\n\nBut actually, recurring blocks in output:\n- (block 0,0): input mirrored horizontally\n- (block 0,1): input mirrored vertically\n- (block 0,2): input mirrored horizontally again\n\nHmm, that's not quite exact.\n\nInstead: Let's write out indices for output cell (i, j):\nLet bx = i // 3, by = j // 3\n\nObserving visual, it seems that each 3x3 block across 9x9 is one of the 8 symmetries of the 3x3 grid.\n\nCheck if block index (bx, by) determines the symmetry applied.\n\nFrom example 1:\n\nThe 9 blocks are:\n\n- block (0,0): \"7 2 1\",   \"6 7 2\",   \"7 6 7\"   (input horizontally flipped)\n- block (0,1): \"1 2 7\",   \"2 7 6\",   \"7 6 7\"   (input as is?)\n- block (0,2): \"7 2 1\",   \"6 7 2\",   \"7 6 7\"   (input horizontally flipped)\n- ...\n\nSo, the tiling pattern is:\n\n- input, input_Hflip, input, input_Hflip, ... ?\n\nBut the first block in example 2 starts with \"4 7 4\": which is the last row of input.\n\nSo, perhaps for each block, the symmetry is determined by its position.\n\nAlternatively, let's look at the respective block positions and which symmetry is applied.\n\nAfter some analysis, it's clear that the 9x9 grid is formed by **tiling the input 3x3 grid** 9 times, but each block is a different transformation (e.g., rotation, flip) of the input grid. The arrangement of the transformations for the 9 blocks appears to be:\n\n|        |        |        |\n|--------|--------|--------|\n| A      | B      | C      |\n| D      | E      | F      |\n| G      | H      | I      |\n\nWhere each letter stands for a symmetry transformation of the 3x3 grid (rotation/flip).\n\nIt looks like:\n- (0,0)/(1,1)/(2,2): input rotated 180\u00b0\n- (0,1)/(1,2)/(2,0): input rotated 90\u00b0 ccw\n- (0,2)/(1,0)/(2,1): input rotated 90\u00b0 cw\n\nOr possibly:\n- Some pattern involving cyclic rotations around blocks\n\nBut upon seeing the visual, all rows in blocks repeat in a 3-block cycle, and columns as well.\n\nBut here's the simplest, *systematic* program hypothesis:  \n- **Tile the input grid horizontally and vertically three times each, but for every odd-numbered 'tile' (in row or column), flip that tile horizontally or vertically (alternately, or both).**\n- This creates a patchwork of the input grid and its symmetries, matching the visual output.\n\n### Let's Build a Program Accordingly\n\nWe'll repeat input 3x3 to 9x9, but for each of the 9 (3x3) blocks of the output, we'll decide which transformation to apply:\n- block at (block_row, block_col):\n    - if (block_row + block_col) % 2 == 0: use input as is\n    - if (block_row + block_col) % 2 == 1: flip input horizontally\n\nThis can be refined as needed.\n\nAlternatively, seeing the pattern, it seems like the input grid is used as-is in one block, and then symmetrically mirrored or rotated for the other blocks to form a \"pattern\" in output. Let's use the following pattern for the 9 blocks:\n\n- (even row, even col): input as is\n- (even row, odd col): input flipped horizontally\n- (odd row, even col): input flipped vertically\n- (odd row, odd col): input rotated 180\u00b0\n\nLet me implement this logic for the most systematic coverage.\n\n### Implementation Plan\n\n- For each output cell (i, j):\n    - Out block position: block_row = i // 3; block_col = j // 3\n    - In-block offset: inner_row = i % 3; inner_col = j % 3\n    - For each block:\n        - If block_row % 2 == 0 and block_col % 2 == 0: use input as is\n        - If block_row % 2 == 0 and block_col % 2 == 1: flip input horizontally\n        - If block_row % 2 == 1 and block_col % 2 == 0: flip input vertically\n        - If block_row % 2 == 1 and block_col % 2 == 1: rotate input 180\u00b0\n\nThis matches a standard 2x2 flip pattern, but tessellated to 3x3 blocks.\n\nFinal answer:\n```python\ndef transform(grid):\n    import numpy as np\n    grid = np.array(grid)\n    out = np.zeros((9,9), dtype=int)\n    for i in range(9):\n        for j in range(9):\n            block_row = i // 3\n            block_col = j // 3\n            inner_row = i % 3\n            inner_col = j % 3\n            # Decide transformation based on block position\n            if block_row % 2 == 0 and block_col % 2 == 0:\n                val = grid[inner_row, inner_col]\n            elif block_row % 2 == 0 and block_col % 2 == 1:\n                val = grid[inner_row, 2-inner_col]  # Flip horizontally\n            elif block_row % 2 == 1 and block_col % 2 == 0:\n                val = grid[2-inner_row, inner_col]  # Flip vertically\n            else: # both odd: rotate 180\u00b0\n                val = grid[2-inner_row, 2-inner_col]\n            out[i, j] = val\n    return out.tolist()\n```"
+        ]
+      }
+    ]
+  },
+  "score": {
+    "correct": true,
+    "pixel_accuracy": 1.0,
+    "total_pixels": 81,
+    "correct_pixels": 81,
+    "error": null,
+    "predicted_output": [
+      [
+        8,
+        8,
+        6,
+        6,
+        8,
+        8,
+        8,
+        8,
+        6
+      ],
+      [
+        6,
+        3,
+        6,
+        6,
+        3,
+        6,
+        6,
+        3,
+        6
+      ],
+      [
+        6,
+        8,
+        8,
+        8,
+        8,
+        6,
+        6,
+        8,
+        8
+      ],
+      [
+        6,
+        8,
+        8,
+        8,
+        8,
+        6,
+        6,
+        8,
+        8
+      ],
+      [
+        6,
+        3,
+        6,
+        6,
+        3,
+        6,
+        6,
+        3,
+        6
+      ],
+      [
+        8,
+        8,
+        6,
+        6,
+        8,
+        8,
+        8,
+        8,
+        6
+      ],
+      [
+        8,
+        8,
+        6,
+        6,
+        8,
+        8,
+        8,
+        8,
+        6
+      ],
+      [
+        6,
+        3,
+        6,
+        6,
+        3,
+        6,
+        6,
+        3,
+        6
+      ],
+      [
+        6,
+        8,
+        8,
+        8,
+        8,
+        6,
+        6,
+        8,
+        8
+      ]
+    ],
+    "actual_output": [
+      [
+        8,
+        8,
+        6,
+        6,
+        8,
+        8,
+        8,
+        8,
+        6
+      ],
+      [
+        6,
+        3,
+        6,
+        6,
+        3,
+        6,
+        6,
+        3,
+        6
+      ],
+      [
+        6,
+        8,
+        8,
+        8,
+        8,
+        6,
+        6,
+        8,
+        8
+      ],
+      [
+        6,
+        8,
+        8,
+        8,
+        8,
+        6,
+        6,
+        8,
+        8
+      ],
+      [
+        6,
+        3,
+        6,
+        6,
+        3,
+        6,
+        6,
+        3,
+        6
+      ],
+      [
+        8,
+        8,
+        6,
+        6,
+        8,
+        8,
+        8,
+        8,
+        6
+      ],
+      [
+        8,
+        8,
+        6,
+        6,
+        8,
+        8,
+        8,
+        8,
+        6
+      ],
+      [
+        6,
+        3,
+        6,
+        6,
+        3,
+        6,
+        6,
+        3,
+        6
+      ],
+      [
+        6,
+        8,
+        8,
+        8,
+        8,
+        6,
+        6,
+        8,
+        8
+      ]
+    ]
+  },
+  "predicted_output": [
+    [
+      8,
+      8,
+      6,
+      6,
+      8,
+      8,
+      8,
+      8,
+      6
+    ],
+    [
+      6,
+      3,
+      6,
+      6,
+      3,
+      6,
+      6,
+      3,
+      6
+    ],
+    [
+      6,
+      8,
+      8,
+      8,
+      8,
+      6,
+      6,
+      8,
+      8
+    ],
+    [
+      6,
+      8,
+      8,
+      8,
+      8,
+      6,
+      6,
+      8,
+      8
+    ],
+    [
+      6,
+      3,
+      6,
+      6,
+      3,
+      6,
+      6,
+      3,
+      6
+    ],
+    [
+      8,
+      8,
+      6,
+      6,
+      8,
+      8,
+      8,
+      8,
+      6
+    ],
+    [
+      8,
+      8,
+      6,
+      6,
+      8,
+      8,
+      8,
+      8,
+      6
+    ],
+    [
+      6,
+      3,
+      6,
+      6,
+      3,
+      6,
+      6,
+      3,
+      6
+    ],
+    [
+      6,
+      8,
+      8,
+      8,
+      8,
+      6,
+      6,
+      8,
+      8
+    ]
+  ],
+  "actual_output": [
+    [
+      8,
+      8,
+      6,
+      6,
+      8,
+      8,
+      8,
+      8,
+      6
+    ],
+    [
+      6,
+      3,
+      6,
+      6,
+      3,
+      6,
+      6,
+      3,
+      6
+    ],
+    [
+      6,
+      8,
+      8,
+      8,
+      8,
+      6,
+      6,
+      8,
+      8
+    ],
+    [
+      6,
+      8,
+      8,
+      8,
+      8,
+      6,
+      6,
+      8,
+      8
+    ],
+    [
+      6,
+      3,
+      6,
+      6,
+      3,
+      6,
+      6,
+      3,
+      6
+    ],
+    [
+      8,
+      8,
+      6,
+      6,
+      8,
+      8,
+      8,
+      8,
+      6
+    ],
+    [
+      8,
+      8,
+      6,
+      6,
+      8,
+      8,
+      8,
+      8,
+      6
+    ],
+    [
+      6,
+      3,
+      6,
+      6,
+      3,
+      6,
+      6,
+      3,
+      6
+    ],
+    [
+      6,
+      8,
+      8,
+      8,
+      8,
+      6,
+      6,
+      8,
+      8
+    ]
+  ],
+  "api_success": true,
+  "multiturn_data": {
+    "turn_details": [
+      {
+        "turn_number": 1,
+        "timestamp": "2025-07-10T19:14:13.237883",
+        "input_tokens": 1530,
+        "output_tokens": 2038,
+        "turn_cost": 0.019364,
+        "program_extracted": true,
+        "program": "def transform(grid):\n    import numpy as np\n    grid = np.array(grid)\n    out = np.zeros((9,9), dtype=int)\n    for i in range(9):\n        for j in range(9):\n            block_row = i // 3\n            block_col = j // 3\n            inner_row = i % 3\n            inner_col = j % 3\n            # Decide transformation based on block position\n            if block_row % 2 == 0 and block_col % 2 == 0:\n                val = grid[inner_row, inner_col]\n            elif block_row % 2 == 0 and block_col % 2 == 1:\n                val = grid[inner_row, 2-inner_col]  # Flip horizontally\n            elif block_row % 2 == 1 and block_col % 2 == 0:\n                val = grid[2-inner_row, inner_col]  # Flip vertically\n            else: # both odd: rotate 180\u00b0\n                val = grid[2-inner_row, 2-inner_col]\n            out[i, j] = val\n    return out.tolist()",
+        "training_feedback": {
+          "feedback_messages": [
+            {
+              "type": "input_text",
+              "text": "Training results: 0/3 examples solved, 25.9% pixel accuracy - Good partial progress! Your approach is capturing some patterns. Next, try to identify a transformation that solves at least one of the training examples.\n\nTraining Example 1 \u2717:\nExpected: [[7, 2, 1, 1, 2, 7, 7, 2, 1], [6, 7, 2, 2, 7, 6, 6, 7, 2], [7, 6, 7, 7, 6, 7, 7, 6, 7], [7, 6, 7, 7, 6, 7, 7, 6, 7], [6, 7, 2, 2, 7, 6, 6, 7, 2], [7, 2, 1, 1, 2, 7, 7, 2, 1], [7, 2, 1, 1, 2, 7, 7, 2, 1], [6, 7, 2, 2, 7, 6, 6, 7, 2], [7, 6, 7, 7, 6, 7, 7, 6, 7]]\nYour output: [[7, 6, 7, 7, 6, 7, 7, 6, 7], [2, 7, 6, 6, 7, 2, 2, 7, 6], [1, 2, 7, 7, 2, 1, 1, 2, 7], [1, 2, 7, 7, 2, 1, 1, 2, 7], [2, 7, 6, 6, 7, 2, 2, 7, 6], [7, 6, 7, 7, 6, 7, 7, 6, 7], [7, 6, 7, 7, 6, 7, 7, 6, 7], [2, 7, 6, 6, 7, 2, 2, 7, 6], [1, 2, 7, 7, 2, 1, 1, 2, 7]]\nPixel accuracy: 33.3%\n\nTraining Example 2 \u2717:\nExpected: [[4, 7, 4, 4, 7, 4, 4, 7, 4], [7, 6, 1, 1, 6, 7, 7, 6, 1], [7, 1, 6, 6, 1, 7, 7, 1, 6], [7, 1, 6, 6, 1, 7, 7, 1, 6], [7, 6, 1, 1, 6, 7, 7, 6, 1], [4, 7, 4, 4, 7, 4, 4, 7, 4], [4, 7, 4, 4, 7, 4, 4, 7, 4], [7, 6, 1, 1, 6, 7, 7, 6, 1], [7, 1, 6, 6, 1, 7, 7, 1, 6]]\nYour output: [[6, 1, 7, 7, 1, 6, 6, 1, 7], [1, 6, 7, 7, 6, 1, 1, 6, 7], [4, 7, 4, 4, 7, 4, 4, 7, 4], [4, 7, 4, 4, 7, 4, 4, 7, 4], [1, 6, 7, 7, 6, 1, 1, 6, 7], [6, 1, 7, 7, 1, 6, 6, 1, 7], [6, 1, 7, 7, 1, 6, 6, 1, 7], [1, 6, 7, 7, 6, 1, 1, 6, 7], [4, 7, 4, 4, 7, 4, 4, 7, 4]]\nPixel accuracy: 11.1%\n\nTraining Example 3 \u2717:\nExpected: [[4, 9, 6, 6, 9, 4, 4, 9, 6], [6, 1, 9, 9, 1, 6, 6, 1, 9], [4, 9, 1, 1, 9, 4, 4, 9, 1], [4, 9, 1, 1, 9, 4, 4, 9, 1], [6, 1, 9, 9, 1, 6, 6, 1, 9], [4, 9, 6, 6, 9, 4, 4, 9, 6], [4, 9, 6, 6, 9, 4, 4, 9, 6], [6, 1, 9, 9, 1, 6, 6, 1, 9], [4, 9, 1, 1, 9, 4, 4, 9, 1]]\nYour output: [[1, 9, 4, 4, 9, 1, 1, 9, 4], [9, 1, 6, 6, 1, 9, 9, 1, 6], [6, 9, 4, 4, 9, 6, 6, 9, 4], [6, 9, 4, 4, 9, 6, 6, 9, 4], [9, 1, 6, 6, 1, 9, 9, 1, 6], [1, 9, 4, 4, 9, 1, 1, 9, 4], [1, 9, 4, 4, 9, 1, 1, 9, 4], [9, 1, 6, 6, 1, 9, 9, 1, 6], [6, 9, 4, 4, 9, 6, 6, 9, 4]]\nPixel accuracy: 33.3%\n\n"
+            },
+            {
+              "type": "input_image",
+              "image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAe8AAALpCAIAAAAVWjkaAAA0N0lEQVR4nO3de1hU9b748e+gDKIgCLbVBCol0A6VRF6ztgbPc1S84aWrGoRlGmbiJf09Hju1NS04tlPL00nBlNy58wSakZs8XqptuknZ5T0CNPDSQRIQucP6PTXP5rCBmWCGYcFn3q+nP3DNurH48nZaM87XoGmaAgB0cE56nwAAoBVQcwCQgJoDgATUHAAkoOYAIAE1BwAJqDkASEDNAUACag4AElBzAJCAmgOABNQcACSg5gCgHL3mMTExBvNmzJjR5DpGo7F3794TJ048ceJE431+/vnnBoPBy8urvLy8wUO7du0yGAybN282/TEyMtJgMMTFxTVYLS8vz2AwrFixwpatTMrLy999993Ro0ffeuutLi4ut9566/Tp07/88ksL12TFihXmLsipU6csX7SwsLDfvLB168yePbv+ctPpTZ069euvv65/PpMnT26w2h133PHCCy9cv369RRff5Nq1a6tWrQoODvbw8OjWrduQIUM2b95c/2M4TYdrsPnx48dvueUWd3f3gwcPWrh0ADrYc/Oqqqqffvrpk08+GT16dHZ2doNHExISlFLXr1/fuXNnc/a2cuXKc+fOtfQcmrPVhQsXhg8f/txzzx06dOjKlSuVlZVXrlzZtWvXQw89tG7dOtXOmE7v448/Hjly5AcffGBhtQsXLmzYsGHMmDG1tbUtuvhff/31vffe+2//9m9///vfi4uLS0tL09PTn3nmmejoaAsnduDAgdGjR9fU1Ozfv3/06NE2fIsA7FbzjRs3av/w0UcfKaUSExPrliQlJdWtmZOTU7e8vLz87NmzTzzxRHFx8aZNm+rvsLCwMCUlZfr06V5eXv/5n//ZnHOorKyMjIysqalp0Zn/5lZVVVXTpk37+9//PmLEiD179ly7dq2qqurHH3985513vLy8li5danqibU5GRobWSFBQUJMXpM7+/fvr76Q561y5csW0vKys7Icffli2bJmmaU8//fTFixfrr1ZWVlb/4oeFhf3tb3/7/PPPm3/x//d//zciIuLy5cuPP/740aNHi4uLf/7555SUlH79+iUmJr777rtNXofk5ORx48Z17dr10KFDQ4cOtXDFAHS85+YuLi4DBgx4/fXXlVINnpvv2LGjvLx8zpw5UVFRR48e/e67735zb/Pnzz927Nh//Md/tOgcfnOr999///jx42FhYV988cWECRO8vb07d+7s6+s7d+7cjz/+uKam5k9/+pNqT7p06dK/f/81a9asXLmysrLyj3/8o4WL/+KLL5r+Jmj+xV+3bt1PP/20cOHCHTt2DB061N3dvUePHpMmTTp8+HC3bt3WrVvXeNqTLVu2TJ8+/Xe/+92XX355zz331C3funWrwWDYuHFjq14AwNHpUPOKiorTp0/HxsYqpQICAuo/lJiYOHDgwIcffnju3LmdOnVqztPz1157zd/ff+XKlWfPnm3+OfzmVjt27DAYDP/1X//VqVOnBg/9/ve/P3PmzKpVq1S7tGjRoq5du/7lL39p8tGqqqrvv/9+/fr1nTt3/v3vf9/8i//nP//Z1dX11VdfbbBDHx+fr7766tChQwaDof7yN954Y/bs2f369fvqq6/uvPPO1vv+AOha8zvuuKPuhbguXboEBQV99NFHPXv2XLBgQd06p06d+uabb5YsWWIwGPr37z99+vQPPvigpKTE8p67du2amJhYVVXVovstv7lVRkbGwIED77jjjiY3HzhwYIN4NRAcHNzg1cuvvvrK3AWpc+jQoZau05i7u/udd97Z4H96XF1dTZsbjcbAwMC//vWv77//fv3vzvLFr6qqunDhwpAhQ9zc3BofcdCgQX369Km/ZOnSpS+99JJS6sEHH/Tz82uwfmRkpKZpMTExlr8RAB3gHYp9+/Z9+umnv/322969e9ctTEhI6Nu375NPPmn64/Lly2/cuNGcGxojR4584YUX/va3v8XHxzf/HCxsVVVVVVhY2KtXr/oLG7zP5Pbbb1ftlbe3d8WvzK1QU1Nz9OjRqqqqZl78wsJCTdO8vb2beQIbNmwYPnx4WFhYQkLCxx9/bNt3A6A91dz0gl5lZeWHH35oevK4du3aW2+9tW6FqqqqpKSkS5cuubi4mHJ57733aprWzNdCX3vttTvvvPPll18+c+ZM88/K3FbOzs7u7u75+fnKWo1fBR05cuRvvsI5atSolq7TpOvXrzs7O7u4uDR+FbSysjI7O/v555/fsGHD4sWLm3nxvby8nJycmn9BoqKiDh06tG3bNi8vr2eeeebSpUvN3BBAx3hu7uzs/Oijj+7cufPw4cNjxoyp/67kvXv3NhmLEydOpKen/+aeXV1drbjfYmGru++++8yZMz/++GOTb+AJCQlR7VVJScmpU6cGDhzY5KPOzs533HFHfHx8UFDQ1q1bm3nxO3XqNHDgwG+++aa0tLTxamvWrJk1a9bly5frlrzzzjtGo7FPnz4bN278+eefZ82a1fjdkAA6/J2WsWPHzp8//8SJE3XPDU3/p9+lS5eioqL6z0OPHDmilDL37rcGHnjggQULFqSnpzf+l0FWbPXkk0/W1tbOmzevyb8bGr9/o/148803q6qqxowZY3k1JyenkpKS6urqZl78yZMnl5WV/fu//3uD/Vy4cOGNN97Yu3dvk/dhHn/88WnTph04cKBFN8EAdJj75q+99pqfn9+mTZuOHTumlLp69eq+ffsmTJjQvXv3+qsNHz48MDDwT3/6U1FRUXN2u3r16jvvvPOdd95p0ck0udXs2bNDQkI+/fTTIUOG/PnPf7569WpVVZXpXw+Fh4efOHHCyal9fShCRUXF+fPnV6xY8corr3Tt2tXca4yapuXl5S1ZsuS7774LDg7u3LlzMy/+woULvb294+LiZs2a9c0335SVlf300087duwYNWpUYWHhkiVL6t/YqW/Tpk29evVasWLF8ePH7fOtA/iFPknq1q3bhg0bamtr58yZU11dvW3bturq6rqX4Op76qmnSktLt2/f3vw7J5bfbdLMrYxGY0pKyvDhw0+cOPHoo4/26dPHaDSa/mV/ampqYGBgM/+pqjlNvl/FYDDUfw9Pc9bp06dP3TuFBgwYsHr1atPHGPj6+jb4Hk2rOTk5+fr6xsfHOzk5md5k2cyL7+3tvXPnTnd39+3btw8ePLhr1669e/d+8sknL168GBERsXTpUnPfac+ePd97772qqqonnnji5s2bvN8csBPdnmBOnDhx8uTJ33777R//+MetW7f26NFj7NixjVebNWuWk5NTM2+2mO6cmP5pTIs0uZWPj8+XX36ZlJQ0btw4Hx8fo9HYq1evcePGvf/++6dOnRo8eLBqT5ydnX19fR977LG//vWvjz/+uLnVOnXq9Lvf/S48PPzzzz833Y1p/sUPDQ3NyMh44YUXBgwY4Obm5urqOnTo0M2bN//3f/9343fl1zdhwoTIyMjvv/++/htSAbQuQ3u+BQwAaKb2dfMXAGAdag4AElBzAJCAmgOABNQcACSg5gAgATUHAAmoOQBIQM0BQAJqDgASUHMAkICaA4AE1BwAJKDmACABNQcACag5AEhAzQFAAmoOABJQcwCQgJoDgATUHAAkoOYAIAE1BwAJqDkASEDNAUACag4AElBzAJCAmgOABNQcACSg5gAgATUHAAmoOQBIQM0BQAJqDgASUHMAkICaA4AE1NwuCgoKzp07p/dZAP+EYSmb/Jr7+PgYGklKSrLrQcPCwo4ePdr89ePj44cNG2bu0cLCwn79+rVoh2jPevbsWTcUjUbjwIED169fb/Xe6gZPYWGhwWCw0GuGpWzya66UevPNN7V/NmPGDLsesaysrLV2lZubGxYWlpOT01o7RHuwadMm01C8efNmXFzc4sWLt2/fbuM+PT09NU0bMGCAuRUYlrI5RM2btGXLFhcXl9zcXKVUfn5+9+7dExMTr127ZjAYtmzZ4uPj4+HhER0dXfcLcOXKlWnTprm5ufn6+sbGxtYtv3TpUkREhLu7+y233DJv3ryKiopRo0adP38+Kipq9uzZFjY8ffr0gw8+6OrqOmLECHO/FZ9++mlQUFBISEhbXRW0NWdn5/Hjx4eGhiYnJ1+9etVgMCxfvtzDwyMyMrKlg6f+c3OGpQNy3JpHR0ePHDly7dq1SqnVq1fff//9UVFRpofeeOONffv2ZWRkHD9+PCYmxrRw6tSp7u7uFy5cOHz4cHp6+sKFC5VSNTU1Y8eONRqNWVlZX3/99cmTJ19++eVDhw4FBgYmJiZu3rzZ3Ibl5eXjxo279957L1++vHz58sTExCZP0sXFZf/+/W+//XYbXhjooLq62s3NzfT1uXPn8vLyXn31VasHD8PSQWnS9e3bt8G33KlTJ9NDmZmZnp6e69at8/DwyMzM1DQtPz9fKZWcnGxaIS0tzWg0lpSUHD58uGvXrhUVFabl6enpTk5OZWVlhw8fNhqNBQUFDQ5q+rXRNM3chikpKR4eHqWlpablzz777NChQ819C1VVVUqpr7/+2g6XBzrw9vauu9NSWFiYmJjo5OS0d+/eK1euKKVSU1NND7V08Fy/fl0pdfbsWYalY3LE++bV1dWm5f7+/kuWLImNjV20aJG/v3/d+nWv/AwaNKiysjIrK+vMmTOlpaUuLi6mV64GDx5cW1ubnZ19+vRpHx8fLy8vc4c2t+GZM2f69+/v6upqWi04ONjO1wDty9y5c01DolevXvHx8W+//XZ4eLjpIT8/PxsHD8PSMTlEzS04deqUUurEiRP1Fzo7O5u+qKmpUUp17ty5urra39+/wd+Ed911l7Ozs8FgsLB/cxs2WK3uiHAQdc/Ny8vLT5069dxzz9U95OLiYuPgYVg6Joeu+WeffbZz5864uLjdu3enpKTULf/uu+9MX2RkZLi5ufXv33/AgAE5OTl5eXkN9hAQEJCbm2v6P9z66n6XzG0YFBSUmZl58+ZN0x9PnjzZ2t8cOjyrBw/D0jE5bs1LSkqee+65F154YfHixc8880xMTMyNGzdMDy1dujQnJyczM/Oll1569tlnXVxcHn744XvuuScqKio3N/fSpUsvvviin59fRUXFgw8+GBQUNH/+/GvXrl24cGHq1KmPP/64Uqpbt26XL1++ceOGuQ3/9V//tU+fPgsWLPj555/379+fkJCg9/VAu2P14GFYOijN8V4FVUrNmTNn/vz5t99+e0lJiaZpRUVFvr6+MTExpldBly1bdtttt/Xo0SM2NraystK0n4sXL06aNKlbt27du3cfM2bM2bNnTctzcnLGjh3bpUsXb2/vyMjIoqIiTdPee+89Nze3qVOnWtgwKysrNDS0S5cuQUFBsbGxvNzkmK+C1md6FdT0grxJiwZP3augDEvHZNA0zeq/CSIiIpQslZWVqampoaGh7u7uep9Lx5acnKzLceWNSXT0MdlmOtu4ffLgdOs2jEgfnFx02cptPW5N8X/dum0n//CSpW3LriuV+j+3LVZe/Zrc1pZztuladbTrrCNbrtXWL16wbtvIh9br9fPlnOHo980BQBJbn5tL49pDLT6v90kAQIvx3BwAJKDmACABNQcACag5AEhAzQFAAmoOABJQcwCQgJoDgATUHAAkoOYAIAE1BwAJqDkASEDNAUACag4AElBzAJCAmgOABMwLCrtgXlC0N8nMC2qZbnMS2jI/p05ze9pyrTrcddYRP99mcrTfI/G40wIAElBzAJCAmgOABNQcACSg5gAgATUHAAmoOQBIQM0BQAJqDgASUHMAkICaA4AE1BwAJKDmACABNQcACag5AEhAzQFAAmoOABJQcwCQgHlBYRfMC4r2Jpl5QS3Tax5Fm+ZC5Jztf846SvF/3boNJ//wkl5zXeo1t6ct16rDXWfxbK05ADgig8HsQzbc8LAFNQeA1oh443XaNuvUHABaqeNNbtJWTafmANDaHdej6bxDEQDslvJW34951BwA2iTBdg46NQeAtoqvPYNOzQGgDbNrtz1TcwBo23vc9tk/NQeANn250k5HoeYAIAE1B4C2fWJun2NRcwCQgJoDQJs/MbfDEak5AEhAzQFAAmoOAEqH2yytfVw+QxEArKJpavduVV2tnJ3VxIm6/X3wD8wLCrtgXlB0sDFpaHmLjx1TCQnq3XdVdLSaPVsNH27lmbXSh+UyL2jLtuWc278ON18l84J21HlBc3NVRYUaNkxduvTLf3rjvjkAWCspSS1frvbtU+0ANQcAa0VFqa1b1YQJqh2g5gBgFV9f5eqqkpN/+aJvX6U33tMCAFYZMkRdvaoeeuiX97QMG6b0Rs0BwCp6vyWxAe60AIBqrbcJ6nhcag4AElBzAJCAmgOATjdbWvWI1BwAJKDmAKDH0/PWPhY1BwAJqDkAtPnTczschZpDf4MGDbr060fQVVRUBAQErF+/Pjg4+L777ktLS9P71OCQNK0j7p+aQ3/Tpk3bs2ePUurgwYNjxoxZtWrVF198sWPHjqSkJL1PDY5K0zrcnqk59Dd9+vTdu3crpT755JNHHnlk3Lhxs2bNys3N3bZtm96nBgemaR3rWT81h/4CAwMLCgqKi4szMjIeeOCBrVu3Lly4cNOmTVFRUXqfGhybpnWgGzh86hbahUmTJq1du3bIkCHFxcUTJ07cv39/SEhIv3799D4vODxNa51P17L/i6vMC4p2MS/o+fPn77nnnoMHD44YMSIuLu7DDz+sra2Njo6OiYlp0X4Yk7DXXLVWN72t3sNua811myfTlnkFdZr70ZZr1eGuszpwTOkhIiKCn28zOdrvkUfBaGW7FjW9bT8qgDstANDyQFvIuk4frkvNAaDjfB66ebynBQAkoOYAIAE1BwAJqDkASEDNAUACag4AElBzAJCAmgOABNQcACSg5gAgATUHAAmoOQBIQM0BQAJqDgASUHMAaEJpaemjjz46atSokJCQTz/9tMkl5tZcu3ZtUFBQXFycUqq2tjY8PLywsFDZGTUHgCZs3Lhx8ODBhw4d2rt37/PPP9/kEnNrvvXWW0eOHFm3bp1SavPmzVOnTvX09FR2xrygaJdzMFqLMYnWGpPXr1/v1q2b0Wjcv3//3LlzMzMzGy8xt6afn9+BAwdCQ0MzMjJmzpy5d+9eQ6tMFW3XuYf0mpMwxf9167ad/MNLtmyr11yIHe4660ivuT31+vlyznbSo0cPpdTMmTM//vjjPXv2NLnE3JqrV6+eMWPGmjVrVqxY8corr7RByrnTAgCWbN++fceOHe+//76FJY2Xz5w58+jRo4GBgUqp7Ozs8PDwXbt2KTuj5gDQhPnz51dXVyulxo8fb3pts/ESc2v+Om+otnLlyj/84Q9Lly7dsmXL0qVLlZ1RcwBoQlFRUUpKilLqyJEjpmfZjZeUlJQ0uVwplZCQMGHCBG9v77KyMk3TSktLVTu/bw4AIq1ateqpp57asGGD0WhMSEhocsmUKVPS0tIaLy8sLPzoo49SU1OVUgsXLgwLC1u0aJG9T5iaA0AT/Pz8Dh48aHlJWlpak8s9PT337dtn+nrZr5T9cacFACSg5gAgATUHAAmoOQBIQM0BQAJqDgASUHMAkICaA4AE1BwAJKDmACABNQcACag5AEhAzQFAAuYFhV0wLyjam2SdxmSbYV7Qlm3LvKDtX4ebr7IjzrHZEc9ZPO60AIAE1BwAJKDmACABNQcACag5AEhAzQFAAmoOABJQcwCQgJoDgATUHAAkoOYAIAE1BwAJqDkASEDNAUACag4AElBzAJCAmgOABNQcACRgXlDYBfOCor1JZl5Qy3Sbk9CW+Tl1mtvTlmvV4a6zjvj5NpOj/R6Jx50WAJCAmgOABNQcACSg5gAgATUHAAmoOQBIQM0BQAJqDgASUHMAkICaA4AE1BwAJKDmACABNQcACag5AEhAzQFAAmoOABJQcwCQgJoDgATMCwq7YF5QtDfJzAtqmV7zKNo0FyLnbP9z1lGK/+vWbTj5h5f0mutSr7k9bblWHe46i8edFgCQgJoDgATUHAAkoOYAIAE1BwAJqDkASEDNAUACag4AElBzAJCAmgOABNQcACSg5gAgATUHAAmoOQBIQM0BQAJqDgASUHMAkICaA4By9HlBAQDtBM/NAUACag4AElBzAJCAmgOABNQcACSg5gAgATUHAAmoOQBIQM0BQAJqDgASUHMAkICaA4AE1BwAJKDmACABNQcACag5AEhAzQFAAmoOABJQcwCQgJoDgATUHAAkoOYAIAE1BwAJqDkASEDNAUACag4AElBzAJCAmgOABNQcACSg5gAgATUHAAmoOQBIQM0BQAJqDgASUHMAkICaA4AE1BwAJKDmACABNQcACag5AEhAzQFAAmoOABJQcwCQgJrbRUFBwblz5/Q+C+CfMCxlk19zHx8fQyNJSUl2PWhYWNjRo0ebv358fPywYcMaL8/MzBw/frynp2efPn3mzJlTXFzcqqcJffTs2bNuKBqNxoEDB65fv97qvdUNnsLCQoPBYKHXDEvZ5NdcKfXmm29q/2zGjBl2PWJZWZntO6mqqho/fvztt9+ek5Pz5ZdfHj9+/LnnnmuNs4P+Nm3aZBqKN2/ejIuLW7x48fbt223cp6enp6ZpAwYMMLcCw1I2h6h5k7Zs2eLi4pKbm6uUys/P7969e2Ji4rVr1wwGw5YtW3x8fDw8PKKjo+t+Aa5cuTJt2jQ3NzdfX9/Y2Ni65ZcuXYqIiHB3d7/lllvmzZtXUVExatSo8+fPR0VFzZ4928KGp0+ffvDBB11dXUeMGJGTk9P4DNPT07Ozs9etW9ejRw9/f/+XX3559+7dmqa14UWC3Tk7O48fPz40NDQ5Ofnq1asGg2H58uUeHh6RkZEtHTz1n5szLB2Q49Y8Ojp65MiRa9euVUqtXr36/vvvj4qKMj30xhtv7Nu3LyMj4/jx4zExMaaFU6dOdXd3v3DhwuHDh9PT0xcuXKiUqqmpGTt2rNFozMrK+vrrr0+ePPnyyy8fOnQoMDAwMTFx8+bN5jYsLy8fN27cvffee/ny5eXLlycmJjY+wxEjRlRVVRmNRtMfr1y54uXlZTAY2vAioY1UV1e7ubmZvj537lxeXt6rr75q9eBhWDooTbq+ffs2+JY7depkeigzM9PT03PdunUeHh6ZmZmapuXn5yulkpOTTSukpaUZjcaSkpLDhw937dq1oqLCtDw9Pd3JyamsrOzw4cNGo7GgoKDBQU2/NpqmmdswJSXFw8OjtLTUtPzZZ58dOnSohe+isLDwjjvuePnll1v78kAH3t7edXdaCgsLExMTnZyc9u7de+XKFaVUamqq6aGWDp7r168rpc6ePcuwdEyOeN+8urratNzf33/JkiWxsbGLFi3y9/evW7/ulZ9BgwZVVlZmZWWdOXOmtLTUxcXF9MrV4MGDa2trs7OzT58+7ePj4+XlZe7Q5jY8c+ZM//79XV1dTasFBwdbOP+bN29OmDAhKChoxYoVrXRJoLO5c+eahkSvXr3i4+Pffvvt8PBw00N+fn42Dh6GpWNyiJpbcOrUKaXUiRMn6i90dnY2fVFTU6OU6ty5c3V1tb+/f4O/Ce+66y5nZ2fL/49pbsMGq9UdsbGCgoLQ0FAfH59du3Z17tzZtm8X7UXdc/Py8vJTp07VfyHRxcXFxsHDsHRMDl3zzz77bOfOnXFxcbt3705JSalb/t1335m+yMjIcHNz69+//4ABA3JycvLy8hrsISAgIDc31/R/uPXV/S6Z2zAoKCgzM/PmzZumP548ebLJM8zLyxs5cuRDDz30wQcf1N2phIOwevAwLB2UJl3fvn0bv0NR07QbN274+fm9+OKLpvuDffv2LS4uNt03v//++7Ozs7///vu77747NjZW07Samprg4OCwsLAff/wxLy9vwYIFvr6+5eXltbW1991335NPPpmfn5+TkzNlypTHHntM07SQkJDVq1cXFxeb27CioiIgICA6OrqgoODzzz93d3dvfIPy+vXrd95559KlS9vqUqGN1L9vXp/pvrnpJRwLo87c4Km7b86wdEwOUfPGf4fNmTNn/vz5t99+e0lJiaZpRUVFvr6+MTExppovW7bstttu69GjR2xsbGVlpWk/Fy9enDRpUrdu3bp37z5mzJizZ8+alufk5IwdO7ZLly7e3t6RkZFFRUWapr333ntubm5Tp061sGFWVlZoaGiXLl2CgoJiY2Mb/9qsWbOm8ZnfuHGjba8fdKt5SwdPXc0Zlo7JYMsbRSMiIpQslZWVqampoaGh7u7uep9Lx5acnKzLceWNSXT0MdlmbH35Ijn+/243t0jE4snJg9Ot3DZ9sE3HNb/ttevqllS1cen/DOjfYc75t7fV45x1tPWLF6zbMPKh9Sn+r1u37eQfXrLpOtuwrS3nbMu16nDXWTyHfhUUAMTgrUX/pGcPpf2g90kAQMvx3BwAJKDmACABNQcACag5AEhAzQFAAmoOABJQcwCQgJoDgATUHAAkoOYAIAE1BwAJqDkASEDNAUACag4AElBzAJCAmgOABMwLCrtgXlC0N8nMC2qZLfMZ6jWvoF7zKOo1b6Qu11lH/HybydF+j8TjTgsASEDNAUACag4AElBzAJCAmgOABNQcACSg5gAgATUHAAmoOQBIQM0BQAJqDgASUHMAkICaA4AE1BwAJKDmACABNQcACag5AEhAzQFAAuYFhV0wLyjam2TmBbXMlvkM9ZpXUK95FPWaN1KX66yj5PgU6zaMWDzZpp+RLcflnO1/zuLZWnMAcEQGg9mHbLjhYQtqDgCtEfHG67Rt1qk5ALRSx5vcpK2aTs0BoLU7rkfTeYciANgt5a2+H/OoOQC0SYLtHHRqDgBtFV97Bp2aA0AbZtdue6bmANC297jts39qDgBt+nKlnY5CzQFAAmoOAG37xNw+x6LmACABNQeANn9ibocjUnMAkICaA4AE1BwAlA63WVr7uHyGIgBYRdPU7t2qulo5O6uJE3X7++AfmBcUdsG8oOhgY9LQ8hYfO6YSEtS776roaDV7tho+3Moza6UPy2Ve0JZty7yg7V+Hm6+yI86x2RHPufXl5qqKCjVsmLp06Zf/9MZ9cwCwVlKSWr5c7dun2gFqDgDWiopSW7eqCRNUO0DNAcAqvr7K1VUlJ//yRd++Sm+8pwUArDJkiLp6VT300C/vaRk2TOmNmgOAVfR+S2ID3GkBANVabxPU8bjUHAAkoOYAIAE1BwCdbra06hGpOQBIQM0BQI+n5619LGoOABJQcwBo86fndjgKNYf+Bg0adOnXj6CrqKgICAhYv359cHDwfffdl5aWpvepwSFpWkfcPzWH/qZNm7Znzx6l1MGDB8eMGbNq1aovvvhix44dSUlJep8aHJWmdbg9U3Pob/r06bt371ZKffLJJ4888si4ceNmzZqVm5u7bds2vU8NDkzTOtazfmoO/QUGBhYUFBQXF2dkZDzwwANbt25duHDhpk2boqKi9D41ODZN60A3cPjULbQLkyZNWrt27ZAhQ4qLiydOnLh///6QkJB+/frpfV5weJrWOp+uZf8XV5kXFO1iXtDz58/fc889Bw8eHDFiRFxc3IcfflhbWxsdHR0TE9Oi/TAmYa+5aq1uelu9h93Wmtsyv59e83PqNR+pXvOC6nKdtbgApYeIiAh+vs3kaL9H6v/lKdu1qOlt+1EB3GkBgJYH2kLWdfpwXWoOAB3n89DN4z0tACABNQcACag5AEhAzQFAAmoOABJQcwCQgJoDgATUHAAkoOYAIAE1BwAJqDkASEDNAUACag4AElBzAJCAmgNA0woLCyMjIz08PCwsaXL52rVrg4KC4uLilFK1tbXh4eGFhYXKzqg5ADRtwoQJISEhhnoTUzRe0uTyt95668iRI+vWrVNKbd68eerUqZ6ensrOmBcU7XIORmsxJtGKY/Lq1au9e/f29PSse2bdeEmTy/38/A4cOBAaGpqRkTFz5sy9e/c2/gug3c09lByfYt2GEYsn2zSPoi3H5Zztf8460mueTL3mBdVrfs4Od52t0Lt3799c0uTy1atXz5gxY82aNStWrHjllVfaIOXcaQGA1jdz5syjR48GBgYqpbKzs8PDw3ft2qXsjHlBAaD1aZq2cuXKbdu2hYSEHD16dMSIEdOmTVP2xHNzALBSSUmJuYcSEhImTJjg7e1dVlamaVppaamyM2oOAFaaMmVKk8sLCws/+uijZ599Vim1cOHCsLCwRYsWKTvjTgsAWNL4reJ1S9LS0ppc7unpuW/fPtPXy36l7I/n5gAgATUHAAmoOQBIQM0BQAJqDgASUHMAkICaA4AE1BwAJKDmACABNQcACag5AEhAzQFAAmoOABIwLyjsgnlB0d4k6zQm2wzzgrZwW8653etw81UyL2i7nRe0Y+FOCwBIQM0BQAJqDgASUHMAkICaA4AE1BwAJKDmACABNQcACag5AEhAzQFAAmoOABJQcwCQgJoDgATUHAAkoOYAIAE1BwAJqDkASEDNAUAC5gWFXTAvKNqbZOYFtcyW+Qz1mldQr3kU9Zo3UpfrrCN+vs3kaL9H4nGnBQAkoOYAIAE1BwAJqDkASEDNAUACag4AElBzAJCAmgOABNQcACSg5gAgATUHAAmoOQBIQM0BQAJqDgASUHMAkICaA4AE1BwAJKDmACAB84LCLpgXFO1NMvOCWmbLfIZ6zSuo1zyKes0bqct11lFyfIp1G0YsnmzTz8iW43LO9j9n8bjTAgASUHMAkICaA4AE1BwAJKDmACABNQcACag5AEhAzQFAAmoOABJQcwCQgJoDgATUHAAkoOYAIAE1BwAJqDkASEDNAUACag4AElBzAFCOPi8oAKCd4Lk5AEhAzQFAAmoOABJQcwCQgJoDgATUHAAkoOYAIAE1BwAJqDkASEDNAUACag4AElBzAJCAmgOABNQcACSg5gAgATUHAAmoOQBIQM0BQAJqDgASUHMAkICaA4AE1BwAJKDmACABNQcACag5AEhAzQFAAmoOABJQcwCQgJoDgATUHAAkoOYAIAE1BwAJqDkASEDNAUACag4AElBzAJCAmgOABNQcACSg5gAgATUHAAmoOQBIQM0BQAJqDgASUHO7KCgoOHfunN5nAfwThqVs8mvu4+NjaCQpKcmuBw0LCzt69Gjz14+Pjx82bFjj5T/99NO0adO6d+/u6+u7atWqVj1H6KZnz551Q9FoNA4cOHD9+vVW761u8BQWFhoMBgu9ZljK1lk5gDfffPPFF19syyOWlZW1yn6eeOIJPz+/3NzczMzMsWPH9u7de/bs2a2yZ+hr06ZNzz33nFKqqqrqL3/5y5QpU3r06DFz5kxb9unp6alpmoUVGJayyX9ubs6WLVtcXFxyc3OVUvn5+d27d09MTLx27ZrBYNiyZYuPj4+Hh0d0dHTdL8CVK1emTZvm5ubm6+sbGxtbt/zSpUsRERHu7u633HLLvHnzKioqRo0adf78+aioKNMQN7fh6dOnH3zwQVdX1xEjRuTk5DQ+w6ysrIMHD8bHx3t4eNx///2jR48+cuRIG14htAVnZ+fx48eHhoYmJydfvXrVYDAsX77cw8MjMjKypYOn/nNzhqUj0qTr27fvm2++2eRDDz/88Lx58zRNW7BgwejRozVNy8/PV0oFBAScPHkyKyvr3nvvffrpp00rDx8+PDIyMj8/Pysra+TIkXPmzNE0rbq6+u67737kkUd++umnzMzMkSNHvvTSS5qmBQYGJiYmWtiwrKzMz8/v+eef//nnn/fs2ePq6jp06FBz30JVVdX+/fu9vLz27Nljn4uENuXt7b1p06b6S8LCwmbOnHnlyhWl1OTJk4uLiy9evNjSwXP9+nWl1NmzZxmWjskhat7gL7BOnTqZHsrMzPT09Fy3bp2Hh0dmZmZdzZOTk00rpKWlGY3GkpKSw4cPd+3ataKiwrQ8PT3dycmprKzs8OHDRqOxoKCgwUHrfm3MbZiSkuLh4VFaWmpa/uyzz1r4tQkMDHRxcRk1alR+fr4drhD0rHlhYWFiYqKTk9PevXtNNU9NTTU91NLBU1dzhqVjcog7LQ2em1dXV5uW+/v7L1myJDY2dtGiRf7+/nXr173yM2jQoMrKyqysrDNnzpSWlrq4uJheuRo8eHBtbW12dvbp06d9fHy8vLzMHdrchmfOnOnfv7+rq6tpteDgYAvnf+7cuYKCgq5du44fP76VLgl0NnfuXNOQ6NWrV3x8/Ntvvx0eHm56yM/Pz8bBw7B0TA5RcwtOnTqllDpx4kT9hc7OzqYvampqfnmluHPn6upqf3//Bn8T3nXXXc7OzgaDwcL+zW3YYLW6I5rTrVu3FStWHDt27PLly9Z+r2hH6p6bl5eXnzp1yvSKqImLi4uNg4dh6ZgcuuafffbZzp074+Lidu/enZKSUrf8u+++M32RkZHh5ubWv3//AQMG5OTk5OXlNdhDQEBAbm6u6f9w66v7XTK3YVBQUGZm5s2bN01/PHnyZOPT27dvn4eHR0VFhemPP//8c6dOnTw9PW37ptFhWD14GJYOSnPUV0Fv3Ljh5+f34osvmu4P9u3bt7i42HTf/P7778/Ozv7+++/vvvvu2NhYTdNqamqCg4PDwsJ+/PHHvLy8BQsW+Pr6lpeX19bW3nfffU8++WR+fn5OTs6UKVMee+wxTdNCQkJWr15dXFxsbsOKioqAgIDo6OiCgoLPP//c3d298Q3KsrKygICAefPmFRYWfvvttwMHDpw9e3ZbXTa06augJqb75qaXcCyMOnODp+6+OcPSMTlEzRv/HTZnzpz58+fffvvtJSUlmqYVFRX5+vrGxMSYar5s2bLbbrutR48esbGxlZWVpv1cvHhx0qRJ3bp16969+5gxY86ePWtanpOTM3bs2C5dunh7e0dGRhYVFWma9t5777m5uU2dOtXChllZWaGhoV26dAkKCoqNjW3y5aYffvhh3Lhx3bt39/PzW758eVlZWRteOehc85YOnrqaMywdk8HyPzewLCIiQslSWVmZmpoaGhrq7u6u97l0bMnJybocV96YREcfkx3m34Imx//f7eYWiVg8eej+09ZteyzsX7Z+8YJ120Y+tN7CtgVaUapKXfPNzIBOfk1ua8s523KtOtx11lGK/+vWbTj5h5cc7edry7XqcNdZPId+FRQAxHCIz2lpPm+DR6HXAb3PAgBajOfmACABNQcACag5AEhAzQFAAmoOABJQcwCQgJoDgATUHAAkoOYAIAE1BwAJqDkASEDNAUACag4AElBzAJCAmgOABNQcACRgXlDYBfOCor1JZl5Qy2yZn1OveQX1mkfRTnOZts/rrCN+vs3kaL9H4nGnBQAkoOYAIAE1BwAJqDkASEDNAUACag4AElBzAJCAmgOABNQcACSg5gAgATUHAAmoOQBIQM0BQAJqDgASUHMAkICaA4AE1BwAJKDmACAB84LCLpgXFO1NMvOCWpYcn2LdhhGLJ+s1r6Be8yjacq063HXWkS1zbDraz1evuUx1uc7i2VpzAHBEBoPZh2y44WELag4ArRHxxuu0bdapOQC0Useb3KStmk7NAaC1O65H03mHIgDYLeWt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"
+            },
+            {
+              "type": "input_text",
+              "text": "Above is a visual comparison of expected vs predicted outputs for each training example. Green circles indicate correct solutions, red circles show errors. Use this visual feedback along with the textual analysis to improve your approach."
+            }
+          ],
+          "solved_count": 0,
+          "total_training_examples": 3,
+          "pixel_accuracy": 0.25925925925925924
+        },
+        "test_result": {
+          "correct": true,
+          "pixel_accuracy": 1.0,
+          "total_pixels": 81,
+          "correct_pixels": 81,
+          "error": null,
+          "predicted_output": [
+            [
+              8,
+              8,
+              6,
+              6,
+              8,
+              8,
+              8,
+              8,
+              6
+            ],
+            [
+              6,
+              3,
+              6,
+              6,
+              3,
+              6,
+              6,
+              3,
+              6
+            ],
+            [
+              6,
+              8,
+              8,
+              8,
+              8,
+              6,
+              6,
+              8,
+              8
+            ],
+            [
+              6,
+              8,
+              8,
+              8,
+              8,
+              6,
+              6,
+              8,
+              8
+            ],
+            [
+              6,
+              3,
+              6,
+              6,
+              3,
+              6,
+              6,
+              3,
+              6
+            ],
+            [
+              8,
+              8,
+              6,
+              6,
+              8,
+              8,
+              8,
+              8,
+              6
+            ],
+            [
+              8,
+              8,
+              6,
+              6,
+              8,
+              8,
+              8,
+              8,
+              6
+            ],
+            [
+              6,
+              3,
+              6,
+              6,
+              3,
+              6,
+              6,
+              3,
+              6
+            ],
+            [
+              6,
+              8,
+              8,
+              8,
+              8,
+              6,
+              6,
+              8,
+              8
+            ]
+          ],
+          "actual_output": [
+            [
+              8,
+              8,
+              6,
+              6,
+              8,
+              8,
+              8,
+              8,
+              6
+            ],
+            [
+              6,
+              3,
+              6,
+              6,
+              3,
+              6,
+              6,
+              3,
+              6
+            ],
+            [
+              6,
+              8,
+              8,
+              8,
+              8,
+              6,
+              6,
+              8,
+              8
+            ],
+            [
+              6,
+              8,
+              8,
+              8,
+              8,
+              6,
+              6,
+              8,
+              8
+            ],
+            [
+              6,
+              3,
+              6,
+              6,
+              3,
+              6,
+              6,
+              3,
+              6
+            ],
+            [
+              8,
+              8,
+              6,
+              6,
+              8,
+              8,
+              8,
+              8,
+              6
+            ],
+            [
+              8,
+              8,
+              6,
+              6,
+              8,
+              8,
+              8,
+              8,
+              6
+            ],
+            [
+              6,
+              3,
+              6,
+              6,
+              3,
+              6,
+              6,
+              3,
+              6
+            ],
+            [
+              6,
+              8,
+              8,
+              8,
+              8,
+              6,
+              6,
+              8,
+              8
+            ]
+          ]
+        },
+        "status": "success"
+      }
+    ],
+    "total_turns": 1,
+    "conversation_history": [
+      {
+        "role": "system",
+        "content": "You are an expert at solving abstract reasoning puzzles. Write clean, efficient Python code."
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "You are solving an ARC (Abstraction and Reasoning Corpus) task. \nI will show you training examples with input and output grids, plus a test input grid. Your task is to:\n\n1. **Analyze the training examples** to discover patterns that map input grids to output grids\n2. **Write a Python program** that implements your best understanding of the transformation  \n3. **DO NOT predict or generate the test output** - your job is only to write the transformation program\n4. **Attempt a solution** - even if the pattern isn't completely clear, provide your best hypothesis\n5. **Do not repeat the same transformation** - if you have already tried a transformation, do not repeat it.\n\n**IMPORTANT: Your transformation must always produce a 9\u00d79 output grid.**\n\nThe test input is shown for context so you understand what type of grid your program will eventually process. Focus on learning patterns from training examples and writing code that captures your understanding.\n\nTraining Examples:\n\nExample 1:\nInput:\n7 6 7\n2 7 6\n1 2 7\nOutput:\n7 2 1 1 2 7 7 2 1\n6 7 2 2 7 6 6 7 2\n7 6 7 7 6 7 7 6 7\n7 6 7 7 6 7 7 6 7\n6 7 2 2 7 6 6 7 2\n7 2 1 1 2 7 7 2 1\n7 2 1 1 2 7 7 2 1\n6 7 2 2 7 6 6 7 2\n7 6 7 7 6 7 7 6 7\n\nExample 2:\nInput:\n6 1 7\n1 6 7\n4 7 4\nOutput:\n4 7 4 4 7 4 4 7 4\n7 6 1 1 6 7 7 6 1\n7 1 6 6 1 7 7 1 6\n7 1 6 6 1 7 7 1 6\n7 6 1 1 6 7 7 6 1\n4 7 4 4 7 4 4 7 4\n4 7 4 4 7 4 4 7 4\n7 6 1 1 6 7 7 6 1\n7 1 6 6 1 7 7 1 6\n\nExample 3:\nInput:\n1 9 4\n9 1 6\n6 9 4\nOutput:\n4 9 6 6 9 4 4 9 6\n6 1 9 9 1 6 6 1 9\n4 9 1 1 9 4 4 9 1\n4 9 1 1 9 4 4 9 1\n6 1 9 9 1 6 6 1 9\n4 9 6 6 9 4 4 9 6\n4 9 6 6 9 4 4 9 6\n6 1 9 9 1 6 6 1 9\n4 9 1 1 9 4 4 9 1\n\nTest Input:\n8 8 6\n6 3 6\n6 8 8\n\nAnalyze the patterns in the training examples and write a Python function that performs this transformation.\n\n**Approach Guidelines:**\n- Look for patterns in shapes, colors, positions, sizes, rotations, reflections, etc.\n- Even if you can't solve all training examples perfectly, implement what patterns you do observe\n- A partial solution that captures some aspects is better than returning the input unchanged\n- If the pattern is unclear, make your best educated guess based on what you can see\n\nRequirements:\n- The function takes a 2D list (grid) where grid[row][col] gives the value at that position\n- Values are integers from 0-9\n- Return a new grid (2D list) with the transformation applied\n- You can use numpy if needed - just add 'import numpy as np' at the start of your function\n- Aim to handle the training examples as well as possible, even if not perfectly\n- Your function should attempt some meaningful transformation based on the patterns you observe\n\nYou MUST end your response with the following exact format:\n\nFinal answer:\n```python\ndef transform(grid):\n    # Your transformation logic here (implement your best understanding)\n    return transformed_grid\n```\n"
+          },
+          {
+            "type": "input_image",
+            "image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAVQAAANmCAIAAAAq3eRtAAAsnklEQVR4nO3cf1xUdb748XNkYJCfQrb+wGT4UUpSZK4/M8sg261UuGKWutdRCd3VjFXCug+re9syBXe7+XMxEixMU1d4VMvD3bCHaXvTSL1aAomGCUIpKKYizgDzfeydx53LFwWH+cEwvF/Pv+Aw55zPnDkvz2EGP6rJZFIAyNPD1QMA4BrEDwhF/IBQxA8IRfyAUMQPCEX8gFDEDwhF/IBQxA8IRfyAUMQPCEX8gFB2xb9w4UK1bTNnzrzpY7y8vPr27Ttp0qTDhw/fuM1PP/1UVdXg4OCGhoZWP9q5c6eqqllZWeZv9Xq9qqoZGRmtHlZZWamq6rJly+xZy6yhoSEzM3P8+PH9+/fXarX9+/efOnXq/v37bTsmcXFxiqLU1tb2798/KCiosrKy1br/8i//4uXl9fXXX1t5QJ5++mlVVTUazfnz528cSXR0tKqqer3e/G1SUlLLwXh4eAQEBIwcOfLdd9+1rBIfH6+q6o07svKpmdXU1KSlpQ0ePLhnz569evUaM2bMhg0bmpqa2jlokHLlNxqNP/3008cffzx+/Pjvv/++1U83bdqkKMrFixc//PBDa7b2yiuvlJaWdnQM1qx1+vTp0aNHz58/f+/evdXV1QaDobq6eufOnePGjfvTn/6k2Oq2227btGlTXV3d7NmzW/5/6nXr1uXl5S1fvvyXv/xlhw5IU1PTrl27Wi385ptvjh8/3s4wmpubL1++/NVXXyUlJaWnpysOcv78+eHDh2dkZHz33XcNDQ2XLl368ssvf/e7302dOpX/PN6t4l+7dq3pf+3YsUNRlOzsbMuS3NxcyyPLy8styxsaGkpKSqZPn/7zzz9v2LCh5Qbr6ury8/OnTp0aHBz85z//2ZoxGAwGvV7f0QvLLdcyGo2JiYn//d//PWbMmI8++qimpsZoNJ45c2b9+vXBwcFpaWnffvttO9tv+XwtCgsLzT/91a9+tWDBgsLCwrVr15qXHD16dMmSJRMmTFiyZEmHDoiHh8egQYO2b9/eavm2bduGDBly4+Orq6vNg2lubr5y5coHH3zg7e39xhtvXL9+vd0DZu1TW7169enTpxMTE48ePXr16tW6urrPPvts6NCheXl5H3/8sZW7QLe98mu12sGDB69cuVJRlFZX/g8++KChoWHevHmzZ88+cODAsWPHbrm155577uDBg3/84x87NIZbrrV58+ZDhw7FxcXt27dv4sSJt912m0ajueOOO37729/u2rWrqalp69atih0yMjIGDx68dOnS77777sqVK0899VRgYOB7772nqmpHD8hTTz31+eefnzt3ruXCDz/8cNq0ae0MQFVVX1/fZ5555umnn/75559PnDihOEJpaalGo8nNzb333nt9fHwCAwPHjx9vvjHZvXu3+TE5OTmqqlr+4YOg+K9fv378+PHFixcrinLXXXe1/FF2dnZUVNQjjzzy29/+1sPDw5qL//LlyyMjI1955ZWSkhLrx3DLtT744ANVVTdu3Ojh4dHqRw899FBxcfHrr7+u2KFnz55btmxpbGycOXPm/Pnzy8rK3nvvvT59+rR6mDUH5Kmnnmp15//VV1+dOnXqqaeesmYk5mv+jU/TNjExMY2NjXl5eS0X6nQ6k8m0fv16h+wCbhZ/WFiY5c0hb2/v6OjoHTt29O7d+/nnn7c85ttvv/36669feOEFVVUjIiKmTp26ZcuWK1eutL9lHx+f7Oxso9HYoZv/W6515MiRqKiosLCwm64eFRXV6hLdzvO12Lt3b8vH3H///f/+7//+9ddfb9myZfHixY899lirjVh5QKKjo++++27zr11m27Zt++UvfxkREdHOCJuamqqqqt5+++3t27f/4he/GDRoUDsPtv6ppaSkjB079plnngkPD09KStq4ceONbz3o9XqTybRw4UIr94hu9VFfSEjInDlzjh492rdvX8vCTZs2hYSEzJgxw/ztSy+9dPnyZWvurseOHbto0aKvvvpq1apV1o+hnbWMRmNdXV2r63Cr97p1Op1it8mTJ5v/ERk7duyNP7X+gLS88zeZTNu3b2/rnr9fv37m8Ws0mpCQkJSUlKampuXLlzvqyu/n57d3797c3NyYmJj8/Px58+ZFR0eHhYVt3rzZIduH+8VvfpfIYDBs27bN39//zjvvXLFiRf/+/S0PMBqNubm5Z8+e1Wq15rMzJibGZDJZ+bbf8uXL77zzzldffbW4uNj6UbW1lqenp7+//00/P7PnXbGHH3645WMaGhqmT58eGBjo7+8/b968Vr+0d+iATJs2zXLnv2/fvqqqqlve8/fo0SM4ODg2NjY/P3/u3LkOfGoeHh4zZszIy8urqakpKyvL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"
+          },
+          {
+            "type": "input_text",
+            "text": "Above is a visual representation of all the training examples and the test input. Each grid cell is colored according to its value (0-9), with clear labels and arrows showing input\u2192output transformations. Use both the textual and visual information to understand the pattern."
+          }
+        ]
+      }
+    ],
+    "all_responses": [
+      {
+        "id": "resp_687002f5590081a39de80b3c3e0f36a007127399379ade0f",
+        "model": "gpt-4.1-2025-04-14",
+        "usage": {
+          "input_tokens": 1530,
+          "output_tokens": 2038,
+          "total_tokens": 3568
+        },
+        "output": [
+          {
+            "type": "message",
+            "content": [
+              "Let's analyze the examples step by step.\n\n#### Step 1: Training Data Analysis\n\nEach input is a 3x3 grid.  \nEach output is a 9x9 grid. \n\nLet's look for a mapping between the positions and output values.\n\n##### Example 1\nInput:\n```\n7 6 7\n2 7 6\n1 2 7\n```\nOutput (top left 3x3):\n```\n7 2 1\n6 7 2\n7 6 7\n```\nNotice: The top-left 3x3 output is the **input grid flipped horizontally**.\n\nBut let's check if that holds for others...\n\n##### Example 2\nInput:\n```\n6 1 7\n1 6 7\n4 7 4\n```\nOutput (top-left 3x3):\n```\n4 7 4\n7 6 1\n7 1 6\n```\nThis is the **input rotated 180 degrees**.\n\n##### Example 3\nInput:\n```\n1 9 4\n9 1 6\n6 9 4\n```\nOutput (top-left 3x3):\n```\n4 9 6\n6 1 9\n4 9 1\n```\nThis is the **input rotated 90 degrees** and flipped vertically? No, that's not a basic transform.\n\nAlternatively, let's check for repeating blocks.\nLooking at full output, it appears each row of the output contains three repeated strips -- for example, in Example 1, the first row is \"7 2 1 1 2 7 7 2 1\": \"7 2 1\", then shifted, then repeated.\n\nBut more accurately, let's look for what 3x3 block is at output grid position (i,j):\n\n##### Let's index an output cell (i, j).\nFor input cell (xr, xc), let's consider various symmetries:\n- Input[ xr, xc ]\n- Input[ xc, xr ]\n- Input[ 2-xr, xc ]\n- Input[ xr, 2-xc ]\n- etc. (rotations and flips)\n\nAre these subgrids tilings of the input, but permuted/flipped/rotated?\n\nLook at how the first 3 rows are, for example, for Example 1:\n\n```\n7 2 1  1 2 7  7 2 1\n6 7 2  2 7 6  6 7 2\n7 6 7  7 6 7  7 6 7\n```\n\n\"7 2 1\"   <--- row 0\n\"1 2 7\"   <--- row 1 (circular shift left)\n\"7 2 1\"   <--- row 2 (repeat)\n\nAha! Each 3x3 is a transformation/rotation/flip of the input.\n\n#### Row/column pattern:\n\nLet's look at block indices.\n\n- grid is 3x3; output is 9x9\n- Output is tiled with 3x3 blocks, but tiles are variously flipped/rotated.\n\nLet's look at block positions:\n- row_block = i // 3\n- col_block = j // 3\n- in-block offset: i % 3, j % 3\n\nLet's see the transformation for each block.\n\nFrom the patterns, it looks like:\n\n- Top-left 3x3 block is the input L-R reversed\n- Next block is something else\n- There is a periodic repeating pattern\n\nBut actually, recurring blocks in output:\n- (block 0,0): input mirrored horizontally\n- (block 0,1): input mirrored vertically\n- (block 0,2): input mirrored horizontally again\n\nHmm, that's not quite exact.\n\nInstead: Let's write out indices for output cell (i, j):\nLet bx = i // 3, by = j // 3\n\nObserving visual, it seems that each 3x3 block across 9x9 is one of the 8 symmetries of the 3x3 grid.\n\nCheck if block index (bx, by) determines the symmetry applied.\n\nFrom example 1:\n\nThe 9 blocks are:\n\n- block (0,0): \"7 2 1\",   \"6 7 2\",   \"7 6 7\"   (input horizontally flipped)\n- block (0,1): \"1 2 7\",   \"2 7 6\",   \"7 6 7\"   (input as is?)\n- block (0,2): \"7 2 1\",   \"6 7 2\",   \"7 6 7\"   (input horizontally flipped)\n- ...\n\nSo, the tiling pattern is:\n\n- input, input_Hflip, input, input_Hflip, ... ?\n\nBut the first block in example 2 starts with \"4 7 4\": which is the last row of input.\n\nSo, perhaps for each block, the symmetry is determined by its position.\n\nAlternatively, let's look at the respective block positions and which symmetry is applied.\n\nAfter some analysis, it's clear that the 9x9 grid is formed by **tiling the input 3x3 grid** 9 times, but each block is a different transformation (e.g., rotation, flip) of the input grid. The arrangement of the transformations for the 9 blocks appears to be:\n\n|        |        |        |\n|--------|--------|--------|\n| A      | B      | C      |\n| D      | E      | F      |\n| G      | H      | I      |\n\nWhere each letter stands for a symmetry transformation of the 3x3 grid (rotation/flip).\n\nIt looks like:\n- (0,0)/(1,1)/(2,2): input rotated 180\u00b0\n- (0,1)/(1,2)/(2,0): input rotated 90\u00b0 ccw\n- (0,2)/(1,0)/(2,1): input rotated 90\u00b0 cw\n\nOr possibly:\n- Some pattern involving cyclic rotations around blocks\n\nBut upon seeing the visual, all rows in blocks repeat in a 3-block cycle, and columns as well.\n\nBut here's the simplest, *systematic* program hypothesis:  \n- **Tile the input grid horizontally and vertically three times each, but for every odd-numbered 'tile' (in row or column), flip that tile horizontally or vertically (alternately, or both).**\n- This creates a patchwork of the input grid and its symmetries, matching the visual output.\n\n### Let's Build a Program Accordingly\n\nWe'll repeat input 3x3 to 9x9, but for each of the 9 (3x3) blocks of the output, we'll decide which transformation to apply:\n- block at (block_row, block_col):\n    - if (block_row + block_col) % 2 == 0: use input as is\n    - if (block_row + block_col) % 2 == 1: flip input horizontally\n\nThis can be refined as needed.\n\nAlternatively, seeing the pattern, it seems like the input grid is used as-is in one block, and then symmetrically mirrored or rotated for the other blocks to form a \"pattern\" in output. Let's use the following pattern for the 9 blocks:\n\n- (even row, even col): input as is\n- (even row, odd col): input flipped horizontally\n- (odd row, even col): input flipped vertically\n- (odd row, odd col): input rotated 180\u00b0\n\nLet me implement this logic for the most systematic coverage.\n\n### Implementation Plan\n\n- For each output cell (i, j):\n    - Out block position: block_row = i // 3; block_col = j // 3\n    - In-block offset: inner_row = i % 3; inner_col = j % 3\n    - For each block:\n        - If block_row % 2 == 0 and block_col % 2 == 0: use input as is\n        - If block_row % 2 == 0 and block_col % 2 == 1: flip input horizontally\n        - If block_row % 2 == 1 and block_col % 2 == 0: flip input vertically\n        - If block_row % 2 == 1 and block_col % 2 == 1: rotate input 180\u00b0\n\nThis matches a standard 2x2 flip pattern, but tessellated to 3x3 blocks.\n\nFinal answer:\n```python\ndef transform(grid):\n    import numpy as np\n    grid = np.array(grid)\n    out = np.zeros((9,9), dtype=int)\n    for i in range(9):\n        for j in range(9):\n            block_row = i // 3\n            block_col = j // 3\n            inner_row = i % 3\n            inner_col = j % 3\n            # Decide transformation based on block position\n            if block_row % 2 == 0 and block_col % 2 == 0:\n                val = grid[inner_row, inner_col]\n            elif block_row % 2 == 0 and block_col % 2 == 1:\n                val = grid[inner_row, 2-inner_col]  # Flip horizontally\n            elif block_row % 2 == 1 and block_col % 2 == 0:\n                val = grid[2-inner_row, inner_col]  # Flip vertically\n            else: # both odd: rotate 180\u00b0\n                val = grid[2-inner_row, 2-inner_col]\n            out[i, j] = val\n    return out.tolist()\n```"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

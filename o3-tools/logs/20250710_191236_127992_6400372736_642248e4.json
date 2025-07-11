@@ -1,0 +1,449 @@
+{
+  "task_id": "642248e4",
+  "model": "gpt-4.1",
+  "reasoning_effort": "N/A",
+  "api_type": "responses_api_multiturn",
+  "program": "def transform(grid):\n    import numpy as np\n\n    H, W = len(grid), len(grid[0])\n    OUT_H, OUT_W = 12, 13\n    grid = np.array(grid)\n    \n    # Find borders\n    borders = {}\n    # Top border\n    if (grid[0] != 0).all() and (grid[0] == grid[0,0]).all():\n        borders['top'] = grid[0,0]\n    # Bottom border\n    if (grid[-1] != 0).all() and (grid[-1] == grid[-1,0]).all():\n        borders['bottom'] = grid[-1,0]\n    # Left border\n    if (grid[:,0] != 0).all() and (grid[:,0] == grid[0,0]).all():\n        borders['left'] = grid[0,0]\n    # Right border\n    if (grid[:,-1] != 0).all() and (grid[:,-1] == grid[0,-1]).all():\n        borders['right'] = grid[0,-1]\n\n    # Prepare a blank grid\n    out = np.zeros((OUT_H, OUT_W), dtype=int)\n\n    # Place (crop or pad) input grid in output grid - always top-left aligned\n    in_h, in_w = grid.shape\n    copy_h = min(OUT_H, in_h)\n    copy_w = min(OUT_W, in_w)\n    out[:copy_h,:copy_w] = grid[:copy_h,:copy_w]\n    \n    # Expand borders if input was smaller than output\n    if 'top' in borders:\n        out[0,:] = borders['top']\n    if 'bottom' in borders:\n        out[-1,:] = borders['bottom']\n    if 'left' in borders:\n        out[:,0] = borders['left']\n    if 'right' in borders:\n        out[:,-1] = borders['right']\n\n    # For each border, flood its color into the grid up to the first nonzero cell\n    # Top border: flow down each column\n    if 'top' in borders:\n        color = borders['top']\n        for c in range(OUT_W):\n            for r in range(1, OUT_H):  # start below border\n                if out[r,c] == 0:\n                    out[r,c] = color\n                else:\n                    break\n    # Bottom border: flow up each column\n    if 'bottom' in borders:\n        color = borders['bottom']\n        for c in range(OUT_W):\n            for r in range(OUT_H-2, -1, -1):  # row before border\n                if out[r,c] == 0:\n                    out[r,c] = color\n                else:\n                    break\n    # Left border: flow right each row\n    if 'left' in borders:\n        color = borders['left']\n        for r in range(OUT_H):\n            for c in range(1, OUT_W):\n                if out[r,c] == 0:\n                    out[r,c] = color\n                else:\n                    break\n    # Right border: flow left each row\n    if 'right' in borders:\n        color = borders['right']\n        for r in range(OUT_H):\n            for c in range(OUT_W-2, -1, -1):\n                if out[r,c] == 0:\n                    out[r,c] = color\n                else:\n                    break\n\n    return out.tolist()",
+  "execution_error": "Max turns reached",
+  "timed_out": false,
+  "tokens_used": 5454,
+  "request_cost": 0.02028,
+  "turns_used": 1,
+  "raw_response": {
+    "id": "resp_6870026dfa8c819fa86972e2dadc87720feab340590f0ae9",
+    "model": "gpt-4.1-2025-04-14",
+    "usage": {
+      "input_tokens": 3892,
+      "output_tokens": 1562,
+      "total_tokens": 5454
+    },
+    "output": [
+      {
+        "type": "message",
+        "content": [
+          "Let's carefully analyze the transformation steps shown in the input/output pairs:\n\n## Observations\n\n**Always a 12\u00d713 output grid is required (so input might get cropped or padded).**\n\n### Border\n- Output grids all have a solid border (either top, bottom, left, or right) matching the border in the input (same color/number, same position, but border length always fills that side).\n- The input grid may be smaller than 12x13, but border will be expanded (padded) to fit the output size.\n\n### Cells with '1'\n- In all examples, cells with '1' in the input are left unchanged in the output.\n\n### Additional colored cells\n- Above or below (or to the left/right of) every '1':\n    - If there's a border cell of the same column (for top/bottom) or row (for left/right) on the outer row/column, the cell between them is colored by the border.\n    - It appears as if a 'border color' floods down from the border to the first '1' in its column (if vertical border), or from left/right border to first '1' in the row (if horizontal border), filling empty cells with the border color up to the first '1'.\n    - Any contiguous stretch of '0's between the border and the first '1' cell gets filled with border color.\n\n### Filling logic\nFrom the outputs, for each border (row/col), border color propagates up to the first '1' encountered, inclusive or exclusive depending on the layout.\n\nLet me be more precise with the training examples:\n\n**Example 1:** (top and bottom border)\n- Top border (row 0) is color '8'. In output: top border row and immediately below, cells in those columns, '8's get filled down up to the first '1' in that column. Also, the bottom border ('3').\n- This applies to both borders: color flows inward (down from top border, up from bottom border) down (or up) columns until the first '1' cell.\n\n**Example 2:** (top and bottom border)\n- Top is '2', bottom is '4'. Output: Color flows from both borders inwards toward the first '1' in columns.\n\n**Example 3:** (left and right border)\n- Left is '3', right is '4'. Output: Color flows horizontally (from left and right borders into the grid), filling horizontally up to the first '1' in each row from each border.\n\nSo: **In the direction perpendicular to each border, for each row/column, color flows in from the border, filling zeroes, up to the first '1' hit, and stops (does NOT overwrite the '1' cell).**\n\n*This always only happens along the row or column for each border.*\n\n## Implementation plan\n\n### Steps\n\n1. Pad or crop input as necessary so output is 12\u00d713.\n2. Copy original grid into result.\n3. For each border (top, bottom, left, right) present, for each line (col or row), fill inwards with the border color up to the first nonzero cell (don't replace nonzero!).\n    - If the border is at the top, iterate down each column from the top, filling zeroes with border color until '1' is found. (stop at '1')\n    - If the border is at the bottom, iterate up each column from the bottom, filling zeroes with border color until '1' is found.\n    - If the border is at left/right, similar logic per row.\n\n### Detecting border locations and color\n\n- A border is any row or column that has all equal and nonzero value.\n\n## Edge Handling\n\n- It's possible for the input grid to be smaller or larger than the output; we will center it or pad as needed. We'll fill missing cells with zero except for borders.\n\n---\n\nFinal answer:\n```python\ndef transform(grid):\n    import numpy as np\n\n    H, W = len(grid), len(grid[0])\n    OUT_H, OUT_W = 12, 13\n    grid = np.array(grid)\n    \n    # Find borders\n    borders = {}\n    # Top border\n    if (grid[0] != 0).all() and (grid[0] == grid[0,0]).all():\n        borders['top'] = grid[0,0]\n    # Bottom border\n    if (grid[-1] != 0).all() and (grid[-1] == grid[-1,0]).all():\n        borders['bottom'] = grid[-1,0]\n    # Left border\n    if (grid[:,0] != 0).all() and (grid[:,0] == grid[0,0]).all():\n        borders['left'] = grid[0,0]\n    # Right border\n    if (grid[:,-1] != 0).all() and (grid[:,-1] == grid[0,-1]).all():\n        borders['right'] = grid[0,-1]\n\n    # Prepare a blank grid\n    out = np.zeros((OUT_H, OUT_W), dtype=int)\n\n    # Place (crop or pad) input grid in output grid - always top-left aligned\n    in_h, in_w = grid.shape\n    copy_h = min(OUT_H, in_h)\n    copy_w = min(OUT_W, in_w)\n    out[:copy_h,:copy_w] = grid[:copy_h,:copy_w]\n    \n    # Expand borders if input was smaller than output\n    if 'top' in borders:\n        out[0,:] = borders['top']\n    if 'bottom' in borders:\n        out[-1,:] = borders['bottom']\n    if 'left' in borders:\n        out[:,0] = borders['left']\n    if 'right' in borders:\n        out[:,-1] = borders['right']\n\n    # For each border, flood its color into the grid up to the first nonzero cell\n    # Top border: flow down each column\n    if 'top' in borders:\n        color = borders['top']\n        for c in range(OUT_W):\n            for r in range(1, OUT_H):  # start below border\n                if out[r,c] == 0:\n                    out[r,c] = color\n                else:\n                    break\n    # Bottom border: flow up each column\n    if 'bottom' in borders:\n        color = borders['bottom']\n        for c in range(OUT_W):\n            for r in range(OUT_H-2, -1, -1):  # row before border\n                if out[r,c] == 0:\n                    out[r,c] = color\n                else:\n                    break\n    # Left border: flow right each row\n    if 'left' in borders:\n        color = borders['left']\n        for r in range(OUT_H):\n            for c in range(1, OUT_W):\n                if out[r,c] == 0:\n                    out[r,c] = color\n                else:\n                    break\n    # Right border: flow left each row\n    if 'right' in borders:\n        color = borders['right']\n        for r in range(OUT_H):\n            for c in range(OUT_W-2, -1, -1):\n                if out[r,c] == 0:\n                    out[r,c] = color\n                else:\n                    break\n\n    return out.tolist()\n```\n"
+        ]
+      }
+    ]
+  },
+  "score": {
+    "correct": false,
+    "pixel_accuracy": 0.0,
+    "total_pixels": 288,
+    "correct_pixels": 0,
+    "error": "Max turns reached"
+  },
+  "actual_output": [
+    [
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      8,
+      8
+    ],
+    [
+      2,
+      2,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      8,
+      0,
+      0,
+      0,
+      0,
+      0,
+      8
+    ],
+    [
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      8
+    ],
+    [
+      2,
+      0,
+      0,
+      2,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      8
+    ],
+    [
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      8
+    ],
+    [
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      8,
+      0,
+      0,
+      0,
+      0,
+      8
+    ],
+    [
+      2,
+      0,
+      0,
+      0,
+      0,
+      2,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      8
+    ],
+    [
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      8
+    ],
+    [
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      2,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      8
+    ],
+    [
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      8
+    ],
+    [
+      2,
+      0,
+      0,
+      2,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      8
+    ],
+    [
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      8,
+      0,
+      8
+    ],
+    [
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      8,
+      0,
+      0,
+      0,
+      0,
+      0,
+      8
+    ],
+    [
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      8
+    ],
+    [
+      2,
+      0,
+      2,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      8,
+      8
+    ],
+    [
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      8
+    ]
+  ],
+  "api_success": true,
+  "multiturn_data": {
+    "turn_details": [
+      {
+        "turn_number": 1,
+        "timestamp": "2025-07-10T19:11:57.862929",
+        "input_tokens": 3892,
+        "output_tokens": 1562,
+        "turn_cost": 0.02028,
+        "program_extracted": true,
+        "program": "def transform(grid):\n    import numpy as np\n\n    H, W = len(grid), len(grid[0])\n    OUT_H, OUT_W = 12, 13\n    grid = np.array(grid)\n    \n    # Find borders\n    borders = {}\n    # Top border\n    if (grid[0] != 0).all() and (grid[0] == grid[0,0]).all():\n        borders['top'] = grid[0,0]\n    # Bottom border\n    if (grid[-1] != 0).all() and (grid[-1] == grid[-1,0]).all():\n        borders['bottom'] = grid[-1,0]\n    # Left border\n    if (grid[:,0] != 0).all() and (grid[:,0] == grid[0,0]).all():\n        borders['left'] = grid[0,0]\n    # Right border\n    if (grid[:,-1] != 0).all() and (grid[:,-1] == grid[0,-1]).all():\n        borders['right'] = grid[0,-1]\n\n    # Prepare a blank grid\n    out = np.zeros((OUT_H, OUT_W), dtype=int)\n\n    # Place (crop or pad) input grid in output grid - always top-left aligned\n    in_h, in_w = grid.shape\n    copy_h = min(OUT_H, in_h)\n    copy_w = min(OUT_W, in_w)\n    out[:copy_h,:copy_w] = grid[:copy_h,:copy_w]\n    \n    # Expand borders if input was smaller than output\n    if 'top' in borders:\n        out[0,:] = borders['top']\n    if 'bottom' in borders:\n        out[-1,:] = borders['bottom']\n    if 'left' in borders:\n        out[:,0] = borders['left']\n    if 'right' in borders:\n        out[:,-1] = borders['right']\n\n    # For each border, flood its color into the grid up to the first nonzero cell\n    # Top border: flow down each column\n    if 'top' in borders:\n        color = borders['top']\n        for c in range(OUT_W):\n            for r in range(1, OUT_H):  # start below border\n                if out[r,c] == 0:\n                    out[r,c] = color\n                else:\n                    break\n    # Bottom border: flow up each column\n    if 'bottom' in borders:\n        color = borders['bottom']\n        for c in range(OUT_W):\n            for r in range(OUT_H-2, -1, -1):  # row before border\n                if out[r,c] == 0:\n                    out[r,c] = color\n                else:\n                    break\n    # Left border: flow right each row\n    if 'left' in borders:\n        color = borders['left']\n        for r in range(OUT_H):\n            for c in range(1, OUT_W):\n                if out[r,c] == 0:\n                    out[r,c] = color\n                else:\n                    break\n    # Right border: flow left each row\n    if 'right' in borders:\n        color = borders['right']\n        for r in range(OUT_H):\n            for c in range(OUT_W-2, -1, -1):\n                if out[r,c] == 0:\n                    out[r,c] = color\n                else:\n                    break\n\n    return out.tolist()",
+        "training_feedback": {
+          "feedback_messages": [
+            {
+              "type": "input_text",
+              "text": "Training results: 0/3 examples solved, 31.0% pixel accuracy - Good partial progress! Your approach is capturing some patterns. Next, try to identify a transformation that solves at least one of the training examples.\n\nTraining Example 1 \u2717:\nExpected: [[8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8], [0, 0, 8, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0], [0, 0, 1, 0, 8, 0, 0, 0, 1, 0, 0, 0, 0], [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0], [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [0, 0, 3, 0, 0, 0, 0, 0, 1, 0, 0, 0, 3], [0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0], [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3]]\nYour output: [[8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8], [8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8], [8, 8, 1, 8, 8, 8, 8, 8, 1, 8, 8, 8, 8], [8, 8, 0, 8, 1, 8, 8, 8, 0, 8, 8, 8, 8], [8, 8, 0, 8, 3, 8, 8, 8, 0, 8, 8, 8, 8], [8, 8, 0, 8, 3, 8, 8, 8, 0, 1, 8, 8, 8], [8, 8, 0, 8, 3, 1, 8, 8, 0, 3, 8, 8, 8], [8, 8, 0, 8, 3, 3, 8, 8, 0, 3, 8, 8, 8], [8, 8, 1, 8, 3, 3, 8, 8, 0, 3, 8, 8, 1], [8, 8, 3, 8, 3, 3, 8, 8, 1, 3, 8, 8, 3], [8, 8, 3, 8, 3, 3, 8, 8, 3, 3, 8, 8, 3], [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3]]\nPixel accuracy: 34.0%\n\nTraining Example 2 \u2717:\nExpected: [[2, 2, 2, 2, 2, 2, 2, 2, 2, 2], [0, 2, 0, 0, 0, 0, 0, 0, 2, 0], [0, 1, 0, 2, 0, 0, 0, 0, 1, 0], [0, 0, 0, 1, 0, 0, 0, 0, 0, 0], [0, 0, 2, 0, 0, 0, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0, 2, 0, 0, 0], [0, 0, 0, 0, 0, 0, 1, 0, 0, 0], [0, 0, 0, 1, 0, 0, 0, 0, 0, 0], [0, 0, 0, 4, 0, 0, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0, 0, 0, 0, 0], [0, 4, 0, 0, 0, 0, 1, 0, 0, 0], [0, 0, 0, 0, 0, 0, 4, 0, 1, 0], [0, 0, 0, 0, 0, 0, 0, 0, 4, 0], [4, 4, 4, 4, 4, 4, 4, 4, 4, 4]]\nYour output: [[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2], [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2], [2, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2], [2, 0, 2, 1, 2, 2, 2, 2, 4, 2, 2, 2, 2], [2, 0, 2, 0, 2, 2, 2, 2, 4, 2, 2, 2, 2], [2, 0, 1, 0, 2, 2, 2, 2, 4, 2, 2, 2, 2], [2, 0, 4, 0, 2, 2, 1, 2, 4, 2, 2, 2, 2], [2, 0, 4, 1, 2, 2, 0, 2, 4, 2, 2, 2, 2], [2, 0, 4, 4, 2, 2, 0, 2, 4, 2, 2, 2, 2], [2, 1, 4, 4, 2, 2, 0, 2, 4, 2, 2, 2, 2], [2, 4, 4, 4, 2, 2, 1, 2, 4, 2, 2, 2, 2], [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]]\nPixel accuracy: 24.4%\n\nTraining Example 3 \u2717:\nExpected: [[3, 0, 0, 0, 0, 0, 0, 0, 0, 4], [3, 0, 0, 0, 0, 0, 1, 4, 0, 4], [3, 3, 1, 0, 0, 0, 0, 0, 0, 4], [3, 0, 0, 0, 0, 0, 0, 0, 0, 4], [3, 0, 3, 1, 0, 0, 0, 0, 0, 4], [3, 0, 0, 0, 0, 1, 4, 0, 0, 4], [3, 0, 0, 0, 0, 0, 0, 0, 0, 4], [3, 0, 0, 0, 0, 0, 0, 0, 0, 4], [3, 0, 0, 0, 0, 0, 1, 4, 0, 4], [3, 0, 0, 0, 0, 0, 0, 0, 0, 4], [3, 3, 1, 0, 0, 0, 0, 0, 0, 4], [3, 0, 0, 0, 0, 0, 0, 0, 0, 4]]\nYour output: [[3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4], [3, 3, 3, 3, 3, 3, 1, 0, 0, 4, 4, 4, 4], [3, 3, 1, 0, 0, 0, 0, 0, 0, 4, 4, 4, 4], [3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4], [3, 3, 3, 1, 0, 0, 0, 0, 0, 4, 4, 4, 4], [3, 3, 3, 3, 3, 1, 0, 0, 0, 4, 4, 4, 4], [3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4], [3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4], [3, 3, 3, 3, 3, 3, 1, 0, 0, 4, 4, 4, 4], [3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4], [3, 3, 1, 0, 0, 0, 0, 0, 0, 4, 4, 4, 4], [3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4]]\nPixel accuracy: 34.6%\n\n\u26a0\ufe0f  GRID SIZE ERROR: One or more of your output grids are incorrect in size. They should ALL be 12\u00d713 for this task.\n\n"
+            },
+            {
+              "type": "input_image",
+              "image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAo8AAAPFCAIAAACLRpWSAABDQ0lEQVR4nO3deZhU9Z3o4VNIN6Jgt6JxYYkiAuYhIuJCjDoYeJ6rLFoloMYFYXAPLiCoPJfojQMRhasTl5DciCgSJ44mVahBgs4AxlESoowKbghoQNAg2iwCzXbuE+tOXwZohCro+lX1+z7+0VTVt86pwzl8rFOnuxNxHEcAQMAaFHoFAIBvoNYAEDq1BoDQqTUAhE6tASB0ag0AoVNrAAidWgNA6NQaAEKn1gAQOrUGgNCpNQCETq0BoKRrPXjw4ETtLrvssp0+pry8/IgjjjjvvPPeeOONHZ/zxRdfTCQShxxyyIYNG7a765lnnkkkEo888kj2jwMGDEgkEmPHjt3uYUuXLk0kEiNHjsxnKmvDhg2//OUvzz777KOOOqpRo0ZHHXVUv379/vjHP+5im4wcObK2DTJv3rxdb7Tu3bt/44atecyVV1657e3Z1evTp89rr7227fokk8ntHnbMMcfceOONX3755R5t/KzPP/981KhRnTp1qqioOPDAA0899dRHHnlk21/jll3cduOvv/76YYcd1rRp0xkzZuxi0wEQ0HvrTZs2ffbZZ88999zZZ5+9aNGi7e599NFHoyj68ssvn3rqqd15tjvuuOO9997b03XYnamPPvroe9/73rXXXjtz5szly5dv3Lhx+fLlzzzzzFlnnXXfffdFgcmu3u9+97szzjjj17/+9S4e9tFHHz344IPnnHPO1q1b92jjv/baax07dvzxj3/8n//5n6tXr163bt2cOXOuuuqqQYMG7WLF/v3f//3ss8/esmXLSy+9dPbZZ+fxEgHqr7xq/dBDD8X/5emnn46iaOLEiTW3TJ48ueaRixcvrrl9w4YN77777iWXXLJ69erx48dv+4RVVVWZTKZfv36HHHLIL37xi91Zh40bNw4YMGDLli17tObfOLVp06a+ffv+53/+5+mnn/7ss89+/vnnmzZt+utf//rzn//8kEMOufXWW7NvlGszd+7ceAcdOnTY6Qap8dJLL237JLvzmOXLl2dvX79+/Ycffnj77bfHcfyP//iPH3/88bYPW79+/bYbv3v37n/+859ffPHF3d/4f/vb31Kp1LJly374wx/Onj179erVX3zxRSaTad269cSJE3/5y1/udDuk0+kePXoccMABM2fOPO2003axxQAI6711o0aN2rdvf88990RRtN176yeffHLDhg3XXHPNwIEDZ8+e/dZbb33js91www1/+tOf/vf//t97tA7fOPX444+//vrr3bt3f/nll3v37t2sWbOGDRu2bNnyuuuu+93vfrdly5Z/+Zd/iUKy//77H3vssXffffcdd9yxcePGf/7nf97Fxr/55puzpd/9jX/fffd99tlnQ4YMefLJJ0877bSmTZsefPDB559//qxZsw488MD77rtv2/PhWRMmTOjXr9+3vvWtP/7xjyeccELN7Y899lgikXjooYf26gYAKGUFqHV1dfX8+fOHDh0aRVHbtm23vWvixInHH3/8D37wg+uuu26//fbbnbfXP/3pT9u0aXPHHXe8++67u78O3zj15JNPJhKJ//N//s9+++233V3/8A//8M4774waNSoK0i233HLAAQf84Q9/2Om9mzZt+uCDDx544IGGDRv+wz/8w+5v/H/9139t3LjxXXfdtd0TtmjR4pVXXpk5c2Yikdj29nvvvffKK69s3br1K6+8ctxxx+291wdQH9VRrY855piaC53233//Dh06PP3004ceeuhNN91U85h58+b95S9/GT58eCKROPbYY/v16/frX/967dq1u37mAw44YOLEiZs2bdqj8+HfODV37tzjjz/+mGOO2en48ccfv12cttOpU6ftrg575ZVXatsgNWbOnLmnj9lR06ZNjzvuuO1OWjRu3Dg7Xl5e3q5du//4j/94/PHHt311u974mzZt+uijj0499dQmTZrsuMQTTzzxyCOP3PaWW2+99bbbboui6Mwzz2zVqtV2jx8wYEAcx4MHD971CwGgwN/B1bx583/8x3988803jzjiiJobH3300ebNm1966aXZP44YMWLNmjW7c8L5jDPOuPHGG//85z+PGzdu99dhF1ObNm2qqqo6/PDDt71xu+u0jz766ChUzZo1q/5abQ/YsmXL7NmzN23atJsbv6qqKo7jZs2a7eYKPPjgg9/73ve6d+/+6KOP/u53v8vv1QBQV7XOXjC1cePG3/zmN9k3f2PGjDnqqKNqHrBp06bJkyd/8sknjRo1yuawY8eOcRzv5rVmP/3pT4877rg777zznXfe2f21qm2qrKysadOmK1asiHK141VmZ5xxxjdeQda1a9c9fcxOffnll2VlZY0aNdrxKrONGzcuWrToRz/60YMPPjhs2LDd3PiHHHJIgwYNdn+DDBw4cObMmZMmTTrkkEOuuuqqTz75ZDcHASj8e+uysrKLLrroqaeemjVr1jnnnLPtd+U+//zzO43BG2+8MWfOnG985saNG+dwPnwXU9/97nffeeedv/71rzu9AL5z585RqNauXTtv3rzjjz9+p/eWlZUdc8wx48aN69Chw2OPPbabG3+//fY7/vjj//KXv6xbt27Hh9199939+/dftmxZzS0///nPy8vLjzzyyIceeuiLL77o37//jt8tBkDQZ8LPPffcG2644Y033qh5b5c9E7v//vuvWrVq2/eRr776ahRFtX130Ha+//3v33TTTXPmzNnxJ5/kMHXppZdu3br1+uuv32n7d7z+ORz333//pk2bzjnnnF0/rEGDBmvXrt28efNubvxkMrl+/fr/9b/+13bP89FHH917773PP//8Ts+T//CHP+zbt++///u/79GHFAAE8bn1T3/601atWo0fP/5Pf/pTFEWffvrptGnTevfufdBBB237sO9973vt2rX7l3/5l1WrVu3O044ePfq44477+c9/vkcrs9OpK6+8snPnzr///e9PPfXUf/3Xf/300083bdqU/ekoPXv2fOONNxo0COuHtlZXV7///vsjR478yU9+csABB9R2DVccx0uXLh0+fPhbb73VqVOnhg0b7ubGHzJkSLNmzcaOHdu/f/+//OUv69ev/+yzz5588smuXbtWVVUNHz582xPv2xo/fvzhhx8+cuTI119/fd+8dIDSV5jkHHjggQ8++ODWrVuvueaazZs3T5o0afPmzTWXOG3riiuuWLdu3RNPPLH7Z7Z3fbX2bk6Vl5dnMpnvfe97b7zxxkUXXXTkkUeWl5dnf/Lo1KlT27Vrt5s/aq02O73eO5FIbHsN/O485sgjj6y50r59+/ajR4/O/pjVli1bbvcasw9r0KBBy5Ytx40b16BBg+w3oe3mxm/WrNlTTz3VtGnTJ5544pRTTjnggAOOOOKISy+99OOPP06lUrfeemttr/TQQw/91a9+tWnTpksuueSrr77y/dYAOSjYG8TzzjsvmUy++eab//zP//zYY48dfPDB55577o4P69+/f4MGDXbzZHj2zHb2R3/skZ1OtWjR4o9//OPkyZN79OjRokWL8vLyww8/vEePHo8//vi8efNOOeWUKCRl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U/nM5rOd81nuopFVuc22HlVZqG1VqO2czzFYdNuq5DkTDkD9EMfFuyy1BoDQqTUA9UYcF+lS1Brq2oknnvjJ17/Sp7q6um3btg888ECnTp1OOumk6dOnF3rVoB6I42J8frWGuta3b99nn302iqIZM2acc845o0aNevnll5988snJkycXetWgfojjontmtYa61q9fvylTpkRR9Nxzz1144YU9evTo37//kiVLJk2aVOhVg3ojjovrXbtaQ11r167dypUrV69ePXfu3O9///uPPfbYkCFDxo8fP3DgwEKvGtQncVxEJ9j9Vg8ogPPPP3/MmDGnnnrq6tWrzzvvvJdeeqlz586tW7cu9HpBPRPHe+dHpuz7i9fUGgqgX79+J5xwwowZMyoqKnr16tWlS5etW7f++Mc/LvR6Qf0Tfx3anJtdV9/DrdZQAO3atauurs5+PfxrhV4jqN/iPW923f5eL7UGgP8e4F1ku0C/fFOtASCM34ddO9eEA0Do1BoAQqfWABA6tQaA0Kk1AIROrQEgdIk4j+vUU6nUXl0ZKFbpdLogy3UMQmGPwaL5futMJpPbYDKZrHezbe7JcfbD24ry9dan2QLqODbHf6TeHJ7KZzaf7ZzPcheNrMpttvWoynyOwWLczvlsq0K93pxnS54z4QAQOrUGgNCpNQCETq0BIHRqDQChU2sACJ1aA1DvrFu37qKLLuratWvnzp1///vfb3vX1KlTGzduXPPHVatWJZPJM844I5lMrlq1KoqiMWPGdOjQYezYsVEUbd26tWfPnlVVOX6z3O5TawDqnYceeuiUU06ZOXPm888//6Mf/ajm9jVr1owaNaqsrKzmltGjR5911lmvvPLKmWeeeffdd0dR9LOf/ezVV1+97777oih65JFH+vTpU1lZua9XWK0BqHeuuuqqG2+8MYqi+fPnb9vm22+//eabb27Q4P/HcerUqRdffHEURRdffHH2XXhZWdnf/va38vLyL774YsqUKQMHDqyDFVZrAOqdgw8+uLy8/PLLLz///PN/8YtfZG985ZVXli1bduGFF277yM8+++yII46IoujII4/87LPPsu+2L7vssrvvvnvkyJE/+clPEolEHaywWgNQTz3xxBNPPvnk448/HkVRdXX1sGHDHn744W+cuvzyy2fPnt2uXbsoihYtWtSzZ89nnnlmX6+qWgNQ79xw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yxcuXPjaa6+9/fbbd95558yZM9u1azdx4sRHHnmktsENGzb06NGjY8eOy5YtGzFixMSJE3dcw9NPP33Tpk3l5eXZPy5fvvyQQw5JJBJ1uJGo1zZv3tykSZPs1++9997SpUvvuuuunHdpBwslYrtTtewtzZs3325T77ffftm7FixYUFlZed9991VUVCxYsCCO4xUrVkRRlE6nsw+YPn16eXn52rVrZ82adcABB1RXV2dvnzNnToMGDdavXz9r1qzy8vKVK1dut9DsP0BxHNc2mMlkKioq1q1bl7396quvPu2003bxKqqqqo455pg777xzb28e+H+aNWtWcya8qqpq4sSJDRo0eP7555cvXx5F0dSpU7N37eku/eWXX0ZR9O677zpYKA3eW9fd59abN2/O3t6mTZvhw4cPHTr0lltuadOmTc3ja65hOfHEEzdu3Lhw4cJ33nln3bp1jRo1yl6Dc8opp2zdunXRokXz589v0aLFIYccUtuiaxt85513jj322MaNG2cf1qlTp12s/1dffdW7d+8OHTqMHDlyL20S2Inrrrsuu6Mefvjh48aNe/jhh3v27Jm9q1WrVnnu0g4WSoNaF8a8efOiKHrjjTe2vbGsrCz7xZYtW6Ioatiw4ebNm9u0abPd/2F95zvfKSsr2/XZttoGt3tYzRJ3tHLlym7durVo0eKZZ55p2LBhfi8XdqXmvfWGDRvmzZu37YVajRo1ynOXdrBQGtS6AF544YWnnnpq7NixU6ZMyWQyNbe/9dZb2S/mzp3bpEmTY489tn379osXL166dOl2z9C2bdslS5Zkz/Vtq+ZfpdoGO3TosGDBgq+++ir7x7fffnuna7h06dIzzjjjrLPO+vWvf13zmRwUUM67tIOFErGXzqizvebNm+/4HVxxHK9Zs6ZVq1Y333xz9pOw5s2br169Ovu59cknn7xo0aIPPvjgu9/97tChQ+M43rJlS6dOnbp37/7Xv/516dKlN910U8uWLTds2LB169aTTjrp0ksvXbFixeLFiy+44IKLL744juPOnTuPHj169erVtQ1WV1e3bdt20KBBK1eufPHFF5s2bbrjR3Fffvnlcccdd+utt9bVpqJe2/Zz621lP7fOXtixi2Ohtl265nNrBwulQa3r7iqzKIquueaaG2644eijj167dm0cx6tWrWrZsuXgwYOztb799tu/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/+yzz/r27XvQQQe1bNly1KhRe3Ud4b859NBDaw6Q8vLy448//oEHHsj52Wp26aqqqkQisYseO1goLg0LvQKl7P7777/55pvrconr16/fK89zySWXtGrVasmSJQsWLDj33HOPOOKIK6+8cq88M+xo/Pjx1157bRRFmzZt+sMf/nDBBRccfPDBl19+eT7PWVlZGcfxLh7gYKG4eG9d1yZMmNCoUaMlS5ZEUbRixYqDDjpo4sSJn3/+eSKRmDBhQosWLSoqKgYNGlTzT8ny5cv79u3bpEmTli1bDh06tOb2Tz75JJVKNW3a9LDDDrv++uurq6u7du36/vvvDxw4MPuPRW2D8+fPP/PMMxs3bnz66acvXrx4xzVcuHDhjBkzxo0bV1FRcfLJJ5999tmvvvpqHW4h6q+ysrJevXp169YtnU5/+umniURixIgRFRUVAwYM2NNdetv31g4WSoBa17VBgwadccYZY8aMiaJo9OjRJ5988sCBA7N33XvvvdOmTZs7d+7rr78+ePDg7I19+vRp2rTpRx99NGvWrDlz5gwZMiSKoi1btpx77rnl5eULFy587bXX3n777TvvvHPmzJnt2rWbOHHiI488Utvghg0bevTo0bFjx2XLlo0YMWLixIk7ruGxxx67devWZs2abd68+d++lkql6nYjUa9t3ry5SZMm2a/fe++9pUuX3nXXXTnv0g4WSkTMvtG8efPtNvV+++2XvWvBggWVlZX33XdfRUXFggUL4jhesWJFFEXpdDr7gOnTp5eXl69du3bWrFkHHHBAdXV19vY5c+Y0aNBg/fr1s2bNKi8vX7ly5XYLzf4DFMdxbYOZTKaiomLdunXZ26+++urTTjuttpfQrl27Ro0ade3adcWKFftgC8HfNWvWbPz48dmvq6qqJk6c2KBBg+eff3758uVRFE2dOjV7157u0l9++WUURe+++66DhdLgvfU+dP/992+7rTdv3py9vU2bNsOHDx86dOgtt9zSpk2bmsfXXMNy4oknbty4ceHChe+88866desaNWqUvQbnlFNO2bp166JFi+bPn9+iRYtDDjmktkXXNvjOO+8ce+yxjRs3zj6sU6dOu1j/9957b+XKlQcccECvXr320iaBnbjuuuuyO+rhhx8+bty4hx9+uGfPntm7WrVqlecu7WChNKh1YcybNy+KojfeeGPbG8vKyrJfbNmy5e9XADZsuHnz5jZt2mz3f1jf+c53ysrKEonELp6/tsHtHlazxNoceOCBI0eO/NOf/rRs2bJcXyt8g5r31hs2bJg3b172irOsRo0a5blLO1goDWpdAC+88MJTTz01duzYKVOmZDKZmtvfeuut7Bdz585t0qTJscce2759+8WLFy9dunS7Z2jbtu2SJUuy5/q2VfOvUm2DHTp0WLBgwVdffZX949tvv73j6k2bNq2ioqK6ujr7xy+++GK//farrKzM70VDXnLepR0slIi9dEad7TVv3ny7M+FZa9asadWq1c0335z9JKx58+arV6/Ofm598sknL1q06IMPPvjud787dOjQOI63bNnSqVOn7t27//Wvf126dOlNN93UsmXLDRs2bN269aSTTrr00ktXrFixePHiCy644OKLL47juHPnzqNHj169enVtg9XV1W3bth00aNDKlStffPHFpk2b7vhR3Pr169u2bXv99ddXVVW9+eabxx9//JVXXllXm416/bn1trKfW2cv7NjFsVDbLl3zubWDhdKg1nV3lVkURddcc80NN9xw9NFHr127No7jVatWtWzZcvDgwdla33777d/+9rcPPvjgoUOHbty4Mfs8H3/88fnnn3/ggQcedNBB55xzzrvvvpu9ffHixeeee+7+++/frFmzAQMGrFq1Ko7jX/3qV02aNOnTp88uBhcuXNitW7f999+/Q4cOQ4cO3emFMx9++GGPHj0OOuigVq1ajRgxYv369XW45ahfdrPWe7pL19TawUJpSOz6BwgUSn37LoiNGzdOnTq1W7duTZs2LfS6lLJ0Ol2Q5da3/RlCOwZLQLg/y2zRyKrcBluPqtz2w+A9kkwmCzLbo0ePKIr+7d/+rY6XW6Sz6XE5zhbp/my2tGdz3p9Tw5JFN0vOXGUGAKFT6yCUl5cXehUACJdaA0Do1BoAQqfWABA6tQaA0Kk1AIROrQEgdGoNAKFTawAInVoDQOjUGgBCp9YAEDq1BoDQqTUAhE6tASB0ag0AoVNrAAhdIo7jKDypVKrQq0AJSqfTBVmu/RkKewyWgIZRqBaNrMptsPWoykwmk9tsMpmsd7Nt7slx9sPb0uNyXG5qWF7rnPNyi3R/Nrv7s/nsz4U6BvM5jopulpw5Ew4AoVNrAAidWgNA6NQaAEKn1gAQOrUGgNCpNQCETq0BIHRqDQChU2sACJ1aA0Do1BoAQqfWABA6tQaA0Kk1AIROrQEgdGoNAKFTawAIXSKO4yg8qVSq0KtACUqn0wVZrv0ZCnsMloCGUagWjazKbbD1qMp8ZjNt7sltNvnhbZlMJsfZZNLs7s+mx+U4W0D2Z7N7fX9ODSu+WXLmTDgAhE6tASB0ag0AoVNrAAidWgNA6NQaAEKn1gAQOrUGgNCpNQCETq0BIHRqDQChU2sACJ1aA0Do1BoAQqfWABA6tQaA0Kk1AIROrQEgdIk4jqPwpFKpQq8CJSidThdkufZnKOwxWAIaRqFaNLIqt8HWoyozmUxus8lk0mz4s+lxOc4W6f5strRnc96fU8OSRTdLzpwJB4DQqTUAhE6tASB0ag0AoVNrAAidWgNA6NQaAEKn1gAQOrUGgNCpNQCELtyfPAoAu5JI1HpXkL8CIx9qDUCpRHrHx5RKttUagBLq9E5Hir/Zag1AKXa6tJrtKjMASjrVe/15CkGtAQjY3k1soliDrdYAhGpfxDVRlMFWawCCtO+ymii+YCfiID91T6VShV4FSlA6nS7Icu3PsMfHYB0ENQ4xf8V3TfiikVW5DbYeVZnJZHKbTSaTeS23zT05LvfD2/JZ5/o2mx6X42wB5bNfFWrW/hz4/pwaVnyzYb33TSSKKNjOhANA6NQagJDU5YfKiaL5AFutASB0ag1AMOr+zW6iON5eqzUAhE6tASB0ag1AGAp1UjpRBCfDw/1+awD4BnEcTZkSbd4clZVF551XFN3NjffWABStP/85euGFqG/f6Nlno9mzo9Kl1gAUrSVLourqqEuX6JNP/v5f6VJrAIrZ5MnRiBHRtGlRSVNrAIrZwIHRY49FvXtHJU2tAShaLVtGjRtH6fTfv2jevNBrsw+5JhyAonXqqdGnn0ZnnfX3a8K7dIlKl1oDULQSJfstW9txJhyAMBTqt03HRfBbrtUaAEKn1gAQukQc5BmAVCpV6FWgBKXT6YIs1/4Me3AM1vFH0XGIESymq8wWjazKbbD1qMpMJpPbbDKZLMrZNvfkOPvhbelxOS43NaxgrzfndS7S/bm+zeazPxfj8ZvPMVh0s+TMmXAAQlKXb3bj4nhjrdYAUATUGoDA1M1b3rho3lirNdTqxBNP/OTrX+lTXV3dtm3bBx54oFOnTieddNL06dMLvWpQD+zrlMbFlGq1hlr17dv32WefjaJoxowZ55xzzqhRo15++eUnn3xy8uTJhV41qB/2XVDjIku1WkOt+vXrN2XKlCiKnnvuuQsvvLBHjx79+/dfsmTJpEmTCr1qUG/si6zGxZdqtYZatWvXbuXKlatXr547d+73v//9xx57bMiQIePHjx84cGChVw3qk70b17goUx3091tDwZ1//vljxow59dRTV69efd5557300kudO3du3bp1odcL6pk43js/MqVoU63WsCv9+vU74YQTZsyYUVFR0atXry5dumzduvXHP/5xodcL6p/469Dm3Oxi7nSWWkOt2rVrV11dnf16+NcKvUZQv8V73uzi73SWWgNQVOL/CvAusl0qka6h1gAUp7jUkrwLrgkHgNCpNQCETq0BIHRqDQChU2sACJ1aA0DoEnGQV8CnUqlCrwIlKJ1OF2S59mco7DFYAsL9futFI6tyG2w9qjKTyeQ2m0wmzYY/mx6X42yR7s9mS3s25/05NSxZdLPkzJlwAAidWgNA6NQaAEKn1gAQOrUGgNCpNQCETq0BCNS6desuuuiirl27du7c+fe///22d02dOrVx48Y1f9y6deuNN974ve9976yzzlq0aFEURWPGjOnQocPYsWOz9/bs2bOqKsdvtAuBWgMQqIceeuiUU06ZOXPm888//6Mf/ajm9jVr1owaNaqsrKzmll/84hdNmzZ97bXXhgwZMmzYsCiKfvazn7366qv33XdfFEWPPPJInz59Kisro6IV7k9HAaCeu+qqqw488MAoiubPn79tm2+//fabb7756quvrrnl17/+9eOPPx5FUc+ePRcsWBBFUVlZ2d/+9rfy8vIvvvhiypQpzz//fFTMvLcGIFAHH3xweXn55Zdffv755//iF7/I3vjKK68sW7bswgsv3PaRH3zwwbPPPtu1a9eLLrooe9fo0aMvu+yyu+++e+TIkT/5yU8SiURUzNQagKA98cQTTz75ZPatc3V19bBhwx5++OHtHrNx48Zvf/vbM2fOvOyyywYNGhRF0eWXXz579ux27dr9/Uf/LlrUs2fPZ555Jipaag1AoG644YbNmzdHUdSrV6/sVWa//e1v16xZc8kll3Tt2nXt2rX9+/fPPvLwww9PJpPZXyXw1ltvZW+M4/iOO+74p3/6p1tvvXXChAm33nprVLTUGoBArVq1KvsbgF599dXsu+RLLrlk/vz5M7/WpEmTSZMmrV27NoqiH/zgBy+//HIURS+//HLHjh2z448++mjv3r2bNWu2fv36OI7XrVsXFS1XmQEQqFGjRl1xxRUPPvhgeXn5o48+utPHXHDBBdOnT7/rrrsGDRp01113NWzY8Je//GUURVVVVU8//fTUqVOjKBoyZEj37t1vueWWqGipNQCBatWq1YwZM2q7N/v909OnT4+i6Fvf+tZzzz237b2VlZXTpk3Lfn3716Ji5kw4AIROrQEgdGoNAKFLxHEchSeVShV6FShB6XS6IMu1P0Nhj8ESEO5VZotG5vjj11uPqsxe8Z+DZDJpNvzZ9LgcZ4t0fzZb2rM578+pYcmimyVnzoQDQOjUGgBCp9YAEDq1BoDQqTUAhE6tASB0ag0AoVNrAAidWgNA6NQaAEKn1gAQOrUGgNCpNQCETq0BIHRqDQChU2sACJ1aA0Do1BoAQpeI4zgKTyqVKvQqUILS6XRBlmt/hsIegyWgYRSqRSOrchtsPaoyk8nkNptMJuvdbJt7cpz98Lb0uByXmxqW1zrnvNwi3Z/N7v5sPvtzoY7BfI6jopslZ86EA0Do1BoAQqfWABA6tQaA0Kk1AIROrQEgdGoNAKFTawAInVoDQOjUGgBCp9YAEDq1BoDQqTUAhE6tASB0ag0AoVNrAAidWgNA6NQaAEKXiOM4Ck8qlSr0KlCC0ul0QZZrf4bCHoMloGEUqkUjq3IbbD2qMpPJ5DabTCbNhj+bHpfjbJHuz2ZLezbn/Tk1LFl0s+TMmXAACJ1aA0Do1BoAQqfWABA6tQaA0Kk1AIROrQEgdGoNAKFTawAInVoDQOjUGgBCp9YAEDq1BoDQqTUAhE6tASB0ag0AoVNrAAidWgNA6BJxHEfhSaVShV4FSlA6nS7Icu3PUNhjsAQ0jEK1aGRVboOtR1XmM5tpc09us8kPb8tkMjnOJpNmd382PS7H2QKyP5vd6/tzaljxzZIzZ8IBIHRqDQChU2sACJ1aA0Do1BoAQqfWABA6tQaA0Kk1AIROrQEgdGoNAKFTawAInVoDQOjUGgBCp9YAEDq1BoDQqTUAhE6tASB0ag0AoUvEcRyFJ5VKFXoVKEHpdLogy7U/Q2GPwRLQMArVopFVuQ22HlWZyWRym00mk2bDn02Py3G2SPdns6U9m/P+nBqWLLpZcuZMOACETq0BIHRqDQChU2sACJ1aA0Do1BoAQqfWABA6tQaA0Kk1AIROrQEgdGoNAKFTawAInVoDQOjUGgBCp9YAEDq1BoDQqTUAhE6tASB0iTiOC70OAMCueG8NAKFTawAInVoDQOjUGgBCp9YAEDq1BoDQqTUAhE6tASB0ag0AoVNrAAidWgNA6NQaAEKn1gAQOrUGgNCpNQCETq0BIHRqDQChU2sACJ1aA0AUuP8LKpC+WQvG6i8AAAAASUVORK5CYII="
+            },
+            {
+              "type": "input_text",
+              "text": "Above is a visual comparison of expected vs predicted outputs for each training example. Green circles indicate correct solutions, red circles show errors. Use this visual feedback along with the textual analysis to improve your approach."
+            }
+          ],
+          "solved_count": 0,
+          "total_training_examples": 3,
+          "pixel_accuracy": 0.30982905982905984
+        },
+        "test_result": {
+          "correct": false,
+          "pixel_accuracy": 0.0,
+          "total_pixels": 288,
+          "correct_pixels": 0,
+          "error": "Grid height mismatch"
+        },
+        "status": "failed_test"
+      }
+    ],
+    "total_turns": 1,
+    "conversation_history": [
+      {
+        "role": "system",
+        "content": "You are an expert at solving abstract reasoning puzzles. Write clean, efficient Python code."
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "You are solving an ARC (Abstraction and Reasoning Corpus) task. \nI will show you training examples with input and output grids, plus a test input grid. Your task is to:\n\n1. **Analyze the training examples** to discover patterns that map input grids to output grids\n2. **Write a Python program** that implements your best understanding of the transformation  \n3. **DO NOT predict or generate the test output** - your job is only to write the transformation program\n4. **Attempt a solution** - even if the pattern isn't completely clear, provide your best hypothesis\n5. **Do not repeat the same transformation** - if you have already tried a transformation, do not repeat it.\n\n**IMPORTANT: Your transformation must always produce a 12\u00d713 output grid.**\n\nThe test input is shown for context so you understand what type of grid your program will eventually process. Focus on learning patterns from training examples and writing code that captures your understanding.\n\nTraining Examples:\n\nExample 1:\nInput:\n8 8 8 8 8 8 8 8 8 8 8 8 8\n0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 1 0 0 0 0 0 1 0 0 0 0\n0 0 0 0 1 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 1 0 0 0\n0 0 0 0 0 1 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 1 0 0 0 0 0 0 0 0 0 1\n0 0 0 0 0 0 0 0 1 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0\n3 3 3 3 3 3 3 3 3 3 3 3 3\nOutput:\n8 8 8 8 8 8 8 8 8 8 8 8 8\n0 0 8 0 0 0 0 0 8 0 0 0 0\n0 0 1 0 8 0 0 0 1 0 0 0 0\n0 0 0 0 1 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 8 0 0 0\n0 0 0 0 0 0 0 0 0 1 0 0 0\n0 0 0 0 0 1 0 0 0 0 0 0 0\n0 0 0 0 0 3 0 0 0 0 0 0 0\n0 0 1 0 0 0 0 0 0 0 0 0 1\n0 0 3 0 0 0 0 0 1 0 0 0 3\n0 0 0 0 0 0 0 0 3 0 0 0 0\n3 3 3 3 3 3 3 3 3 3 3 3 3\n\nExample 2:\nInput:\n2 2 2 2 2 2 2 2 2 2\n0 0 0 0 0 0 0 0 0 0\n0 1 0 0 0 0 0 0 1 0\n0 0 0 1 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0\n0 0 1 0 0 0 0 0 0 0\n0 0 0 0 0 0 1 0 0 0\n0 0 0 1 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0\n0 1 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 1 0 0 0\n0 0 0 0 0 0 0 0 1 0\n0 0 0 0 0 0 0 0 0 0\n4 4 4 4 4 4 4 4 4 4\nOutput:\n2 2 2 2 2 2 2 2 2 2\n0 2 0 0 0 0 0 0 2 0\n0 1 0 2 0 0 0 0 1 0\n0 0 0 1 0 0 0 0 0 0\n0 0 2 0 0 0 0 0 0 0\n0 0 1 0 0 0 2 0 0 0\n0 0 0 0 0 0 1 0 0 0\n0 0 0 1 0 0 0 0 0 0\n0 0 0 4 0 0 0 0 0 0\n0 1 0 0 0 0 0 0 0 0\n0 4 0 0 0 0 1 0 0 0\n0 0 0 0 0 0 4 0 1 0\n0 0 0 0 0 0 0 0 4 0\n4 4 4 4 4 4 4 4 4 4\n\nExample 3:\nInput:\n3 0 0 0 0 0 0 0 0 4\n3 0 0 0 0 0 1 0 0 4\n3 0 1 0 0 0 0 0 0 4\n3 0 0 0 0 0 0 0 0 4\n3 0 0 1 0 0 0 0 0 4\n3 0 0 0 0 1 0 0 0 4\n3 0 0 0 0 0 0 0 0 4\n3 0 0 0 0 0 0 0 0 4\n3 0 0 0 0 0 1 0 0 4\n3 0 0 0 0 0 0 0 0 4\n3 0 1 0 0 0 0 0 0 4\n3 0 0 0 0 0 0 0 0 4\nOutput:\n3 0 0 0 0 0 0 0 0 4\n3 0 0 0 0 0 1 4 0 4\n3 3 1 0 0 0 0 0 0 4\n3 0 0 0 0 0 0 0 0 4\n3 0 3 1 0 0 0 0 0 4\n3 0 0 0 0 1 4 0 0 4\n3 0 0 0 0 0 0 0 0 4\n3 0 0 0 0 0 0 0 0 4\n3 0 0 0 0 0 1 4 0 4\n3 0 0 0 0 0 0 0 0 4\n3 3 1 0 0 0 0 0 0 4\n3 0 0 0 0 0 0 0 0 4\n\nTest Input:\n2 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 8\n2 0 1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 8\n2 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 8\n2 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 8\n2 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 8\n2 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 8\n2 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 8\n2 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 8\n2 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 8\n2 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 8\n2 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 8\n2 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 8\n2 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 8\n2 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 8\n2 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0 8\n2 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 8\n\nAnalyze the patterns in the training examples and write a Python function that performs this transformation.\n\n**Approach Guidelines:**\n- Look for patterns in shapes, colors, positions, sizes, rotations, reflections, etc.\n- Even if you can't solve all training examples perfectly, implement what patterns you do observe\n- A partial solution that captures some aspects is better than returning the input unchanged\n- If the pattern is unclear, make your best educated guess based on what you can see\n\nRequirements:\n- The function takes a 2D list (grid) where grid[row][col] gives the value at that position\n- Values are integers from 0-9\n- Return a new grid (2D list) with the transformation applied\n- You can use numpy if needed - just add 'import numpy as np' at the start of your function\n- Aim to handle the training examples as well as possible, even if not perfectly\n- Your function should attempt some meaningful transformation based on the patterns you observe\n\nYou MUST end your response with the following exact format:\n\nFinal answer:\n```python\ndef transform(grid):\n    # Your transformation logic here (implement your best understanding)\n    return transformed_grid\n```\n"
+          },
+          {
+            "type": "input_image",
+            "image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAmwAAAVGCAIAAACsZ3CsAAA/t0lEQVR4nO3df5yWdZ3o/+uWmx/ya8BsVTAdhukgRY7G+jMrDazdSr3vE2ap5zQkqbtSctSg9kF1TpkJw26n/LUYiRZmqcfrfmwbD88G+6DsnExSVktEQTHFoRQEQhFngOv7ODue+XJQcXjPwD3X3M/nwz/gmvt9X5/79v7w8r7mHixkWZYAAPvuoMAMACCiABAnogAQJKIAECSiABAkogAQJKIAECSiABAkogAQJKIAECSiABAkogAQJKIAUI2ITp8+vfDmLrzwwje8zYABAw4//PCzzz77oYceev19/vznPy8UCocccsj27dv3+NLdd99dKBQWLFjQ8dvm5uZCodDS0rLHzdatW1coFGbPnt2dqQ7bt2+fP3/+GWecMWrUqIEDB44aNercc8+97777Ys/J5MmTkyTZuHHjqFGjRo4cuW7duj1m/+N//I8DBgz47W9/28Un5FOf+lShUCgWiy+88MLrVzJhwoRCodDc3Nzx22nTpu2+mH79+g0fPvykk076/ve/3zlSKpUKhcLrT9TFh9Zhw4YNM2fOPOaYYw4++OARI0aceuqpN910086dO/fypAHkVBXeiba3t//pT3/66U9/esYZZzz11FN7fPWWW25JkmTTpk0/+clPunJvX/3qV1etWrWva+jK1NNPP33KKadceumly5YtW79+fVtb2/r16+++++4PfOAD//AP/5BEve1tb7vllls2b948derU3f8/dDfccEOaptdcc81f/uVf7tMTsnPnznvuuWePg7/73e8effTRvSxj165dW7dufeCBB6ZNmzZ37tykh7zwwgsnnHBCS0vL448/vn379i1btvz617/+27/923PPPdf/dA/oe7oV0euvvz77v+66664kSRYuXNh5ZNGiRZ23XLt2befx7du3P/bYY+eff/6f//znm266afc73Lx5c6VSOffccw855JB//Md/7Moa2trampub9/WNzltOtbe3T5ky5d/+7d9OPfXUf/qnf9qwYUN7e/szzzxz4403HnLIITNnzvz973+/l/vf/fF2WrJkScdX/+qv/uqyyy5bsmTJ9ddf33Hk4YcfvvLKKz/84Q9feeWV+/SE9OvXb9y4cXfeeecex3/84x+/+93vfv3t169f37GYXbt2vfTSSz/60Y8GDRr0zW9+89VXX93rE9bVh/bd73736aefnjJlysMPP/zyyy9v3rz5X//1X48//vg0TX/605928RQAeVGFd6IDBw485phj5syZkyTJHu9Ef/SjH23fvv2SSy6ZOnXq/fff/8gjj7zlvX3+85//zW9+8/d///f7tIa3nLrtttsefPDByZMn//KXvzzrrLPe9ra3FYvFd7zjHX/zN39zzz337Ny584477ki6oaWl5Zhjjpk1a9bjjz/+0ksvffKTn6yrq/vBD35QKBT29Qn55Cc/+Ytf/OL555/f/eBPfvKT8847by8LKBQKQ4YM+fSnP/2pT33qz3/+8xNPPJH0hFWrVhWLxUWLFh177LGDBw+uq6s744wzOt4o33vvvR23ufXWWwuFQud/QADkVxUi+uqrrz766KNXXHFFkiT/4T/8h92/tHDhwvHjx3/oQx/6m7/5m379+nXlzeg111zT2Nj41a9+9bHHHuv6Gt5y6kc/+lGhULj55pv79eu3x5c++MEPrly58uqrr0664eCDD7799tt37Nhx4YUXXnrppatXr/7BD35w2GGH7XGzrjwhn/zkJ/e4ovvAAw88+eSTn/zkJ7uyko73oK9/mDFNTU07duxI03T3g/X19VmW3XjjjT1yCoCai+iYMWM6P4QyaNCgCRMm3HXXXYceeujll1/eeZvf//73v/3tb7/4xS8WCoWxY8eee+65t99++0svvbT3ex48ePDChQvb29v36aLuW06tWLFi/PjxY8aMecPx8ePH7/GWcS+Pt9OyZct2v8173/ve//pf/+tvf/vb22+//YorrvjIRz6yx5108QmZMGHCu971ro7L6R1+/OMf/+Vf/uXYsWP3ssKdO3e2trZ+5zvfufPOO//iL/5i3Lhxe7lx1x/ajBkzTjvttE9/+tMNDQ3Tpk27+eabX/+t2ebm5izLpk+f3sUzAvRa1fkRl9GjR3/2s599+OGHDz/88M6Dt9xyy+jRoy+44IKO3375y1/eunVrV66annbaaV/4whceeOCBefPmdX0Ne5lqb2/fvHnzHu8L9/hsan19fdJt55xzTkeMTzvttNd/tetPyO5XdLMsu/POO9/sWu4RRxzRsf5isTh69OgZM2bs3Lnzmmuu6al3okOHDl22bNmiRYuampoqlcoll1wyYcKEMWPG3HbbbT1y/wC1GNGOT6O0tbX9+Mc/HjZs2Dvf+c5rr7121KhRnTdob29ftGjRc889N3DgwI4/5ZuamrIs6+LHi6655pp3vvOdX/va11auXNn1Vb3ZVP/+/YcNG/aGPzfSnU/fnH766bvfZvv27eeff35dXd2wYcMuueSSPb6puU9PyHnnndd5RfeXv/xla2vrW17LPeiggw455JBJkyZVKpWLLrqoBx9av379LrjggjRNN2zYsHr16oULFx522GHNzc3f/va3u34WgFw4oO9E+/fvf9555/3kJz/5xS9+8Vd/9Ve7/zziP//zP79htB566KHly5e/5T0ffPDBgYu6e5l6z3ves3LlymeeeeYNP4o8ceLEpNtmzJjxyCOPfPffPf/885/97Gd3/+o+PSHHHHPMe97zno7P6P7kJz85+eSTjzrqqDc8aeenc3fu3Llx48YlS5acc845yX7T2NjY3Nz8q1/96vjjj+/md5EBeqEqXM7967/+689//vMPPfTQVVdd1XnwlltuGTRo0JYtW3Z/f/O///f/TpJk/vz5Xbnb973vfZdffvny5ctf/xcpBKYuuOCCXbt2/e3f/u0bJrn7P/J41113zZ8///zzz/9P/+k/NTc3f+ITn/jZz362+w/87OsTct555/3yl7/s+EnWvX8ud/957rnnCoXCtGnT9jheLBbf8573bN68ua2trSoLA+hT3xO95pprjjrqqJtuuuk3v/lNkiR//OMf77333rPOOmv48OG73+yUU04ZN27cHXfcsWXLlq7c7Te/+c13vvOd+/op0DecmjZt2sSJE3/2s5+deOKJd9555x//+Mf29vaORH3sYx976KGHDjoo/tStXbv2c5/73JgxYzqrOX/+/COOOOLKK6/s+CsgAk9IxxXdGTNmbNiw4dxzz02qYfTo0e9973tvueWW6dOn//rXv/7Tn/60ffv2J5988sYbb7zrrrtOPPHEAQMGVGVhAH0qokOGDLnuuut27dp1ySWX7Nix4wc/+MGOHTs6P0Gzu8985jPbtm374Q9/2PXLs3v/3GwXpwYMGFCpVE455ZSHHnrovPPOO+KIIwYMGNDx1/4tXrx43Lhxe/8Lld7wI6yFQuGll15qb28/77zzXn755dtvv72zkW9729tuvfXW7du3X3DBBe3t7YEnpLGx8fjjj7/zzjvf//737/7N5oCDDz54j2XfeuutXXloHW+gR4wY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kIgCQJCIAkCQiAJAkIiybzZu3Lhq1apqrwJ63cvb1qhNItqXlUql5ubmnr3PyZMn33///a8//qc//WnKlCnDhw9/xzvecfXVV/fsSWFfPfvss5/73OdGjx49aNCghoaGq6666sUXXwy/vLvC1qhNIsq+eeWVV97w+Pnnnz9s2LBnn302TdPvfOc7CxYsOOBLg9c88cQTEydO3LRp0+LFi1988cV77rnnsccemzhx4vr162Mv766wNWpURt91zjnnfOYzn8my7IUXXkiS5Prrrz/66KMHDhz44Q9/eN26dZ3HFyxYMHr06OHDh3/2s5/dtm1blmXPPvtskiRr167tuJ+WlpaTTjopy7IPfvCDHS+biy66aPcTrVmzplAobNiwoeO355577tSpU6vxiOH/eP/73z9lypTdj+zcufPkk0/uONiVl7etQRd5J1pDbrvttqVLl65ataq1tfXrX/965/G5c+fee++9K1asePDBB6dPn76Xe1i2bNm4ceMWLly4x39Njx07dteuXW9729t27Nix9N+Vy+X9+VDgTf3hD3+477779nglH3TQQTNmzKhUKps2ber6y9vW4C2JaA35yle+Mnbs2Pr6+ubm5uXLl3cenzNnzoQJExoaGlpaWhYtWvTyyy+HTzFhwoSPfexjxx577CmnnNJDq4Z9s3LlyiRJxo8fv8fxpqamHTt2rFmzput3ZWvwlkS0htTX13f8YsiQIe3t7Z3HTz755I5fHHfccW1tbU8++WT4FKtWrdq4cePgwYM//vGPd3u9EFEoFJIk2blz5x7HX3311X29K1uDtySiNaR///6dv86y7PXHO/7cKRaLHX8MdXr9n0d7MWTIkNmzZ//mN79pbW3tiVXDvul4D9rxfnR3q1atKhaLjY2NXX952xq8JREleeSRRzp+sWLFiqFDh44dO3bAgAFJknRevHrmmWc6b7zHHyId7r333rq6us7/0n/xxRf79es3YsSIA7J8+H8cffTRkyZNuvbaa3c/uGvXrrlz55599tkjR47s+svb1uAtiSjJzJkz165du3r16lmzZl188cUDBw489NBDx4wZM3/+/G3bti1ZsuSOO+7ovPGQIUNaW1u3bt26+z2cfvrphx9++BVXXLFly5ZHHnnki1/84tSpUwcPHlyNRwPJzTff/Oijj1544YVPPPFEe3v7ypUrp0yZ8vzz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SEQBIEhEASBIRAEgSEQBIEhEASCokGVZUkvK5XK1l0AflKZpkjf2AvtDmsO90B3FpPY8NXtzbLDh6hGVSiU2WyqVzPb+2XRecDan7AWzbzZba3shzOVcAAgSUQAIElEACBJRAAgSUQAIElEACBJRAAgSUQAIElEACBJRAAgSUQAIElEACBJRAAgSUQAIElEACBJRAAgSUQAIElEACCpkWRadBYCa5p0oAASJKAAEiSgABIkoAASJKAAEiSgABIkoAASJKAAEiSgABIkoAASJKAAEiSgABIkoAASJKAAEiSgABIkoAASJKAAEiSgABIkoAASJKAAEiSgABIkoAASJKAAEiSgABIkoAASJKAAEiSgABIkoAASJKAAEiSgABIkoAASJKAAEiSgAVCOi06dPL7y5Cy+8cO+3mTx5cuddbdiwYebMmcccc8zBBx88YsSIU0899aabbtq5c2fXT7SHu+++u1AoLFiwoOO3zc3NhUKhpaVlj5utW7euUCjMnj2747fTpk3b/Z779es3fPjwk0466fvf//4ej/rpp5/e465WrVpVKBSuuuqq2IIByJ1i0gu88MILJ554YmeWtm/f/ut/9/Of//x//I//USgUeupEX/3qV88666xjjjmmi7fftWvX1q1bH/h3GzdunDlzZk+tBIBafyd6/fXXZ//XXXfdlSTJwoULO48sWrSo85Zr167NXmfJkiUdX/3ud7/79NNPT5ky5eGHH3755Zc3b978r//6r8cff3yapj/96U/36UR719bW1tzc3PkG982sX7++45537dr10ksv/ehHPxo0aNA3v/nNV199tcefGQDyq1d8T3TVqlXFYnHRokXHHnvs4MGD6+rqzjjjjHvuuSdJknvvvbcHT/T5z3/+N7/5zd///d938faFQmHIkCGf/vSnP/WpT/35z39+4oknenAxt956a6FQuP7663vwPgGouYg2NTXt2LEjTdPdD9bX12dZduONN/bgia655prGxsavfvWrjz322D4NdrwH7devXw8uBoC8O0ARHTNmzOs/X7Ns2bKOr86YMeO000779Kc/3dDQMG3atJtvvvnRRx/dH8sYPHjwwoUL29vbu3JRN0mSnTt3tra2fuc737nzzjv/4i/+Yty4cT24mObm5izLpk+f3oP3CUDNvRMdOnTosmXLFi1a1NTUVKlULrnkkgkTJowZM+a2227r8XOddtppX/jCFx544IF58+a92W2OOOKIjswXi8XRo0fPmDFj586d11xzjXeiAFQhom/4waLTTz+98wb9+vW74IIL0jTdsGHD6tWrFy5ceNhhhzU3N3/729/u8cVcc80173znO7/2ta+tXLly77c86KCDDjnkkEmTJlUqlYsuuqjjYLH4fz7S3N7evseNO450fBWAWtAr3onuobGxsbm5+Ve/+tXxxx9/9dVX9/j9H3zwwXu/qNv56dydO3du3LhxyZIl55xzTudX6+rqkiR5/vnn95j64x//2PlVAGpB9SP63HPPFQqFadOm7XG8WCy+5z3v2bx5c1tbW4+f9H3ve9/ll1++fPny1//1C29pzJgxb/ix4Y4jDQ0NPbdMAHq16l97HD169Hvf+95bbrll0KBBF1xwQUNDQ11d3XPPPfc//+f/vOuuu0488cQBAwbsj/N+85vf/Od//ufAp3/PPPPM/v37z507t66u7oILLnj729/+pz/96cc//vF11103ePDgD33oQ/tjtQD0QtX8dG6hUHjppZeSJLnllltGjBhxww03nHrqqYcffvjBBx/c2Nh42WWXFYvF/fdjlB0XdQN/HdLo0aP/23/7b21tbV/84hdHjRrVv3//I4888qqrrtqxY8c//MM/vP3tb+/i/fg5UYC86y0/J/roo49eeeWVEyZMGD58+IABA+rr6y+++OLf/e53EydO3H/nfd/73jdjxozA4Je//OVKpfKRj3zksMMO69+//xFHHHHWWWctWbLkkksu2Q/LBKCXKmRZVu01AEAu9Yp3ogCQRyIKAEEiCgBBIgoAQSIKAEEiCgBBIgoAQSIKAEEiCgBBIgoAQSIKAEEiCgBBIgoAQSIKAEEiCgBBIgoAQSIKAEEiCgBBIgoAQSIKAEEiCgBBIgoAQSIKAEEiCgBBIgoAQSIKAEEiCgBBIgoAQSIKAEEiCgBBIgoAQSIKAEEiCgBBIgoAQSIKAEEiCgBBIgq9xcaNG1etWtX3zgV9mIhCt0yZMqXwRpYsWbKvdzV58uT777//9cdLpVJzc3MPrfctzgXsExGFbrn77ruzf7dw4cIhQ4Z0/DrLssmTJ+/rXb3yyiv7Z41VPhf0YSIK+9H69eunTJkydOjQd7zjHVdccUVnuv7xH/+xoaFh2LBhJ5xwwj333JMkyemnn/74449PnTp12rRpb3ZvGzZsKBQKN9xwQ319/aBBgz7ykY8899xznce///3vH3nkkXV1dRdddFHHidatW1coFJ5++umO8Xnz5p188sldPBfQFSIK+9EnPvGJYcOGPf3007/4xS+WL1/+X/7Lf0mS5JFHHpk5c+bdd9+9YcOGyy+//Pzzz9+0adOyZcvGjRu3cOHCBQsW7P0+b7vttqVLl65ataq1tfXrX/965/G5c+fee++9K1asePDBB6dPn76Xe+j6uYC9E1HYX375y18+/PDD8+fPP/TQQxsaGr797W9/73vf2759+x/+8IckSYYMGTJw4MALL7xw+/btI0eO7PrdfuUrXxk7dmx9fX1zc/Py5cs7j8+ZM2fChAkNDQ0tLS2LFi16+eWX98/DAv5/Igr7y8qVK7dt2zZw4MCOjxqdcMIJu3bteuqpp84888wTTzxx/PjxJ5544je+8Y1169bt093W19d3/GLIkCHt7e2dxzsu1SZJctxxx7W1tT355JM9+miANyCisL/s2LGjsbEx+3+9613vGjRo0M9//vNf/epXkyZN+uEPf3j88cevXr2663fbv3//zl9nWfb64zt37kySpFgsFgqF3Qc7jgM9SERhfznmmGPWrl37hm80C4XCqaee+q1vfWvlypWDBw/+l3/5l46D3TndI4880vGLFStWDB06dOzYsQMGDEiSpPO67jPPPLP7ArpzLqCDiML+8qEPfejYY4+dOnXqs88++9xzz82YMeOoo4569dVXf/jDH9bX1//+979va2u77777nn/++fe+970dl2dbW1u3bt0aO93MmTPXrl27evXqWbNmXXzxxQMHDjz00EPHjBkzf/78bdu2LVmy5I477ui8cTfPBXQQUdhfDjrooEqlMmTIkPHjx7/rXe96/PHH/+Vf/qXjw0Sf+cxnPvrRjw4bNuziiy++8cYbTznllCRJLr300m9961tTp06NnW7y5MlnnHHGSSeddOaZZ1577bUdbzcXLFiwZMmSQw455Bvf+Mbf/d3fdd64m+cCOhR2/54K1VIul6u9BHKsra1t8eLFkyZNGjZsWLXXwoGTpmm1l0BSrPYCeE26pTU2WK4bValUYrOlUslsn5ldunRpVc7bd2Yb5wRn18zqznmbWrQwx1zOBYAgEQWAIBEFgCARBYAgEQWAIBEFgCARBYAgEQWAIBEFgCARBYAgEQWAIBEFgCARBYAgEQWAIBEFgCARBYAgEQWAIBEFgKBClmXRWXpMuVyu9hKAnEnTtNpLIClWewG8Jt3SGhss142qVCqx2VKpVGmcE5xdM6tb5zV7YGb9++31s00tWphjLucCQJCIAkCQiAJAkIgCQJCIAkCQiAJAkIgCQJCIAkCQiAJAkIgCQJCIAkCQiAJAkIgCQJCIAkCQiAJAkIgCQJCIAkCQiAJAUCHLsugsPaZcLld7CUDOpGla7SWQFKu9AF6TbmmNDZbrRlUqldhsqVQya9ZsdWebWrQwx1zOBYAgEQWAIBEFgCARBYAgEQWAIBEFgCARBYAgEQWAIBEFgCARBYAgEQWAIBEFgCARBYAgEQWAIBEFgCARBYAgEQWAIBEFgKBClmXRWXpMuVyu9hKAnEnTtNpLIClWewG8Jt3SGhss142qVCqx2VKpVLXZxjnB2TWzcvl4zZp9k9mmFi3MMZdzASBIRAEgSEQBIEhEASBIRAEgSEQBIEhEASBIRAEgSEQBIEhEASBIRAEgSEQBIEhEASBIRAEgSEQBIEhEASBIRAEgSEQBIKiQZVl0lh5TLpervQQgZ9I0rfYSSIrVXgCvSbe0xgbLdaMqlUpstlQqmTVrtrqzTS1amGMu5wJAkIgCQJCIAkCQiAJAkIgCQJCIAkCQiAJAkIgCQJCIAkCQiAJAkIgCQJCIAkCQiAJAkIgCQJCIAkCQiAJAkIgCQJCIAkBQIcuy6Cw9plwuV3sJQM6kaVrtJZAUq70AXpNuaY0NlutGVSqV2GypVDJr9k1nG+cEZ9fMyuXjrdJsU4sW5pjLuQAQJKIAECSiABAkogAQJKIAECSiABAkogAQJKIAECSiABAkogAQJKIAECSiABAkogAQJKIAECSiABAkogAQJKIAECSiABBUyLIsOkuPKZfL1V4CkDNpmlZ7CSTFai+A16RbWmOD5bpRlUolNlsqlWputnFOcHbNrFw+XrO9frapRQtzzOVcAAgSUQAIElEACBJRAAgSUQAIElEACBJRAAgSUQAIElEACBJRAAgSUQAIElEACBJRAAgSUQAIElEACBJRAAgSUQAIElEACCpkWRadpceUy+VqLwHImTRNq70EkmK1F8Br0i2tscFy3ahKpRKbLZVKZs2are5sU4sW5pjLuQAQJKIAECSiABAkogAQJKIAECSiABAkogAQJKIAECSiABAkogAQJKIAECSiABAkogAQJKIAECSiABAkogAQJKIAECSiABBUyLIsOkuPKZfL1V4CkDNpmlZ7CSTFai+A16RbWmOD5bpRlUolNlsqlcweoNnGOcHZNbNy+XjNdnm2qUULc8zlXAAIElEACBJRAAgSUQAIElEACBJRAAgSUQAIElEACBJRAAgSUQAIElEACBJRAAgSUQAIElEACBJRAAgSUQAIElEACBJRAAgqZFkWnaXHlMvlai8ByJk0Tau9BJJitRfAa9ItrbHBct2oSqUSmy2VSmbNmq3ubFOLFuaYy7kAECSiABAkogAQJKIAECSiABAkogAQJKIAECSiABAkogAQJKIAECSiABAkogAQJKIAECSiABAkogAQJKIAECSiABAkogAQVMiyLDpLjymXy9VeApAzaZpWewkkxWovgNekW1pjg+W6UZVKJTZbKpWqNts4Jzi7ZlYuH69Zs28y29SihTnmci4ABIkoAASJKAAEiSgABIkoAASJKAAEiSgABIkoAASJKAAEiSgABIkoAASJKAAEiSgABIkoAASJKAAEiSgABIkoAASJKAAEFbIsi87SY8rlcrWXAORMmqbVXgJJsdoL4DXpltbYYLluVKVSic2WSiWzZvvUbOOc4OyaWdVac1OLFuaYy7kAECSiABAkogAQJKIAECSiABAkogAQJKIAECSiABAkogAQJKIAECSiABAkogAQJKIAECSiABAkogAQJKIAECSiABAkogAQVMiyLDpLjymXy9VeApAzaZpWewkkxWovgNekW1pjg+W6UZVKJTZbKpXM9vHZxjnB2TWzcvl4czjb1KKFOeZyLgAEiSgABIkoAASJKAAEiSgABIkoAASJKAAEiSgABIkoAASJKAAEiSgABIkoAASJKAAEiSgABIkoAASJKAAEiSgABIkoAAQVsiyLztJjyuVytZcA5EyaptVeAkmx2gvgNemW1thguW5UpVKJzZZKJbNmzVZ3tqlFC3PM5VwACBJRAAgSUQAIElEACBJRAAgSUQAIElEACBJRAAgSUQAIElEACBJRAAgSUQAIElEACBJRAAgSUQAIElEACBJRAAgSUQAIKmRZFp2lx5TL5WovAciZNE2rvQSSYrUXwGvSLa2xwXLdqEqlEpstlUrdmm2cE5xdM6tqazZrtpe9nptatDDHXM4FgCARBYAgEQWAIBEFgCARBYAgEQWAIBEFgCARBYAgEQWAIBEFgCARBYAgEQWAIBEFgCARBYAgEQWAIBEFgCARBYAgEQWAoEKWZdFZeky5XK72EoCcSdO02ksgKVZ7Abwm3dIaGyzXjapUKrHZUqlk1qzZ6s42tWhhjrmcCwBBIgoAQSIKAEEiCgBBIgoAQSIKAEEiCgBBIgoAScz/BxTDHVytA3KcAAAAAElFTkSuQmCC"
+          },
+          {
+            "type": "input_text",
+            "text": "Above is a visual representation of all the training examples and the test input. Each grid cell is colored according to its value (0-9), with clear labels and arrows showing input\u2192output transformations. Use both the textual and visual information to understand the pattern."
+          }
+        ]
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          "Let's carefully analyze the transformation steps shown in the input/output pairs:\n\n## Observations\n\n**Always a 12\u00d713 output grid is required (so input might get cropped or padded).**\n\n### Border\n- Output grids all have a solid border (either top, bottom, left, or right) matching the border in the input (same color/number, same position, but border length always fills that side).\n- The input grid may be smaller than 12x13, but border will be expanded (padded) to fit the output size.\n\n### Cells with '1'\n- In all examples, cells with '1' in the input are left unchanged in the output.\n\n### Additional colored cells\n- Above or below (or to the left/right of) every '1':\n    - If there's a border cell of the same column (for top/bottom) or row (for left/right) on the outer row/column, the cell between them is colored by the border.\n    - It appears as if a 'border color' floods down from the border to the first '1' in its column (if vertical border), or from left/right border to first '1' in the row (if horizontal border), filling empty cells with the border color up to the first '1'.\n    - Any contiguous stretch of '0's between the border and the first '1' cell gets filled with border color.\n\n### Filling logic\nFrom the outputs, for each border (row/col), border color propagates up to the first '1' encountered, inclusive or exclusive depending on the layout.\n\nLet me be more precise with the training examples:\n\n**Example 1:** (top and bottom border)\n- Top border (row 0) is color '8'. In output: top border row and immediately below, cells in those columns, '8's get filled down up to the first '1' in that column. Also, the bottom border ('3').\n- This applies to both borders: color flows inward (down from top border, up from bottom border) down (or up) columns until the first '1' cell.\n\n**Example 2:** (top and bottom border)\n- Top is '2', bottom is '4'. Output: Color flows from both borders inwards toward the first '1' in columns.\n\n**Example 3:** (left and right border)\n- Left is '3', right is '4'. Output: Color flows horizontally (from left and right borders into the grid), filling horizontally up to the first '1' in each row from each border.\n\nSo: **In the direction perpendicular to each border, for each row/column, color flows in from the border, filling zeroes, up to the first '1' hit, and stops (does NOT overwrite the '1' cell).**\n\n*This always only happens along the row or column for each border.*\n\n## Implementation plan\n\n### Steps\n\n1. Pad or crop input as necessary so output is 12\u00d713.\n2. Copy original grid into result.\n3. For each border (top, bottom, left, right) present, for each line (col or row), fill inwards with the border color up to the first nonzero cell (don't replace nonzero!).\n    - If the border is at the top, iterate down each column from the top, filling zeroes with border color until '1' is found. (stop at '1')\n    - If the border is at the bottom, iterate up each column from the bottom, filling zeroes with border color until '1' is found.\n    - If the border is at left/right, similar logic per row.\n\n### Detecting border locations and color\n\n- A border is any row or column that has all equal and nonzero value.\n\n## Edge Handling\n\n- It's possible for the input grid to be smaller or larger than the output; we will center it or pad as needed. We'll fill missing cells with zero except for borders.\n\n---\n\nFinal answer:\n```python\ndef transform(grid):\n    import numpy as np\n\n    H, W = len(grid), len(grid[0])\n    OUT_H, OUT_W = 12, 13\n    grid = np.array(grid)\n    \n    # Find borders\n    borders = {}\n    # Top border\n    if (grid[0] != 0).all() and (grid[0] == grid[0,0]).all():\n        borders['top'] = grid[0,0]\n    # Bottom border\n    if (grid[-1] != 0).all() and (grid[-1] == grid[-1,0]).all():\n        borders['bottom'] = grid[-1,0]\n    # Left border\n    if (grid[:,0] != 0).all() and (grid[:,0] == grid[0,0]).all():\n        borders['left'] = grid[0,0]\n    # Right border\n    if (grid[:,-1] != 0).all() and (grid[:,-1] == grid[0,-1]).all():\n        borders['right'] = grid[0,-1]\n\n    # Prepare a blank grid\n    out = np.zeros((OUT_H, OUT_W), dtype=int)\n\n    # Place (crop or pad) input grid in output grid - always top-left aligned\n    in_h, in_w = grid.shape\n    copy_h = min(OUT_H, in_h)\n    copy_w = min(OUT_W, in_w)\n    out[:copy_h,:copy_w] = grid[:copy_h,:copy_w]\n    \n    # Expand borders if input was smaller than output\n    if 'top' in borders:\n        out[0,:] = borders['top']\n    if 'bottom' in borders:\n        out[-1,:] = borders['bottom']\n    if 'left' in borders:\n        out[:,0] = borders['left']\n    if 'right' in borders:\n        out[:,-1] = borders['right']\n\n    # For each border, flood its color into the grid up to the first nonzero cell\n    # Top border: flow down each column\n    if 'top' in borders:\n        color = borders['top']\n        for c in range(OUT_W):\n            for r in range(1, OUT_H):  # start below border\n                if out[r,c] == 0:\n                    out[r,c] = color\n                else:\n                    break\n    # Bottom border: flow up each column\n    if 'bottom' in borders:\n        color = borders['bottom']\n        for c in range(OUT_W):\n            for r in range(OUT_H-2, -1, -1):  # row before border\n                if out[r,c] == 0:\n                    out[r,c] = color\n                else:\n                    break\n    # Left border: flow right each row\n    if 'left' in borders:\n        color = borders['left']\n        for r in range(OUT_H):\n            for c in range(1, OUT_W):\n                if out[r,c] == 0:\n                    out[r,c] = color\n                else:\n                    break\n    # Right border: flow left each row\n    if 'right' in borders:\n        color = borders['right']\n        for r in range(OUT_H):\n            for c in range(OUT_W-2, -1, -1):\n                if out[r,c] == 0:\n                    out[r,c] = color\n                else:\n                    break\n\n    return out.tolist()\n```\n"
+        ]
+      }
+    ],
+    "all_responses": [
+      {
+        "id": "resp_6870026dfa8c819fa86972e2dadc87720feab340590f0ae9",
+        "model": "gpt-4.1-2025-04-14",
+        "usage": {
+          "input_tokens": 3892,
+          "output_tokens": 1562,
+          "total_tokens": 5454
+        },
+        "output": [
+          {
+            "type": "message",
+            "content": [
+              "Let's carefully analyze the transformation steps shown in the input/output pairs:\n\n## Observations\n\n**Always a 12\u00d713 output grid is required (so input might get cropped or padded).**\n\n### Border\n- Output grids all have a solid border (either top, bottom, left, or right) matching the border in the input (same color/number, same position, but border length always fills that side).\n- The input grid may be smaller than 12x13, but border will be expanded (padded) to fit the output size.\n\n### Cells with '1'\n- In all examples, cells with '1' in the input are left unchanged in the output.\n\n### Additional colored cells\n- Above or below (or to the left/right of) every '1':\n    - If there's a border cell of the same column (for top/bottom) or row (for left/right) on the outer row/column, the cell between them is colored by the border.\n    - It appears as if a 'border color' floods down from the border to the first '1' in its column (if vertical border), or from left/right border to first '1' in the row (if horizontal border), filling empty cells with the border color up to the first '1'.\n    - Any contiguous stretch of '0's between the border and the first '1' cell gets filled with border color.\n\n### Filling logic\nFrom the outputs, for each border (row/col), border color propagates up to the first '1' encountered, inclusive or exclusive depending on the layout.\n\nLet me be more precise with the training examples:\n\n**Example 1:** (top and bottom border)\n- Top border (row 0) is color '8'. In output: top border row and immediately below, cells in those columns, '8's get filled down up to the first '1' in that column. Also, the bottom border ('3').\n- This applies to both borders: color flows inward (down from top border, up from bottom border) down (or up) columns until the first '1' cell.\n\n**Example 2:** (top and bottom border)\n- Top is '2', bottom is '4'. Output: Color flows from both borders inwards toward the first '1' in columns.\n\n**Example 3:** (left and right border)\n- Left is '3', right is '4'. Output: Color flows horizontally (from left and right borders into the grid), filling horizontally up to the first '1' in each row from each border.\n\nSo: **In the direction perpendicular to each border, for each row/column, color flows in from the border, filling zeroes, up to the first '1' hit, and stops (does NOT overwrite the '1' cell).**\n\n*This always only happens along the row or column for each border.*\n\n## Implementation plan\n\n### Steps\n\n1. Pad or crop input as necessary so output is 12\u00d713.\n2. Copy original grid into result.\n3. For each border (top, bottom, left, right) present, for each line (col or row), fill inwards with the border color up to the first nonzero cell (don't replace nonzero!).\n    - If the border is at the top, iterate down each column from the top, filling zeroes with border color until '1' is found. (stop at '1')\n    - If the border is at the bottom, iterate up each column from the bottom, filling zeroes with border color until '1' is found.\n    - If the border is at left/right, similar logic per row.\n\n### Detecting border locations and color\n\n- A border is any row or column that has all equal and nonzero value.\n\n## Edge Handling\n\n- It's possible for the input grid to be smaller or larger than the output; we will center it or pad as needed. We'll fill missing cells with zero except for borders.\n\n---\n\nFinal answer:\n```python\ndef transform(grid):\n    import numpy as np\n\n    H, W = len(grid), len(grid[0])\n    OUT_H, OUT_W = 12, 13\n    grid = np.array(grid)\n    \n    # Find borders\n    borders = {}\n    # Top border\n    if (grid[0] != 0).all() and (grid[0] == grid[0,0]).all():\n        borders['top'] = grid[0,0]\n    # Bottom border\n    if (grid[-1] != 0).all() and (grid[-1] == grid[-1,0]).all():\n        borders['bottom'] = grid[-1,0]\n    # Left border\n    if (grid[:,0] != 0).all() and (grid[:,0] == grid[0,0]).all():\n        borders['left'] = grid[0,0]\n    # Right border\n    if (grid[:,-1] != 0).all() and (grid[:,-1] == grid[0,-1]).all():\n        borders['right'] = grid[0,-1]\n\n    # Prepare a blank grid\n    out = np.zeros((OUT_H, OUT_W), dtype=int)\n\n    # Place (crop or pad) input grid in output grid - always top-left aligned\n    in_h, in_w = grid.shape\n    copy_h = min(OUT_H, in_h)\n    copy_w = min(OUT_W, in_w)\n    out[:copy_h,:copy_w] = grid[:copy_h,:copy_w]\n    \n    # Expand borders if input was smaller than output\n    if 'top' in borders:\n        out[0,:] = borders['top']\n    if 'bottom' in borders:\n        out[-1,:] = borders['bottom']\n    if 'left' in borders:\n        out[:,0] = borders['left']\n    if 'right' in borders:\n        out[:,-1] = borders['right']\n\n    # For each border, flood its color into the grid up to the first nonzero cell\n    # Top border: flow down each column\n    if 'top' in borders:\n        color = borders['top']\n        for c in range(OUT_W):\n            for r in range(1, OUT_H):  # start below border\n                if out[r,c] == 0:\n                    out[r,c] = color\n                else:\n                    break\n    # Bottom border: flow up each column\n    if 'bottom' in borders:\n        color = borders['bottom']\n        for c in range(OUT_W):\n            for r in range(OUT_H-2, -1, -1):  # row before border\n                if out[r,c] == 0:\n                    out[r,c] = color\n                else:\n                    break\n    # Left border: flow right each row\n    if 'left' in borders:\n        color = borders['left']\n        for r in range(OUT_H):\n            for c in range(1, OUT_W):\n                if out[r,c] == 0:\n                    out[r,c] = color\n                else:\n                    break\n    # Right border: flow left each row\n    if 'right' in borders:\n        color = borders['right']\n        for r in range(OUT_H):\n            for c in range(OUT_W-2, -1, -1):\n                if out[r,c] == 0:\n                    out[r,c] = color\n                else:\n                    break\n\n    return out.tolist()\n```\n"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

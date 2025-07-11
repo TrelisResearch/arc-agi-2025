@@ -1,0 +1,509 @@
+{
+  "task_id": "13713586",
+  "model": "gpt-4.1",
+  "reasoning_effort": "N/A",
+  "api_type": "responses_api_multiturn",
+  "program": "import numpy as np\n\ndef transform(grid):\n    grid = np.array(grid)\n    h, w = grid.shape\n\n    # Set output size as required (16 rows x 15 cols)\n    out_h, out_w = 16, 15\n    output = np.zeros((out_h, out_w), dtype=int)\n\n    # Find background color (assume 0), and identify color rectangles (nonzero color blobs)\n    # We'll find rectangles for each color, ignoring zeros\n    nonzero = grid != 0\n    colors = set(np.unique(grid[nonzero]))\n\n    # Get bounding boxes for each color\n    bboxes = []\n    for color in colors:\n        mask = (grid == color)\n        if np.any(mask):\n            ys, xs = np.where(mask)\n            miny, maxy = ys.min(), ys.max()\n            minx, maxx = xs.min(), xs.max()\n            bboxes.append((color, miny, maxy, minx, maxx))\n\n    # Sort the boxes, following training: first by topmost, then leftmost\n    if len(bboxes) == 0:\n        return output.tolist()\n    \n    # For each input, order: left to right for horizontal bars, or top to bottom for vertical bars\n    # Training set reveals: In the output, the colored rectangles are packed into columns/rows at upper-left, largest to smallest/ordered by position or input order.\n    # Vertical stacking: In output, all bars are \"grown\" into rectangles (of height/width equal to largest in group) and packed together.\n    # The output always fills rectangles tightly for each unique input color, and preserves outer edge \"frames\" if present.\n\n    # Special case: preserve gray border if present in input\n    # Let's detect and copy gray borders (value 7 in ARC, but here 7 is not present; in our samples, \"frame\" is value=8, value=1, or value=9 if any).\n    # Instead, just copy any nonzero border colors, but training shows border is always zero (black).\n\n    # To determine orientation: If width >= height (i.e., a bar, not a column), fill horizontally and stack vertically.\n\n    # Sort bboxes so:\n    #  - If all bars are horizontal: Sort by y, then x\n    #  - If all bars are vertical: Sort by x, then y\n    #  - Otherwise, sort by area, then top-left\n    \n    areas = []\n    for (color, miny, maxy, minx, maxx) in bboxes:\n        h_ = maxy-miny+1\n        w_ = maxx-minx+1\n        areas.append((color, h_, w_, miny, minx))\n\n    # We'll treat any bar (either height==1 or width==1) as a strip to be grown into a rectangle\n    # Collect all bars' widths and heights\n    # For each bar, in output:\n    # - Grow to fill rectangle of certain width/height, according to groupings in training outputs\n\n    # Let's approximate from the training:\n    # - Output is always 16x15\n    # - There are at most 3 bars in input; in output, stacked and expanded horizontally or vertically at upper left.\n    # - Try to pack bars as rectangles, sorted top to bottom\n\n    # Sort bars by input topmost (miny), then leftmost (minx)\n    bboxes_sorted = sorted(bboxes, key=lambda b: (b[1], b[3]))\n\n    # For each, compute size needed: in training, bars grow to fill a rectangle, but their output width is the largest bar's width\n    # So, max output width = max of input bars' widths, and each bar is expanded to that width (same for heights)\n    # Some outputs, however, grow all bars to the same height and width as biggest bar.\n    total_bars = len(bboxes_sorted)\n    \n    # Output: for each bar color, grow a rectangle of (max_bar_height, max_bar_width)\n    # For horizontal bars: stack vertically, for vertical bars: stack horizontally.\n    # More generally, training ex shows stacking bars in output; also filling to same width.\n    max_width = max([b[4] - b[3] + 1 for b in bboxes_sorted])\n    max_height = max([b[2] - b[1] + 1 for b in bboxes_sorted])\n\n    # Now, for vertical packing: fill from top down, with each group as a band of height=max_height, width=max_width\n    # Disambiguation: in training ex 1,\n    #   bar0 (leftmost) is blue (width 4) -> output: fills left col group (width 5)\n    #   bar1 (yellow, middle, width 5) and bar2 (green, bottom, width 3)\n    #      - output: grouped together, forming one big rectangle, yellow on top, green below, both of width 5\n\n    # In training 2: vertical orange, vertical green, small red -- packed horizontally in layers to right\n\n    # It appears that the ordering in the output is:\n    # - Rectangles are packed tightly at the upper edge,\n    # - The largest input \"bar\" dictates the span,\n    # - All bars of the same color are stacked in a row or column, growing to rectangle\n\n    # We'll implement stacking bars as rows, each expanded horizontally, top to bottom, left to right,\n    # grouped in order of their appearance in input.\n\n    # We'll fill stacked rectangles using the order and largest needed dimensions.\n\n    # Compute the output row for each rectangle: start at row 0 and grow down\n\n    cur_y = 0\n    for (color, miny, maxy, minx, maxx) in bboxes_sorted:\n        height = maxy - miny + 1\n        width = maxx - minx + 1\n\n        # To match the output, set the output rectangle's width as the largest among all bars for this task\n        out_width = max_width\n        out_height = height\n\n        # In training, bars are grown to width = max_width, height = bar's height or max of group\n        # But in most cases, stacking each bar as a horizontal band fits\n\n        if cur_y + out_height > out_h:\n            break  # out of bounds\n\n        output[cur_y:cur_y+out_height, 0:out_width] = color\n        cur_y += out_height\n\n    return output.tolist()",
+  "execution_error": "Max turns reached",
+  "timed_out": false,
+  "tokens_used": 7279,
+  "request_cost": 0.022952,
+  "turns_used": 1,
+  "raw_response": {
+    "id": "resp_687001ea3738819ebfdef93ac9720f8408fa1092d1499d53",
+    "model": "gpt-4.1-2025-04-14",
+    "usage": {
+      "input_tokens": 5880,
+      "output_tokens": 1399,
+      "total_tokens": 7279
+    },
+    "output": [
+      {
+        "type": "message",
+        "content": [
+          "Final answer:\n```python\nimport numpy as np\n\ndef transform(grid):\n    grid = np.array(grid)\n    h, w = grid.shape\n\n    # Set output size as required (16 rows x 15 cols)\n    out_h, out_w = 16, 15\n    output = np.zeros((out_h, out_w), dtype=int)\n\n    # Find background color (assume 0), and identify color rectangles (nonzero color blobs)\n    # We'll find rectangles for each color, ignoring zeros\n    nonzero = grid != 0\n    colors = set(np.unique(grid[nonzero]))\n\n    # Get bounding boxes for each color\n    bboxes = []\n    for color in colors:\n        mask = (grid == color)\n        if np.any(mask):\n            ys, xs = np.where(mask)\n            miny, maxy = ys.min(), ys.max()\n            minx, maxx = xs.min(), xs.max()\n            bboxes.append((color, miny, maxy, minx, maxx))\n\n    # Sort the boxes, following training: first by topmost, then leftmost\n    if len(bboxes) == 0:\n        return output.tolist()\n    \n    # For each input, order: left to right for horizontal bars, or top to bottom for vertical bars\n    # Training set reveals: In the output, the colored rectangles are packed into columns/rows at upper-left, largest to smallest/ordered by position or input order.\n    # Vertical stacking: In output, all bars are \"grown\" into rectangles (of height/width equal to largest in group) and packed together.\n    # The output always fills rectangles tightly for each unique input color, and preserves outer edge \"frames\" if present.\n\n    # Special case: preserve gray border if present in input\n    # Let's detect and copy gray borders (value 7 in ARC, but here 7 is not present; in our samples, \"frame\" is value=8, value=1, or value=9 if any).\n    # Instead, just copy any nonzero border colors, but training shows border is always zero (black).\n\n    # To determine orientation: If width >= height (i.e., a bar, not a column), fill horizontally and stack vertically.\n\n    # Sort bboxes so:\n    #  - If all bars are horizontal: Sort by y, then x\n    #  - If all bars are vertical: Sort by x, then y\n    #  - Otherwise, sort by area, then top-left\n    \n    areas = []\n    for (color, miny, maxy, minx, maxx) in bboxes:\n        h_ = maxy-miny+1\n        w_ = maxx-minx+1\n        areas.append((color, h_, w_, miny, minx))\n\n    # We'll treat any bar (either height==1 or width==1) as a strip to be grown into a rectangle\n    # Collect all bars' widths and heights\n    # For each bar, in output:\n    # - Grow to fill rectangle of certain width/height, according to groupings in training outputs\n\n    # Let's approximate from the training:\n    # - Output is always 16x15\n    # - There are at most 3 bars in input; in output, stacked and expanded horizontally or vertically at upper left.\n    # - Try to pack bars as rectangles, sorted top to bottom\n\n    # Sort bars by input topmost (miny), then leftmost (minx)\n    bboxes_sorted = sorted(bboxes, key=lambda b: (b[1], b[3]))\n\n    # For each, compute size needed: in training, bars grow to fill a rectangle, but their output width is the largest bar's width\n    # So, max output width = max of input bars' widths, and each bar is expanded to that width (same for heights)\n    # Some outputs, however, grow all bars to the same height and width as biggest bar.\n    total_bars = len(bboxes_sorted)\n    \n    # Output: for each bar color, grow a rectangle of (max_bar_height, max_bar_width)\n    # For horizontal bars: stack vertically, for vertical bars: stack horizontally.\n    # More generally, training ex shows stacking bars in output; also filling to same width.\n    max_width = max([b[4] - b[3] + 1 for b in bboxes_sorted])\n    max_height = max([b[2] - b[1] + 1 for b in bboxes_sorted])\n\n    # Now, for vertical packing: fill from top down, with each group as a band of height=max_height, width=max_width\n    # Disambiguation: in training ex 1,\n    #   bar0 (leftmost) is blue (width 4) -> output: fills left col group (width 5)\n    #   bar1 (yellow, middle, width 5) and bar2 (green, bottom, width 3)\n    #      - output: grouped together, forming one big rectangle, yellow on top, green below, both of width 5\n\n    # In training 2: vertical orange, vertical green, small red -- packed horizontally in layers to right\n\n    # It appears that the ordering in the output is:\n    # - Rectangles are packed tightly at the upper edge,\n    # - The largest input \"bar\" dictates the span,\n    # - All bars of the same color are stacked in a row or column, growing to rectangle\n\n    # We'll implement stacking bars as rows, each expanded horizontally, top to bottom, left to right,\n    # grouped in order of their appearance in input.\n\n    # We'll fill stacked rectangles using the order and largest needed dimensions.\n\n    # Compute the output row for each rectangle: start at row 0 and grow down\n\n    cur_y = 0\n    for (color, miny, maxy, minx, maxx) in bboxes_sorted:\n        height = maxy - miny + 1\n        width = maxx - minx + 1\n\n        # To match the output, set the output rectangle's width as the largest among all bars for this task\n        out_width = max_width\n        out_height = height\n\n        # In training, bars are grown to width = max_width, height = bar's height or max of group\n        # But in most cases, stacking each bar as a horizontal band fits\n\n        if cur_y + out_height > out_h:\n            break  # out of bounds\n\n        output[cur_y:cur_y+out_height, 0:out_width] = color\n        cur_y += out_height\n\n    return output.tolist()\n```"
+        ]
+      }
+    ]
+  },
+  "score": {
+    "correct": false,
+    "pixel_accuracy": 0.0,
+    "total_pixels": 342,
+    "correct_pixels": 0,
+    "error": "Max turns reached"
+  },
+  "actual_output": [
+    [
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5
+    ],
+    [
+      4,
+      4,
+      4,
+      4,
+      3,
+      3,
+      3,
+      3,
+      2,
+      2,
+      2,
+      2,
+      2,
+      0,
+      8,
+      8,
+      8,
+      0
+    ],
+    [
+      4,
+      4,
+      4,
+      4,
+      3,
+      3,
+      3,
+      3,
+      2,
+      2,
+      2,
+      2,
+      2,
+      0,
+      8,
+      8,
+      8,
+      0
+    ],
+    [
+      4,
+      4,
+      4,
+      4,
+      3,
+      3,
+      3,
+      3,
+      2,
+      2,
+      2,
+      2,
+      2,
+      0,
+      8,
+      8,
+      8,
+      0
+    ],
+    [
+      4,
+      4,
+      4,
+      4,
+      3,
+      3,
+      3,
+      3,
+      2,
+      2,
+      2,
+      2,
+      2,
+      0,
+      8,
+      8,
+      8,
+      0
+    ],
+    [
+      4,
+      4,
+      4,
+      4,
+      3,
+      3,
+      3,
+      3,
+      2,
+      2,
+      2,
+      2,
+      2,
+      0,
+      8,
+      8,
+      8,
+      0
+    ],
+    [
+      4,
+      4,
+      4,
+      4,
+      3,
+      3,
+      3,
+      3,
+      2,
+      2,
+      2,
+      2,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      4,
+      4,
+      4,
+      4,
+      3,
+      3,
+      3,
+      3,
+      2,
+      2,
+      2,
+      2,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      2,
+      2,
+      2,
+      2,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      2,
+      2,
+      2,
+      2,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      2,
+      2,
+      2,
+      2,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      2,
+      2,
+      2,
+      2,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  ],
+  "api_success": true,
+  "multiturn_data": {
+    "turn_details": [
+      {
+        "turn_number": 1,
+        "timestamp": "2025-07-10T19:09:40.980854",
+        "input_tokens": 5880,
+        "output_tokens": 1399,
+        "turn_cost": 0.022952,
+        "program_extracted": true,
+        "program": "import numpy as np\n\ndef transform(grid):\n    grid = np.array(grid)\n    h, w = grid.shape\n\n    # Set output size as required (16 rows x 15 cols)\n    out_h, out_w = 16, 15\n    output = np.zeros((out_h, out_w), dtype=int)\n\n    # Find background color (assume 0), and identify color rectangles (nonzero color blobs)\n    # We'll find rectangles for each color, ignoring zeros\n    nonzero = grid != 0\n    colors = set(np.unique(grid[nonzero]))\n\n    # Get bounding boxes for each color\n    bboxes = []\n    for color in colors:\n        mask = (grid == color)\n        if np.any(mask):\n            ys, xs = np.where(mask)\n            miny, maxy = ys.min(), ys.max()\n            minx, maxx = xs.min(), xs.max()\n            bboxes.append((color, miny, maxy, minx, maxx))\n\n    # Sort the boxes, following training: first by topmost, then leftmost\n    if len(bboxes) == 0:\n        return output.tolist()\n    \n    # For each input, order: left to right for horizontal bars, or top to bottom for vertical bars\n    # Training set reveals: In the output, the colored rectangles are packed into columns/rows at upper-left, largest to smallest/ordered by position or input order.\n    # Vertical stacking: In output, all bars are \"grown\" into rectangles (of height/width equal to largest in group) and packed together.\n    # The output always fills rectangles tightly for each unique input color, and preserves outer edge \"frames\" if present.\n\n    # Special case: preserve gray border if present in input\n    # Let's detect and copy gray borders (value 7 in ARC, but here 7 is not present; in our samples, \"frame\" is value=8, value=1, or value=9 if any).\n    # Instead, just copy any nonzero border colors, but training shows border is always zero (black).\n\n    # To determine orientation: If width >= height (i.e., a bar, not a column), fill horizontally and stack vertically.\n\n    # Sort bboxes so:\n    #  - If all bars are horizontal: Sort by y, then x\n    #  - If all bars are vertical: Sort by x, then y\n    #  - Otherwise, sort by area, then top-left\n    \n    areas = []\n    for (color, miny, maxy, minx, maxx) in bboxes:\n        h_ = maxy-miny+1\n        w_ = maxx-minx+1\n        areas.append((color, h_, w_, miny, minx))\n\n    # We'll treat any bar (either height==1 or width==1) as a strip to be grown into a rectangle\n    # Collect all bars' widths and heights\n    # For each bar, in output:\n    # - Grow to fill rectangle of certain width/height, according to groupings in training outputs\n\n    # Let's approximate from the training:\n    # - Output is always 16x15\n    # - There are at most 3 bars in input; in output, stacked and expanded horizontally or vertically at upper left.\n    # - Try to pack bars as rectangles, sorted top to bottom\n\n    # Sort bars by input topmost (miny), then leftmost (minx)\n    bboxes_sorted = sorted(bboxes, key=lambda b: (b[1], b[3]))\n\n    # For each, compute size needed: in training, bars grow to fill a rectangle, but their output width is the largest bar's width\n    # So, max output width = max of input bars' widths, and each bar is expanded to that width (same for heights)\n    # Some outputs, however, grow all bars to the same height and width as biggest bar.\n    total_bars = len(bboxes_sorted)\n    \n    # Output: for each bar color, grow a rectangle of (max_bar_height, max_bar_width)\n    # For horizontal bars: stack vertically, for vertical bars: stack horizontally.\n    # More generally, training ex shows stacking bars in output; also filling to same width.\n    max_width = max([b[4] - b[3] + 1 for b in bboxes_sorted])\n    max_height = max([b[2] - b[1] + 1 for b in bboxes_sorted])\n\n    # Now, for vertical packing: fill from top down, with each group as a band of height=max_height, width=max_width\n    # Disambiguation: in training ex 1,\n    #   bar0 (leftmost) is blue (width 4) -> output: fills left col group (width 5)\n    #   bar1 (yellow, middle, width 5) and bar2 (green, bottom, width 3)\n    #      - output: grouped together, forming one big rectangle, yellow on top, green below, both of width 5\n\n    # In training 2: vertical orange, vertical green, small red -- packed horizontally in layers to right\n\n    # It appears that the ordering in the output is:\n    # - Rectangles are packed tightly at the upper edge,\n    # - The largest input \"bar\" dictates the span,\n    # - All bars of the same color are stacked in a row or column, growing to rectangle\n\n    # We'll implement stacking bars as rows, each expanded horizontally, top to bottom, left to right,\n    # grouped in order of their appearance in input.\n\n    # We'll fill stacked rectangles using the order and largest needed dimensions.\n\n    # Compute the output row for each rectangle: start at row 0 and grow down\n\n    cur_y = 0\n    for (color, miny, maxy, minx, maxx) in bboxes_sorted:\n        height = maxy - miny + 1\n        width = maxx - minx + 1\n\n        # To match the output, set the output rectangle's width as the largest among all bars for this task\n        out_width = max_width\n        out_height = height\n\n        # In training, bars are grown to width = max_width, height = bar's height or max of group\n        # But in most cases, stacking each bar as a horizontal band fits\n\n        if cur_y + out_height > out_h:\n            break  # out of bounds\n\n        output[cur_y:cur_y+out_height, 0:out_width] = color\n        cur_y += out_height\n\n    return output.tolist()",
+        "training_feedback": {
+          "feedback_messages": [
+            {
+              "type": "input_text",
+              "text": "Training results: 0/3 examples solved, 36.8% pixel accuracy - Good partial progress! Your approach is capturing some patterns. Next, try to identify a transformation that solves at least one of the training examples.\n\nTraining Example 1 \u2717:\nExpected: [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 4, 4, 4, 4, 4, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 4, 4, 4, 4, 4, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 4, 4, 4, 4, 4, 0, 0, 0, 0], [8, 8, 8, 8, 0, 0, 4, 4, 4, 4, 4, 0, 0, 0, 0], [8, 8, 8, 8, 0, 0, 4, 4, 4, 4, 4, 0, 0, 0, 0], [8, 8, 8, 8, 0, 0, 4, 4, 4, 4, 4, 0, 0, 0, 0], [8, 8, 8, 8, 0, 0, 4, 4, 4, 4, 4, 0, 0, 0, 0], [8, 8, 8, 8, 0, 0, 4, 4, 4, 4, 4, 0, 0, 0, 0], [8, 8, 8, 8, 0, 0, 4, 3, 3, 3, 4, 0, 0, 0, 0], [8, 8, 8, 8, 0, 0, 4, 3, 3, 3, 4, 0, 0, 0, 0], [8, 8, 8, 8, 0, 0, 4, 3, 3, 3, 4, 0, 0, 0, 0], [8, 8, 8, 8, 0, 0, 4, 3, 3, 3, 4, 0, 0, 0, 0], [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5]]\nYour output: [[4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4], [8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8], [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3], [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]\nPixel accuracy: 30.8%\n\nTraining Example 2 \u2717:\nExpected: [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 5], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 5], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5], [0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5], [0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5], [0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5], [0, 0, 7, 7, 7, 7, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5], [0, 0, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 5], [0, 0, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 5], [0, 0, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 5], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5]]\nYour output: [[5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]\nPixel accuracy: 50.4%\n\nTraining Example 3 \u2717:\nExpected: [[5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0], [5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0], [5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0], [5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0], [5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 6, 6, 6, 6, 0, 0, 0], [5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 6, 6, 6, 6, 0, 0, 0], [5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 0, 0, 0], [5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 0, 0, 0], [5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 0, 0, 0], [5, 2, 2, 2, 2, 2, 2, 6, 6, 6, 6, 6, 6, 6, 0, 0, 0], [5, 2, 2, 2, 2, 2, 2, 6, 6, 6, 6, 6, 6, 6, 0, 0, 0], [5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 0, 0, 0], [5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]\nYour output: [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]\nPixel accuracy: 29.1%\n\n\u26a0\ufe0f  GRID SIZE ERROR: One or more of your output grids are incorrect in size. They should ALL be 16\u00d715 for this task.\n\n"
+            },
+            {
+              "type": "input_image",
+              "image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAwcAAAShCAIAAADp2HBlAABJYUlEQVR4nO3de5gU9Z3o4WpkBlFwRtFF5bKKCOpDRMR70NWF86yCaLdCouMNFu/rDbys7hLdZCFyhIMbjTE5QUHFiUZjN0aRoAlgjJIQZb1rWEADCgbRAREYbnWen312HhYcAj2Xmp5538c/oKe/XTW/3qp8tqtmSMVxHAEAtHitkt4BAIAmQRUBAASqCAAgUEUAAIEqAgAIVBEAQKCKAAACVQQAEKgiAIBAFQEABKoIACBQRQAAgSoCAKhzFV1zzTWp2l144YVf+5zS0tL999//rLPOeu2117Z/zeeffz6VSu2zzz7r16/f5ktPPvlkKpWaNGlS/q/Dhg1LpVLjx4/f5mlLly5NpVKjR4+uy1Te+vXrf/KTn5x22mkHHnhgmzZtDjzwwKFDh/72t7/dwZqMHj26tgV56623drxoAwYM+KsLW/OcSy+9dOvH87t37rnnvvLKK1vvTzqd3uZpBx988HXXXff555/v0uLnffrpp2PGjOnTp09ZWdmee+553HHHTZo0KY7jbTa3zfirr7663377tW/fftasWTtYOgBocZ8Vbdy48ZNPPvnlL3952mmnLVq0aJuvPvjgg1EUff75548//vjOvNrtt9/+3nvv7eo+7MzUBx98cOKJJ1555ZWzZ89etmzZhg0bli1b9uSTT55yyikTJ06Mmpj87j311FP9+vV79NFHd/C0Dz744N577z399NO3bNmyS4v/yiuv9O7d+zvf+c5//ud/rl69eu3atfPmzbvssstGjBixgx37zW9+c9ppp23evPmFF1447bTT6vAtAkATrqIf/vCH8X974oknoiiaPHlyzSNTp06teebixYtrHl+/fv27775bUVGxevXq+++/f+sXrKqqyuVyQ4cO3WeffX784x/vzD5s2LBh2LBhmzdv3qU9/6tTGzduHDJkyH/+53+edNJJTz/99Keffrpx48Y///nPP/rRj/bZZ59bbrkl/8FPbebPnx9vp1evXl+7IDVeeOGFrV9kZ56zbNmy/OPr1q37r//6r1tvvTWO43/8x3/88MMPt37aunXrtl78AQMG/OEPf3j++ed3fvH/8pe/ZDKZjz/++Pzzz587d+7q1as/++yzXC7XrVu3yZMn/+QnP/nadchmswMHDtxjjz1mz559/PHH72DFAKAlflbUpk2bww477H//7/8dRdE2nxVVVlauX7/+iiuuGD58+Ny5c994442/+mrXXnvt73//+//zf/7PLu3DX5166KGHXn311QEDBrz44ouDBw/u0KFD69atu3TpctVVVz311FObN2/+2c9+FjUlu++++yGHHHLnnXfefvvtGzZs+I//+I8dLP4NN9yQL6qdX/yJEyd+8sknI0eOrKysPP7449u3b7/33nufffbZc+bM2XPPPSdOnLj1dbS8Bx54YOjQoX/zN3/z29/+9sgjj6x5fMqUKalU6oc//GG9LgAAFGEVVVdXv/3226NGjYqiqEePHlt/afLkyYcffvjf//3fX3XVVbvtttvOfFz0/e9/v3v37rfffvu777678/vwV6cqKytTqdT//b//d7fddtvmS3/3d3/3zjvvjBkzJmqSbrzxxj322ONXv/rV135148aNf/rTn+65557WrVv/3d/93c4v/s9//vO2bdt+73vf2+YFO3fu/NJLL82ePTuVSm39+F133XXppZd269btpZdeOvTQQ+vv+wOAIq+igw8+uOaG3913371Xr15PPPHEvvvue/3119c856233vrjH/948803p1KpQw45ZOjQoY8++uiaNWt2/Mp77LHH5MmTN27cuEvX0f7q1Pz58w8//PCDDz74a8cPP/zwbSJgG3369NnmLumXXnqptgWpMXv27F19zvbat29/6KGHbvMhXNu2bfPjpaWlPXv2/N3vfvfQQw9t/d3tePE3btz4wQcfHHfcce3atdt+i0cdddQBBxyw9SO33HLLP//zP0dRdPLJJ3ft2nWb5w8bNiyO42uuuWbH3wgAtIifzO/UqdM//uM/vv766/vvv3/Ngw8++GCnTp0uuOCC/F9vu+22L774YmcuVPXr1++66677wx/+MGHChJ3fhx1Mbdy4saqqqmPHjls/uM3PhR100EFRU9WhQ4fqr9T2hM2bN8+dO3fjxo07ufhVVVVxHHfo0GEnd+Dee+898cQTBwwY8OCDDz711FN1+24AoHlVUf7G4Q0bNjz22GP5DzPGjRt34IEH1jxh48aNU6dO/eijj9q0aZPPjt69e8dxvJP3XH//+98/9NBD77jjjnfeeWfn96q2qZKSkvbt269YsSIq1PZ3W/fr1++v3kl96qmn7upzvtbnn39eUlLSpk2b7e+23rBhw6JFi/7pn/7p3nvvvemmm3Zy8ffZZ59WrVrt/IIMHz589uzZDz/88D777HPZZZd99NFHOzkIAC3ls6KSkpJvf/vbjz/++Jw5c04//fStf6vNM88887X/o/vaa6/Nmzfvr75y27ZtC7iOtoOpb3zjG++8886f//znr/2Bu759+0ZN1Zo1a956663DDz/8a79aUlJy8MEHT5gwoVevXlOmTNnJxd9tt90OP/zwP/7xj2vXrt3+aXfeeefFF1/88ccf1zzyox/9qLS09IADDvjhD3/42WefXXzxxdv/FgAAaGoSuIJ2xhlnXHvtta+99lrNZxX5Kzi77777qlWrtv5c5OWXX46iqLaf+t7GN7/5zeuvv37evHnb/4bGAqYuuOCCLVu2XH311V/bWNv/vFXTcffdd2/cuPH000/f8dNatWq1Zs2aTZs27eTip9PpdevW/du//ds2r/PBBx/cddddzzzzzNdeXzv//POHDBnym9/8ZpcubgJAC7qv6Pvf/37Xrl3vv//+3//+91EULV++fMaMGYMHD95rr722ftqJJ57Ys2fPn/3sZ6tWrdqZlx07duyhhx76ox/9aJd25munLr300r59+z777LPHHXfcz3/+8+XLl2/cuDH/WxwHDRr02muvtWrVtP6xlOrq6vfff3/06NHf/e5399hjj9ruZY7jeOnSpTfffPMbb7zRp0+f1q1b7+Tijxw5skOHDuPHj7/44ov/+Mc/rlu37pNPPqmsrDz11FOrqqpuvvnmrS/Ybe3+++/v2LHj6NGjX3311Yb51gGgfiTzP+177rnnvffeu2XLliuuuGLTpk0PP/zwpk2bam713doll1yydu3aRx55ZOeviO34p8N2cqq0tDSXy5144omvvfbat7/97QMOOKC0tDT/L35Mnz69Z8+eO/mrt2vztT9flkqltv6Zu515zgEHHFDzk32HHXbY2LFj8/+8SZcuXbb5HvNPa9WqVZcuXSZMmNCqVav8LxfYycXv0KHD448/3r59+0ceeeTYY4/dY4899t9//wsuuODDDz/MZDK33HJLbd/pvvvu+9Of/nTjxo0VFRVffvml31cEQJOV2AceZ511Vjqdfv311//jP/5jypQpe++99xlnnLH90y6++OJWrVrt5EW0/BWx/K8o3CVfO9W5c+ff/va3U6dOHThwYOfOnUtLSzt27Dhw4MCHHnrorbfeOvbYY6OmpKSkpEuXLuedd97vfve7888/v7an7bbbbn/zN38zaNCg559/Pn+VbecXv3///vPnz7/uuusOO+ywdu3atW3b9vjjj580adIvfvGL7X+r09YGDx48bNiwP/3pT1v/IgYAaGpSTfkWGQCARtO0bo4BAEiKKgIACFQRAECgigAAAlUEABCoIgCAQBUBAASqCAAgUEUAAIEqAgAIVBEAQKCKAAACVQQAEKgiAIBAFQEABKoIACBQRQAAgSoCAAhUEQBAoIoAAAJVBAAQqCIAgEAVAQAEqggAIFBFAACBKgIACFQRAECgigAAAlUEABCoIgCAQBUBAASqCAAgUEUAAIEqAgAIVBEAQKCKAAACVUQ9WLly5XvvvZf0XgAJcPjTnKii5qZz586p7UydOrVBNzpgwIC5c+fu/PMnTJhwwgkn1PbVqqqqbt267dILAvvuu2/NIV9aWnr44Yffc889Bb9azUFaVVWVSqV20D0Of5oTVdQM3X333fH/dOGFFzboFtetW1dfL7VkyZIBAwYsXry4vl4QWo77778/f8h/+eWX48ePv+mmmx555JE6vmZ5eXkcx4cddlhtT3D405yoopbigQceaNOmzZIlS6IoWrFixV577TV58uRPP/00lUo98MADnTt3LisrGzFiRM0JbtmyZUOGDGnXrl2XLl1GjRpV8/hHH32UyWTat2+/3377XX311dXV1aeeeur7778/fPjwSy+9dAeDb7/99sknn9y2bduTTjqptrPes88+26tXr759+zbWqkDzVFJScuaZZ/bv3z+bzS5fvjyVSt12221lZWXDhg3b1YN068+KHP40e6qopRgxYkS/fv3GjRsXRdHYsWOPOeaY4cOH57901113zZgxY/78+a+++uo111yTf/Dcc89t3779Bx98MGfOnHnz5o0cOTKKos2bN59xxhmlpaULFy585ZVX3nzzzTvuuGP27Nk9e/acPHnypEmTahtcv379wIEDe/fu/fHHH992222TJ0/+2p1s06bNCy+8cN999zXiwkCztWnTpnbt2uX//N577y1duvR73/tewQepw58WYZtLLRS7Tp06bfMW77bbbvkvLViwoLy8fOLEiWVlZQsWLIjjeMWKFVEUZbPZ/BNmzpxZWlq6Zs2aOXPm7LHHHtXV1fnH582b16pVq3Xr1s2ZM6e0tHTlypXbbDR/WozjuLbBXC5XVla2du3a/OOXX3758ccfX9u3sHHjxiiKXnnllQZYHmi2OnToUHMFraqqavLkya1atXrmmWeWLVsWRdH06dPzX9rVg/Tzzz+Poujdd991+NMS+Kyo+d9XtGnTpvzj3bt3v/nmm0eNGnXjjTd279695vk1dz4eddRRGzZsWLhw4TvvvLN27do2bdrk79w89thjt2zZsmjRorfffrtz58777LNPbZuubfCdd9455JBD2rZtm39anz59GngNoCW66qqr8odex44dJ0yYcN999w0aNCj/pa5du9bxIHX40xKoopblrbfeiqLotdde2/rBkpKS/B82b94cRVHr1q03bdrUvXv3bQr6iCOOKCkpSaVSO3j92ga3eVrNFoF6VPNZ0fr16996660rr7yy5ktt2rSp40Hq8KclUEUtyHPPPff444+PHz9+2rRpuVyu5vE33ngj/4f58+e3a9fukEMOOeywwxYvXrx06dJtXqFHjx5LlizJf6K+tZpzZW2DvXr1WrBgwZdffpn/65tvvlnf3xywUwo+SB3+tASqqKVYs2bNlVdeed111910002XXXbZNddc88UXX+S/dMsttyxevHjBggX//M//fPnll7dp0+bv//7vjzzyyOHDhy9ZsuSjjz664YYbunbtWl1dffLJJ/fq1evaa6/99NNPP/jgg3PPPff888+PomjPPff8+OOPv/jii9oG/+Ef/uGAAw64/vrrP/vssxdeeOHBBx9Mej2ghSr4IHX40xKoomZo5MiR2/wWxyuvvPJf/uVfWrVqNWbMmCiKxo8f36pVq3/5l3/JP3/AgAGnnXba8ccf/7/+1//K/5Baq1atcrncnnvuefjhhx9xxBHvv//+zJkz87cL/OIXv/jss8+6dOlyzDHH7LXXXj/5yU+iKLryyivvvPPO4cOH1zZYWlr63HPPffDBB506dRo5cuRll12W9CJBC1XwQerwpyVIxXGcyIYzmUwi22VrGzZsmD59ev/+/du3b5/0vtDYstlsItt17EPLPPaLQusEt731rS27JJ1Om63H2V//+teJbNdssrMJyk4ocJ8zN6XNmjVbx1l2wBU0AIBAFQEABKoIACBQRQAAgSoCAAhUEQBAoIoAAAJVBAAQqCIAgEAVAQAEqggAIFBFAACBKgIACFQRAECgigAAAlUEABCoIgCA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rFmzpkyZMmLEiCiKfvCDH7z88ssTJ06MomjSpEnnnntueXl51ISpIgCgVpdddtl1110XRdHbb79dUlISRdH06dPPO++8KIrOO++8/KdHeR06dFi5cmUURStXrvzyyy+jKCopKfnLX/5SWlr62WefTZs2bfjw4VHTluTvtgYAmri99947iqKLLrroqaeeevrpp6Mo+uSTT/bff/8oig444IBPPvmk5pk//vGP+/Xrd+ihhy5YsODJJ5/Mf6p04YUX3nnnnaNHj/7ud7+bSqWips1nRQDAX/HII49UVlY+9NBDO3jOTTfd9Oijj7755puPPPLIU089lW+puXPn9uzZM4qiRYsWDRo0KF9LTZYqAgBqde21127atCmKojPPPDN/vaxjx47Lly+PomjZsmUdO3aseeabb76Z/+efzznnnPynSlEUxXF8++23//u///stt9zywAMP3HLLLVETpooAgFqtWrUq/y/Rvvzyy/lPfQYOHPjYY49FUfTYY48NHDgwiqI1a9ZEUdSzZ8/f/e53URS98sorBx10UH78wQcfHDx4cIcOHdatWxfH8dq1a6MmzH1FAECtxowZc8kll9x7772lpaUPPvhgFEX/+q//eskllzz11FP77rtv/praOeecM3PmzB//+Mf5+7JTqdSkSZOiKKqqqnriiSemT58eRdHIkSMHDBhw4403Rk2YKgIAatW1a9dZs2Zt/UhZWVn+06MaM2fOjKKod+/ec+bM2frx8vLyGTNm5P9861eips0VNACAQBUBAASqCAAgSMVxnMhK5H94D0hKNptNZLuOfWiZx35RSPJu697jC3xjXr85U4yz29ybtvPS6XRdZrMTCpzN3NTiZpN6jxKZTVDRrZVZs81plh1wBQ0AIFBFAACBKgIACFQRAECgigAAAlUEABCoIgCAQBUBAASqCAAgUEUAAIEqAgAIVBEAQKCKAAACVQQAEKgiAIBAFQEABKoIACBQRQAAQSqO40RWIpPJeAcgQdlsNpHtOvahZR77RaF1gtvuPb7AN+b1mzPFOJvL5QqbTafTdZnNTihwNnNTi5tN6j1KZDZBRbdWZs02p1l2wBU0AIBAFQEABKoIACBQRQAAgSoCAAhUEQBAoIoAAAJVBAAQqCIAgEAVAQAEqggAIFBFAACBKgIACFQRAECgigAAAlUEABCoIgCAQBUBAASpOI4TWYlMJuMdgARls9lEtuvYh5Z57BeF1gluu/f4At+Y12/OFONsLpcrbDadTtdlNjuhwNnMTelFo6sKm+02pjyp2bp8v0m9R4nMJqjo1sqs2eY0yw64ggYAEKgiAIBAFQEABKoIACBQRQAAgSoCAAhUEQBAoIoAAAJVBAAQqCIAgEAVAQAEqggAIFBFAACBKgIACFQRAECgigAAAlUEABCoIgCAIBXHcSIrkclkvAOQoGw2m8h2HfvQMo/9otA6wW33Hl/gG/P6zZlinM3lcoXNptPpusxmJxQ4m7kpvWh0VWGz3caUJzVbl+83qfcokdkEFd1amTXbnGbZAVfQAAACVQQAEKgiAIBAFQEABKoIACBQRQAAgSoCAAhUEQBAoIoAAAJVBAAQqCIAgEAVAQAEqggAIFBFAACBKgIACFQRAECgigAAAlUEABCk4jhOZCUymYx3ABKUzWYT2a5jH1rmsV8UWie47d7jC3xjXr85U4yzuVyusNl0Ol2X2eyEAmczN6UXja4qbLbbmPKkZuvy/Sb1HiUym6CiWyuzZpvTLDvgChoAQKCKAAACVQQAEKgiAIBAFQEABKoIACBQRQAAgSoCAAhUEQBAoIoAAAJVBAAQqCIAgEAVAQAEqggAIFBFAACBKgIACFQRAECgigAAglQcx4msRCaT8Q5AgrLZbCLbdexDyzz2i0LrBLfde3yBb8zrN2eKcTaXyxU2m06n6zKbnVDgbOam9KLRVYXNdhtTntRsXb7fpN6jRGYTVHRrZdZsc5plB1xBAwAIVBEAQKCKAAACVQQAEKgiAIBAFQEABKoIACBQRQAAgSoCAAhUEQBAoIoAAAJVBAAQqCIAgEAVAQAEqggAIFBFAACBKgIACFQRAECQiuM4kZXIZDLeAUhQNptNZLuOfWiZx35RaJ3gtisqKgobrKysNGvWbB1nE5TL5QobTKfTZs2areMsO+AKGgBAoIoAAAJVBAAQqCIAgEAVAQAEqggAIFBFAACBKgIACFQRAECgigAAAlUEABCoIgCAQBUBAASqCAAgUEUAAIEqAgAIVBEAQKCKAACCVBzHVgIAwGdFAACBKgIACFQRAECgigAAAlUEABCoIgCAQBUBAASqCAAgUEUAAIEqAgAIVBEAQKCKAAACVQQAEKgiAIBAFQEABKoIACBQRQAAgSoCAAhUEQBAoIoAAAJVBAAQqCIAgEAVAQAEqggAIFBFAACBKgIACFQRAECgigAAAlUEABCoIgCAQBUBAASqCAAgUEUAAIEqAgAIVBEAQKCKAAACVQQAEKgiAIBAFQEABKoIACBQRQAAgSoCAAhUEQBAoIqoBytXrnzvvfeS3gugyDh10NSoouamc+fOqe1MnTq1QTc6YMCAuXPn7vzzJ0yYcMIJJ2z/+IIFC84888zy8vIDDjjgiiuuWL16db3uJvD19t1335rTRWlp6eGHH37PPfcU/Go1B3hVVVUqldpB9zh10NSoombo7rvvjv+nCy+8sEG3uG7durq/yMaNG88888yDDjpo8eLFv/3tb1999dUrr7yyPvYO+Ovuv//+/Oniyy+/HD9+/E033fTII4/U8TXLy8vjOD7ssMNqe4JTB02NKmopHnjggTZt2ixZsiSKohUrVuy1116TJ0/+9NNPU6nUAw880Llz57KyshEjRtScpJYtWzZkyJB27dp16dJl1KhRNY9/9NFHmUymffv2++2339VXX11dXX3qqae+//77w4cPv/TSS3cw+Pbbb5988slt27Y96aSTFi9evP0ezps3b9GiRRMnTtx77727d+9+xx13TJs2LY7jRlwkICopKTnzzDP79++fzWaXL1+eSqVuu+22srKyYcOG7eoBvvVnRU4dFAVV1FKMGDGiX79+48aNi6Jo7NixxxxzzPDhw/Nfuuuuu2bMmDF//vxXX331mmuuyT947rnntm/f/oMPPpgzZ868efNGjhwZRdHmzZvPOOOM0tLShQsXvvLKK2+++eYdd9wxe/bsnj17Tp48edKkSbUNrl+/fuDAgb179/74449vu+22yZMnb7+HJ5100saNG0tLS/N/XbZs2T777JNKpRpxkYD/b9OmTe3atcv/+b333lu6dOn3vve9gg9wpw6KxjaXWih2nTp12uYt3m233fJfWrBgQXl5+cSJE8vKyhYsWBDH8YoVK6Ioymaz+SfMnDmztLR0zZo1c+bM2WOPPaqrq/OPz5s3r1WrVuvWrZszZ05paenKlSu32Wj+1BbHcW2DuVyurKxs7dq1+ccvv/zy448/fgffRVVV1cEHH3zHHXfU9/IAX6NDhw41V9CqqqomT57cqlWrZ555ZtmyZVEUTZ8+Pf+lXT3AP//88yiK3n33XacOioXPipr/fUWbNm3KP969e/ebb7551KhRN954Y/fu3WueX3P34lFHHbVhw4aFCxe+8847a9eubdOmTf7uy2OPPXbLli2LFi16++23O3fuvM8++9S26doG33nnnUMOOaRt27b5p/Xp02cH+//ll18OHjy4V69eo0ePrqclAf6Kq666Kn/YduzYccKECffdd9+gQYPyX+ratWsdD3CnDoqFKmpZ3nrrrSiKXnvtta0fLCkpyf9h8+bNURS1bt1606ZN3bt336agjzjiiJKSkh1/Ll3b4DZPq9ni9lauXNm/f//OnTs/+eSTrVu3rtu3C+ysms+K1q9f/9Zbb219w3KbNm3qeIA7dVAsVFEL8txzzz3++OPjx4+fNm1aLperefyNN97I/2H+/Pnt2rU75JBDDjvssMWLFy9dunSbV+jRo8eSJUvyn4pvreZ8V9tgr169FixY8OWXX+b/+uabb37tHi5durRfv36nnHLKo48+WnOXANBEFHyAO3VQNOrpShxNRadOnbb/yfw4jr/44ouuXbvecMMN+WvznTp1Wr16df6+omOOOWbRokV/+tOfvvGNb4waNSqO482bN/fp02fAgAF//vOfly5dev3113fp0mX9+vVbtmw5+uijL7jgghUrVixevPicc84577zz4jju27fv2LFjV69eXdtgdXV1jx49RowYsXLlyueff759+/bb3xzw+eefH3roobfccktjLRXwNfcVbS1/X1H+NsQdnBlqO8Br7ity6qBYqKLmf7d1FEVXXHHFtddee9BBB61ZsyaO41WrVnXp0uWaa67JV9Gtt976t3/7t3vvvfeoUaM2bNiQf50PP/zw7LPP3nPPPffaa6/TTz/93XffzT++ePHiM844Y/fdd+/QocOwYcNWrVoVx/FPf/rTdu3anXvuuTsYXLhwYf/+/XffffdevXqNGjVq+1PbnXfeuf2ef/HFF427ftAS7WQV7eoBXlNFTh0Ui1RdfqlDJpMpeJamYMOGDdOnT+/fv3/79u2T3heKSTabTWS7zjnQMo/9RlPXW9K2vj1ll6TTabNNZPbXv/51Its1m/hsRUVFVGwK3ufKyspifI/Mmm1Ss82eu60BAAJVBAAQqCIAgEAVAQAEqggAIFBFAACBKgIACFQRAECgigAAAlUEABCoIgCAQBUBAASqCAAgUEUAAIEqAgAIVBEAQKCKAAACVQQAEKTiOC54JTKZjFWEFiibzSay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vvhizJgxJSUlURT94Ac/ePnllydOnBhF0aRJk84999zy8vKG3mFVBAA0iGXLlh1wwAFbPzJ9+vTzzjsviqLzzjvv2Wef3eb5t9566w033NCqVYiTkpKSv/zlL6WlpZ999tm0adOGDx/eCDusigCABrFs2bJnn322X79+Z5111sKFC6Mo+uSTT/bff/8oig444IBPPvlk6ye/9NJLH3/88be+9a38X8eOHXvhhRfeeeedo0eP/u53v5tKpRphh1URANAgUqlU7969X3rppWHDhl122WU7eGZ1dfVNN91033331Txy0UUXzZ07t2fPnlEULVq0aNCgQU8++WRT/3fQAAC+1nXXXdelS5cois4+++wrrrgiiqKOHTsuX778wAMPXLZsWceOHWue+Ytf/OKLL77I/0OHa9asufjiix9++OE4jm+//faHH364b9++c+fOPemkk4YMGRI1JJ8VAQAN4tZbb33mmWeiKPr973//jW98I4qigQMHPvbYY1EUPfbYYwMHDsw3UP4ffn777bfz92W3a9fu4YcfjqLowQcfHDx4cIcOHdatWxfH8dq1axt6h31WBAA0iH//938fPnz43Xffvfvuu//0pz+Nouhf//VfL7nkkqeeemrfffd96KGHoig655xzZs6cuf1sVVXVE088MX369CiKRo4cOWDAgBtvvLGhd1gVAQAN4tBDD33ppZe2fqSsrCyXy239yPZJlP+9ROXl5TNmzMg/cutXGn5/XUEDAPiKKgIACFQRAECQiuO44JXIZDJWEVqgbDabyHadc6BlHvuNpq53W29zz9TOS6fTdZnNHjuvsNnMvGPNmjWbn83/apDiUvA+V1ZWJnW+Mmu22cw2e66gAQAEqggAIFBFAACBKgIACFQRAECgigAAAlUEABCoIgCAQBUBAASqCAAgUEUAAIEqAgAIVBEAQKCKAAACVQQAEKgiAIBAFQEABKoIACBIxXFc8EpkMhmrCC1QNptNZLvOOdAyj/1G07qO87lcrrDBdDpdl9nssfMKm83MO9asWbP52YqKiqjYFLzPlZWVSZ2vzJptNrPNnitoAACBKgIACFQRAECgigAAAlUEABCoIgCAQBUBAASqCAAgUEUAAIEqAgAIVBEAQKCKAAACVQQAEKgiAIBAFQEABKoIACBQRQAAgSoCAAhScRwXvBKZTMYqQguUzWYT2a5zDrTMY7/RtK7jfC6XK2wwnU6bNWs22dmKioqo2BS8z5WVlcX4Hpk126Rmmz1X0AAAAlUEABCoIgCAQBUBAASqCAAgUEUAAIEqAgAIVBEAQKCKAAACVQQAEKgiAIBAFQEABKoIACBQRQAAgSoCAAhUEQBAoIoAAAJVBAAQpOI4LnglMpmMVYQWKJvNJrJd5xxomcd+o2ldx/lcLlfYYDqdNmvWbLKzFRUVUbEpeJ8rKyuL8T0ya7ZJzTZ7rqABAASqCAAgUEUAAIEqAgAIVBEAQKCKAAACVQQAEKgiAIBAFQEABKoIACBQRQAAgSoCAAhUEQBAoIoAAAJVBAAQqCIAgEAVAQAEqggAIEjFcVzwSmQyGasILVA2m01ku8450DKP/UbTuo7zuVyusMF0Om3WrNlkZysqKqJiU/A+V1ZWFuN7ZNZsk5pt9lxBAwAIVBEAQKCKAAACVQQAEKgiAIBAFQEABKoIACBQRQAAgSoCAAhUEQBAoIoAAAJVBAAQqCIAgEAVAQAEqggAIFBFAACBKgIACFQRAECQiuO44JXIZDJWEVqgbDabyHadc6BlHvuNpnUd53O5XGGD6XTarFmzyc5WVFRExabgfa6srCzG98is2SY12+y5ggYAEKgiAIBAFQEABKoIACBQRQAAgSoCAAhUEQBAoIoAAAJVBAAQqCIAgEAVAQAEqggAIFBFAACBKgIACFQRAECgigAAAlUEABCoIgCAIBXHccErkclkrCK0QNlsNpHtOudAyzz2G03rOs7ncrnCBtPptFmzZpOdraioiIpNwftcWVlZjO+RWbNNarbZcwUNACBQRQAAgSoCAAhUEQBAoIoAAAJVBAAQqCIAgEAVAQAEqggAIFBFAACBKgIACFQRAECgigAAAlUEABCoIgCAQBUBAASqCAAgUEUAAEEqjmMrAQDgsyIAgEAVAQAEqggAIFBFAACBKgIACFQRAECgigAAAlUEABCoIgCAQBUBAASqCAAgUEUAAIEqAgAIVBEAQKCKAAACVQQAEKgiAIBAFQEABKoIACBQRQAAgSoCAAhUEQBAoIoAAAJVBAAQqCIAgEAVAQAEqggAIFBFAACBKgIACFQRAECgigAAAlUEABCoIgCAQBUBAASqCAAgUEUAAIEqAgAIVBEAQKCKAAACVQQAEKgiAIBAFQEABKoIACBQRdSDlStXvvfee0nvBVBknDpoalRRc9O5c+fUdqZOndqgGx0wYMDcuXN3/vkTJkw44YQTtn/8k08+GTJkyF577dWlS5cxY8bU6z4Ctdp3331rThelpaWHH374PffcU/Cr1RzgVVVVqVRqB93j1EFT0zrpHaD+3X333TfccENjbnHdunX18joVFRVdu3ZdsmTJggULzjjjjP333//SSy+tl1cGduz++++/8soroyjauHHjr371q3POOWfvvfe+6KKL6vKa5eXlcRzv4AlOHTQ1PitqKR544IE2bdosWbIkiqIVK1bstddekydP/vTTT1Op1AMPPNC5c+eysrIRI0bUnKSWLVs2ZMiQdu3adenSZdSoUTWPf/TRR5lMpn379vvtt9/VV19dXV196qmnvv/++8OHD8+fhmobfPvtt08++eS2bduedNJJixcv3n4PFy5cOGvWrAkTJpSVlR1zzDGnnXbayy+/3IgrBAQlJSVnnnlm//79s9ns8uXLU6nUbbfdVlZWNmzYsF09wLf+rMipg6KgilqKESNG9OvXb9y4cVEUjR079phjjhk+fHj+S3fdddeMGTPmz5//6quvXnPNNfkHzz333Pbt23/wwQdz5syZN2/eyJEjoyjavHnzGWecUVpaunDhwldeeeXNN9+84447Zs+e3bNnz8mTJ0+aNKm2wfXr1w8cOLB3794ff/zxbbfdNnny5O338JBDDtmyZUuHDh02bdr0669kMpnGXSTg/9u0aVO7du3yf37vvfeWLl36ve99r+AD3KmDohHTvHTq1Gmbt3i33XbLf2nBggXl5eUTJ04sKytbsGBBHMcrVqyIoiibzeafMHPmzNLS0jVr1syZM2ePPfaorq7OPz5v3rxWrVqtW7duzpw5paWlK1eu3Gaj+VNbHMe1DeZyubKysrVr1+Yfv/zyy48//vjavoWePXu2adPm1FNPXbFiRQOsELCtDh063H///fk/V1VVTZ48uVWrVs8888yyZcuiKJo+fXr+S7t6gH/++edRFL377rtOHRQLnxU1Q3fffffW7/GmTZvyj3fv3v3mm28eNWrUjTfe2L1795rn19y9eNRRR23YsGHhwoXvvPPO2rVr27Rpk7/78thjj92yZcuiRYvefvvtzp0777PPPrVturbBd95555BDDmnbtm3+aX369NnB/r/33nsrV67cY489zjzzzHpaEuCvuOqqq/KHbceOHSdMmHDfffcNGjQo/6WuXbvW8QB36qBYqKKW5a233oqi6LXXXtv6wZKSkvwfNm/eHO7Ab91606ZN3bt336agjzjiiJKSklQqtYPXr21wm6fVbLE2e+655+jRo3//+99//PHHhX6vwC6o+axo/fr1b731Vv7O67w2bdrU8QB36qBYqKIW5Lnnnnv88cfHjx8/bdq0XC5X8/gbb7yR/8P8+fPbtWt3yCGHHHbYYYsXL166dOk2r9CjR48lS5bkPxXfWs35rrbBXr16LViw4Msvv8z/9c0339x+92bMmFFWVlZdXZ3/62effbbbbruVl5fX7ZsG6k3BB7hTB0Wjnq7E0VR06tRpmytoeV988UXXrl1vuOGG/LX5Tp06rV69On9f0THHHLNo0aI//elP3/jGN0aNGhXH8ebNm/v06TNgwIA///nPS5cuvf7667t06bJ+/fotW7YcffTRF1xwwYoVKxYvXnzOOeecd955cRz37dt37Nixq1evrm2wurq6R48eI0aMWLly5fPPP9++ffvtbw5Yt25djx49rr766qqqqtdff/3www+/9NJLG2vZoEXb+r6ireXvK8rfhriDM0NtB3jNfUVOHRQLVdT877aOouiKK6649tprDzrooDVr1sRxvGrVqi5dulxzzTX5Krr11lv/9m//du+99x41atSGDRvyr/Phhx+effbZe+6551577XX66ae/++67+ccXL158xhln7L777h06dBg2bNiqVaviOP7pT3/arl27c889dweDCxcu7N+//+67796rV69Ro0Z97S2T//Vf/zVw4MC99tqra9eut91227p16xpx5aDl2skq2tUDvKaKnDooFqkd/4qtHfPTj8Vuw4YN06dP79+/f/v27ZPeF4pJNptNZLvOOdAyj/3GU5ekSqfTPy9UOp0ueJ/NmjWb7Gz9/T9mu3zOSeT7NWvWbLLHfqNxtzUAQKCKAAACVQQAEKgiAIBAFQEABKoIACBQRQAAgSoCAAhUEQBAoIoAAAJVBAAQqCIAgEAVAQAEqggAIFBFAACBKgIACFQRAECgigAAglQcxwWvRCaTsYrQAmWz2US265wDLfPYbzSt6zhfUVFR2GBlZeWi0VWFzXYbU262ec/mcrnCZtPptNlGmE1Q0a2VWbPNabbZcwUNACBQRQAAgSoCAAhUEQBAoIoAAAJVBAAQqCIAgEAVAQAEqggAIFBFAACBKgIACFQRAECgigAAAlUEABCoIgCAQBUBAASqCAAgUEUAAEEqjuOCVyKTyVhFaIGy2Wwi23XOgZZ57Dea1nWcr6ioKGywsrJy0eiqwma7jSk327xnc7lcYbPpdNpsI8wmqOjWyqzZ5jTb7LmCBgAQqCIAgEAVAQAEqggAIFBFAACBKgIACFQRAECgigAAAlUEABCoIgCAQBUBAASqCAAgUEUAAIEqAgAIVBEAQKCKAAACVQQAEKgiAIAgFcdxwSuRyWSsIrRA2Ww2ke0650DLPPYbTes6zldUVBQ2WFlZuWh0VWGz3caUm23es7lcrrDZdDptthFmE1R0a2XWbHOabfZcQQMACFQRAECgigAAAlUEABCoIgCAQBUBAASqCAAgUEUAAIEqAgAIVBEAQKCKAAACVQQAEKgiAIBAFQEABKoIACBQRQAAgSoCAAhUEQBAkIrjuOCVyGQyVhFaoGw2m8h2nXOgZR77jaZ1HecrKioKG6ysrFw0uqqw2W5jys0279lcLlfYbDqdNtsIswkqurUya7Y5zTZ7rqABAASqCAAgUEUAAIEqAgAIVBEAQKCKAAACVQQAEKgiAIBAFQEABKoIACBQRQAAgSoCAAhUEQBAoIoAAAJVBAAQqCIAgEAVAQAEqggAIEjFcVzwSmQyGasILVA2m01ku8450DKP/UbTuo7zFRUVhQ1WVlYuGl1V2Gy3MeVmm/fslBevK2x22Cn3FONsLpcrbDadTicym6CiWyuzZpvTbLPnChoAQKCKAAACVQQAEKgiAIBAFQEABKoIACBQRQAAgSoCAAhUEQBAoIoAAAJVBAAQqCIAgEAVAQAEqggAIFBFAACBKgIACFQRAECgigAAglQcxwWvRCaTsYrQAmWz2US265wDLfPYbzSt6zhfUVFR2GBlZeWi0VWFzXYbU262ec9OefG6wmaHnXJPMc7mcrnCZtPpdCKzCSq6tTJrtjnNNnt1rSIAgEKkUrV+qQ4XsupCFQEAjWgHMbT9cxo3j1QRANAodqaHvnaksdpIFQEADayAHkqijfxkPgDQkOqYRPX+OrVTRQBAg6nflGngMFJFAEDDaIiIacgwUkUAQANouHxpsFdWRQBAfWvoe4Aa5vVVEQBQrxr+tugG2ooqAgAIVBEAUH8a54OihtmWKgIACFQRAFBPGvODogbYoioCAAhUEQBAoIoAgPrQ+JfP6nu7revrhQAAdk0cR9OmRZs2RSUl0VlnJdZV/y0Vx3HBw5lMpl53BigO2Ww2ke0650CTPvZTu940v/999OCD0U9+Eo0YEV16aXTiiQXuWR1ipj4/K6qoqChssLKycsqL1xU2O+yUe8yabU6zuVyusNl0Op3IbIKKbq3Mmm1Os/VvyZKoujo64YToo4/Cf0lzXxEAkJypU6PbbotmzIiaAFUEACRn+PBoypRo8OCoCVBFAEBCunSJ2raNstnwh06dkt4bP4MGACTluOOi5cujU04JP4N2wglJ740qAgCSkkr4R/G34QoaAFAf6unH4xPcrioCAAhUEQBAoIoAgHrS+BfR6nWLqggAIFBFAED9acyPi+p7W6oIACBQRQBAvWqcj4saYCuqCGhYRx111Edf/VPY1dXVPXr0uOeee/r06XP00UfPnDkz6V0DijaM4gZ5fVUENKwhQ4Y8/fTTURTNmjXr9NNPHzNmzIsvvlhZWTl16tSkdw0ozjCKG+qVVRHQsIYOHTpt2rQoin75y19+61vfGjhw4MUXX7xkyZKHH3446V0DGlgcF9enUKoIaFg9e/ZcuXLl6tWr58+f/81vfnPKlCkjR468//77hw8fnvSuAQ0vjovowpx/HRZocGefffa4ceOOO+641atXn3XWWS+88ELfvn27deuW9H4BjSKO6+dfgW34m7hTcR22kclk6nVngOKQzWZ36fnvv//+kUceOWvWrJNOOmn8+PGPPfbYli1bRowYcc011+zS6zjnQHEd+9squI0a63cg1bWKKioqCputrKyc8uJ1hc0OO+Ues2ab02wulytsNp1OJzJbl/NGXWQymaJbK7Nmm9NsXC/H/i61UeOebVxBAwAaUU3o7CCPEvp/vVQRAJCEhNJnB/wMGgBAoIoAAAJVBAAQqCIAgEAVAQAEqggAIFBFAACBKgIACFQRAECgigAAAlUEABCoIgCAQBUBAASqCAAgUEUAQEN58MEHTz755KOOOmrmzJlRFC1evPgf/uEfTj311DPPPPOTTz7Z+plVVVXDhg0rKyvL/3XcuHG9evUaP358FEVbtmwZNGhQVVVVQ++tKgIAGsSKFSseeuihOXPmPPbYY9dff30URZdffvktt9wye/bskSNH/tu//dvWTx48eHDfvn1TqVT+rz/4wQ9efvnl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"
+            },
+            {
+              "type": "input_text",
+              "text": "Above is a visual comparison of expected vs predicted outputs for each training example. Green circles indicate correct solutions, red circles show errors. Use this visual feedback along with the textual analysis to improve your approach."
+            }
+          ],
+          "solved_count": 0,
+          "total_training_examples": 3,
+          "pixel_accuracy": 0.3682896379525593
+        },
+        "test_result": {
+          "correct": false,
+          "pixel_accuracy": 0.0,
+          "total_pixels": 342,
+          "correct_pixels": 0,
+          "error": "Grid height mismatch"
+        },
+        "status": "failed_test"
+      }
+    ],
+    "total_turns": 1,
+    "conversation_history": [
+      {
+        "role": "system",
+        "content": "You are an expert at solving abstract reasoning puzzles. Write clean, efficient Python code."
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "You are solving an ARC (Abstraction and Reasoning Corpus) task. \nI will show you training examples with input and output grids, plus a test input grid. Your task is to:\n\n1. **Analyze the training examples** to discover patterns that map input grids to output grids\n2. **Write a Python program** that implements your best understanding of the transformation  \n3. **DO NOT predict or generate the test output** - your job is only to write the transformation program\n4. **Attempt a solution** - even if the pattern isn't completely clear, provide your best hypothesis\n5. **Do not repeat the same transformation** - if you have already tried a transformation, do not repeat it.\n\n**IMPORTANT: Your transformation must always produce a 16\u00d715 output grid.**\n\nThe test input is shown for context so you understand what type of grid your program will eventually process. Focus on learning patterns from training examples and writing code that captures your understanding.\n\nTraining Examples:\n\nExample 1:\nInput:\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 4 4 4 4 4 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n8 8 8 8 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 3 3 3 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n5 5 5 5 5 5 5 5 5 5 5 5 5 5 5\nOutput:\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 4 4 4 4 4 0 0 0 0\n0 0 0 0 0 0 4 4 4 4 4 0 0 0 0\n0 0 0 0 0 0 4 4 4 4 4 0 0 0 0\n8 8 8 8 0 0 4 4 4 4 4 0 0 0 0\n8 8 8 8 0 0 4 4 4 4 4 0 0 0 0\n8 8 8 8 0 0 4 4 4 4 4 0 0 0 0\n8 8 8 8 0 0 4 4 4 4 4 0 0 0 0\n8 8 8 8 0 0 4 4 4 4 4 0 0 0 0\n8 8 8 8 0 0 4 3 3 3 4 0 0 0 0\n8 8 8 8 0 0 4 3 3 3 4 0 0 0 0\n8 8 8 8 0 0 4 3 3 3 4 0 0 0 0\n8 8 8 8 0 0 4 3 3 3 4 0 0 0 0\n5 5 5 5 5 5 5 5 5 5 5 5 5 5 5\n\nExample 2:\nInput:\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5\n0 0 0 0 0 0 0 0 0 0 0 2 0 0 0 0 5\n0 0 0 0 0 0 0 0 0 0 0 2 0 0 0 0 5\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5\n0 0 0 0 0 0 3 0 0 0 0 0 0 0 0 0 5\n0 0 0 0 0 0 3 0 0 0 0 0 0 0 0 0 5\n0 0 0 0 0 0 3 0 0 0 0 0 0 0 0 0 5\n0 0 7 0 0 0 3 0 0 0 0 0 0 0 0 0 5\n0 0 7 0 0 0 0 0 0 0 0 0 0 0 0 0 5\n0 0 7 0 0 0 0 0 0 0 0 0 0 0 0 0 5\n0 0 7 0 0 0 0 0 0 0 0 0 0 0 0 0 5\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5\nOutput:\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5\n0 0 0 0 0 0 0 0 0 0 0 2 2 2 2 2 5\n0 0 0 0 0 0 0 0 0 0 0 2 2 2 2 2 5\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5\n0 0 0 0 0 0 3 3 3 3 3 3 3 3 3 3 5\n0 0 0 0 0 0 3 3 3 3 3 3 3 3 3 3 5\n0 0 0 0 0 0 3 3 3 3 3 3 3 3 3 3 5\n0 0 7 7 7 7 3 3 3 3 3 3 3 3 3 3 5\n0 0 7 7 7 7 7 7 7 7 7 7 7 7 7 7 5\n0 0 7 7 7 7 7 7 7 7 7 7 7 7 7 7 5\n0 0 7 7 7 7 7 7 7 7 7 7 7 7 7 7 5\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5\n\nExample 3:\nInput:\n5 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n5 0 0 0 0 0 0 0 0 3 0 0 0 0 0 0 0\n5 0 0 0 0 0 0 0 0 3 0 0 0 0 0 0 0\n5 0 0 0 0 0 0 0 0 3 0 0 0 0 0 0 0\n5 0 0 0 0 0 0 0 0 3 0 0 0 0 0 0 0\n5 0 0 0 0 0 0 0 0 3 0 0 0 6 0 0 0\n5 0 0 0 0 0 0 0 0 3 0 0 0 6 0 0 0\n5 0 0 0 0 0 0 0 0 0 0 0 0 6 0 0 0\n5 0 0 0 0 0 0 0 0 0 0 0 0 6 0 0 0\n5 0 0 0 0 0 0 0 0 0 0 0 0 6 0 0 0\n5 0 0 0 0 0 2 0 0 0 0 0 0 6 0 0 0\n5 0 0 0 0 0 2 0 0 0 0 0 0 6 0 0 0\n5 0 0 0 0 0 0 0 0 0 0 0 0 6 0 0 0\n5 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n5 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n5 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n5 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nOutput:\n5 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n5 3 3 3 3 3 3 3 3 3 0 0 0 0 0 0 0\n5 3 3 3 3 3 3 3 3 3 0 0 0 0 0 0 0\n5 3 3 3 3 3 3 3 3 3 0 0 0 0 0 0 0\n5 3 3 3 3 3 3 3 3 3 0 0 0 0 0 0 0\n5 3 3 3 3 3 3 3 3 3 6 6 6 6 0 0 0\n5 3 3 3 3 3 3 3 3 3 6 6 6 6 0 0 0\n5 6 6 6 6 6 6 6 6 6 6 6 6 6 0 0 0\n5 6 6 6 6 6 6 6 6 6 6 6 6 6 0 0 0\n5 6 6 6 6 6 6 6 6 6 6 6 6 6 0 0 0\n5 2 2 2 2 2 2 6 6 6 6 6 6 6 0 0 0\n5 2 2 2 2 2 2 6 6 6 6 6 6 6 0 0 0\n5 6 6 6 6 6 6 6 6 6 6 6 6 6 0 0 0\n5 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n5 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n5 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n5 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n\nTest Input:\n5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 8 8 8 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n4 4 4 4 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 2 2 2 2 2 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 3 3 3 3 3 3 3 3 3 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n\nAnalyze the patterns in the training examples and write a Python function that performs this transformation.\n\n**Approach Guidelines:**\n- Look for patterns in shapes, colors, positions, sizes, rotations, reflections, etc.\n- Even if you can't solve all training examples perfectly, implement what patterns you do observe\n- A partial solution that captures some aspects is better than returning the input unchanged\n- If the pattern is unclear, make your best educated guess based on what you can see\n\nRequirements:\n- The function takes a 2D list (grid) where grid[row][col] gives the value at that position\n- Values are integers from 0-9\n- Return a new grid (2D list) with the transformation applied\n- You can use numpy if needed - just add 'import numpy as np' at the start of your function\n- Aim to handle the training examples as well as possible, even if not perfectly\n- Your function should attempt some meaningful transformation based on the patterns you observe\n\nYou MUST end your response with the following exact format:\n\nFinal answer:\n```python\ndef transform(grid):\n    # Your transformation logic here (implement your best understanding)\n    return transformed_grid\n```\n"
+          },
+          {
+            "type": "input_image",
+            "image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAwwAAAZeCAIAAABiYzF3AABKmElEQVR4nO3dfbxVBb3g/7X1CAgiSN7rA5ZwoFEbCo3rY2YaWPdq6lpzMWvrTIck9d7ImHya24tqJs0H8N4mn0qHRAuPpY5rv243Xs4N78u0mSxS0xJRVMwHLAXFfAg5wPq9fp3mvBj4poe1D2wW+/1+9Qcsznevtc/Dtw97nYO1oigSAAD+Xzts9HsAAEQSAEBMJAEABEQSAEBAJAEABEQSAEBAJAEABEQSAEBAJAEABEQSAEBAJAEABEQSAEBAJAEADHQkzZgxo/bnnXbaaeHbDBo0aM899zzxxBPvv//+TR/zRz/6Ua1WGzVq1OrVqzf6o9tuu61Wq82dO7f3t11dXbVabc6cORu92bPPPlur1WbNmtXMVK/Vq1dfe+21xxxzzN577z148OC999775JNPvueee8q9T6ZMmZIkycqVK/fee+/ddtvt2Wef3Wj2P/yH/zBo0KBf/OIX/XyHfOITn6jVah0dHS+++OKmVzJhwoRardbV1dX72+nTp294MTvuuOOuu+566KGHfvvb3+4bSdO0VqtteqJ+PrVeK1asOP/88/fff/+dd9555MiRRxxxxDe/+c1169a9xTsNALZBLXglqaen53e/+90PfvCDY4455sknn9zoT6+//vokSV5++eXvf//7/Xm0L3/5y0uWLNnca+jP1FNPPXX44YefddZZd9111/PPP79mzZrnn3/+tttuO+qoo/7pn/4pKesd73jH9ddfv2rVqmnTphVF0Xf86quvzvP84osv/qu/+qvNeoesW7fu9ttv3+jgr371q4cffvgtLmP9+vWvvvrqz3/+8+nTp8+ePTsZIC+++OLBBx88Z86cRx99dPXq1a+88spPf/rTv//7vz/55JM3fLIAsJ1H0lVXXVX8X7feemuSJPPmzes7Mn/+/L63XLZsWd/x1atXP/LII/V6/fe///03v/nNDR9w1apVjUbj5JNPHjVq1Le+9a3+XMOaNWu6uro294WKt53q6emZOnXqL3/5yyOOOOKf//mfV6xY0dPT8/TTT19zzTWjRo06//zzf/3rX7/F42/4fPssXLiw90//+q//+rOf/ezChQuvuuqq3iMPPvjgOeec85GPfOScc87ZrHfIjjvuuN9++91yyy0bHf/e97737//9v9/07Z9//vnei1m/fv1rr73W3d09ZMiQr33ta2+++eZbvsP6+9SuuOKKp556aurUqQ8++ODrr7++atWqf/u3fzvooIPyPP/BD37Qz1MAQJu+kjR48OD999//sssuS5Jko1eSuru7V69efeaZZ06bNu3ee+996KGH3vbRPve5z/3sZz/7x3/8x826hreduvHGG++7774pU6bcfffdJ5xwwjve8Y6Ojo53vvOdf/d3f3f77bevW7fu5ptvTpowZ86c/fff/4ILLnj00Udfe+21j3/84yNGjPjOd75Tq9U29x3y8Y9//Mc//vELL7yw4cHvf//7p5xyyltcQK1WGzZs2Cc/+clPfOITv//97x977LFkICxZsqSjo2P+/Pnve9/7hg4dOmLEiGOOOab3ha477rij921uuOGGWq3WF4gAsG1qQSS9+eabDz/88Be+8IUkSf7dv/t3G/7RvHnzDjjggA9/+MN/93d/t+OOO/bnxaSLL754/PjxX/7ylx955JH+X8PbTnV3d9dqteuuu27HHXfc6I8+9KEPLV68+KKLLkqasPPOO990001r16497bTTzjrrrKVLl37nO9/ZY489Nnqz/rxDPv7xj290x+3nP//5E0888fGPf7w/V9L7GtKmT7OciRMnrl27Ns/zDQ+OGTOmKIprrrlmQE4BANtVJI0dO7bvm3yHDBkyYcKEW2+9dffdd//85z/f9za//vWvf/GLX5x33nm1Wm3cuHEnn3zyTTfd9Nprr731Iw8dOnTevHk9PT2bddPtbaceeOCBAw44YOzYseH4AQccsNFLPm/xfPvcddddG77N+9///v/6X//rL37xi5tuuukLX/jCRz/60Y0epJ/vkAkTJrznPe/pvd3Z63vf+95f/dVfjRs37i2ucN26dcuXL//GN75xyy23/OVf/uV+++33Fm/c/6c2c+bMI4888pOf/GRnZ+f06dOvu+66Tb81qqurqyiKGTNm9POMANBG/wTA6NGjP/3pTz/44IN77rln38Hrr79+9OjRp556au9v/+Ef/uHVV1/tz12tI4888uyzz/75z39++eWX9/8a3mKqp6dn1apVG72us9HPdo0ZMyZp2kknndQbW0ceeeSmf9r/d8iGd9yKorjlllv+3L22vfbaq/f6Ozo6Ro8ePXPmzHXr1l188cUD9UrSLrvsctddd82fP3/ixImNRuPMM8+cMGHC2LFjb7zxxgF5fADY3iKp97t916xZ873vfW/48OHvfve7L7300r333rvvDXp6eubPn//cc88NHjy49//FJ06cWBRFP799++KLL373u9/9la98ZfHixf2/qj83tdNOOw0fPjz8ufpmvrv56KOP3vBtVq9eXa/XR4wYMXz48DPPPHOjbyrarHfIKaec0nfH7e67716+fPnb3mvbYYcdRo0aNXny5Eajcfrppw/gU9txxx1PPfXUPM9XrFixdOnSefPm7bHHHl1dXV//+tf7fxYAaK9XknbaaadTTjnl+9///o9//OO//uu/3vDf4/mXf/mXMEruv//+RYsWve0j77zzziVuur3F1Hvf+97Fixc//fTT4Y/yTZo0KWnazJkzH3rooSv+6IUXXvj0pz+94Z9u1jtk//33f+9739v7M27f//73DzvssHe9613hSft+um3dunUrV65cuHDhSSedlGwx48eP7+rq+slPfnLQQQc1+V1cALD93277m7/5m8997nP333//ueee23fw+uuvHzJkyCuvvLLh6xP/5//8nyRJrr322v487Ac+8IHPf/7zixYt2vQfiiwxdeqpp65fv/7v//7vw+Rq/p/8ufXWW6+99tp6vf4f/+N/7Orq+tu//dsf/vCHG/6DCJv7DjnllFPuvvvu3n/J6a1/rm3Lee6552q12vTp0zc63tHR8d73vnfVqlVr1qxpyYUBQGW+J+niiy9+17ve9c1vfvNnP/tZkiS//e1v77jjjhNOOGHXXXfd8M0OP/zw/fbb7+abb37llVf687Bf+9rX3v3ud2/uT1GFU9OnT580adIPf/jDQw455JZbbvntb3/b09PTmyDHH3/8/fffv8MO5d91y5Yt+8xnPjN27Ni+Krr22mv32muvc845p/efuCzxDum94zZz5swVK1acfPLJSSuMHj36/e9///XXXz9jxoyf/vSnv/vd71avXv3EE09cc801t9566yGHHDJo0KCWXBgAVCaShg0bduWVV65fv/7MM89cu3btd77znbVr1/Z9h/KGPvWpT73xxhvf/e53+3/77K1/7qyfU4MGDWo0Gocffvj9999/yimn7LXXXoMGDer9z5IsWLBgv/32e+t/EDz8EbBarfbaa6/19PSccsopr7/++k033dTXQO94xztuuOGG1atXn3rqqT09PSXeIePHjz/ooINuueWWD37wgxt+s1cJO++880aXfcMNN/TnqfW+ADZy5Mirr776iCOO2HPPPXfeeefx48d/9rOf7ejo6PuHkfw7SQBUQsv+A7cnnnhimqYPPvjgf//v//2GG27Ybbfd/uZv/mbTN/tP/+k/7bDDDv2849Z7+2zmzJmbezHh1D777HPPPffMnz//uOOO22effQYNGrTHHnscd9xxN954469//euDDz44KeW//Jf/smjRoq985SuHH374hsc/8pGPzJgx4/777581a1a5d0jvXbZ+/vNIW8jEiRMffvjhc845Z8KECbvuuuugQYPGjBlzxhln/OpXvxqQb+QCgK2m5r+oBQCwDb2SBACwLRNJAAABkQQAEBBJAAABkQQAEBBJAAABkQQAEBBJAAABkQQAEBBJAAABkQQAEBBJAAABkQQAEBBJAAABkQQAEBBJAAABkQQAEBBJAAABkQQAEBBJAAABkQQAEBBJAAABkQQAEBBJAAABkQQAEBBJAAABkQQAEBBJAAABkQQAEBBJAAABkQQAEBBJAAABkQQAEBBJAAABkQQAEBBJAAABkcS2YuXKlUuWLGn1VQAVXgXWCANLJFFGmqZdXV0D+5hTpky59957/9yfrlq1qrOz8y3eANjWPPPMM5/5zGdGjx49ZMiQzs7Oc88996WXXmpyFTQza42wuUQS24o//OEPf+6PnnnmmSlTpixbtmzrXhFQ3mOPPTZp0qSXX355wYIFL7300u233/7II49MmjTp+eefL70K3pY1wsASSTRlxYoVtVrt6quvHjNmzJAhQz760Y8+99xzfce//e1v77PPPiNGjDj99NN7l9ezzz5bq9Weeuqp3vHLL7/8sMMOS5Lk6KOPfvTRR6dNmzZ9+vSNTvHDH/5wwoQJkyZNasXzA0qaPn36hz70odtuu23ixIlDhw498MADf/CDH+y5555nn312P1eBNULLiSQGwI033njnnXcuWbJk+fLlX/3qV/uOz549+4477njggQfuu+++GTNmvMUj3HXXXfvtt9+8efPmzp270R8NHjx44cKFV1999Ra7fGCA/eY3v7nnnns2+qrfYYcdZs6c2Wg0Xn755f6vAmuEFhJJDIAvfelL48aNGzNmTFdX16JFi/qOX3bZZRMmTOjs7JwzZ878+fNff/31Eg8+ZcqUgw8+eECvF9iyFi9enCTJAQccsNHxiRMnrl279vHHH+//Q1kjtJBIYgCMGTOm9xfDhg3r6enpO977GniSJAceeOCaNWueeOKJFl0gsFXVarUkSdatW7fR8TfffHNzH8oaoYVEEgNgp5126vt1URSbHu/dlR0dHb2rs8+mOxTYDvS+htT7etKGlixZ0tHRMX78+P6vAmuEFhJJbEEPPfRQ7y8eeOCBXXbZZdy4cYMGDUqSpO8F86effrrvjTdafEB17bvvvpMnT7700ks3PLh+/frZs2efeOKJu+22W/9XgTVCC4kktqDzzz9/2bJlS5cuveCCC84444zBgwfvvvvuY8eOvfbaa994442FCxfefPPNfW88bNiw5cuXv/rqqy29ZGBgXHfddQ8//PBpp5322GOP9fT0LF68eOrUqS+88MKVV16ZJEn/V4E1QguJJLagKVOmHHPMMYceeuixxx7b+3fKWq02d+7chQsXjho16sILL/ziF7/Y98ZnnXXWJZdcMm3atJZeMjAwOjs777///pEjRx577LHDhw8//vjj991331/+8pd77733Zq0Ca4QWqm34HSRVkWVZqy+Bt7FmzZoFCxZMnjx5+PDhrb4WBl6e50nV2BuVY41sZ/IK7o3//9tsKydN09LP1+zWmT3uuONacl6zW2e2qKAqvp/Nmt2eZosKcrsNACAgktgien/8BACqSyQBAAREEgBAQCQBAAREEgBAQCQBAAREEgBAQCQBAAREEgBAQCQBAAREEgBAQCQBAAREEgBAQCQBAAREEgBAQCQBAAREEgBAoFYURVI1WZa1+hKgreV5nlSNvQGtlVdwbyRFBaVpWvr5mjVrtvnZooKq+H42a3Z7mi0qyO02AICASAIACIgkAICASAIACIgkAICASAIACIgkAICASAIACIgkAICASAIACIgkAICASAIACIgkAICASAIACIgkAICASAIACIgkAICASAIACNSKokiqJsuyVl8CtLU8z5OqsTegtfIK7o2kqKA0TUs/X7NmzTY/W1RQFd/PZs1uT7NFBbndBgAQEEkAAAGRBAAQEEkAAAGRBAAQEEkAAAGRBAAQEEkAAAGRBAAQEEkAAAGRBAAQEEkAAAGRBAAQEEkAAAGRBAAQEEkAAAGRBAAQEEkAAIFaURRJ1WRZ1upLgLaW53lSNfYGtFZewb3RkVRTo9EoN5imqdn+z+aXl5zNzm272Sp+fEvPVlTl3s8Vna3i16+9sRVmq8jtNgCAgEgCAAiIJACAgEgCAAiIJACAgEgCAAiIJACAgEgCAAiIJACAgEgCAAiIJACAgEgCAAiIJACAgEgCAAiIJACAgEgCAAiIJACAgEgCAAjUiqJIqibLslZfArS1PM+TqrE3oLXyCu6NpKigNE1LP1+zZs02P1tUUBXfzxWdLR5Pyv2vDWdb9TFqyWxRQW63AQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQKBWFEVSNVmWtfoSoK3leZ5Ujb0BrZVXcG8kRQWlaVr6+Zo1a7b52aKCqvh+ruhs8XhS7n9tONuqj1FLZosKcrsNACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAArWiKJKqybKs1ZcAbS3P86Rq7A1orbyCe6MjqaaJc0q+rx88L6vibKPRKDebpqlZswM+W1FV/Nqv4t7ILy85m53bdrOV+9pP22xvuN0GABAQSQAAAZEEABAQSQAAAZEEABAQSQAAAZEEABAQSQAAAZEEABAQSQAAAZEEABAQSQAAAZEEABAQSQAAAZEEABAQSQAAAZEEABAQSQAAgVpRFEnVZFnW6kuAtpbneVI19ga0Vl7BvdGRVFOj0Sg3mKapWbNmm5zdamq1gfyL3MQ5JXf0g+dlVZxt1edVfnnJ2ezctput3Nd+WoW9MYDcbgO2abVardWXALQpkQRs63QS0BIiCQAgIJKACvBiErD1VfUbt4F2y53ewSr+QC5QUV5JAgAIiCQAgIDbbcBWtVn3yza8N+dGG7CVeSUJqACFBGx9IgkAICCSgG2dl5GAlhBJwDZNIQGtIpKAbZdCAlpIJAEABEQSAEBAJAEABEQSAEBAJAEABGpV/OGRLMtafQnQ1vI8T6rG3oDWyiu4N6r6325rNBrlBtM0NWvWbJOzFTVxTskd/eB5WRVnW/V5lV9ecjY7t+1mK/e1n7bZ3nC7DQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAK1oiiSqsmyrNWXAG0tz/OkauwNaK28gnujI6mmRqNRbjBNU7NmzTY5W1ET55Tc0Q+el1VxtlWfV/nlJWezc9tutnJf+2mb7Q232wAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACBQK4oiqZosy1p9CdDW8jxPqsbegNbKK7g3OpJqajQa5QbTNDVr1myTsxU1cU7JHf3geVkVZ1v1eZVfXnI2O7ftZiv3tZ+22d5wuw0AICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACtaIokqrJsqzVlwBtLc/zpGrsDWitvIJ7oyOppkajUW4wTVOzW2f2yVmrys12XjSyVbNVfD+3ZLaiJs4puaMfPC+r4myrPq/yy0vOZudWcm8083wr97WfttnecLsNACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAArWiKJKqybKs1ZcAbS3P86Rq7A1orbyCe6MjqaZGo1FuME1Ts2bNNjlbURPnlNzRD56XVXG2VZ9X+eUlZ7Nz0ydnrSo323nRyFbNNvN8K/e1n7bZ3nC7DQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAK1oiiSqsmyrNWXAG0tz/OkauwNaK28gnujI6mmRqNRbjBNU7NmzTY5W1ET55Tc0Q+el1VxtlWfV/nlJWezc9MnZ60qN9t50chWzTbzfCv3tZ+22d5wuw0AICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACtaIokqrJsqzVlwBtLc/zpGrsDWitvIJ7oyOppkajUW4wTVOzZs02OVtRE+eU3NEPnpdVcbZVn1f55SVns3PTJ2etKjfbedHIVs0283wr97WfttnecLsNACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAArWiKJKqybKs1ZcAbS3P86Rq7A1orbyCe6MjqaZ6vV5usLu726xZs03OVlTl3s9mzW5Ps1XkdhsAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAEakVRRMcBANqaV5IAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiCQAgIJIAAAIiiYG0cuXKJUuWtPoqgDbVzAqyvtiUSGpfaZp2dXUN7GNOmTLl3nvv3fT40qVLP/axj40cOXKvvfY688wzf//73w/seYHtzDPPPPOZz3xm9OjRQ4YM6ezsPPfcc1966aXSK6g/rC82JZIYSH/4wx82PdjT0/Oxj31szJgxy5Ytu+eee+67776zzjqrFVcHVMNjjz02adKkl19+ecGCBS+99NLtt9/+yCOPTJo06fnnny+xgvrJ+iJQ0K5OOumkT33qU0VRvPjii0mSXHXVVfvuu+/gwYM/8pGPPPvss33H586dO3r06F133fXTn/70G2+8URTFM888kyTJsmXLeh9nzpw5hx56aFEUH/rQh3o/qU4//fQNT/S///f/7ujoePPNN3t/+8///M9Dhw5dv359K540UAEf/OAHp06duuGRdevWHXbYYb0H+7OCrC8GhFeS+JMbb7zxzjvvXLJkyfLly7/61a/2HZ89e/Ydd9zxwAMP3HfffTNmzHiLR7jrrrv222+/efPmzZ07d8PjRxxxRE9Pz6BBg3p/+/zzz48aNapWq22xpwJU2G9+85t77rlno22zww47zJw5s9FovPzyy/1fQdYXTRJJ/MmXvvSlcePGjRkzpqura9GiRX3HL7vssgkTJnR2ds6ZM2f+/Pmvv/56M2d55ZVXLr300tNPP30gLhnYDi1evDhJkgMOOGCj4xMnTly7du3jjz/e/4eyvmiSSOJPxowZ0/uLYcOG9fT09B0/7LDDen9x4IEHrlmz5oknnih9itdff/2EE06YMGHCrFmzmr5eYPvU+zrNunXrNjr+5ptvbu5DWV80SSTxJzvttFPfr4ui2PR4787q6OjY6KXmTXdZaOXKlZMnT95nn31uu+22jo6OgbtwYLvS+xpS7+tJG1qyZElHR8f48eP7v4KsL5okkngbDz30UO8vHnjggV122WXcuHG9t+f7Xrh++umn+974z92qf/bZZ4888sijjjrqpptu6ru7D7Cpfffdd/LkyZdeeumGB9evXz979uwTTzxxt9126/8Ksr5okkjibZx//vnLli1bunTpBRdccMYZZwwePHj33XcfO3bstdde+8YbbyxcuPDmm2/ue+Nhw4YtX7781Vdf3fARVq1a9eEPf/jEE0+cPXu2b3gE3tZ111338MMPn3baaY899lhPT8/ixYunTp36wgsvXHnllUmS9H8FWV80SSTxNqZMmXLMMccceuihxx57bO/f7Wq12ty5cxcuXDhq1KgLL7zwi1/8Yt8bn3XWWZdccsm0adM2fIRvfetbS5cu7V0xfV577bVWPBugAjo7O++///6RI0cee+yxw4cPP/744/fdd99f/vKXe++992atIOuLJtU2/O6TzZVlWbPnZxu2Zs2aBQsWTJ48efjw4a2+FrYteZ4nVWNftRXriwHZV81+A1qj0Sg3mKap2W189rjjjkuS5M4779zK5zW71Wbr9XrSTqr4MTLbzGw/19c2dc1mt6l95XYbAEBAJPFn+TkOANqZSAIACIgkAICASAIACIgkAICASAIACIgkAICASAIACIgkAICASAIACIgkAICASAIACIgkAICASAIACIgkAICASAIACIgkAIBArSiKpKwsy0rPAtWV53lSNfYVtKe8iX3V0eS5G41GucE0Tc2a3RKz+SvLy81mI/au4vNtZrZeryftpIofI7Pb92wz+6rdZuut2FdutwEABEQSAEBAJAEABEQSAEBAJAEABEQSAEBAJAEABEQSAEBAJAEABEQSAEBAJAEABEQSAEBAJAEABEQSAEBAJAEABEQSAEBAJAEABEQSAECgVhRF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d91113777Tdv3ryN/qY1bty49evXv+Md71i7du2df5Rl2ZZ8KkCF/eY3v7nnnns22jY77LDDzJkzG43Gyy+/3P8VZH3RJJHEn3zpS18aN27cmDFjurq6Fi1a1Hf8sssumzBhQmdn55w5c+bPn//666+XPsWECROOP/74973vfYcffvgAXTWwvVm8eHGSJAcccMBGxydOnLh27drHH3+8/w9lfdEkkcSfjBkzpvcXw4YN6+np6Tt+2GGH9f7iwAMPXLNmzRNPPFH6FEuWLFm5cuXQoUM/9rGPNX29wPapVqslSbJu3bqNjr/55pub+1DWF00SSfzJTjvt1Pfroig2Pd67szo6OnpXWJ9Nd9lbGDZs2KxZs372s58tX758IK4a2N70vobU+3rShpYsWdLR0TF+/Pj+ryDriyaJJN7GQw891PuLBx54YJdddhk3btygQYOSJOl74frpp5/ue+ONFlCvO+64Y8SIEX1/C3zppZd23HHHkSNHbpXLBypm3333nTx58qWXXrrhwfXr18+ePfvEE0/cbbfd+r+CrC+aJJJ4G+eff/6yZcuWLl16wQUXnHHGGYMHD959993Hjh177bXXvvHGGwsXLrz55pv73njYsGHLly9/9dVXN3yEo48+es899/zCF77wyiuvPPTQQ+edd960adOGDh3aimcDVMB111338MMPn3baaY899lhPT8/ixYunTp36wgsvXHnllUmS9H8FWV80SSTxNqZMmXLMMccceuihxx57bO/f7Wq12ty5cxcuXDhq1KgLL7zwi1/8Yt8bn3XWWZdccsm0adM2fIQhQ4YsWLDgqaeeete73nXCCSekadq76QBCnZ2d999//8iRI4899tjhw4cff/zx++677y9/+cu99957s1aQ9UWTaht+98nm8pOQ27c1a9YsWLBg8uTJw4cPb/W1sG3J8zypGvuqrVhfDMi+6kiaU6/Xyw12d3c3Go1ys2mamt0Ks8cdd1ySJHfeeedWPq/ZbX+2ouyrdpvt5/rapq7Z7Da1r9xuAwAIiCT+rN4fAwGA9iSSAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAIFAriiIpK8uy0rNAdeV5nlSNfQXtKW9iX3U0ee56vV5usLu7u9FolJtN09Tstj/75KxV5WY7LxpZxefbVrMV1cy+aubz2ez2PVu5r992m22G220AAAGRBAAQEEkAAAGRBAAQEEkAAAGRBAAQEEkAAAGRBAAQEEkAAAGRBAAQEEkAAAGRBAAQEEkAAAGRBAAQEEkAAAGRBAAQEEkAAAGRBAAQqBVFkZSVZVnpWaC68jxPqsa+gvaUN7GvOpo8d71eLzfY3d3daDTKzaZpanbbn31y1qpys50Xjazi822r2YpqZl818/lsdvuerdzXb7vNNsPtNgCAgEgCAAiIJACAgEgCAAiIJACAgEgCAAiIJACAgEgCAAiIJACAgEgCAAiIJACAgEgCAAiIJACAgEgCAAiIJACAgEgCAAiIJACAgEgCAAjUiqJIysqyrPQsUF15nidVY19Be8qb2FcdTZ67Xq+XG+zu7m40GuVm0zQ1u+3PPjlrVbnZzotGVvH5ttVsRTWzr5r5fDa7fc9W7uu33Wab4XYbAEBAJAEABEQSAEBAJAEABEQSAEBAJAEABEQSAEBAJAEABEQSAEBAJAEABEQSAEBAJAEABEQSAEBAJAEABEQSAEBAJAEABEQSAEBAJAEABGpFUSRlZVlWehaorjzPk6qxr6A95U3sq44mz12v18sNdnd3NxqNcrNpmprd9mefnLWq3GznRSOr+HzbaraimtlXzXw+m92+Zyv39dtus81wuw0AICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACtaIokrKyLCs9C1RXnudJ1dhX0J7yJvZVR5Pnrtfr5Qa7u7sbjUa52TRNzW77s0/OWlVutvOikVV8vjfcfXa52a6jrqjc862oZvZVM5/PZrfv2Wa+9qs422infeV2GwBAQCQBAAREEgBAQCQBAAREEgBAQCQBAAREEgBAQCQBAAREEgBAQCQBAAREEgBAQCQBAAREEgBAQCQBAAREEgBAQCQBAAREEgBAQCQBAARqRVEkZWVZVnoWqK48z5Oqsa+gPeVN7KuOJs9dr9fLDXZ3dzcajXKzaZqa3fZnn5y1qtxs50Ujq/h8b7j77HKzXUddUbnnW1HN7KtmPp/Nbt+zzXztV3G20U77yu02AICASAIACIgkAICASAIACIgkAICASAIACIgkAICASAIACIgkAICASAIACIgkAICASAIACIgkAICASAIACIgkAICASAIACIgkAICASAIACNSKokjKyrKs9CxQXXmeJ1VjX0F7ypvYVx1Nnrter5cb7O7ubjQa5WbTNDVrdlubveHus8vNdh11ReWeb0U1s6+a+fiaNbs9zTbaaV+53QYAEBBJAAABkQQAEBBJAAABkQQAEBBJAAABkQQAEBBJAAABkQQAEBBJwLarVqu1+hKA9iWSgG2aTgJaRSQB2zqdBLSESAIACIgkoAK8mARsfR0tOCfQxkrnTu9gURQDfUUAMa8kAQAERBIAQMDtNmCr2qz7ZRvem3OjDdjKas3snSzLBvRigGrI83zrnKgvkpovJPsK2lPexL5q9pWker1ebrC7u7vRaJSbTdPUrNltbfaGu88uN9t11BWVe74V1cy+aubja9bs9jTbaKd95XuSgG2dG21AS4gkYJumkIBWEUnAtkshAS0kkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAArWiKJKysiwrPQtUV57nSdXYV9Ce8ib2VUeT567X6+UGu7u7G41Gudk0Tc2a3dZmb7j77HKzXUddUbnnW1HN7KtmPr5mzW5Ps4122ldutwEABEQSAEBAJAEABEQSAEBAJAEABEQSAEBAJAEABEQSAEBAJAEABEQSAEBAJAEABEQSAEBAJAEABEQSAEBAJAEABEQSAEBAJAEABEQSAECgVhRFUlaWZaVngerK8zypGvsK2lPexL7qaPLc9Xq93GB3d3ej0Sg3m6Zpu83mrywvN5uN2LuKz7eKszfcfXa52a6jrqjc862oZvZVM1+DZvs/28zXkdmtM9top33ldhsAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAEakVRJGVlWVZ6FqiuPM+TqrGvoD3lTeyrjibPXa/Xyw12d3c3Go1ys2mattts/srycrPZiL2r+HyrOHvD3WeXm+066orKPd+KamZfNfM1aLb/s818HZndOrONdtpXbrcBAAREEgBAQCQBAAREEgBAQCQBAAREEgBAQCQBAAREEgBAQCQBAAREEgBAQCQBAAREEgBAQCQBAAREEgBAQCQBAAREEgBAQCQBAAREEgBAoFYURVJWlmWlZ4HqyvM8qRr7CtpT3sS+6mjy3PV6vdxgd3d3o9EoN5umqVmz29rsDXefXW6266grKvd8K6qZfdXMx9es2e1pttFO+8rtNgCAgEgCAAiIJACAgEgCAAiIJACAgEgCAAiIJACAgEgCAAiIJACAgEgCAAiIJACAgEgCAAiIJACAgEgCAAiIJACAgEgCAAiIJACAgEgCAAjUiqJIysqyrPQsUF15nidVY19Be8qb2FcdTZ67Xq+XG+zu7m40GuVm0zQ1a9ZsC2cryr4ya7YNZ5vhdhsAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAEakVRJGVlWVZ6FqiuPM+TqrGvoD3lTeyrjibPXa/Xyw12d3c3Go1ys2mamjVrtoWzFWVfmTXbhrPNcLsNACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAArWiKJKysiwrPQtUV57nSdXYV9Ce8ib2VUeT567X6+UGu7u7G41Gudk0Tc2aNdvC2Yqyr8yabcPZZrjdBgAQEEkAAAGRBAAQEEkAAAGRBAAQEEkAAAGRBAAQEEkAAAGRBAAQEEkAAAGRBAAQEEkAAAGRBAAQEEkAAAGRBAAQEEkAAAGRBAAQEEkAAIFaURRJWVmWlZ4FqivP86Rq7CtoT3kT+6qjyXPX6/Vyg93d3Y1Go9xsmqZmzZpt4WxF2VdmzbbhbDPcbgMACIgkAICASAIACIgkAICASAIACIgkAICASAIACIgkAICASAIACIgkAICASAIACIgkAICASAIACIgkAICASAIACIgkAICASAIACIgkAIBArSiK6DgAQFvzShIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAQEAkAQAERBIAwEBH0owZM2p/3mmnnfbWbzNlypS+h1qxYsX555+///7777zzziNHjjziiCO++c1vrlu3rv8n2shtt91Wq9Xmzp3b+9uurq5arTZnzpyN3uzZZ5+t1WqzZs3q/e306dM3fOQdd9xx1113PfTQQ7/97W9v9KyfeuqpjR5qyZIltVrt3HPPLXfBAMA2pSPZBrz44ouHHHJIX3asXr36p3/0ox/96H/+z/9Zq9UG6kRf/vKXTzjhhP3337+fb79+/fpXX33153+0cuXK888/f6CuBADYnl9Juuqqq4r/69Zbb02SZN68eX1H5s+f3/eWy5YtKzaxcOHC3j+94oornnrqqalTpz744IOvv/76qlWr/u3f/u2ggw7K8/wHP/jBZp3ora1Zs6arq6vvBao/5/nnn+995PXr17/22mvd3d1Dhgz52te+9uabbw74ewYA2DZtE9+TtGTJko6Ojvnz57/vfe8bOnToiBEjjjnmmNtvvz1JkjvuuGMAT/S5z33uZz/72T/+4z/28+1rtdqwYcM++clPfuITn/j973//2GOPDeDF3HDDDbVa7aqrrhrAxwQAtqtImjhx4tq1a/M83/DgmDFjiqK45pprBvBEF1988fjx47/85S8/8sgjmzXY+xrSjjvuOIAXAwBsy7ZSJI0dO3bT71++6667ev905syZRx555Cc/+cnOzs7p06dfd911Dz/88Ja4jKFDh86bN6+np6c/N92SJFm3bt3y5cu/8Y1v3HLLLX/5l3+53377DeDFdHV1FUUxY8aMAXxMAGC7eiVpl112ueuuu+bPnz9x4sRGo3HmmWdOmDBh7NixN95444Cf68gjjzz77LN//vOfX3755X/ubfbaa6/ejOvo6Bg9evTMmTPXrVt38cUXeyUJANrHVoqk8Bu3jz766L432HHHHU899dQ8z1esWLF06dJ58+btscceXV1dX//61wf8Yi6++OJ3v/vdX/nKVxYvXvzWb7nDDjuMGjVq8uTJjUbj9NNP7z3Y0fH//0hgT0/PRm/ce6T3TwGAqtsmXknayPjx47u6un7yk58cdNBBF1100YA//s477/zWN936frpt3bp1K1euXLhw4UknndT3pyNGjEiS5IUXXtho6re//W3fnwIAVdf6SHruuedqtdr06dM3Ot7R0fHe97531apVa9asGfCTfuADH/j85z+/aNGiTf95ybc1duzY8Mfueo90dnYO3GUCAC3T+ntDo0ePfv/733/99dcPGTLk1FNP7ezsHDFixHPPPfe//tf/uvXWWw855JBBgwZtifN+7Wtf+5d/+ZcSPz137LHH7rTTTrNnzx4xYsSpp576F3/xF7/73e++973vXXnllUOHDv3whz+8Ja4WAGijn26r1WqvvfZakiTXX3/9yJEjr7766iOOOGLPPffceeedx48f/9nPfrajo2PL/TNCvTfdSvxz3qNHj/5v/+2/rVmz5rzzztt777132mmnffbZ59xzz127du0//dM//cVf/EU/H8e/kwQA27Jt5d9Jevjhh88555wJEybsuuuugwYNGjNmzBlnnPGrX/1q0qRJW+68H/jAB2bOnFli8B/+4R8ajcZHP/rRPfbYY6eddtprr71OOOGEhQsXnnnmmVvgMgGAFqgVRdGK8wIAbNO2iVeSAAC2NSIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkgAAAiIJACAgkoDWWLly5ZIlS7a/cwHbDZEEbIapU6fWIgsXLtzch5oyZcq999676fE0Tbu6ugboet/mXABvQSQBm+G2224r/mjevHnDhg3r/XVRFFOmTNnch/rDH/6wZa6xxecCthsiCRgwzz///NSpU3fZZZd3vvOdX/jCF/rS5Fvf+lZnZ+fw4cMPPvjg22+/PUmSo48++tFHH502bdr06dP/3KOtWLGiVqtdffXVY8aMGTJkyEc/+tHnnnuu7/i3v/3tffbZZ8SIEaeffnrviZ599tlarfbUU0/1jl9++eWHHXZYP88FsCmRBAyYv/3bvx0+fPhTTz314x//eNGiRf/5P//nJEkeeuih888//7bbbluxYsXnP//5er3+8ssv33XXXfvtt9+8efPmzp371o9544033nnnnUuWLFm+fPlXv/rVvuOzZ8++4447Hnjggfvuu2/GjBlv8Qj9PxfAhkQSMDDuvvvuBx988Nprr9199907Ozu//vWv/4//8T9Wr179m9/8JkmSYcOGDR48+LTTTlu9evVuu+3W/4f90pe+NG7cuDFjxnR1dS1atKjv+GWXXTZhwoTOzs45c+bMnz//9ddf3zJPC2hfIgkYGIsXL37jjTcGDx7c+63cBx988Pr165988sljjz32kEMOOeCAAw455JALL7zw2Wef3ayHHTNmTO8vhg0b1tPT03e891ZakiQHHnjgmjVrnnjiiQF9NgAiCRgga9euHT9+fPH/es973jNkyJAf/ehHP/nJTyZPnvzd7373oIMOWrp0af8fdqeddur7dVEUmx5ft25dkiQdHR21Wm3Dwd7jAKWJJGBg7L///suWLQtfKKrVakccccQll1yyePHioUOH/uu//mvvwWZO99BDD/X+4oEHHthll13GjRs3aNCgJEn67rs9/fTTG15AM+cC2pNIAgbGhz/84fe9733Tpk175plnnnvuuZkzZ77rXe968803v/vd744ZM+bXv/71mjVr7rnnnhdeeOH9739/7+2z5cuXv/rqq+VOd/755y9btmzp0qUXXHDBGWecMXjw4N13333s2LHXXnvtG2+8sXDhwptvvrnvjZs8F9CeRBIwMHbYYYdGozFs2LADDjjgPe95z6OPPvqv//qvvd+s/alPfeq4444bPnz4GWeccc011xx++OFJkpx11lmXXHLJtGnTyp1uypQpxxxzzKGHHnrsscdeeumlvS8XzZ07d+HChaNGjbrwwgu/+MUv9r1xk+cC2lNtw3v8sHVkWdbqS6DC1qxZs2DBgsmTJw8fPrzV18LWk+d5qy+BttPR6gugTdXr9XKD3d3dZtt89tVXX12wYMHHPvax0aNHb83zmm3tLGx9brcBAAS8kgRUzPDhw2+55ZZWXwWw/fNKEgBAQCQBAAREEgBAQCQBAAREEgBAQCQBAAREEgBAQCQBAAREEgBAQCQBAAREEgBAQCQBAAREEgBAQCQBAAREEgBAQCQBAARqRVFEx2ELyrKs1ZcAVEye562+BNpPAVtdmqalP2PNmjXbnrOt3lu0I7fbAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAICCSAAACIgkAIFAriiI6DltQlmWtvgSgYvI8b/Ul0H4K2OrSNC39GWvWrNn2nG313qIdud0GABAQSQAAAZEEABAQSQAA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"
+          },
+          {
+            "type": "input_text",
+            "text": "Above is a visual representation of all the training examples and the test input. Each grid cell is colored according to its value (0-9), with clear labels and arrows showing input\u2192output transformations. Use both the textual and visual information to understand the pattern."
+          }
+        ]
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          "Final answer:\n```python\nimport numpy as np\n\ndef transform(grid):\n    grid = np.array(grid)\n    h, w = grid.shape\n\n    # Set output size as required (16 rows x 15 cols)\n    out_h, out_w = 16, 15\n    output = np.zeros((out_h, out_w), dtype=int)\n\n    # Find background color (assume 0), and identify color rectangles (nonzero color blobs)\n    # We'll find rectangles for each color, ignoring zeros\n    nonzero = grid != 0\n    colors = set(np.unique(grid[nonzero]))\n\n    # Get bounding boxes for each color\n    bboxes = []\n    for color in colors:\n        mask = (grid == color)\n        if np.any(mask):\n            ys, xs = np.where(mask)\n            miny, maxy = ys.min(), ys.max()\n            minx, maxx = xs.min(), xs.max()\n            bboxes.append((color, miny, maxy, minx, maxx))\n\n    # Sort the boxes, following training: first by topmost, then leftmost\n    if len(bboxes) == 0:\n        return output.tolist()\n    \n    # For each input, order: left to right for horizontal bars, or top to bottom for vertical bars\n    # Training set reveals: In the output, the colored rectangles are packed into columns/rows at upper-left, largest to smallest/ordered by position or input order.\n    # Vertical stacking: In output, all bars are \"grown\" into rectangles (of height/width equal to largest in group) and packed together.\n    # The output always fills rectangles tightly for each unique input color, and preserves outer edge \"frames\" if present.\n\n    # Special case: preserve gray border if present in input\n    # Let's detect and copy gray borders (value 7 in ARC, but here 7 is not present; in our samples, \"frame\" is value=8, value=1, or value=9 if any).\n    # Instead, just copy any nonzero border colors, but training shows border is always zero (black).\n\n    # To determine orientation: If width >= height (i.e., a bar, not a column), fill horizontally and stack vertically.\n\n    # Sort bboxes so:\n    #  - If all bars are horizontal: Sort by y, then x\n    #  - If all bars are vertical: Sort by x, then y\n    #  - Otherwise, sort by area, then top-left\n    \n    areas = []\n    for (color, miny, maxy, minx, maxx) in bboxes:\n        h_ = maxy-miny+1\n        w_ = maxx-minx+1\n        areas.append((color, h_, w_, miny, minx))\n\n    # We'll treat any bar (either height==1 or width==1) as a strip to be grown into a rectangle\n    # Collect all bars' widths and heights\n    # For each bar, in output:\n    # - Grow to fill rectangle of certain width/height, according to groupings in training outputs\n\n    # Let's approximate from the training:\n    # - Output is always 16x15\n    # - There are at most 3 bars in input; in output, stacked and expanded horizontally or vertically at upper left.\n    # - Try to pack bars as rectangles, sorted top to bottom\n\n    # Sort bars by input topmost (miny), then leftmost (minx)\n    bboxes_sorted = sorted(bboxes, key=lambda b: (b[1], b[3]))\n\n    # For each, compute size needed: in training, bars grow to fill a rectangle, but their output width is the largest bar's width\n    # So, max output width = max of input bars' widths, and each bar is expanded to that width (same for heights)\n    # Some outputs, however, grow all bars to the same height and width as biggest bar.\n    total_bars = len(bboxes_sorted)\n    \n    # Output: for each bar color, grow a rectangle of (max_bar_height, max_bar_width)\n    # For horizontal bars: stack vertically, for vertical bars: stack horizontally.\n    # More generally, training ex shows stacking bars in output; also filling to same width.\n    max_width = max([b[4] - b[3] + 1 for b in bboxes_sorted])\n    max_height = max([b[2] - b[1] + 1 for b in bboxes_sorted])\n\n    # Now, for vertical packing: fill from top down, with each group as a band of height=max_height, width=max_width\n    # Disambiguation: in training ex 1,\n    #   bar0 (leftmost) is blue (width 4) -> output: fills left col group (width 5)\n    #   bar1 (yellow, middle, width 5) and bar2 (green, bottom, width 3)\n    #      - output: grouped together, forming one big rectangle, yellow on top, green below, both of width 5\n\n    # In training 2: vertical orange, vertical green, small red -- packed horizontally in layers to right\n\n    # It appears that the ordering in the output is:\n    # - Rectangles are packed tightly at the upper edge,\n    # - The largest input \"bar\" dictates the span,\n    # - All bars of the same color are stacked in a row or column, growing to rectangle\n\n    # We'll implement stacking bars as rows, each expanded horizontally, top to bottom, left to right,\n    # grouped in order of their appearance in input.\n\n    # We'll fill stacked rectangles using the order and largest needed dimensions.\n\n    # Compute the output row for each rectangle: start at row 0 and grow down\n\n    cur_y = 0\n    for (color, miny, maxy, minx, maxx) in bboxes_sorted:\n        height = maxy - miny + 1\n        width = maxx - minx + 1\n\n        # To match the output, set the output rectangle's width as the largest among all bars for this task\n        out_width = max_width\n        out_height = height\n\n        # In training, bars are grown to width = max_width, height = bar's height or max of group\n        # But in most cases, stacking each bar as a horizontal band fits\n\n        if cur_y + out_height > out_h:\n            break  # out of bounds\n\n        output[cur_y:cur_y+out_height, 0:out_width] = color\n        cur_y += out_height\n\n    return output.tolist()\n```"
+        ]
+      }
+    ],
+    "all_responses": [
+      {
+        "id": "resp_687001ea3738819ebfdef93ac9720f8408fa1092d1499d53",
+        "model": "gpt-4.1-2025-04-14",
+        "usage": {
+          "input_tokens": 5880,
+          "output_tokens": 1399,
+          "total_tokens": 7279
+        },
+        "output": [
+          {
+            "type": "message",
+            "content": [
+              "Final answer:\n```python\nimport numpy as np\n\ndef transform(grid):\n    grid = np.array(grid)\n    h, w = grid.shape\n\n    # Set output size as required (16 rows x 15 cols)\n    out_h, out_w = 16, 15\n    output = np.zeros((out_h, out_w), dtype=int)\n\n    # Find background color (assume 0), and identify color rectangles (nonzero color blobs)\n    # We'll find rectangles for each color, ignoring zeros\n    nonzero = grid != 0\n    colors = set(np.unique(grid[nonzero]))\n\n    # Get bounding boxes for each color\n    bboxes = []\n    for color in colors:\n        mask = (grid == color)\n        if np.any(mask):\n            ys, xs = np.where(mask)\n            miny, maxy = ys.min(), ys.max()\n            minx, maxx = xs.min(), xs.max()\n            bboxes.append((color, miny, maxy, minx, maxx))\n\n    # Sort the boxes, following training: first by topmost, then leftmost\n    if len(bboxes) == 0:\n        return output.tolist()\n    \n    # For each input, order: left to right for horizontal bars, or top to bottom for vertical bars\n    # Training set reveals: In the output, the colored rectangles are packed into columns/rows at upper-left, largest to smallest/ordered by position or input order.\n    # Vertical stacking: In output, all bars are \"grown\" into rectangles (of height/width equal to largest in group) and packed together.\n    # The output always fills rectangles tightly for each unique input color, and preserves outer edge \"frames\" if present.\n\n    # Special case: preserve gray border if present in input\n    # Let's detect and copy gray borders (value 7 in ARC, but here 7 is not present; in our samples, \"frame\" is value=8, value=1, or value=9 if any).\n    # Instead, just copy any nonzero border colors, but training shows border is always zero (black).\n\n    # To determine orientation: If width >= height (i.e., a bar, not a column), fill horizontally and stack vertically.\n\n    # Sort bboxes so:\n    #  - If all bars are horizontal: Sort by y, then x\n    #  - If all bars are vertical: Sort by x, then y\n    #  - Otherwise, sort by area, then top-left\n    \n    areas = []\n    for (color, miny, maxy, minx, maxx) in bboxes:\n        h_ = maxy-miny+1\n        w_ = maxx-minx+1\n        areas.append((color, h_, w_, miny, minx))\n\n    # We'll treat any bar (either height==1 or width==1) as a strip to be grown into a rectangle\n    # Collect all bars' widths and heights\n    # For each bar, in output:\n    # - Grow to fill rectangle of certain width/height, according to groupings in training outputs\n\n    # Let's approximate from the training:\n    # - Output is always 16x15\n    # - There are at most 3 bars in input; in output, stacked and expanded horizontally or vertically at upper left.\n    # - Try to pack bars as rectangles, sorted top to bottom\n\n    # Sort bars by input topmost (miny), then leftmost (minx)\n    bboxes_sorted = sorted(bboxes, key=lambda b: (b[1], b[3]))\n\n    # For each, compute size needed: in training, bars grow to fill a rectangle, but their output width is the largest bar's width\n    # So, max output width = max of input bars' widths, and each bar is expanded to that width (same for heights)\n    # Some outputs, however, grow all bars to the same height and width as biggest bar.\n    total_bars = len(bboxes_sorted)\n    \n    # Output: for each bar color, grow a rectangle of (max_bar_height, max_bar_width)\n    # For horizontal bars: stack vertically, for vertical bars: stack horizontally.\n    # More generally, training ex shows stacking bars in output; also filling to same width.\n    max_width = max([b[4] - b[3] + 1 for b in bboxes_sorted])\n    max_height = max([b[2] - b[1] + 1 for b in bboxes_sorted])\n\n    # Now, for vertical packing: fill from top down, with each group as a band of height=max_height, width=max_width\n    # Disambiguation: in training ex 1,\n    #   bar0 (leftmost) is blue (width 4) -> output: fills left col group (width 5)\n    #   bar1 (yellow, middle, width 5) and bar2 (green, bottom, width 3)\n    #      - output: grouped together, forming one big rectangle, yellow on top, green below, both of width 5\n\n    # In training 2: vertical orange, vertical green, small red -- packed horizontally in layers to right\n\n    # It appears that the ordering in the output is:\n    # - Rectangles are packed tightly at the upper edge,\n    # - The largest input \"bar\" dictates the span,\n    # - All bars of the same color are stacked in a row or column, growing to rectangle\n\n    # We'll implement stacking bars as rows, each expanded horizontally, top to bottom, left to right,\n    # grouped in order of their appearance in input.\n\n    # We'll fill stacked rectangles using the order and largest needed dimensions.\n\n    # Compute the output row for each rectangle: start at row 0 and grow down\n\n    cur_y = 0\n    for (color, miny, maxy, minx, maxx) in bboxes_sorted:\n        height = maxy - miny + 1\n        width = maxx - minx + 1\n\n        # To match the output, set the output rectangle's width as the largest among all bars for this task\n        out_width = max_width\n        out_height = height\n\n        # In training, bars are grown to width = max_width, height = bar's height or max of group\n        # But in most cases, stacking each bar as a horizontal band fits\n\n        if cur_y + out_height > out_h:\n            break  # out of bounds\n\n        output[cur_y:cur_y+out_height, 0:out_width] = color\n        cur_y += out_height\n\n    return output.tolist()\n```"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
