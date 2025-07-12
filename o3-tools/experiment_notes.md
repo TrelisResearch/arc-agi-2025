@@ -3,11 +3,44 @@
 ## 2025 12th July
 
 ### Running the gpt-4.1-mini-calib-training dataset to test whether images do anything
+
+**Commentary:**
+- On gpt-4.1-mini (and very likely gpt-4.1) adding images does not help. This doesn't mean images can't help if there is fine-tuning.
+- Adding images doesn't meaningfully increase cost.
+
+**Results:**
+
+AGGREGATE STATISTICS - with images:
+----------------------------------------------------------------------
 ```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini --independent-attempts
-
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini --disable_images
 ```
+Attempt 1 Only Success Rate:
+  Mean: 15.2%
+  Std Dev: 3.8%
+  95% CI: [7.8%, 22.6%]
+
+All Attempts Success Rate:
+  Mean: 37.7%
+  Std Dev: 3.3%
+  95% CI: [31.2%, 44.2%]
+Rough cost per run: $0.63
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini --disable_images  --independent-attempts
+```
+Attempt 1 Only Success Rate:
+  Mean: 14.5%
+  Std Dev: 1.3%
+  95% CI: [12.0%, 17.0%]
+
+All Attempts Success Rate:
+  Mean: 36.2%
+  Std Dev: 3.3%
+  95% CI: [29.7%, 42.7%]
+Rough cost per run: $0.60
 
 ### Expanding on the gpt-4.1-mini-calib dataset
 
