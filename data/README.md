@@ -122,8 +122,8 @@ Each task file is a JSON object with the following structure:
 ## Subset Naming Convention (2025+)
 
 Subsets are now split by training and evaluation for each dataset:
-- `shortest_training_1`, `shortest_training_10`, `shortest_training_30`, `shortest_training_100` (arc-agi-1 only)
-- `shortest_evaluation_1`, `shortest_evaluation_10`, `shortest_evaluation_30`, `shortest_evaluation_100` (arc-agi-1 only)
+- `shortest_training_1`, `shortest_training_10`, `shortest_training_30`, `shortest_training_100` (both datasets)
+- `shortest_evaluation_1`, `shortest_evaluation_10`, `shortest_evaluation_30`, `shortest_evaluation_100` (both datasets)
 - ... and similarly for `middle` and `longest` (up to 30 tasks)
 - `grid_size_distributed_30_training`: 30 training tasks evenly distributed by grid size
 - `grid_size_distributed_30_evaluation`: 30 evaluation tasks evenly distributed by grid size
@@ -148,6 +148,11 @@ uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset longest_tra
 Run the 100 shortest evaluation tasks from ARC-AGI-1:
 ```bash
 uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_100
+```
+
+Run the 100 shortest training tasks from ARC-AGI-2:
+```bash
+uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-2 --subset shortest_training_100
 ```
 
 Run 30 grid size distributed evaluation tasks from ARC-AGI-2:
@@ -182,9 +187,11 @@ The following subset files are available:
 - **shortest_training_1.txt**: Single shortest training task
 - **shortest_training_10.txt**: 10 shortest training tasks  
 - **shortest_training_30.txt**: 30 shortest training tasks
+- **shortest_training_100.txt**: 100 shortest training tasks
 - **shortest_evaluation_1.txt**: Single shortest evaluation task
 - **shortest_evaluation_10.txt**: 10 shortest evaluation tasks
 - **shortest_evaluation_30.txt**: 30 shortest evaluation tasks
+- **shortest_evaluation_100.txt**: 100 shortest evaluation tasks
 - Similar files for **middle** and **longest** (up to 30 tasks each)
 - **grid_size_distributed_30_training.txt**: 30 training tasks evenly distributed by grid size
 - **grid_size_distributed_30_evaluation.txt**: 30 evaluation tasks evenly distributed by grid size
@@ -212,6 +219,10 @@ These subsets contain task IDs that were successfully solved by specific models,
   - Created by removing gpt-4.1-nano solved tasks from gpt-4.1-o4-mini subset
   - Excludes the 3 "easy" tasks that gpt-4.1-nano could solve
   - Designed for more challenging evaluation of gpt-4.1-mini capabilities
+- **gpt-4.1-mini-calib-train.txt**: 46 task training calibration subset for gpt-4.1-mini experiments
+  - Created from shortest_training_100 subset (100 smallest training tasks)
+  - Contains tasks solved by EITHER o4-mini OR gpt-4.1 but NOT by gpt-4.1-mini OR gpt-4.1-nano
+  - Designed for training experiments with ideal difficulty range for gpt-4.1-mini
 
 ### Model Performance Summary:
 - **gpt-4.1**: 22/400 tasks solved (5.5%)
@@ -224,6 +235,11 @@ These subsets contain task IDs that were successfully solved by specific models,
 Test gpt-4.1-mini on the calibration subset:
 ```bash
 uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib
+```
+
+Test gpt-4.1-mini on the training calibration subset:
+```bash
+uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train
 ```
 
 Test a model on tasks that o4-mini solved:

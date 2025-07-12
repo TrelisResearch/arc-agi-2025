@@ -1,0 +1,181 @@
+{
+  "task_id": "d4469b4b",
+  "model": "gpt-4.1-mini",
+  "reasoning_effort": "N/A",
+  "api_type": "responses_api_independent_attempts",
+  "program": "def transform(grid):\n    import numpy as np\n    from collections import Counter, deque\n\n    # Convert to numpy array\n    arr = np.array(grid)\n    rows, cols = arr.shape\n\n    # Find the main nonzero color (most frequent nonzero)\n    flattened = arr.flatten()\n    counts = Counter(x for x in flattened if x != 0)\n    if not counts:\n        # no color, empty input -> output all zeros\n        return [[0]*3 for _ in range(3)]\n    main_color = counts.most_common(1)[0][0]\n\n    # Find connected components of main_color using 4-connectivity\n    visited = np.zeros_like(arr, dtype=bool)\n    components = []\n\n    def neighbors(r,c):\n        for nr, nc in [(r-1,c),(r+1,c),(r,c-1),(r,c+1)]:\n            if 0 <= nr < rows and 0 <= nc < cols:\n                yield nr, nc\n\n    for r in range(rows):\n        for c in range(cols):\n            if arr[r,c] == main_color and not visited[r,c]:\n                # BFS to find all cells in this component\n                q = deque()\n                q.append((r,c))\n                comp = []\n                visited[r,c] = True\n                while q:\n                    rr, cc = q.popleft()\n                    comp.append((rr,cc))\n                    for nr,nc in neighbors(rr,cc):\n                        if arr[nr,nc] == main_color and not visited[nr,nc]:\n                            visited[nr,nc] = True\n                            q.append((nr,nc))\n                components.append(comp)\n\n    # Find largest component\n    largest_comp = max(components, key=len)\n\n    # Compute centroid\n    pts = np.array(largest_comp)\n    centroid = pts.mean(axis=0)\n\n    # Compute covariance and principal direction\n    # If only one point, orientation is arbitrary\n    if len(pts) > 1:\n        centered_pts = pts - centroid\n        cov = np.cov(centered_pts, rowvar=False)\n        eigvals, eigvecs = np.linalg.eigh(cov)\n        principal_dir = eigvecs[:, np.argmax(eigvals)]  # eigenvector with largest eigenvalue\n        # principal_dir is 2D vector (row_component, col_component)\n    else:\n        principal_dir = np.array([1,0])  # arbitrary\n    \n    # Check orientation: is principal_dir aligned mostly with axis (vertical/horizontal) or diagonal?\n    # We consider alignment if cos(angle) with axes > 0.7\n    # Angle with row axis (vertical) = arccos(|row_component|)\n    row_comp, col_comp = principal_dir\n    row_comp = abs(row_comp)\n    col_comp = abs(col_comp)\n\n    # Decide orientation\n    # If close to axis (vertical or horizontal)\n    aligned = (row_comp > 0.7 and col_comp < 0.7) or (col_comp > 0.7 and row_comp < 0.7)\n\n    # Prepare output grid of zeros 3x3\n    out = np.zeros((3,3), dtype=int)\n\n    # Draw plus shape depending on orientation pattern\n    if aligned:\n        # Centered plus (+)\n        center = (1,1)\n        # Center cell\n        out[center] = 5\n        # Up\n        out[center[0]-1, center[1]] = 5\n        # Down\n        out[center[0]+1, center[1]] = 5\n        # Left\n        out[center[0], center[1]-1] = 5\n        # Right\n        out[center[0], center[1]+1] = 5\n    else:\n        # Diagonal/rotated style: L shape in bottom-right corner\n        # Fill bottom row last 3 cells with 5, and last column bottom 3 cells with 5\n        # That means cells (2,0),(2,1),(2,2) and (0,2),(1,2),(2,2) - overlap at (2,2)\n        for c in range(3):\n            out[2,c] = 5\n        for r in range(3):\n            out[r,2] = 5\n\n    return out.tolist()",
+  "execution_error": "",
+  "timed_out": false,
+  "tokens_used": 3265,
+  "request_cost": 0.0031792000000000005,
+  "turns_used": 1,
+  "raw_response": {
+    "id": "resp_6872283c1e18819eaca281722b9c2a7806fc783056a40c21",
+    "model": "gpt-4.1-mini-2025-04-14",
+    "usage": {
+      "input_tokens": 1704,
+      "output_tokens": 1561,
+      "total_tokens": 3265
+    },
+    "output": [
+      {
+        "type": "message",
+        "content": [
+          "Let's analyze the patterns:\n\n- The output is always a 3x3 grid regardless of input size.\n- Output grids consistently have a plus sign (+) pattern made from the color 5, positioned either centrally or in one corner.\n- The plus sign corresponds to highlighting some dominant shape or cluster of the nonzero number(s) in the input.\n- The plus is oriented upright or rotated, depending on the input.\n- The input has many zeros and some \"feature color\" (like 1, 2, or 3) roughly in a cluster.\n- In outputs, the \"5\" forms a plus shape with 5 cells: the center cell plus 4 neighbors (up, down, left, right).\n- The placement of the plus in the output seems to correspond roughly to the \"centroid\" of the feature cells in the input, or the dominant cluster.\n- Rotations of the plus pattern appear:\n  - Some outputs look like a regular plus centered in the 3x3.\n  - Others are rotated (e.g. diagonally placed 5's in the bottom row, or right column) matching input's cluster orientation.\n\nObserving outputs closely:\n\n- Examples 1,5,6: plus shape centered in middle cell (1,1)\n- Examples 2,4: plus shape centered in middle cell (1,1) but upright plus (vertical and horizontal arms)\n- Examples 3,7: the plus shifted to bottom right corner, arms forming an L-shape along bottom row and rightmost column.\n\nThis suggests:\n\n- If the cluster is mostly vertical/horizontal: put a plus centered in output.\n- If cluster is rotated or \"angled\", place plus in bottom-right with arms on bottom and right sides.\n\nHypothesis/action:\n\n- Find the largest connected cluster of nonzero cells in input.\n- Find orientation:\n  - Calculate covariance or rough orientation angle.\n  - If mostly vertical/horizontal, output centered plus.\n  - If diagonal/rotated, output corner plus (bottom-right).\n- The values in output are either 0 or 5.\n- So just draw a plus of 5's accordingly.\n\nWe also see the output is always full 3x3, no empty rows or columns.\n\nImplementation plan:\n\n1. Identify the main color (nonzero number) in input (most frequent nonzero value).\n2. Find connected components of cells with that color.\n3. Choose the largest connected component.\n4. Compute the centroid of the largest component.\n5. Compute orientation from points:\n   - Find covariance matrix of points, get principal direction.\n   - If principal direction roughly aligned with axes -> standard plus (centered).\n   - Else -> rotated plus in bottom-right.\n6. Create output 3x3 grid of zeros.\n7. Draw plus pattern:\n   - Centered plus: fill center and up/down/left/right with 5.\n   - Bottom-right corner plus: fill bottom row rightmost 3 cells and rightmost column bottom 3 cells with 5.\n8. Return output grid.\n\nThis should approximate the pattern seen in training examples.\n\n---\n\nFinal answer:\n```python\ndef transform(grid):\n    import numpy as np\n    from collections import Counter, deque\n\n    # Convert to numpy array\n    arr = np.array(grid)\n    rows, cols = arr.shape\n\n    # Find the main nonzero color (most frequent nonzero)\n    flattened = arr.flatten()\n    counts = Counter(x for x in flattened if x != 0)\n    if not counts:\n        # no color, empty input -> output all zeros\n        return [[0]*3 for _ in range(3)]\n    main_color = counts.most_common(1)[0][0]\n\n    # Find connected components of main_color using 4-connectivity\n    visited = np.zeros_like(arr, dtype=bool)\n    components = []\n\n    def neighbors(r,c):\n        for nr, nc in [(r-1,c),(r+1,c),(r,c-1),(r,c+1)]:\n            if 0 <= nr < rows and 0 <= nc < cols:\n                yield nr, nc\n\n    for r in range(rows):\n        for c in range(cols):\n            if arr[r,c] == main_color and not visited[r,c]:\n                # BFS to find all cells in this component\n                q = deque()\n                q.append((r,c))\n                comp = []\n                visited[r,c] = True\n                while q:\n                    rr, cc = q.popleft()\n                    comp.append((rr,cc))\n                    for nr,nc in neighbors(rr,cc):\n                        if arr[nr,nc] == main_color and not visited[nr,nc]:\n                            visited[nr,nc] = True\n                            q.append((nr,nc))\n                components.append(comp)\n\n    # Find largest component\n    largest_comp = max(components, key=len)\n\n    # Compute centroid\n    pts = np.array(largest_comp)\n    centroid = pts.mean(axis=0)\n\n    # Compute covariance and principal direction\n    # If only one point, orientation is arbitrary\n    if len(pts) > 1:\n        centered_pts = pts - centroid\n        cov = np.cov(centered_pts, rowvar=False)\n        eigvals, eigvecs = np.linalg.eigh(cov)\n        principal_dir = eigvecs[:, np.argmax(eigvals)]  # eigenvector with largest eigenvalue\n        # principal_dir is 2D vector (row_component, col_component)\n    else:\n        principal_dir = np.array([1,0])  # arbitrary\n    \n    # Check orientation: is principal_dir aligned mostly with axis (vertical/horizontal) or diagonal?\n    # We consider alignment if cos(angle) with axes > 0.7\n    # Angle with row axis (vertical) = arccos(|row_component|)\n    row_comp, col_comp = principal_dir\n    row_comp = abs(row_comp)\n    col_comp = abs(col_comp)\n\n    # Decide orientation\n    # If close to axis (vertical or horizontal)\n    aligned = (row_comp > 0.7 and col_comp < 0.7) or (col_comp > 0.7 and row_comp < 0.7)\n\n    # Prepare output grid of zeros 3x3\n    out = np.zeros((3,3), dtype=int)\n\n    # Draw plus shape depending on orientation pattern\n    if aligned:\n        # Centered plus (+)\n        center = (1,1)\n        # Center cell\n        out[center] = 5\n        # Up\n        out[center[0]-1, center[1]] = 5\n        # Down\n        out[center[0]+1, center[1]] = 5\n        # Left\n        out[center[0], center[1]-1] = 5\n        # Right\n        out[center[0], center[1]+1] = 5\n    else:\n        # Diagonal/rotated style: L shape in bottom-right corner\n        # Fill bottom row last 3 cells with 5, and last column bottom 3 cells with 5\n        # That means cells (2,0),(2,1),(2,2) and (0,2),(1,2),(2,2) - overlap at (2,2)\n        for c in range(3):\n            out[2,c] = 5\n        for r in range(3):\n            out[r,2] = 5\n\n    return out.tolist()\n```\n"
+        ]
+      }
+    ]
+  },
+  "score": {
+    "correct": true,
+    "pixel_accuracy": 1.0,
+    "total_pixels": 9,
+    "correct_pixels": 9,
+    "error": null,
+    "predicted_output": [
+      [
+        0,
+        5,
+        0
+      ],
+      [
+        5,
+        5,
+        5
+      ],
+      [
+        0,
+        5,
+        0
+      ]
+    ],
+    "actual_output": [
+      [
+        0,
+        5,
+        0
+      ],
+      [
+        5,
+        5,
+        5
+      ],
+      [
+        0,
+        5,
+        0
+      ]
+    ]
+  },
+  "predicted_output": [
+    [
+      0,
+      5,
+      0
+    ],
+    [
+      5,
+      5,
+      5
+    ],
+    [
+      0,
+      5,
+      0
+    ]
+  ],
+  "actual_output": [
+    [
+      0,
+      5,
+      0
+    ],
+    [
+      5,
+      5,
+      5
+    ],
+    [
+      0,
+      5,
+      0
+    ]
+  ],
+  "api_success": true,
+  "independent_attempts_data": {
+    "attempt_details": [
+      {
+        "attempt_number": 1,
+        "timestamp": "2025-07-12T10:17:47.927370",
+        "input_tokens": 1704,
+        "output_tokens": 1561,
+        "attempt_cost": 0.0031792000000000005,
+        "program_extracted": true,
+        "program": "def transform(grid):\n    import numpy as np\n    from collections import Counter, deque\n\n    # Convert to numpy array\n    arr = np.array(grid)\n    rows, cols = arr.shape\n\n    # Find the main nonzero color (most frequent nonzero)\n    flattened = arr.flatten()\n    counts = Counter(x for x in flattened if x != 0)\n    if not counts:\n        # no color, empty input -> output all zeros\n        return [[0]*3 for _ in range(3)]\n    main_color = counts.most_common(1)[0][0]\n\n    # Find connected components of main_color using 4-connectivity\n    visited = np.zeros_like(arr, dtype=bool)\n    components = []\n\n    def neighbors(r,c):\n        for nr, nc in [(r-1,c),(r+1,c),(r,c-1),(r,c+1)]:\n            if 0 <= nr < rows and 0 <= nc < cols:\n                yield nr, nc\n\n    for r in range(rows):\n        for c in range(cols):\n            if arr[r,c] == main_color and not visited[r,c]:\n                # BFS to find all cells in this component\n                q = deque()\n                q.append((r,c))\n                comp = []\n                visited[r,c] = True\n                while q:\n                    rr, cc = q.popleft()\n                    comp.append((rr,cc))\n                    for nr,nc in neighbors(rr,cc):\n                        if arr[nr,nc] == main_color and not visited[nr,nc]:\n                            visited[nr,nc] = True\n                            q.append((nr,nc))\n                components.append(comp)\n\n    # Find largest component\n    largest_comp = max(components, key=len)\n\n    # Compute centroid\n    pts = np.array(largest_comp)\n    centroid = pts.mean(axis=0)\n\n    # Compute covariance and principal direction\n    # If only one point, orientation is arbitrary\n    if len(pts) > 1:\n        centered_pts = pts - centroid\n        cov = np.cov(centered_pts, rowvar=False)\n        eigvals, eigvecs = np.linalg.eigh(cov)\n        principal_dir = eigvecs[:, np.argmax(eigvals)]  # eigenvector with largest eigenvalue\n        # principal_dir is 2D vector (row_component, col_component)\n    else:\n        principal_dir = np.array([1,0])  # arbitrary\n    \n    # Check orientation: is principal_dir aligned mostly with axis (vertical/horizontal) or diagonal?\n    # We consider alignment if cos(angle) with axes > 0.7\n    # Angle with row axis (vertical) = arccos(|row_component|)\n    row_comp, col_comp = principal_dir\n    row_comp = abs(row_comp)\n    col_comp = abs(col_comp)\n\n    # Decide orientation\n    # If close to axis (vertical or horizontal)\n    aligned = (row_comp > 0.7 and col_comp < 0.7) or (col_comp > 0.7 and row_comp < 0.7)\n\n    # Prepare output grid of zeros 3x3\n    out = np.zeros((3,3), dtype=int)\n\n    # Draw plus shape depending on orientation pattern\n    if aligned:\n        # Centered plus (+)\n        center = (1,1)\n        # Center cell\n        out[center] = 5\n        # Up\n        out[center[0]-1, center[1]] = 5\n        # Down\n        out[center[0]+1, center[1]] = 5\n        # Left\n        out[center[0], center[1]-1] = 5\n        # Right\n        out[center[0], center[1]+1] = 5\n    else:\n        # Diagonal/rotated style: L shape in bottom-right corner\n        # Fill bottom row last 3 cells with 5, and last column bottom 3 cells with 5\n        # That means cells (2,0),(2,1),(2,2) and (0,2),(1,2),(2,2) - overlap at (2,2)\n        for c in range(3):\n            out[2,c] = 5\n        for r in range(3):\n            out[r,2] = 5\n\n    return out.tolist()",
+        "test_result": {
+          "correct": true,
+          "pixel_accuracy": 1.0,
+          "total_pixels": 9,
+          "correct_pixels": 9,
+          "error": null,
+          "predicted_output": [
+            [
+              0,
+              5,
+              0
+            ],
+            [
+              5,
+              5,
+              5
+            ],
+            [
+              0,
+              5,
+              0
+            ]
+          ],
+          "actual_output": [
+            [
+              0,
+              5,
+              0
+            ],
+            [
+              5,
+              5,
+              5
+            ],
+            [
+              0,
+              5,
+              0
+            ]
+          ]
+        },
+        "status": "success"
+      }
+    ],
+    "total_attempts": 1,
+    "all_responses": [
+      {
+        "id": "resp_6872283c1e18819eaca281722b9c2a7806fc783056a40c21",
+        "model": "gpt-4.1-mini-2025-04-14",
+        "usage": {
+          "input_tokens": 1704,
+          "output_tokens": 1561,
+          "total_tokens": 3265
+        },
+        "output": [
+          {
+            "type": "message",
+            "content": [
+              "Let's analyze the patterns:\n\n- The output is always a 3x3 grid regardless of input size.\n- Output grids consistently have a plus sign (+) pattern made from the color 5, positioned either centrally or in one corner.\n- The plus sign corresponds to highlighting some dominant shape or cluster of the nonzero number(s) in the input.\n- The plus is oriented upright or rotated, depending on the input.\n- The input has many zeros and some \"feature color\" (like 1, 2, or 3) roughly in a cluster.\n- In outputs, the \"5\" forms a plus shape with 5 cells: the center cell plus 4 neighbors (up, down, left, right).\n- The placement of the plus in the output seems to correspond roughly to the \"centroid\" of the feature cells in the input, or the dominant cluster.\n- Rotations of the plus pattern appear:\n  - Some outputs look like a regular plus centered in the 3x3.\n  - Others are rotated (e.g. diagonally placed 5's in the bottom row, or right column) matching input's cluster orientation.\n\nObserving outputs closely:\n\n- Examples 1,5,6: plus shape centered in middle cell (1,1)\n- Examples 2,4: plus shape centered in middle cell (1,1) but upright plus (vertical and horizontal arms)\n- Examples 3,7: the plus shifted to bottom right corner, arms forming an L-shape along bottom row and rightmost column.\n\nThis suggests:\n\n- If the cluster is mostly vertical/horizontal: put a plus centered in output.\n- If cluster is rotated or \"angled\", place plus in bottom-right with arms on bottom and right sides.\n\nHypothesis/action:\n\n- Find the largest connected cluster of nonzero cells in input.\n- Find orientation:\n  - Calculate covariance or rough orientation angle.\n  - If mostly vertical/horizontal, output centered plus.\n  - If diagonal/rotated, output corner plus (bottom-right).\n- The values in output are either 0 or 5.\n- So just draw a plus of 5's accordingly.\n\nWe also see the output is always full 3x3, no empty rows or columns.\n\nImplementation plan:\n\n1. Identify the main color (nonzero number) in input (most frequent nonzero value).\n2. Find connected components of cells with that color.\n3. Choose the largest connected component.\n4. Compute the centroid of the largest component.\n5. Compute orientation from points:\n   - Find covariance matrix of points, get principal direction.\n   - If principal direction roughly aligned with axes -> standard plus (centered).\n   - Else -> rotated plus in bottom-right.\n6. Create output 3x3 grid of zeros.\n7. Draw plus pattern:\n   - Centered plus: fill center and up/down/left/right with 5.\n   - Bottom-right corner plus: fill bottom row rightmost 3 cells and rightmost column bottom 3 cells with 5.\n8. Return output grid.\n\nThis should approximate the pattern seen in training examples.\n\n---\n\nFinal answer:\n```python\ndef transform(grid):\n    import numpy as np\n    from collections import Counter, deque\n\n    # Convert to numpy array\n    arr = np.array(grid)\n    rows, cols = arr.shape\n\n    # Find the main nonzero color (most frequent nonzero)\n    flattened = arr.flatten()\n    counts = Counter(x for x in flattened if x != 0)\n    if not counts:\n        # no color, empty input -> output all zeros\n        return [[0]*3 for _ in range(3)]\n    main_color = counts.most_common(1)[0][0]\n\n    # Find connected components of main_color using 4-connectivity\n    visited = np.zeros_like(arr, dtype=bool)\n    components = []\n\n    def neighbors(r,c):\n        for nr, nc in [(r-1,c),(r+1,c),(r,c-1),(r,c+1)]:\n            if 0 <= nr < rows and 0 <= nc < cols:\n                yield nr, nc\n\n    for r in range(rows):\n        for c in range(cols):\n            if arr[r,c] == main_color and not visited[r,c]:\n                # BFS to find all cells in this component\n                q = deque()\n                q.append((r,c))\n                comp = []\n                visited[r,c] = True\n                while q:\n                    rr, cc = q.popleft()\n                    comp.append((rr,cc))\n                    for nr,nc in neighbors(rr,cc):\n                        if arr[nr,nc] == main_color and not visited[nr,nc]:\n                            visited[nr,nc] = True\n                            q.append((nr,nc))\n                components.append(comp)\n\n    # Find largest component\n    largest_comp = max(components, key=len)\n\n    # Compute centroid\n    pts = np.array(largest_comp)\n    centroid = pts.mean(axis=0)\n\n    # Compute covariance and principal direction\n    # If only one point, orientation is arbitrary\n    if len(pts) > 1:\n        centered_pts = pts - centroid\n        cov = np.cov(centered_pts, rowvar=False)\n        eigvals, eigvecs = np.linalg.eigh(cov)\n        principal_dir = eigvecs[:, np.argmax(eigvals)]  # eigenvector with largest eigenvalue\n        # principal_dir is 2D vector (row_component, col_component)\n    else:\n        principal_dir = np.array([1,0])  # arbitrary\n    \n    # Check orientation: is principal_dir aligned mostly with axis (vertical/horizontal) or diagonal?\n    # We consider alignment if cos(angle) with axes > 0.7\n    # Angle with row axis (vertical) = arccos(|row_component|)\n    row_comp, col_comp = principal_dir\n    row_comp = abs(row_comp)\n    col_comp = abs(col_comp)\n\n    # Decide orientation\n    # If close to axis (vertical or horizontal)\n    aligned = (row_comp > 0.7 and col_comp < 0.7) or (col_comp > 0.7 and row_comp < 0.7)\n\n    # Prepare output grid of zeros 3x3\n    out = np.zeros((3,3), dtype=int)\n\n    # Draw plus shape depending on orientation pattern\n    if aligned:\n        # Centered plus (+)\n        center = (1,1)\n        # Center cell\n        out[center] = 5\n        # Up\n        out[center[0]-1, center[1]] = 5\n        # Down\n        out[center[0]+1, center[1]] = 5\n        # Left\n        out[center[0], center[1]-1] = 5\n        # Right\n        out[center[0], center[1]+1] = 5\n    else:\n        # Diagonal/rotated style: L shape in bottom-right corner\n        # Fill bottom row last 3 cells with 5, and last column bottom 3 cells with 5\n        # That means cells (2,0),(2,1),(2,2) and (0,2),(1,2),(2,2) - overlap at (2,2)\n        for c in range(3):\n            out[2,c] = 5\n        for r in range(3):\n            out[r,2] = 5\n\n    return out.tolist()\n```\n"
+            ]
+          }
+        ]
+      }
+    ],
+    "mode": "independent_attempts"
+  }
+}

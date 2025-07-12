@@ -1,5 +1,50 @@
 # Experiment Notes
 
+## 2025 12th July
+
+### Running the gpt-4.1-mini-calib-training dataset to test whether images do anything
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini --independent-attempts
+
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini --disable_images
+```
+
+### Expanding on the gpt-4.1-mini-calib dataset
+
+Idea is to run the longest 100 training examples from the arc-agi-1 dataset:
+- On nano, to see what we get.
+- On gpt-4.1, to see what we get.
+
+I think o4-mini solves are too hard for gpt-4.1-mini.
+
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_100 --repeat-runs 1 --max_workers 25 --max_turns 1 --model gpt-4.1-nano --independent-attempts
+
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_100 --repeat-runs 1 --max_workers 25 --max_turns 1 --model gpt-4.1-mini --independent-attempts
+
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_100 --repeat-runs 1 --max_workers 25 --max_turns 1 --model gpt-4.1 --independent-attempts
+
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_100 --repeat-runs 1 --max_workers 25 --max_turns 1 --model o4-mini --independent-attempts
+```
+
+**Results Summary:**
+- **o4-mini**: 74/100 correct
+- **gpt-4.1**: 33/100 correct  
+- **gpt-4.1-mini**: 30/100 correct
+- **gpt-4.1-nano**: 5/100 correct
+
+**Created gpt-4.1-mini-calib-train.txt:**
+- Tasks correct by EITHER o4-mini OR gpt-4.1: 77 tasks
+- Remove tasks correct by gpt-4.1-mini OR gpt-4.1-nano: 32 tasks  
+- **Final calibration dataset: 46 tasks**
+
+This dataset contains problems that stronger models (o4-mini/gpt-4.1) can solve but weaker models (gpt-4.1-mini/gpt-4.1-nano) cannot, providing an ideal difficulty range for testing gpt-4.1-mini improvements.
+
+**Usage:**
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 1 --max_workers 25 --max_turns 1 --model gpt-4.1-mini --independent-attempts
+```
+
 ## 2025 11th July
 
 ### Rerunning feedback vs sampling on the gpt-4.1-mini-calib dataset with gpt-4.1-mini
