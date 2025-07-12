@@ -316,7 +316,7 @@ def execute_with_timeout(func, *args, timeout=300, **kwargs):
 class ARCTaskRunner:
     """Run ARC tasks using the OpenAI Responses API (single-shot with tool execution)"""
     
-    def __init__(self, model: str = "gpt-4.1-nano", reasoning_effort: str = "low", max_workers: int = 1, rate_limit_delay: float = 0.0, max_turns: int = 3, debug_images: bool = False, enable_images: bool = True, run_number: int = 0, independent_attempts: bool = False):
+    def __init__(self, model: str = "gpt-4.1-nano", reasoning_effort: str = "low", max_workers: int = 1, rate_limit_delay: float = 0.0, max_turns: int = 3, debug_images: bool = False, enable_images: bool = True, run_number: int = 0, independent_attempts: bool = False, disable_text_grids: bool = False):
         self.model = model
         self.reasoning_effort = reasoning_effort
         self.max_workers = max_workers
@@ -326,18 +326,27 @@ class ARCTaskRunner:
         self.enable_images = enable_images
         self.run_number = run_number  # NEW: Track run number for repeated runs
         self.independent_attempts = independent_attempts  # NEW: Track independent attempts mode
+        self.disable_text_grids = disable_text_grids  # NEW: Disable text grid representations
         self.api_key = os.getenv('OPENAI_API_KEY')
         self.client = OpenAI()
         self.task_loader = TaskLoader()
         self.scorer = GridScorer()
         self.executor = ProgramExecutor(timeout=0.5)
         
+        # Validate disable_text_grids settings
+        if self.disable_text_grids and not self.enable_images:
+            raise ValueError("Cannot disable text grids without enabling images - model would receive no input!")
+        
+        if self.disable_text_grids and not self.is_vision_model():
+            raise ValueError(f"Cannot disable text grids for non-vision model {self.model} - model cannot process images!")
+        
         # Initialize visual capabilities
         self.use_visuals = self.enable_images and PIL_AVAILABLE and self.is_vision_model()
         if self.use_visuals:
             self.visualizer = ARCGridVisualizer(debug_save=self.debug_images)
             debug_msg = " with debug image saving" if self.debug_images else ""
-            print(f"🖼️  Visual mode enabled for {self.model} (PIL available: {PIL_AVAILABLE}){debug_msg}")
+            visual_mode_msg = " (visual-only mode)" if self.disable_text_grids else ""
+            print(f"🖼️  Visual mode enabled for {self.model} (PIL available: {PIL_AVAILABLE}){debug_msg}{visual_mode_msg}")
         else:
             self.visualizer = None
             if not self.enable_images:
@@ -465,9 +474,6 @@ def transform(grid):
     return transformed_grid
 ```"""}]
         
-        # Create the text content
-        task_str = self.task_loader.format_task_for_prompt(task_data, include_test=True)
-        
         # Get the consistent output grid dimensions from the first training example
         if task_data['train'] and task_data['train'][0]['output']:
             output_grid = task_data['train'][0]['output']
@@ -476,6 +482,17 @@ def transform(grid):
             grid_size_info = f"\n**IMPORTANT: Your transformation must always produce a {output_height}×{output_width} output grid.**\n"
         else:
             grid_size_info = ""
+        
+        # Create the text content - conditionally include text grids
+        if self.disable_text_grids:
+            # Visual-only mode - rely entirely on images
+            task_description = "The training examples and test input are shown in the visual representation below. Each colored cell represents a value from 0-9, with consistent colors across all grids."
+            data_source_info = "**Note**: Grid data is provided visually only - analyze the colored grids in the image to understand the transformation patterns."
+        else:
+            # Include text grid representation
+            task_str = self.task_loader.format_task_for_prompt(task_data, include_test=True)
+            task_description = task_str
+            data_source_info = ""
         
         text_content = f"""You are solving an ARC (Abstraction and Reasoning Corpus) task. 
 I will show you training examples with input and output grids, plus a test input grid. Your task is to:
@@ -488,7 +505,9 @@ I will show you training examples with input and output grids, plus a test input
 {grid_size_info}
 The test input is shown for context so you understand what type of grid your program will eventually process. Focus on learning patterns from training examples and writing code that captures your understanding.
 
-{task_str}
+{task_description}
+
+{data_source_info}
 
 Analyze the patterns in the training examples and write a Python function that performs this transformation.
 
@@ -520,7 +539,7 @@ def transform(grid):
         messages = []
         messages.append({"type": "input_text", "text": text_content})
         
-        # Add visual representation if available
+        # Add visual representation if available - this is crucial when text grids are disabled
         if self.use_visuals and self.visualizer:
             try:
                 training_image = self.visualizer.create_training_examples_image(task_data, task_id, turn)
@@ -531,14 +550,25 @@ def transform(grid):
                     "image_url": f"data:image/png;base64,{image_base64}"
                 })
                 
-                # Add explanation of the visual
+                # Add explanation of the visual - enhanced message for visual-only mode
+                if self.disable_text_grids:
+                    visual_explanation = "Above is the visual representation of all training examples and the test input. Each grid cell is colored according to its value (0-9). Study the visual patterns carefully to understand the transformation rule, as this is your only source of grid data."
+                else:
+                    visual_explanation = "Above is a visual representation of all the training examples and the test input. Each grid cell is colored according to its value (0-9), with clear labels and arrows showing input→output transformations. Use both the textual and visual information to understand the pattern."
+                
                 messages.append({
                     "type": "input_text", 
-                    "text": "Above is a visual representation of all the training examples and the test input. Each grid cell is colored according to its value (0-9), with clear labels and arrows showing input→output transformations. Use both the textual and visual information to understand the pattern."
+                    "text": visual_explanation
                 })
                 
             except Exception as e:
                 print(f"⚠️  Failed to create visual representation: {e}")
+                if self.disable_text_grids:
+                    # If visuals fail in visual-only mode, this is a critical error
+                    raise Exception(f"Visual-only mode failed: {e}")
+        elif self.disable_text_grids:
+            # This should not happen due to validation, but just in case
+            raise Exception("Visual-only mode requires working visual capabilities")
         
         return messages
     
@@ -657,14 +687,19 @@ def transform(grid):
         for result in results:
             status = "✓" if result['solved'] else "✗"
             feedback_text += f"Training Example {result['index']} {status}:\n"
-            feedback_text += f"Expected: {result['expected']}\n"
+            
+            # Only include text grid representations if text grids are enabled
+            if not self.disable_text_grids:
+                feedback_text += f"Expected: {result['expected']}\n"
             
             if result['error']:
                 feedback_text += f"Error: {result['error']}\n"
             elif result['timed_out']:
                 feedback_text += f"Error: Code execution timed out\n"
             else:
-                feedback_text += f"Your output: {result['predicted']}\n"
+                # Only include text grid representations if text grids are enabled
+                if not self.disable_text_grids:
+                    feedback_text += f"Your output: {result['predicted']}\n"
                 if not result['solved']:
                     feedback_text += f"Pixel accuracy: {result['pixel_accuracy']:.1%}\n"
             feedback_text += "\n"
@@ -693,9 +728,15 @@ def transform(grid):
                     "image_url": f"data:image/png;base64,{image_base64}"
                 })
                 
+                # Update visual feedback message based on mode
+                if self.disable_text_grids:
+                    visual_feedback_text = "Above is a visual comparison of expected vs predicted outputs for each training example. Green circles indicate correct solutions, red circles show errors. This visual feedback is your primary source of grid information - analyze the patterns carefully to improve your approach."
+                else:
+                    visual_feedback_text = "Above is a visual comparison of expected vs predicted outputs for each training example. Green circles indicate correct solutions, red circles show errors. Use this visual feedback along with the textual analysis to improve your approach."
+                
                 feedback_messages.append({
                     "type": "input_text",
-                    "text": "Above is a visual comparison of expected vs predicted outputs for each training example. Green circles indicate correct solutions, red circles show errors. Use this visual feedback along with the textual analysis to improve your approach."
+                    "text": visual_feedback_text
                 })
                 
             except Exception as e:
@@ -1547,6 +1588,14 @@ Make sure to include the function definition inside a proper code block."""
             print(f"API: Responses API (multi-turn, max {self.max_turns} turns)")
             print("Mode: Multi-turn feedback - conversation with training examples")
         
+        # Show visual/text mode
+        if self.disable_text_grids:
+            print("Input mode: Visual-only (text grids disabled)")
+        elif self.use_visuals:
+            print("Input mode: Visual + text grids")
+        else:
+            print("Input mode: Text-only")
+            
         if self.max_workers > 1:
             print(f"Parallelization: ENABLED ({self.max_workers} workers)")
             if self.rate_limit_delay > 0:
@@ -1769,6 +1818,14 @@ Make sure to include the function definition inside a proper code block."""
             print(f"API: Responses API (multi-turn, max {self.max_turns} turns)")
             print("Mode: Multi-turn feedback - conversation with training examples")
         
+        # Show visual/text mode
+        if self.disable_text_grids:
+            print("Input mode: Visual-only (text grids disabled)")
+        elif self.use_visuals:
+            print("Input mode: Visual + text grids")
+        else:
+            print("Input mode: Text-only")
+            
         if self.max_workers > 1:
             print(f"Parallelization: ENABLED ({self.max_workers} workers)")
         else:
@@ -1792,7 +1849,8 @@ Make sure to include the function definition inside a proper code block."""
                 debug_images=self.debug_images,
                 enable_images=self.enable_images,
                 run_number=run_num,
-                independent_attempts=self.independent_attempts
+                independent_attempts=self.independent_attempts,
+                disable_text_grids=self.disable_text_grids
             )
             
             # Run the subset
@@ -1973,6 +2031,8 @@ def main():
                        help="Enable visual image generation for vision models (default: True)")
     parser.add_argument("--disable_images", action="store_true",
                        help="Disable visual image generation (text-only mode)")
+    parser.add_argument("--disable-text-grids", action="store_true",
+                       help="Disable text grid representation (visual-only mode, requires images)")
     parser.add_argument("--repeat-runs", type=int, default=1,
                        help="Number of times to repeat the entire test (default: 1)")
     parser.add_argument("--independent-attempts", action="store_true",
@@ -1999,6 +2059,10 @@ def main():
     # Handle image enable/disable flags
     enable_images = args.enable_images and not args.disable_images
     
+    # Validate disable_text_grids
+    if args.disable_text_grids and not enable_images:
+        parser.error("--disable-text-grids requires images to be enabled (cannot use with --disable_images)")
+    
     # Create runner and run tasks
     runner = ARCTaskRunner(
         model=args.model, 
@@ -2008,7 +2072,8 @@ def main():
         max_turns=args.max_turns, 
         debug_images=args.debug_images, 
         enable_images=enable_images,
-        independent_attempts=args.independent_attempts
+        independent_attempts=args.independent_attempts,
+        disable_text_grids=args.disable_text_grids
     )
     
     if args.repeat_runs > 1:

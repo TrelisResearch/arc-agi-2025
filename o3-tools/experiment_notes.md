@@ -2,6 +2,30 @@
 
 ## 2025 12th July
 
+### Testing only on images, no text grids!
+
+**Commentary:**
+- Images alone are significantly weaker than text alone.
+- Perhaps this would be different with training.
+- Also, it shows that before adding images to text, probably images of different kinds should be ablated first.
+
+**Results:**
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini --disable-text-grids --independent-attempts
+```
+Attempt 1 Only Success Rate:
+  Mean: 3.6%
+  Std Dev: 3.3%
+  95% CI: [-2.9%, 10.1%]
+
+All Attempts Success Rate:
+  Mean: 15.9%
+  Std Dev: 1.3%
+  95% CI: [13.5%, 18.4%]
+
 ### Running the gpt-4.1-mini-calib-training dataset to test whether images do anything
 
 **Commentary:**
