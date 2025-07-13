@@ -72,15 +72,123 @@ class ProgramExecutor:
         else:
             return obj
     
-    def execute_program(self, program: str, test_input: List[List[int]]) -> Tuple[Optional[List[List[int]]], str, bool]:
+    def execute_program(self, program: str, test_input: List[List[int]] = None, function_name: str = None) -> Tuple[Optional[List[List[int]]], str, bool]:
         """
-        Execute a Python program with the test input
+        Execute a Python program with optional test input and function name
+        
+        Args:
+            program: The Python code to execute
+            test_input: Input grid for transform functions (optional)
+            function_name: Specific function to call (optional)
         
         Returns:
             (output_grid, error_message, timed_out)
         """
         # Create a wrapper script that will execute the program
-        wrapper = f"""
+        if function_name and test_input is None:
+            # For generator functions that take no parameters
+            wrapper = f"""
+import json
+import sys
+
+def convert_numpy_types(obj):
+    \"\"\"Convert numpy types to Python native types for JSON serialization\"\"\"
+    try:
+        import numpy as np
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, (np.integer, np.int64, np.int32, np.int16, np.int8)):
+            return int(obj)
+        elif isinstance(obj, (np.floating, np.float64, np.float32)):
+            return float(obj)
+    except ImportError:
+        pass  # numpy not available
+    
+    if isinstance(obj, list):
+        return [convert_numpy_types(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(convert_numpy_types(item) for item in obj)
+    else:
+        return obj
+
+# Execute the provided program
+{program}
+
+# Call the specific function
+output = None
+if '{function_name}' in locals() and callable(locals()['{function_name}']):
+    try:
+        output = locals()['{function_name}']()
+    except Exception as e:
+        print(f"ERROR: Function '{function_name}' failed: {{e}}")
+        sys.exit(1)
+else:
+    print(f"ERROR: Function '{function_name}' not found")
+    sys.exit(1)
+
+if output is not None:
+    # Convert numpy types before JSON serialization
+    output = convert_numpy_types(output)
+    print(json.dumps(output))
+else:
+    print("ERROR: Function returned None")
+"""
+        else:
+            # For transform functions that take test_input
+            if function_name:
+                # Specific function name provided
+                wrapper = f"""
+import json
+import sys
+
+def convert_numpy_types(obj):
+    \"\"\"Convert numpy types to Python native types for JSON serialization\"\"\"
+    try:
+        import numpy as np
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, (np.integer, np.int64, np.int32, np.int16, np.int8)):
+            return int(obj)
+        elif isinstance(obj, (np.floating, np.float64, np.float32)):
+            return float(obj)
+    except ImportError:
+        pass  # numpy not available
+    
+    if isinstance(obj, list):
+        return [convert_numpy_types(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(convert_numpy_types(item) for item in obj)
+    else:
+        return obj
+
+# Define the test input
+test_input = {json.dumps(test_input)}
+
+# Execute the provided program
+{program}
+
+# Call the specific function
+output = None
+if '{function_name}' in locals() and callable(locals()['{function_name}']):
+    try:
+        output = locals()['{function_name}'](test_input)
+    except Exception as e:
+        print(f"ERROR: Function '{function_name}' failed: {{e}}")
+        sys.exit(1)
+else:
+    print(f"ERROR: Function '{function_name}' not found")
+    sys.exit(1)
+
+if output is not None:
+    # Convert numpy types before JSON serialization
+    output = convert_numpy_types(output)
+    print(json.dumps(output))
+else:
+    print("ERROR: Function returned None")
+"""
+            else:
+                # No specific function name, try common names
+                wrapper = f"""
 import json
 import sys
 

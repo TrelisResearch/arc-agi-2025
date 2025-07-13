@@ -17,8 +17,8 @@ Objective: Define a test that is a representative measure of performance while a
 ...
 
 - MEDIUM:
-[ ] Describing grids ablation: Get the model to also describe the input grid and the output grid with code (so, return three code blocks), and provide feedback on those too.
-  [ ] Do this all in one go.
+[x] Describing grids ablation: Get the model to also describe the input grid and the output grid with code (so, return three code blocks).
+  [x] Do this all in one go.
   [ ] Do the description in separate calls to the LLM.
 [ ] Port the scripts to an openai style endpoint. Run Qwen and try to calibrate.
 [ ] Generate training data.
@@ -54,6 +54,7 @@ Completed:
 [x] Add guidance around output grid sizes, if wrong. (Enhanced: now tells model target dimensions upfront + general reminders)
 [x] Create a script that automatically will do a run three times and calculate the mean and std dev (for the number correct on one turn, and the number correct on more than one turn).
 [x] Ablate feedback of max 8 turns versus sampling for max 8 turns.
+[x] **Three-code block analysis**: Models now generate separate input generator, output generator, and transformation functions for detailed diagnostic insights into pattern understanding vs. transformation logic.
 [x] Refine prompting:
   [x] Examine the correct tasks for what happened. Examine also some wrong tasks.
   [x] Adjust the soft prompt so that it encourages finding an improvement! check that. Sometimes there is no attempt to improve when some training grids pass. Perhaps try a prompt that encourages generalisation to the other training grids.
@@ -76,6 +77,8 @@ Completed:
 - Run ARC-AGI tasks with OpenAI models (currently using gpt-4o-mini or o4-mini)
 - Support for reasoning models (o3, o4, o1)
 - Multi-turn execution with training examples feedback
+- **Three-code block analysis**: Models generate separate functions for input pattern understanding, output pattern understanding, and transformation logic
+- **Pattern understanding verification**: Automatic validation of how well models can reproduce training input/output grids
 - **Robust timeout handling** with automatic retries (300s timeout, 3 attempts per turn)
 - Comprehensive scoring including pixel accuracy and binary correctness
 - Budget tracking with token usage and cost estimation
@@ -366,10 +369,10 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10
 Processing task: abc123
   🔄 Turn 1/3...
     💰 Turn cost: $0.004146 (input: 1089, output: 4321)
-    📊 Training: 2/3 solved, 85.0% accuracy
+    📊 Training: 2/3 solved, 85.0% accuracy | Input Grids: 4/4 correctly described | Output Grids: 3/3 correctly described
   🔄 Turn 2/3...
     💰 Turn cost: $0.003891 (input: 1156, output: 3247)
-    ✅ Perfect solution found!
+    ✅ Perfect solution found! Training: 3/3 solved, 100% accuracy | Input Grids: 4/4 correctly described | Output Grids: 3/3 correctly described
 ```
 
 **Independent Attempts:**
@@ -377,10 +380,10 @@ Processing task: abc123
 Processing task: abc123
   🔄 Attempt 1/3...
     💰 Attempt cost: $0.004146 (input: 1089, output: 4321)
-    📊 Attempt 1 failed test
+    📊 Attempt 1 failed test | Input Grids: 4/4 correctly described | Output Grids: 2/3 correctly described
   🔄 Attempt 2/3...
     💰 Attempt cost: $0.004089 (input: 1087, output: 4298)
-    ✅ Perfect solution found on attempt 2!
+    ✅ Perfect solution found on attempt 2! | Input Grids: 4/4 correctly described | Output Grids: 3/3 correctly described
 ```
 
 ### File Outputs
@@ -399,6 +402,113 @@ Processing task: abc123
 - **Independent attempts**: Best for comparing diverse solution approaches without bias from previous attempts
 - **A/B testing**: Compare which strategy works better for different types of problems
 - **Sampling research**: Study solution diversity and consistency across multiple attempts
+
+## Three-Code Block Analysis
+
+The tool requests models to generate three separate Python functions to provide detailed diagnostic insights into their reasoning process:
+
+### Code Block Structure
+
+**Input Grid Generator:**
+```python
+def generate_input_grids():
+    # Generate all training input grids + test input grid
+    # Return list of grids: [train_input_1, train_input_2, ..., test_input]
+    return input_grids
+```
+
+**Output Grid Generator:**
+```python
+def generate_output_grids():
+    # Generate all training output grids
+    # Return list of grids: [train_output_1, train_output_2, ...]
+    return output_grids
+```
+
+**Transformation Function:**
+```python
+def transform(grid):
+    # Your transformation logic here
+    return transformed_grid
+```
+
+### Verification and Scoring
+
+The tool automatically verifies each generator function and provides detailed accuracy metrics:
+
+- **Input Generator Verification**: Compares generated input grids against actual training inputs + test input
+- **Output Generator Verification**: Compares generated output grids against actual training outputs
+- **Pixel-level accuracy**: Calculates exact match rates and pixel accuracy for each generator
+- **Exact match counting**: Tracks how many grids are reproduced perfectly
+
+### Enhanced Console Output
+
+The console now shows three separate accuracy metrics:
+
+**Multi-turn Mode:**
+```
+📊 Training: 2/3 solved, 67% accuracy | Input Grids: 4/4 correctly described | Output Grids: 3/3 correctly described
+```
+
+**Independent Attempts Mode:**
+```
+📊 Attempt 1 failed test | Input Grids: 3/4 correctly described | Output Grids: 2/3 correctly described
+```
+
+### Diagnostic Value
+
+This three-block approach provides unprecedented insight into model capabilities:
+
+**Pattern Understanding vs. Transformation Logic:**
+- Models may achieve 100% accuracy on input/output pattern reproduction but 0% on transformation
+- This reveals whether failure is due to pattern recognition or transformation logic implementation
+- Helps identify if models "understand what the patterns look like" but "can't implement the transformation rules"
+
+**Common Patterns Observed:**
+- **Perfect pattern understanding, failed transformation**: Model sees the patterns correctly but can't code the transformation
+- **Partial pattern understanding**: Model captures some but not all input/output patterns
+- **Format errors**: Model generates reasonable 1D arrays like `[9,0,1,6,8]` instead of required 2D format `[[9],[0],[1],[6],[8]]`
+
+### Grid Format Handling
+
+The verification system handles format mismatches gracefully:
+- **1D to 2D conversion**: Automatically normalizes 1D arrays to 2D column vectors for comparison
+- **Dimension mismatch tolerance**: Calculates pixel accuracy even when grid dimensions don't match exactly
+- **Missing grid handling**: Accounts for cases where models generate fewer grids than expected
+
+### Use Cases
+
+- **Diagnostic analysis**: Understand exactly where models succeed and fail in the reasoning process
+- **Pattern vs. transformation research**: Study whether models can recognize patterns vs. implement transformations
+- **Model comparison**: Compare how different models perform on pattern understanding vs. transformation logic
+- **Failure mode analysis**: Identify whether failures are due to perception or reasoning
+
+### File Logging
+
+All verification results are logged in detail:
+
+```json
+{
+  "input_generator_result": {
+    "correct": true,
+    "exact_matches": 4,
+    "expected_count": 4,
+    "pixel_accuracy": 1.0,
+    "total_pixels": 36,
+    "correct_pixels": 36
+  },
+  "output_generator_result": {
+    "correct": false,
+    "exact_matches": 2,
+    "expected_count": 3,
+    "pixel_accuracy": 0.89,
+    "total_pixels": 27,
+    "correct_pixels": 24
+  }
+}
+```
+
+This provides rich data for analyzing model performance across different cognitive dimensions beyond simple pass/fail metrics.
 
 ## Parallelization
 
@@ -604,7 +714,7 @@ Summary reports aggregate across all tasks and include:
   "task_id": "6150a2bd",
   "model": "o4-mini", 
   "reasoning_effort": "medium",
-  "api_type": "responses_api",
+  "api_type": "responses_api_multiturn",
   "program": "def transform(grid):\n    return [row[::-1] for row in grid[::-1]]",
   "execution_error": "",
   "timed_out": false,
@@ -620,7 +730,40 @@ Summary reports aggregate across all tasks and include:
     "error": null
   },
   "predicted_output": [[0,0,4], [0,8,6], [5,3,6]],
-  "actual_output": [[0,0,4], [0,8,6], [5,3,6]]
+  "actual_output": [[0,0,4], [0,8,6], [5,3,6]],
+  "multiturn_data": {
+    "turn_details": [
+      {
+        "turn_number": 1,
+        "programs_extracted": {
+          "input_generator": true,
+          "output_generator": true,
+          "transform": true
+        },
+        "input_generator_result": {
+          "correct": true,
+          "exact_matches": 4,
+          "expected_count": 4,
+          "pixel_accuracy": 1.0
+        },
+        "output_generator_result": {
+          "correct": true,
+          "exact_matches": 3,
+          "expected_count": 3,
+          "pixel_accuracy": 1.0
+        },
+        "test_result": { "correct": false, "pixel_accuracy": 0.67 },
+        "status": "failed_test"
+      },
+      {
+        "turn_number": 2,
+        "input_generator_result": { /* ... */ },
+        "output_generator_result": { /* ... */ },
+        "test_result": { "correct": true, "pixel_accuracy": 1.0 },
+        "status": "success"
+      }
+    ]
+  }
 }
 ```
 
@@ -687,7 +830,7 @@ Parallelization: DISABLED (sequential execution)
 
 Processing task: 6150a2bd
   💰 Cost: $0.019646 (input: 1089 @ $1.1, output: 4321 @ $4.4)
-  ✅ Perfect solution found!
+  ✅ Perfect solution found! Training: 3/3 solved, 100% accuracy | Input Grids: 4/4 correctly described | Output Grids: 3/3 correctly described
 ```
 
 ### Parallel Execution

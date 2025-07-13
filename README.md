@@ -24,9 +24,30 @@ The `o3-tools/` folder contains a comprehensive testing framework for evaluating
 - **Parallel Execution**: Run up to 30 tasks simultaneously for dramatic speedup
 - **Multiple Models**: Support for o3/o4, GPT-4 family, and other OpenAI models
 - **Tool Integration**: Optional code interpreter tools for iterative problem solving
+- **Three-Code Analysis**: Models generate input generators, output generators, and transformation functions for comprehensive pattern understanding
 - **Comprehensive Scoring**: Binary correctness, pixel accuracy, and pattern learning metrics
 - **Cost Tracking**: Detailed token usage and cost calculation with 6-decimal precision
 - **Flexible Subsets**: Pre-defined task subsets by difficulty and size
+
+### Three-Code Block Analysis
+
+The framework now prompts models to generate three separate code blocks for each task:
+
+1. **Input Grid Generator**: Reproduces all training input grids + the test input grid
+2. **Output Grid Generator**: Reproduces all training output grids  
+3. **Transformation Function**: Maps individual input grids to output grids
+
+This provides detailed insight into model capabilities:
+- **Input Pattern Understanding**: Can the model understand and reproduce input patterns?
+- **Output Pattern Understanding**: Can the model understand and reproduce output patterns?
+- **Transformation Logic**: Can the model correctly implement the input→output mapping?
+
+Example output showing all three metrics:
+```
+📊 Training: 0/2 solved, 0.0% accuracy | Input Grids: 3/3 correctly described | Output Grids: 2/2 correctly described
+```
+
+This reveals that while the model perfectly understands input/output patterns (100% accuracy), it struggles with the transformation logic (0% accuracy), providing valuable diagnostic information for model improvement.
 
 ### Quick Start
 

@@ -147,10 +147,28 @@ class ARCTaskRunner:
 2. If you cannot find a perfect solution, provide your best attempt at a transformation that solves as many training examples as possible - ideally more than in the best previous turn.
 3. Even if your solution doesn't solve all examples perfectly, ensure it demonstrates meaningful pattern recognition and provides reasonable outputs that minimize pixel-level errors.
 
-Final answer:
+You must provide all three code blocks in your response:
+
+Input Grid Generator:
+```python
+def generate_input_grids():
+    # Generate all training input grids + test input grid
+    # Return list of {num_train_examples + 1} grids: [train_input_1, train_input_2, ..., test_input]
+    return input_grids
+```
+
+Output Grid Generator:
+```python
+def generate_output_grids():
+    # Generate all training output grids
+    # Return list of {num_train_examples} grids: [train_output_1, train_output_2, ...]
+    return output_grids
+```
+
+Transformation:
 ```python
 def transform(grid):
-    # Your improved transformation logic here (even if partial)
+    # Your transformation logic here (implement your best understanding)
     return transformed_grid
 ```"""}]
         
@@ -166,38 +184,60 @@ def transform(grid):
         # Create the text content with text grid representation
         task_str = self.task_loader.format_task_for_prompt(task_data, include_test=True)
         
+        # Count training examples for the prompt
+        num_train_examples = len(task_data['train'])
+        
         text_content = f"""You are solving an ARC (Abstraction and Reasoning Corpus) task. 
 I will show you training examples with input and output grids, plus a test input grid. Your task is to:
 
-1. **Analyze the training examples** to discover patterns that map input grids to output grids
-2. **Write a Python program** that implements your best understanding of the transformation  
-3. **DO NOT predict or generate the test output** - your job is only to write the transformation program
+1. **Analyze the training examples** to discover patterns in both input and output grids
+2. **Write three Python programs** that demonstrate your understanding:
+   - An input grid generator that recreates all training input grids + the test input grid
+   - An output grid generator that recreates all training output grids
+   - A transformation function that maps any input grid to its corresponding output grid
+3. **DO NOT predict or generate the test output** - your job is only to write the programs
 4. **Attempt a solution** - even if the pattern isn't completely clear, provide your best hypothesis
-5. **Do not repeat the same transformation** - if you have already tried a transformation, do not repeat it.
 {grid_size_info}
-The test input is shown for context so you understand what type of grid your program will eventually process. Focus on learning patterns from training examples and writing code that captures your understanding.
+The test input is shown for context so you understand what type of grid your programs will eventually process. Focus on learning patterns from training examples and writing code that captures your understanding.
 
 {task_str}
 
-Analyze the patterns in the training examples and write a Python function that performs this transformation.
+Analyze the patterns in the training examples and write three Python functions that demonstrate your understanding.
 
 **Approach Guidelines:**
 - Look for patterns in shapes, colors, positions, sizes, rotations, reflections, etc.
 - Even if you can't solve all training examples perfectly, implement what patterns you do observe
-- A partial solution that captures some aspects is better than returning the input unchanged
+- A partial solution that captures some aspects is better than returning unchanged data
 - If the pattern is unclear, make your best educated guess based on what you can see
 
 Requirements:
-- The function takes a 2D list (grid) where grid[row][col] gives the value at that position
+- All functions take no arguments except the transformation function
 - Values are integers from 0-9
-- Return a new grid (2D list) with the transformation applied
-- You can use numpy if needed - just add 'import numpy as np' at the start of your function
+- You can use numpy if needed - just add 'import numpy as np' at the start of your functions
+- The input generator should return a list of {num_train_examples + 1} grids (all training inputs + test input)
+- The output generator should return a list of {num_train_examples} grids (all training outputs)
+- The transformation function should work on individual grids
 - Aim to handle the training examples as well as possible, even if not perfectly
-- Your function should attempt some meaningful transformation based on the patterns you observe
 
 You MUST end your response with the following exact format:
 
-Final answer:
+Input Grid Generator:
+```python
+def generate_input_grids():
+    # Generate all training input grids + test input grid
+    # Return list of {num_train_examples + 1} grids: [train_input_1, train_input_2, ..., test_input]
+    return input_grids
+```
+
+Output Grid Generator:
+```python
+def generate_output_grids():
+    # Generate all training output grids
+    # Return list of {num_train_examples} grids: [train_output_1, train_output_2, ...]
+    return output_grids
+```
+
+Transformation:
 ```python
 def transform(grid):
     # Your transformation logic here (implement your best understanding)
@@ -350,8 +390,8 @@ def transform(grid):
         
         return feedback_messages, solved_count, overall_accuracy
     
-    def extract_code_from_response(self, response) -> str:
-        """Extract Python code from the Responses API result using simple regex"""
+    def extract_code_from_response(self, response) -> Dict[str, str]:
+        """Extract three Python code blocks from the Responses API result"""
         import re
         
         # Get the full text from response
@@ -364,30 +404,53 @@ def transform(grid):
                     if content_item.type == 'output_text':
                         full_text += content_item.text + "\n"
         
-        # First priority: look for code after "Final answer:"
-        final_answer_match = re.search(r'Final answer:\s*```python\s*\n(.*?)\n```', full_text, re.DOTALL | re.IGNORECASE)
-        if final_answer_match:
-            return final_answer_match.group(1).strip()
+        # Initialize result structure
+        result = {
+            'input_generator': '',
+            'output_generator': '',
+            'transform': ''
+        }
         
-        # Second priority: last ```python block 
-        python_blocks = re.findall(r'```python\s*\n(.*?)\n```', full_text, re.DOTALL)
-        if python_blocks:
-            return python_blocks[-1].strip()
+        # Extract Input Grid Generator
+        input_generator_match = re.search(r'Input Grid Generator:\s*```python\s*\n(.*?)\n```', full_text, re.DOTALL | re.IGNORECASE)
+        if input_generator_match:
+            result['input_generator'] = input_generator_match.group(1).strip()
         
-        # Third priority: any ``` block with def transform
-        code_blocks = re.findall(r'```\s*\n(.*?)\n```', full_text, re.DOTALL)
-        for block in reversed(code_blocks):  # Check from last to first
-            if 'def transform' in block:
-                return block.strip()
+        # Extract Output Grid Generator
+        output_generator_match = re.search(r'Output Grid Generator:\s*```python\s*\n(.*?)\n```', full_text, re.DOTALL | re.IGNORECASE)
+        if output_generator_match:
+            result['output_generator'] = output_generator_match.group(1).strip()
         
-        # Last resort: extract def transform function without code blocks
-        transform_match = re.search(r'(def transform.*?)(?=\n\S|\n*$)', full_text, re.DOTALL)
+        # Extract Transformation function
+        transform_match = re.search(r'Transformation:\s*```python\s*\n(.*?)\n```', full_text, re.DOTALL | re.IGNORECASE)
         if transform_match:
-            return transform_match.group(1).strip()
+            result['transform'] = transform_match.group(1).strip()
         
-        return ""
+        # Fallback: if specific sections not found, try to extract functions by name
+        if not result['input_generator']:
+            input_func_match = re.search(r'(def generate_input_grids.*?)(?=\n\S|\n*def|\n*$)', full_text, re.DOTALL)
+            if input_func_match:
+                result['input_generator'] = input_func_match.group(1).strip()
+        
+        if not result['output_generator']:
+            output_func_match = re.search(r'(def generate_output_grids.*?)(?=\n\S|\n*def|\n*$)', full_text, re.DOTALL)
+            if output_func_match:
+                result['output_generator'] = output_func_match.group(1).strip()
+        
+        if not result['transform']:
+            # Try legacy "Final answer:" format for backward compatibility
+            final_answer_match = re.search(r'Final answer:\s*```python\s*\n(.*?)\n```', full_text, re.DOTALL | re.IGNORECASE)
+            if final_answer_match:
+                result['transform'] = final_answer_match.group(1).strip()
+            else:
+                # Try to find transform function directly
+                transform_func_match = re.search(r'(def transform.*?)(?=\n\S|\n*def|\n*$)', full_text, re.DOTALL)
+                if transform_func_match:
+                    result['transform'] = transform_func_match.group(1).strip()
+        
+        return result
     
-    def create_success_result(self, task_id: str, program: str, response, test_score: Dict, total_cost: float, total_tokens: int, turns_used: int, task_data: Dict, conversation_history: List = None, all_responses: List = None, turn_details: List = None, is_independent_attempts: bool = False) -> Dict:
+    def create_success_result(self, task_id: str, transform_program: str, response, test_score: Dict, total_cost: float, total_tokens: int, turns_used: int, task_data: Dict, conversation_history: List = None, all_responses: List = None, turn_details: List = None, is_independent_attempts: bool = False) -> Dict:
         """Create a successful task result with complete multi-turn data"""
 
         # Convert response to JSON-serializable format
@@ -489,7 +552,7 @@ def transform(grid):
             'model': self.model,
             'reasoning_effort': self.reasoning_effort if self.is_reasoning_model() else "N/A",
             'api_type': api_type,
-            'program': program,
+            'program': transform_program,
             'execution_error': '',
             'timed_out': False,
             'tokens_used': total_tokens,
@@ -521,7 +584,7 @@ def transform(grid):
             
         return result
     
-    def create_failure_result(self, task_id: str, program: str, all_responses: List, total_cost: float, total_tokens: int, turns_used: int, task_data: Dict, error_msg: str, conversation_history: List = None, turn_details: List = None, is_independent_attempts: bool = False) -> Dict:
+    def create_failure_result(self, task_id: str, transform_program: str, all_responses: List, total_cost: float, total_tokens: int, turns_used: int, task_data: Dict, error_msg: str, conversation_history: List = None, turn_details: List = None, is_independent_attempts: bool = False) -> Dict:
         """Create a failed task result with complete multi-turn data"""
         # Get test output for pixel counting
         actual_output = task_data['test'][0]['output']
@@ -627,7 +690,7 @@ def transform(grid):
             'model': self.model,
             'reasoning_effort': self.reasoning_effort if self.is_reasoning_model() else "N/A",
             'api_type': api_type,
-            'program': program,
+            'program': transform_program,
             'execution_error': error_msg,
             'timed_out': False,
             'tokens_used': total_tokens,
@@ -836,8 +899,21 @@ def transform(grid):
                 if self.max_workers == 1:
                     print(f"     💰 Attempt cost: ${attempt_cost:.6f} (input: {input_tokens}, output: {output_tokens})")
                 
-                # Extract code
-                program = self.extract_code_from_response(response)
+                # Extract code blocks
+                programs = self.extract_code_from_response(response)
+                input_generator = programs.get('input_generator', '')
+                output_generator = programs.get('output_generator', '')
+                transform_program = programs.get('transform', '')
+                
+                # Verify input and output generators
+                input_generator_result = None
+                output_generator_result = None
+                
+                if input_generator:
+                    input_generator_result = self.verify_input_generator(input_generator, task_data)
+                
+                if output_generator:
+                    output_generator_result = self.verify_output_generator(output_generator, task_data)
                 
                 # Initialize attempt detail
                 attempt_detail = {
@@ -846,13 +922,23 @@ def transform(grid):
                     'input_tokens': input_tokens,
                     'output_tokens': output_tokens,
                     'attempt_cost': attempt_cost,
-                    'program_extracted': bool(program),
-                    'program': program,
+                    'programs_extracted': {
+                        'input_generator': bool(input_generator),
+                        'output_generator': bool(output_generator),
+                        'transform': bool(transform_program)
+                    },
+                    'programs': {
+                        'input_generator': input_generator,
+                        'output_generator': output_generator,
+                        'transform': transform_program
+                    },
+                    'input_generator_result': input_generator_result,
+                    'output_generator_result': output_generator_result,
                     'test_result': None,
                     'status': 'in_progress'
                 }
                 
-                if not program:
+                if not transform_program:
                     if self.max_workers == 1:
                         print(f"     ❌ No code found in response")
                     
@@ -865,7 +951,7 @@ def transform(grid):
                 # Test on test input
                 test_input = task_data['test'][0]['input']
                 test_expected = task_data['test'][0]['output']
-                predicted_output, error, timed_out = self.executor.execute_program(program, test_input)
+                predicted_output, error, timed_out = self.executor.execute_program(transform_program, test_input)
                 
                 if predicted_output is not None and not error and not timed_out:
                     # Check if test is correct
@@ -878,7 +964,20 @@ def transform(grid):
                         attempt_details.append(attempt_detail)
                         
                         if self.max_workers == 1:
-                            print(f"     ✅ Perfect solution found on attempt {attempt + 1}!")
+                            # Show success with all statistics
+                            # Add input generator stats
+                            if input_generator_result:
+                                input_stats = f"Input Grids: {input_generator_result['exact_matches']}/{input_generator_result['expected_count']} correctly described"
+                            else:
+                                input_stats = "Input Grids: Not provided"
+                            
+                            # Add output generator stats
+                            if output_generator_result:
+                                output_stats = f"Output Grids: {output_generator_result['exact_matches']}/{output_generator_result['expected_count']} correctly described"
+                            else:
+                                output_stats = "Output Grids: Not provided"
+                            
+                            print(f"     ✅ Perfect solution found on attempt {attempt + 1}! | {input_stats} | {output_stats}")
                         
                         # Update costs only (progress handled by parallel executor)
                         self._update_costs(total_cost, total_tokens)
@@ -887,7 +986,7 @@ def transform(grid):
                         test_score['predicted_output'] = predicted_output
                         test_score['actual_output'] = test_expected
                         
-                        return self.create_success_result(task_id, program, response, test_score, total_cost, total_tokens, attempt + 1, task_data, None, all_responses, attempt_details, is_independent_attempts=True)
+                        return self.create_success_result(task_id, transform_program, response, test_score, total_cost, total_tokens, attempt + 1, task_data, None, all_responses, attempt_details, is_independent_attempts=True)
                 else:
                     # Execution failed
                     attempt_detail['test_result'] = {
@@ -900,12 +999,25 @@ def transform(grid):
                 attempt_details.append(attempt_detail)
                 
                 if self.max_workers == 1:
-                    print(f"     📊 Attempt {attempt + 1} failed test")
+                    # Show detailed statistics including generator results
+                    # Add input generator stats
+                    if input_generator_result:
+                        input_stats = f"Input Grids: {input_generator_result['exact_matches']}/{input_generator_result['expected_count']} correctly described"
+                    else:
+                        input_stats = "Input Grids: Not provided"
+                    
+                    # Add output generator stats
+                    if output_generator_result:
+                        output_stats = f"Output Grids: {output_generator_result['exact_matches']}/{output_generator_result['expected_count']} correctly described"
+                    else:
+                        output_stats = "Output Grids: Not provided"
+                    
+                    print(f"     📊 Attempt {attempt + 1} failed test | {input_stats} | {output_stats}")
             
             # Failed after all attempts
             self._update_costs(total_cost, total_tokens)
             
-            return self.create_failure_result(task_id, program if 'program' in locals() else "", all_responses, total_cost, total_tokens, self.max_turns, task_data, "All attempts failed", None, attempt_details, is_independent_attempts=True)
+            return self.create_failure_result(task_id, transform_program if 'transform_program' in locals() else "", all_responses, total_cost, total_tokens, self.max_turns, task_data, "All attempts failed", None, attempt_details, is_independent_attempts=True)
         
         except Exception as e:
             print(f"     ❌ Independent attempts execution failed: {e}")
@@ -977,8 +1089,21 @@ def transform(grid):
                 if self.max_workers == 1:
                     print(f"     💰 Turn cost: ${turn_cost:.6f} (input: {input_tokens}, output: {output_tokens})")
                 
-                # Extract code
-                program = self.extract_code_from_response(response)
+                # Extract code blocks
+                programs = self.extract_code_from_response(response)
+                input_generator = programs.get('input_generator', '')
+                output_generator = programs.get('output_generator', '')
+                transform_program = programs.get('transform', '')
+                
+                # Verify input and output generators
+                input_generator_result = None
+                output_generator_result = None
+                
+                if input_generator:
+                    input_generator_result = self.verify_input_generator(input_generator, task_data)
+                
+                if output_generator:
+                    output_generator_result = self.verify_output_generator(output_generator, task_data)
                 
                 # Initialize turn detail
                 turn_detail = {
@@ -987,14 +1112,24 @@ def transform(grid):
                     'input_tokens': input_tokens,
                     'output_tokens': output_tokens,
                     'turn_cost': turn_cost,
-                    'program_extracted': bool(program),
-                    'program': program,
+                    'programs_extracted': {
+                        'input_generator': bool(input_generator),
+                        'output_generator': bool(output_generator),
+                        'transform': bool(transform_program)
+                    },
+                    'programs': {
+                        'input_generator': input_generator,
+                        'output_generator': output_generator,
+                        'transform': transform_program
+                    },
+                    'input_generator_result': input_generator_result,
+                    'output_generator_result': output_generator_result,
                     'training_feedback': None,
                     'test_result': None,
                     'status': 'in_progress'
                 }
                 
-                if not program:
+                if not transform_program:
                     if self.max_workers == 1:
                         print(f"     ❌ No code found in response")
                     
@@ -1040,20 +1175,34 @@ def transform(grid):
                         conversation_history.append(assistant_msg)
                     
                     # Add request for code
-                    code_request = """I need you to provide Python code to attempt this task. Even if you're not completely certain about the pattern, please provide your best hypothesis as a working transformation function.
+                    code_request = """I need you to provide Python code to attempt this task. Even if you're not completely certain about the pattern, please provide your best hypothesis as working functions.
 
 **Remember**: A partial solution that captures some observed patterns is much more valuable than refusing to attempt the task. Your goal is to implement whatever understanding you have, even if incomplete.
 
 You MUST end your response with the following exact format:
 
-Final answer:
+Input Grid Generator:
+```python
+def generate_input_grids():
+    # Generate all training input grids + test input grid
+    return input_grids
+```
+
+Output Grid Generator:
+```python
+def generate_output_grids():
+    # Generate all training output grids
+    return output_grids
+```
+
+Transformation:
 ```python
 def transform(grid):
     # Your transformation logic here (implement your best understanding)
     return transformed_grid
 ```
 
-Make sure to include the function definition inside a proper code block."""
+Make sure to include all three function definitions inside proper code blocks."""
                     
                     conversation_history.append({"role": "user", "content": code_request})
                     turn_detail['code_request_sent'] = True
@@ -1064,7 +1213,7 @@ Make sure to include the function definition inside a proper code block."""
                 # Test on test input first
                 test_input = task_data['test'][0]['input']
                 test_expected = task_data['test'][0]['output']
-                predicted_output, error, timed_out = self.executor.execute_program(program, test_input)
+                predicted_output, error, timed_out = self.executor.execute_program(transform_program, test_input)
                 
                 # Determine test correctness for training feedback
                 test_correct = None
@@ -1075,7 +1224,7 @@ Make sure to include the function definition inside a proper code block."""
                     test_correct = False
                 
                 # Get training feedback for this turn (including test result context)
-                training_feedback_messages, solved_count, pixel_acc = self.create_training_feedback(program, task_data['train'], test_correct, task_id, turn + 1)
+                training_feedback_messages, solved_count, pixel_acc = self.create_training_feedback(transform_program, task_data['train'], test_correct, task_id, turn + 1)
                 turn_detail['training_feedback'] = {
                     'feedback_messages': training_feedback_messages,
                     'solved_count': solved_count,
@@ -1094,7 +1243,22 @@ Make sure to include the function definition inside a proper code block."""
                         turn_details.append(turn_detail)
                         
                         if self.max_workers == 1:
-                            print(f"     ✅ Perfect solution found! Training: {solved_count}/{len(task_data['train'])} solved, {pixel_acc:.1%} accuracy")
+                            # Show success with all statistics
+                            train_stats = f"Training: {solved_count}/{len(task_data['train'])} solved, {pixel_acc:.1%} accuracy"
+                            
+                            # Add input generator stats
+                            if input_generator_result:
+                                input_stats = f"Input Grids: {input_generator_result['exact_matches']}/{input_generator_result['expected_count']} correctly described"
+                            else:
+                                input_stats = "Input Grids: Not provided"
+                            
+                            # Add output generator stats
+                            if output_generator_result:
+                                output_stats = f"Output Grids: {output_generator_result['exact_matches']}/{output_generator_result['expected_count']} correctly described"
+                            else:
+                                output_stats = "Output Grids: Not provided"
+                            
+                            print(f"     ✅ Perfect solution found! {train_stats} | {input_stats} | {output_stats}")
                         
                         # Update costs only (progress handled by parallel executor)
                         self._update_costs(total_cost, total_tokens)
@@ -1103,7 +1267,7 @@ Make sure to include the function definition inside a proper code block."""
                         test_score['predicted_output'] = predicted_output
                         test_score['actual_output'] = test_expected
                         
-                        return self.create_success_result(task_id, program, response, test_score, total_cost, total_tokens, turn + 1, task_data, conversation_history, all_responses, turn_details)
+                        return self.create_success_result(task_id, transform_program, response, test_score, total_cost, total_tokens, turn + 1, task_data, conversation_history, all_responses, turn_details)
                 else:
                     # Execution failed
                     turn_detail['test_result'] = {
@@ -1116,7 +1280,22 @@ Make sure to include the function definition inside a proper code block."""
                 turn_details.append(turn_detail)
                 
                 if self.max_workers == 1:
-                    print(f"     📊 Training: {solved_count}/{len(task_data['train'])} solved, {pixel_acc:.1%} accuracy")
+                    # Show training and generator statistics
+                    train_stats = f"Training: {solved_count}/{len(task_data['train'])} solved, {pixel_acc:.1%} accuracy"
+                    
+                    # Add input generator stats
+                    if input_generator_result:
+                        input_stats = f"Input Grids: {input_generator_result['exact_matches']}/{input_generator_result['expected_count']} correctly described"
+                    else:
+                        input_stats = "Input Grids: Not provided"
+                    
+                    # Add output generator stats
+                    if output_generator_result:
+                        output_stats = f"Output Grids: {output_generator_result['exact_matches']}/{output_generator_result['expected_count']} correctly described"
+                    else:
+                        output_stats = "Output Grids: Not provided"
+                    
+                    print(f"     📊 {train_stats} | {input_stats} | {output_stats}")
                 
                 # Stop if this is the last turn
                 if turn == self.max_turns - 1:
@@ -1165,7 +1344,7 @@ Make sure to include the function definition inside a proper code block."""
             # Failed after max turns
             self._update_costs(total_cost, total_tokens)
             
-            return self.create_failure_result(task_id, program if 'program' in locals() else "", all_responses, total_cost, total_tokens, self.max_turns, task_data, "Max turns reached", conversation_history, turn_details)
+            return self.create_failure_result(task_id, transform_program if 'transform_program' in locals() else "", all_responses, total_cost, total_tokens, self.max_turns, task_data, "Max turns reached", conversation_history, turn_details)
         
         except Exception as e:
             print(f"     ❌ Multi-turn execution failed: {e}")
@@ -1597,6 +1776,202 @@ Make sure to include the function definition inside a proper code block."""
             print(f"Aggregate results saved to: {filepath}")
         else:
             print("\n❌ No valid run statistics to aggregate")
+
+    def verify_input_generator(self, program: str, task_data: Dict) -> Dict:
+        """Verify the input grid generator program"""
+        # Expected grids: all training inputs + test input
+        expected_grids = [example['input'] for example in task_data['train']]
+        expected_grids.append(task_data['test'][0]['input'])
+        
+        # Execute the program
+        generated_grids, error, timed_out = self.executor.execute_program(program, None, function_name='generate_input_grids')
+        
+        if error or timed_out or generated_grids is None:
+            return {
+                'correct': False,
+                'error': error,
+                'timed_out': timed_out,
+                'generated_grids': generated_grids,
+                'expected_count': len(expected_grids),
+                'generated_count': 0,
+                'exact_matches': 0,
+                'pixel_accuracy': 0.0,
+                'total_pixels': self._count_total_pixels(expected_grids),
+                'correct_pixels': 0
+            }
+        
+        # Verify the generated grids
+        exact_matches = 0
+        total_pixels = 0
+        correct_pixels = 0
+        
+        # Check if we got the right number of grids
+        if not isinstance(generated_grids, list):
+            generated_grids = []
+        
+        for i, expected_grid in enumerate(expected_grids):
+            if i < len(generated_grids):
+                generated_grid = generated_grids[i]
+                
+                # Normalize both grids to 2D format for comparison
+                normalized_expected = self._normalize_grid_to_2d(expected_grid)
+                normalized_generated = self._normalize_grid_to_2d(generated_grid)
+                
+                # Calculate pixel accuracy for this grid
+                grid_correct_pixels, grid_total_pixels = self._calculate_pixel_accuracy(normalized_generated, normalized_expected)
+                
+                # Check for exact match
+                if grid_correct_pixels == grid_total_pixels and grid_total_pixels > 0:
+                    exact_matches += 1
+                
+                total_pixels += grid_total_pixels
+                correct_pixels += grid_correct_pixels
+            else:
+                # Missing grid
+                total_pixels += self._count_pixels_in_grid(expected_grid)
+        
+        pixel_accuracy = correct_pixels / total_pixels if total_pixels > 0 else 0.0
+        
+        return {
+            'correct': exact_matches == len(expected_grids),
+            'error': None,
+            'timed_out': False,
+            'generated_grids': generated_grids,
+            'expected_count': len(expected_grids),
+            'generated_count': len(generated_grids),
+            'exact_matches': exact_matches,
+            'pixel_accuracy': pixel_accuracy,
+            'total_pixels': total_pixels,
+            'correct_pixels': correct_pixels
+        }
+    
+    def verify_output_generator(self, program: str, task_data: Dict) -> Dict:
+        """Verify the output grid generator program"""
+        # Expected grids: all training outputs
+        expected_grids = [example['output'] for example in task_data['train']]
+        
+        # Execute the program
+        generated_grids, error, timed_out = self.executor.execute_program(program, None, function_name='generate_output_grids')
+        
+        if error or timed_out or generated_grids is None:
+            return {
+                'correct': False,
+                'error': error,
+                'timed_out': timed_out,
+                'generated_grids': generated_grids,
+                'expected_count': len(expected_grids),
+                'generated_count': 0,
+                'exact_matches': 0,
+                'pixel_accuracy': 0.0,
+                'total_pixels': self._count_total_pixels(expected_grids),
+                'correct_pixels': 0
+            }
+        
+        # Verify the generated grids
+        exact_matches = 0
+        total_pixels = 0
+        correct_pixels = 0
+        
+        # Check if we got the right number of grids
+        if not isinstance(generated_grids, list):
+            generated_grids = []
+        
+        for i, expected_grid in enumerate(expected_grids):
+            if i < len(generated_grids):
+                generated_grid = generated_grids[i]
+                
+                # Normalize both grids to 2D format for comparison
+                normalized_expected = self._normalize_grid_to_2d(expected_grid)
+                normalized_generated = self._normalize_grid_to_2d(generated_grid)
+                
+                # Calculate pixel accuracy for this grid
+                grid_correct_pixels, grid_total_pixels = self._calculate_pixel_accuracy(normalized_generated, normalized_expected)
+                
+                # Check for exact match
+                if grid_correct_pixels == grid_total_pixels and grid_total_pixels > 0:
+                    exact_matches += 1
+                
+                total_pixels += grid_total_pixels
+                correct_pixels += grid_correct_pixels
+            else:
+                # Missing grid
+                total_pixels += self._count_pixels_in_grid(expected_grid)
+        
+        pixel_accuracy = correct_pixels / total_pixels if total_pixels > 0 else 0.0
+        
+        return {
+            'correct': exact_matches == len(expected_grids),
+            'error': None,
+            'timed_out': False,
+            'generated_grids': generated_grids,
+            'expected_count': len(expected_grids),
+            'generated_count': len(generated_grids),
+            'exact_matches': exact_matches,
+            'pixel_accuracy': pixel_accuracy,
+            'total_pixels': total_pixels,
+            'correct_pixels': correct_pixels
+        }
+    
+    def _normalize_grid_to_2d(self, grid):
+        """Normalize a grid to 2D format for consistent comparison"""
+        if grid is None:
+            return []
+        
+        # If it's already 2D, return as-is
+        if isinstance(grid, list) and len(grid) > 0 and isinstance(grid[0], list):
+            return grid
+        
+        # If it's 1D, convert to 2D column vector
+        if isinstance(grid, list) and len(grid) > 0 and isinstance(grid[0], int):
+            return [[cell] for cell in grid]
+        
+        # If it's not a list, treat as empty
+        return []
+    
+    def _calculate_pixel_accuracy(self, generated_grid, expected_grid):
+        """Calculate pixel accuracy between two normalized 2D grids"""
+        if not generated_grid or not expected_grid:
+            expected_size = self._count_pixels_in_grid(expected_grid)
+            return 0, expected_size
+        
+        grid_correct_pixels = 0
+        grid_total_pixels = 0
+        
+        # Handle dimension mismatches gracefully
+        min_rows = min(len(generated_grid), len(expected_grid))
+        for r in range(min_rows):
+            if r < len(generated_grid) and r < len(expected_grid):
+                min_cols = min(len(generated_grid[r]), len(expected_grid[r]))
+                for c in range(min_cols):
+                    grid_total_pixels += 1
+                    if generated_grid[r][c] == expected_grid[r][c]:
+                        grid_correct_pixels += 1
+        
+        # Account for dimension mismatches as errors
+        expected_size = self._count_pixels_in_grid(expected_grid)
+        generated_size = self._count_pixels_in_grid(generated_grid)
+        grid_total_pixels = max(expected_size, generated_size, grid_total_pixels)
+        
+        return grid_correct_pixels, grid_total_pixels
+    
+    def _count_pixels_in_grid(self, grid):
+        """Count total pixels in a grid (handles both 1D and 2D)"""
+        if not grid:
+            return 0
+        
+        if isinstance(grid, list):
+            if len(grid) > 0 and isinstance(grid[0], list):
+                # 2D grid
+                return sum(len(row) for row in grid)
+            else:
+                # 1D grid
+                return len(grid)
+        
+        return 0
+    
+    def _count_total_pixels(self, grids):
+        """Count total pixels across multiple grids"""
+        return sum(self._count_pixels_in_grid(grid) for grid in grids)
 
 def main():
     parser = argparse.ArgumentParser(description="Run ARC tasks with OpenAI o3/o4 models")

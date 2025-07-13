@@ -1,11 +1,39 @@
 # Experiment Notes
 
+## 2025 13th July
+
+Having the model write out the programs for the input and output grids, and the transformation function, is working well.
+
+**Motivation:**
+By having grids be described by the model, perhaps it helps to better ground its solving. Further, it can be useful during the back-prop phase of training to embed this kind of knowledge.
+
+Score to beat is about 36% (about 16/46) on this gpt-4.1-mini-calib-train dataset.
+
+**Results:**
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini --independent-attempts
+```
+Attempt 1 Only Success Rate:
+  Mean: 14.5%
+  Std Dev: 1.3%
+  95% CI: [12.0%, 17.0%]
+
+All Attempts Success Rate:
+  Mean: 39.1%
+  Std Dev: 8.7%
+  95% CI: [22.1%, 56.2%]
+Rough cost per run: $1.20.
+
+But the problem is that the llm is actually hard coding the grids...
+
 ## 2025 12th July
 
 ### Testing only on images, no text grids!
 
 **Commentary:**
-- Images alone are significantly weaker than text alone.
+- Images alone are  significantly weaker than text alone.
 - Perhaps this would be different with training.
 - Also, it shows that before adding images to text, probably images of different kinds should be ablated first.
 
