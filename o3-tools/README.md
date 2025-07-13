@@ -17,23 +17,21 @@ Objective: Define a test that is a representative measure of performance while a
 ...
 
 - MEDIUM:
-[x] Review of some samples.
-[x] Add guidance around output grid sizes, if wrong. (Enhanced: now tells model target dimensions upfront + general reminders)
-[x] Create a script that automatically will do a run three times and calculate the mean and std dev (for the number correct on one turn, and the number correct on more than one turn).
-[x] Ablate feedback of max 8 turns versus sampling for max 8 turns.
-[ ] Fix the cheating issue whereby there is more sampling/turns if the training examples are all correct, but the test is wrong.
-[ ] MCTS-type ablation: Sample for half of the max_turns, and then feedback for the other remaining turns (stop of course if the test is solved).
 [ ] Describing grids ablation: Get the model to also describe the input grid and the output grid with code (so, return three code blocks), and provide feedback on those too.
   [ ] Do this all in one go.
   [ ] Do the description in separate calls to the LLM.
-[ ] Ablate the costs of solving if we do o4-mini (low) versus o4-mini (high). Is it possibly better to use o4-mini (low) with 8 max turns versus o4-mini (high) with 4 max turns? Consider costs across three runs. (best to develop a script for doing this that calculates means etc.).
+[ ] Port the scripts to an openai style endpoint. Run Qwen and try to calibrate.
+[ ] Generate training data.
+[ ] Train.
 
 - SLOW:
 ...
 
 Other ideas:
+[ ] Ablate the costs of solving if we do o4-mini (low) versus o4-mini (high). Is it possibly better to use o4-mini (low) with 8 max turns versus o4-mini (high) with 4 max turns? Consider costs across three runs. (best to develop a script for doing this that calculates means etc.).
+[ ] PROBLEM: WE ARE CHEATING BY ALLOWING THE MODEL TO CONTINUE IF THE TRAINING EXAMPLES ARE ALL CORRECT, BUT THE TEST IS WRONG. THERE'S AN ABLATION TO TEST FOR THE CASE WHERE WE - BEFORE STOPPING - ASK THE MODEL TO SEE IF IT SHOULD MAKE THE PROGRAM MORE GENERAL. Fix the cheating issue whereby there is more sampling/turns if the training examples are all correct, but the test is wrong. Only applies to feedback.
+[ ] MCTS-type ablation: Sample for half of the max_turns, and then feedback for the other remaining turns (stop of course if the test is solved). Not worth it as sampling seems better than feedback.
 [ ] Swap to chat completions endpoint so as to allow for openai-style endpoint usage (enable other models, incl. reasoning). THIS IS NOT GOING TO SUPPORT OPENAI REASONING MODELS, WHICH DONT' DISCLOSE THE REASONING TRACE, AND SO YOU MUST USE THE RESPONSES API TO USE REASONING WITH OPENAI MODELS. OTHERS (CLAUDE, QWEN, GEMINI?, DEEPSEEK?) RESPOND WITH <think> TAGS.
-[ ] PROBLEM: WE ARE CHEATING BY ALLOWING THE MODEL TO CONTINUE IF THE TRAINING EXAMPLES ARE ALL CORRECT, BUT THE TEST IS WRONG. THERE'S AN ABLATION TO TEST FOR THE CASE WHERE WE - BEFORE STOPPING - ASK THE MODEL TO SEE IF IT SHOULD MAKE THE PROGRAM MORE GENERAL.
 [ ] Apply a limit to oscillation within feedback roll-outs.
 [ ] Put in simpler images (particularly relevant when we fine-tune because the model will know the format to expect).
 [ ] Start with strict prompt, only then fall back to partial attempt. DELAY.
@@ -52,6 +50,10 @@ Cleanups:
   [x] Run tests on low levels of reasoning effort.
 
 Completed:
+[x] Review of some samples.
+[x] Add guidance around output grid sizes, if wrong. (Enhanced: now tells model target dimensions upfront + general reminders)
+[x] Create a script that automatically will do a run three times and calculate the mean and std dev (for the number correct on one turn, and the number correct on more than one turn).
+[x] Ablate feedback of max 8 turns versus sampling for max 8 turns.
 [x] Refine prompting:
   [x] Examine the correct tasks for what happened. Examine also some wrong tasks.
   [x] Adjust the soft prompt so that it encourages finding an improvement! check that. Sometimes there is no attempt to improve when some training grids pass. Perhaps try a prompt that encourages generalisation to the other training grids.
@@ -69,10 +71,6 @@ Completed:
 [x] prompt so that the model keeps reasoning until it finds a python program that solves (for the tool use case). don't include the test examples in the prompt.
 [x] **Simplified scoring**: Removed complex compression-based calculations and focused on core metrics.
 
-For Kaggle / low compute competition:
-[ ] Testing out a baseline with Qwen.
-[ ] Potentially distilling from o3 down to Qwen if needed.
-
 ## Features
 
 - Run ARC-AGI tasks with OpenAI models (currently using gpt-4o-mini or o4-mini)
@@ -83,6 +81,7 @@ For Kaggle / low compute competition:
 - Budget tracking with token usage and cost estimation
 - Detailed logging of all runs for analysis
 - Support for different datasets and task subsets
+- Text-only mode for fast, efficient execution
 
 > **Note:** In testing, o3 looped does not solve any of the longest ARC-AGI problems (tested on 5). Shortest and medium tasks are solved much more reliably.
 
@@ -125,12 +124,6 @@ uv run python run_arc_tasks.py --dataset arc-agi-2 --subset shortest_training_30
 # Run tasks in parallel with rate limiting to respect API limits
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_10 --max_workers 5 --rate_limit_delay 0.5
 
-# Run with images disabled for faster execution (text-only mode)
-uv run python run_arc_tasks.py --dataset arc-agi-2 --subset shortest_training_10 --disable_images
-
-# Run with debug images saved to disk for analysis
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_1 --debug_images
-
 # Run the same test 3 times and calculate mean/std dev statistics
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 3
 
@@ -146,8 +139,6 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10
 #   --reasoning_effort: Reasoning effort for the model (low, medium, high; default: low, only applies to o3/o4/o1 models)
 #   --max_workers: Number of parallel workers (default: 1, max: 30)
 #   --rate_limit_delay: Delay between API calls in seconds (default: 0.0)
-#   --disable_images: Disable visual image generation (text-only mode)
-#   --debug_images: Save debug images to debug_images/ directory
 #   --repeat-runs: Number of times to repeat the entire test (default: 1, max: 10)
 #   --independent-attempts: Use independent attempts mode instead of multi-turn feedback
 ```
@@ -252,110 +243,6 @@ All plots saved in: plots/
 - **Identify patterns**: Spot when models oscillate between solutions
 - **Visual analysis**: Compare predicted vs expected outputs side-by-side
 - **Progress tracking**: Monitor training vs test performance across turns
-
-## Debug Images for Vision Models
-
-When using vision-capable models (o3, o4, gpt-4o variants), the script automatically generates debug images alongside the regular text-based prompts. This provides visual feedback to help understand model performance.
-
-### Features
-
-- **Automatic detection**: Vision capabilities are auto-detected based on model name
-- **Manual control**: Use `--disable_images` for text-only mode or `--debug_images` to save images to disk
-- **Training images**: Visual representation of all training examples with input→output transformations
-- **Feedback images**: Side-by-side comparison of expected vs predicted outputs after each turn
-- **ARC color palette**: Proper 0-9 color mapping matching official ARC visualization
-- **Clear labeling**: Arrows, dimensions, and accuracy indicators for easy interpretation
-
-### Debug Image Generation
-
-**Training Phase (Turn 1):**
-- Shows all training examples as input→output pairs
-- Includes grid dimensions and clear visual arrows
-- Saved as `debug_images/[timestamp]_[task_id]_turn1_training.png`
-
-**Feedback Phase (Turn 2+):**
-- Compares expected outputs with model predictions
-- Shows accuracy percentages and pixel-level differences
-- Color-coded: green borders for correct, red for incorrect
-- Saved as `debug_images/[timestamp]_[task_id]_turn[N]_feedback.png`
-
-### Model Support
-
-**Vision-enabled models:**
-- `o3` (full OpenAI o3)
-- `o4` and `o4-mini` 
-- `gpt-4o`, `gpt-4o-mini`
-- `gpt-4-vision-preview`
-
-**Text-only models:**
-- `o3-mini` (reasoning without vision)
-- `gpt-4`, `gpt-3.5-turbo`
-- All other non-vision models
-
-### Usage
-
-**Automatic Image Generation (Default):**
-Debug images are automatically generated when using vision models:
-
-```bash
-# This will generate debug images (o4 supports vision)
-uv run python run_arc_tasks.py --model o4-mini
-
-# This will NOT generate debug images (o3-mini is text-only)
-uv run python run_arc_tasks.py --model o3-mini
-```
-
-**Manual Control:**
-You can explicitly control image generation:
-
-```bash
-# Force text-only mode even for vision models (faster execution)
-uv run python run_arc_tasks.py --model o4-mini --disable_images
-
-# Save debug images to disk for analysis (requires vision model)
-uv run python run_arc_tasks.py --model o3 --debug_images
-
-# Combine: text-only mode with no debug images
-uv run python run_arc_tasks.py --model gpt-4o --disable_images
-```
-
-**Debug images are saved to:**
-```
-o3-tools/debug_images/
-├── 20250109_143022_abc123_turn1_training.png
-├── 20250109_143035_abc123_turn2_feedback.png
-└── 20250109_143048_abc123_turn3_feedback.png
-```
-
-### When to Use Each Mode
-
-**Default (Auto Images)**: Best for most use cases
-- Automatically uses images with vision models for better performance
-- No extra disk usage (images sent to API only)
-
-**Text-Only (`--disable_images`)**: Best for speed and cost optimization
-- Faster execution (no image generation)
-- Lower token usage (text-only prompts)
-- Useful for quick experiments or budget-conscious runs
-
-**Debug Images (`--debug_images`)**: Best for analysis and debugging
-- Saves visual representations to disk for manual inspection
-- Helps understand model behavior and pattern recognition
-- Useful for research and detailed performance analysis
-
-### Example Debug Images
-
-**Training Image (Turn 1):**
-- Visual grid representations of all training examples
-- Input grids on the left, output grids on the right
-- Arrows showing transformations
-- Grid dimensions displayed clearly
-
-**Feedback Image (Turn 2+):**
-- Three columns: Input | Expected | Predicted
-- Visual comparison of model predictions vs ground truth
-- Accuracy percentages for each example
-- Color-coded borders indicating success/failure
 
 ## Repeated Runs with Statistical Analysis
 
@@ -793,7 +680,8 @@ Summary reports aggregate across all tasks and include:
 ```
 Running 10 tasks from arc-agi-1/shortest_10
 Model: o4-mini
-API: Responses API (single-shot)
+API: Responses API (multi-turn, max 3 turns)
+Input mode: Text-only
 Parallelization: DISABLED (sequential execution)
 --------------------------------------------------
 
@@ -806,7 +694,8 @@ Processing task: 6150a2bd
 ```
 Running 10 tasks from arc-agi-1/shortest_10
 Model: o4-mini
-API: Responses API (single-shot)
+API: Responses API (multi-turn, max 3 turns)
+Input mode: Text-only
 Parallelization: ENABLED (5 workers)
 --------------------------------------------------
 Starting parallel execution with 5 workers...
@@ -947,12 +836,12 @@ We use **only the Responses API** with multi-turn mode:
 
 - **Multi-turn local execution** with training feedback (up to `--max_turns`, default 3)
 - Model writes code, we test it locally on test input immediately  
-- If incorrect, we run it on training examples and provide detailed feedback
+- If incorrect, we run it on training examples and provide detailed text feedback
 - Model can see training results and iterate to improve the solution
 - Uses encrypted reasoning traces to maintain context between turns
 - More expensive but potentially more accurate through iteration
 
-**Key Point**: In both cases, we execute the final code locally to score it. The difference is whether the model gets multiple conversation turns with training feedback to improve its solution.
+**Key Point**: We execute the final code locally to score it. The difference is whether the model gets multiple conversation turns with training feedback to improve its solution.
 
 ## File Structure
 

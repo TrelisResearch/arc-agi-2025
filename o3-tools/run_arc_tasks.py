@@ -6,8 +6,6 @@ import argparse
 import datetime
 import time
 import threading
-import base64
-import io
 import numpy as np
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -15,292 +13,10 @@ from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from openai import OpenAI
 
-try:
-    from PIL import Image, ImageDraw, ImageFont
-    PIL_AVAILABLE = True
-except ImportError:
-    PIL_AVAILABLE = False
-
 from task_loader import TaskLoader
 from scoring import GridScorer, ProgramExecutor
 
 load_dotenv()
-
-class ARCGridVisualizer:
-    """Create visual representations of ARC grids for use with vision models"""
-    
-    def __init__(self, pixel_size=20, grid_spacing=5, section_spacing=30, debug_save=False):
-        self.pixel_size = pixel_size
-        self.grid_spacing = grid_spacing
-        self.section_spacing = section_spacing
-        self.debug_save = debug_save
-        
-        # Create debug directory if debug mode is enabled
-        if self.debug_save:
-            self.debug_dir = Path("debug_images")
-            self.debug_dir.mkdir(exist_ok=True)
-        
-        # ARC color palette
-        self.colors = {
-            0: (0, 0, 0),         # Black
-            1: (0, 116, 217),     # Blue  
-            2: (255, 65, 54),     # Red
-            3: (46, 204, 64),     # Green
-            4: (255, 220, 0),     # Yellow
-            5: (170, 170, 170),   # Gray
-            6: (240, 18, 190),    # Magenta
-            7: (255, 133, 27),    # Orange
-            8: (127, 219, 255),   # Sky Blue
-            9: (135, 12, 37)      # Dark Red
-        }
-    
-    def grid_to_image(self, grid):
-        """Convert a single grid to PIL Image"""
-        if not grid or not grid[0]:
-            return Image.new('RGB', (20, 20), 'white')
-            
-        height, width = len(grid), len(grid[0])
-        img_width = width * self.pixel_size
-        img_height = height * self.pixel_size
-        
-        img = Image.new('RGB', (img_width, img_height), 'white')
-        draw = ImageDraw.Draw(img)
-        
-        for row in range(height):
-            for col in range(width):
-                value = grid[row][col]
-                color = self.colors.get(value, (128, 128, 128))
-                
-                x1 = col * self.pixel_size
-                y1 = row * self.pixel_size
-                x2 = x1 + self.pixel_size
-                y2 = y1 + self.pixel_size
-                
-                draw.rectangle([x1, y1, x2, y2], fill=color)
-                draw.rectangle([x1, y1, x2, y2], outline=(80, 80, 80), width=1)
-        
-        return img
-    
-    def add_label(self, img, text, position='top'):
-        """Add a text label to an image"""
-        label_height = 25
-        if position == 'top':
-            new_img = Image.new('RGB', (img.width, img.height + label_height), 'white')
-            new_img.paste(img, (0, label_height))
-            text_y = 12
-        else:  # bottom
-            new_img = Image.new('RGB', (img.width, img.height + label_height), 'white')
-            new_img.paste(img, (0, 0))
-            text_y = img.height + 12
-        
-        draw = ImageDraw.Draw(new_img)
-        try:
-            font = ImageFont.truetype("/System/Library/Fonts/Arial.ttf", 14)
-        except:
-            font = ImageFont.load_default()
-        
-        # Center the text
-        bbox = draw.textbbox((0, 0), text, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_x = (new_img.width - text_width) // 2
-        
-        draw.text((text_x, text_y), text, fill='black', font=font)
-        return new_img
-    
-    def create_training_examples_image(self, task_data, task_id=None, turn=None):
-        """Create image showing all training examples with input->output pairs"""
-        train_examples = task_data['train']
-        example_pairs = []
-        
-        for i, example in enumerate(train_examples):
-            input_grid = example['input']
-            output_grid = example['output']
-            
-            input_img = self.grid_to_image(input_grid)
-            output_img = self.grid_to_image(output_grid)
-            
-            # Add labels
-            input_img = self.add_label(input_img, f"Input {i+1}")
-            output_img = self.add_label(output_img, f"Output {i+1}")
-            
-            # Create arrow
-            arrow_width = 50
-            arrow_height = max(input_img.height, output_img.height)
-            arrow_img = Image.new('RGB', (arrow_width, arrow_height), 'white')
-            draw = ImageDraw.Draw(arrow_img)
-            
-            mid_y = arrow_height // 2
-            draw.line([(15, mid_y), (35, mid_y)], fill='black', width=3)
-            draw.polygon([(30, mid_y-6), (35, mid_y), (30, mid_y+6)], fill='black')
-            
-            # Combine into pair
-            pair_width = input_img.width + arrow_width + output_img.width + 2 * self.grid_spacing
-            pair_height = max(input_img.height, output_img.height)
-            pair_img = Image.new('RGB', (pair_width, pair_height), 'white')
-            
-            x_offset = 0
-            pair_img.paste(input_img, (x_offset, 0))
-            x_offset += input_img.width + self.grid_spacing
-            pair_img.paste(arrow_img, (x_offset, 0))
-            x_offset += arrow_width + self.grid_spacing  
-            pair_img.paste(output_img, (x_offset, 0))
-            
-            example_pairs.append(pair_img)
-        
-        # Test input section
-        test_input = task_data['test'][0]['input']
-        test_img = self.grid_to_image(test_input)
-        test_img = self.add_label(test_img, "Test Input")
-        
-        # Layout everything vertically with section headers
-        max_width = max([pair.width for pair in example_pairs] + [test_img.width])
-        
-        # Calculate total height
-        total_height = 40  # Training section header
-        for pair in example_pairs:
-            total_height += pair.height + self.section_spacing
-        total_height += 40  # Test section header
-        total_height += test_img.height
-        
-        # Create final image
-        final_img = Image.new('RGB', (max_width + 40, total_height), 'white')
-        draw = ImageDraw.Draw(final_img)
-        
-        try:
-            title_font = ImageFont.truetype("/System/Library/Fonts/Arial.ttf", 18)
-        except:
-            title_font = ImageFont.load_default()
-        
-        y_offset = 10
-        
-        # Training section
-        draw.text((20, y_offset), "TRAINING EXAMPLES:", fill='black', font=title_font)
-        y_offset += 40
-        
-        for pair in example_pairs:
-            x_center = (final_img.width - pair.width) // 2
-            final_img.paste(pair, (x_center, y_offset))
-            y_offset += pair.height + self.section_spacing
-        
-        # Test section
-        draw.text((20, y_offset), "TEST INPUT:", fill='black', font=title_font)
-        y_offset += 40
-        
-        x_center = (final_img.width - test_img.width) // 2
-        final_img.paste(test_img, (x_center, y_offset))
-        
-        # Debug: Save image if debug mode is enabled
-        if self.debug_save and task_id:
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            turn_info = f"_turn{turn}" if turn is not None else ""
-            filename = f"{timestamp}_{task_id}{turn_info}_training.png"
-            debug_path = self.debug_dir / filename
-            final_img.save(debug_path)
-            print(f"🐛 Debug: Saved training image to {debug_path}")
-        
-        return final_img
-    
-    def create_feedback_image(self, training_examples, predicted_outputs, training_results, task_id=None, turn=None):
-        """Create visual feedback showing expected vs predicted outputs"""
-        feedback_rows = []
-        
-        for i, (example, predicted, result) in enumerate(zip(training_examples, predicted_outputs, training_results)):
-            expected_grid = example['output']
-            predicted_grid = predicted
-            
-            expected_img = self.grid_to_image(expected_grid)
-            predicted_img = self.grid_to_image(predicted_grid)
-            
-            # Add labels
-            expected_img = self.add_label(expected_img, f"Expected {i+1}")
-            predicted_img = self.add_label(predicted_img, f"Predicted {i+1}")
-            
-            # Create status indicator
-            status_size = 50
-            status_img = Image.new('RGB', (status_size, status_size), 'white')
-            draw = ImageDraw.Draw(status_img)
-            
-            if result['solved']:
-                # Green circle with checkmark
-                draw.ellipse([5, 5, 45, 45], fill='green')
-                draw.text((25, 25), "✓", fill='white', anchor="mm")
-            else:
-                # Red circle with X
-                draw.ellipse([5, 5, 45, 45], fill='red')
-                draw.text((25, 25), "✗", fill='white', anchor="mm")
-            
-            # Add accuracy text below status
-            status_with_text = Image.new('RGB', (status_size, status_size + 30), 'white')
-            status_with_text.paste(status_img, (0, 0))
-            draw_text = ImageDraw.Draw(status_with_text)
-            acc_text = f"{result['pixel_accuracy']:.1%}"
-            draw_text.text((status_size//2, status_size + 15), acc_text, fill='black', anchor="mm")
-            
-            # Create "vs" separator
-            vs_width = 30
-            vs_height = max(expected_img.height, predicted_img.height)
-            vs_img = Image.new('RGB', (vs_width, vs_height), 'white')
-            draw_vs = ImageDraw.Draw(vs_img)
-            draw_vs.text((vs_width//2, vs_height//2), "vs", fill='black', anchor="mm")
-            
-            # Combine into row
-            row_width = expected_img.width + vs_width + predicted_img.width + status_with_text.width + 3 * self.grid_spacing
-            row_height = max(expected_img.height, predicted_img.height, status_with_text.height)
-            row_img = Image.new('RGB', (row_width, row_height), 'white')
-            
-            x_offset = 0
-            row_img.paste(expected_img, (x_offset, 0))
-            x_offset += expected_img.width + self.grid_spacing
-            row_img.paste(vs_img, (x_offset, (row_height - vs_height) // 2))
-            x_offset += vs_width + self.grid_spacing
-            row_img.paste(predicted_img, (x_offset, 0))
-            x_offset += predicted_img.width + self.grid_spacing
-            row_img.paste(status_with_text, (x_offset, (row_height - status_with_text.height) // 2))
-            
-            feedback_rows.append(row_img)
-        
-        # Combine all rows with title
-        max_width = max(row.width for row in feedback_rows) if feedback_rows else 400
-        total_height = 40  # Title space
-        for row in feedback_rows:
-            total_height += row.height + self.section_spacing
-        
-        final_img = Image.new('RGB', (max_width + 40, total_height), 'white')
-        draw = ImageDraw.Draw(final_img)
-        
-        try:
-            title_font = ImageFont.truetype("/System/Library/Fonts/Arial.ttf", 18)
-        except:
-            title_font = ImageFont.load_default()
-        
-        # Title
-        y_offset = 10
-        draw.text((20, y_offset), "TRAINING FEEDBACK:", fill='black', font=title_font)
-        y_offset += 40
-        
-        # Feedback rows
-        for row in feedback_rows:
-            x_center = (final_img.width - row.width) // 2
-            final_img.paste(row, (x_center, y_offset))
-            y_offset += row.height + self.section_spacing
-        
-        # Debug: Save image if debug mode is enabled
-        if self.debug_save and task_id:
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            turn_info = f"_turn{turn}" if turn is not None else ""
-            filename = f"{timestamp}_{task_id}{turn_info}_feedback.png"
-            debug_path = self.debug_dir / filename
-            final_img.save(debug_path)
-            print(f"🐛 Debug: Saved feedback image to {debug_path}")
-        
-        return final_img
-    
-    def image_to_base64(self, img):
-        """Convert PIL Image to base64 string"""
-        buffer = io.BytesIO()
-        img.save(buffer, format='PNG')
-        img_str = base64.b64encode(buffer.getvalue()).decode()
-        return img_str
 
 def execute_with_timeout(func, *args, timeout=300, **kwargs):
     """Execute a function with timeout using ThreadPoolExecutor"""
@@ -316,45 +32,21 @@ def execute_with_timeout(func, *args, timeout=300, **kwargs):
 class ARCTaskRunner:
     """Run ARC tasks using the OpenAI Responses API (single-shot with tool execution)"""
     
-    def __init__(self, model: str = "gpt-4.1-nano", reasoning_effort: str = "low", max_workers: int = 1, rate_limit_delay: float = 0.0, max_turns: int = 3, debug_images: bool = False, enable_images: bool = True, run_number: int = 0, independent_attempts: bool = False, disable_text_grids: bool = False):
+    def __init__(self, model: str = "gpt-4.1-nano", reasoning_effort: str = "low", max_workers: int = 1, rate_limit_delay: float = 0.0, max_turns: int = 3, run_number: int = 0, independent_attempts: bool = False):
         self.model = model
         self.reasoning_effort = reasoning_effort
         self.max_workers = max_workers
         self.rate_limit_delay = rate_limit_delay
         self.max_turns = max_turns
-        self.debug_images = debug_images
-        self.enable_images = enable_images
-        self.run_number = run_number  # NEW: Track run number for repeated runs
-        self.independent_attempts = independent_attempts  # NEW: Track independent attempts mode
-        self.disable_text_grids = disable_text_grids  # NEW: Disable text grid representations
+        self.run_number = run_number  # Track run number for repeated runs
+        self.independent_attempts = independent_attempts  # Track independent attempts mode
         self.api_key = os.getenv('OPENAI_API_KEY')
         self.client = OpenAI()
         self.task_loader = TaskLoader()
         self.scorer = GridScorer()
         self.executor = ProgramExecutor(timeout=0.5)
         
-        # Validate disable_text_grids settings
-        if self.disable_text_grids and not self.enable_images:
-            raise ValueError("Cannot disable text grids without enabling images - model would receive no input!")
-        
-        if self.disable_text_grids and not self.is_vision_model():
-            raise ValueError(f"Cannot disable text grids for non-vision model {self.model} - model cannot process images!")
-        
-        # Initialize visual capabilities
-        self.use_visuals = self.enable_images and PIL_AVAILABLE and self.is_vision_model()
-        if self.use_visuals:
-            self.visualizer = ARCGridVisualizer(debug_save=self.debug_images)
-            debug_msg = " with debug image saving" if self.debug_images else ""
-            visual_mode_msg = " (visual-only mode)" if self.disable_text_grids else ""
-            print(f"🖼️  Visual mode enabled for {self.model} (PIL available: {PIL_AVAILABLE}){debug_msg}{visual_mode_msg}")
-        else:
-            self.visualizer = None
-            if not self.enable_images:
-                print(f"📝 Text-only mode for {self.model} (images disabled by user)")
-            elif not PIL_AVAILABLE:
-                print("⚠️  PIL not available - install pillow for visual features")
-            elif not self.is_vision_model():
-                print(f"📝 Text-only mode for {self.model} (no vision support)")
+        print(f"📝 Text-only mode for {self.model}")
         
         # Create logs directory
         self.logs_dir = Path("logs")
@@ -395,18 +87,6 @@ class ARCTaskRunner:
         model_to_check = model or self.model
         model_lower = model_to_check.lower()
         return model_lower.startswith(('o3', 'o4', 'o1'))
-    
-    def is_vision_model(self, model: str = None) -> bool:
-        """Check if the model supports vision/image inputs"""
-        model_to_check = model or self.model
-        model_lower = model_to_check.lower()
-        # o4-mini and o3 (but not o3-mini) support vision
-        # Also gpt-4o and gpt-4.1 series support vision
-        return (model_lower.startswith('o4-mini') or 
-                (model_lower.startswith('o3') and not model_lower.startswith('o3-mini')) or
-                model_lower.startswith('gpt-4o') or 
-                model_lower.startswith('gpt-4.1') or
-                model_lower.startswith('gpt-image'))
     
     def get_model_pricing(self, model: str) -> tuple[float, float]:
         """Get input and output pricing rates for a model in $/1M tokens"""
@@ -483,16 +163,8 @@ def transform(grid):
         else:
             grid_size_info = ""
         
-        # Create the text content - conditionally include text grids
-        if self.disable_text_grids:
-            # Visual-only mode - rely entirely on images
-            task_description = "The training examples and test input are shown in the visual representation below. Each colored cell represents a value from 0-9, with consistent colors across all grids."
-            data_source_info = "**Note**: Grid data is provided visually only - analyze the colored grids in the image to understand the transformation patterns."
-        else:
-            # Include text grid representation
-            task_str = self.task_loader.format_task_for_prompt(task_data, include_test=True)
-            task_description = task_str
-            data_source_info = ""
+        # Create the text content with text grid representation
+        task_str = self.task_loader.format_task_for_prompt(task_data, include_test=True)
         
         text_content = f"""You are solving an ARC (Abstraction and Reasoning Corpus) task. 
 I will show you training examples with input and output grids, plus a test input grid. Your task is to:
@@ -505,9 +177,7 @@ I will show you training examples with input and output grids, plus a test input
 {grid_size_info}
 The test input is shown for context so you understand what type of grid your program will eventually process. Focus on learning patterns from training examples and writing code that captures your understanding.
 
-{task_description}
-
-{data_source_info}
+{task_str}
 
 Analyze the patterns in the training examples and write a Python function that performs this transformation.
 
@@ -536,39 +206,7 @@ def transform(grid):
 """
         
         # Create message content
-        messages = []
-        messages.append({"type": "input_text", "text": text_content})
-        
-        # Add visual representation if available - this is crucial when text grids are disabled
-        if self.use_visuals and self.visualizer:
-            try:
-                training_image = self.visualizer.create_training_examples_image(task_data, task_id, turn)
-                image_base64 = self.visualizer.image_to_base64(training_image)
-                
-                messages.append({
-                    "type": "input_image",
-                    "image_url": f"data:image/png;base64,{image_base64}"
-                })
-                
-                # Add explanation of the visual - enhanced message for visual-only mode
-                if self.disable_text_grids:
-                    visual_explanation = "Above is the visual representation of all training examples and the test input. Each grid cell is colored according to its value (0-9). Study the visual patterns carefully to understand the transformation rule, as this is your only source of grid data."
-                else:
-                    visual_explanation = "Above is a visual representation of all the training examples and the test input. Each grid cell is colored according to its value (0-9), with clear labels and arrows showing input→output transformations. Use both the textual and visual information to understand the pattern."
-                
-                messages.append({
-                    "type": "input_text", 
-                    "text": visual_explanation
-                })
-                
-            except Exception as e:
-                print(f"⚠️  Failed to create visual representation: {e}")
-                if self.disable_text_grids:
-                    # If visuals fail in visual-only mode, this is a critical error
-                    raise Exception(f"Visual-only mode failed: {e}")
-        elif self.disable_text_grids:
-            # This should not happen due to validation, but just in case
-            raise Exception("Visual-only mode requires working visual capabilities")
+        messages = [{"type": "input_text", "text": text_content}]
         
         return messages
     
@@ -596,7 +234,7 @@ def transform(grid):
             raise Exception(f"API call failed: {e}")
     
     def create_training_feedback(self, program: str, training_examples: List[Dict], test_correct: bool = None, task_id: str = None, turn: int = None) -> tuple[List, int, float]:
-        """Generate detailed training feedback with stats, actual outputs, and optional visuals for LLM"""
+        """Generate detailed training feedback with stats, actual outputs for LLM"""
         results = []
         predicted_outputs = []
         total_pixels = 0
@@ -687,19 +325,14 @@ def transform(grid):
         for result in results:
             status = "✓" if result['solved'] else "✗"
             feedback_text += f"Training Example {result['index']} {status}:\n"
-            
-            # Only include text grid representations if text grids are enabled
-            if not self.disable_text_grids:
-                feedback_text += f"Expected: {result['expected']}\n"
+            feedback_text += f"Expected: {result['expected']}\n"
             
             if result['error']:
                 feedback_text += f"Error: {result['error']}\n"
             elif result['timed_out']:
                 feedback_text += f"Error: Code execution timed out\n"
             else:
-                # Only include text grid representations if text grids are enabled
-                if not self.disable_text_grids:
-                    feedback_text += f"Your output: {result['predicted']}\n"
+                feedback_text += f"Your output: {result['predicted']}\n"
                 if not result['solved']:
                     feedback_text += f"Pixel accuracy: {result['pixel_accuracy']:.1%}\n"
             feedback_text += "\n"
@@ -712,35 +345,8 @@ def transform(grid):
                 expected_width = len(expected_output[0]) if expected_output else 0
                 feedback_text += f"⚠️  GRID SIZE ERROR: One or more of your output grids are incorrect in size. They should ALL be {expected_height}×{expected_width} for this task.\n\n"
         
-        # Create message list with text and optional visual feedback
-        feedback_messages = []
-        feedback_messages.append({"type": "input_text", "text": feedback_text})
-        
-        # Add visual feedback if available
-        if self.use_visuals and self.visualizer:
-            try:
-                # Create visual feedback showing expected vs predicted
-                feedback_image = self.visualizer.create_feedback_image(training_examples, predicted_outputs, results, task_id, turn)
-                image_base64 = self.visualizer.image_to_base64(feedback_image)
-                
-                feedback_messages.append({
-                    "type": "input_image",
-                    "image_url": f"data:image/png;base64,{image_base64}"
-                })
-                
-                # Update visual feedback message based on mode
-                if self.disable_text_grids:
-                    visual_feedback_text = "Above is a visual comparison of expected vs predicted outputs for each training example. Green circles indicate correct solutions, red circles show errors. This visual feedback is your primary source of grid information - analyze the patterns carefully to improve your approach."
-                else:
-                    visual_feedback_text = "Above is a visual comparison of expected vs predicted outputs for each training example. Green circles indicate correct solutions, red circles show errors. Use this visual feedback along with the textual analysis to improve your approach."
-                
-                feedback_messages.append({
-                    "type": "input_text",
-                    "text": visual_feedback_text
-                })
-                
-            except Exception as e:
-                print(f"⚠️  Failed to create visual feedback: {e}")
+        # Create message list with text feedback
+        feedback_messages = [{"type": "input_text", "text": feedback_text}]
         
         return feedback_messages, solved_count, overall_accuracy
     
@@ -1589,12 +1195,7 @@ Make sure to include the function definition inside a proper code block."""
             print("Mode: Multi-turn feedback - conversation with training examples")
         
         # Show visual/text mode
-        if self.disable_text_grids:
-            print("Input mode: Visual-only (text grids disabled)")
-        elif self.use_visuals:
-            print("Input mode: Visual + text grids")
-        else:
-            print("Input mode: Text-only")
+        print("Input mode: Text-only")
             
         if self.max_workers > 1:
             print(f"Parallelization: ENABLED ({self.max_workers} workers)")
@@ -1819,12 +1420,7 @@ Make sure to include the function definition inside a proper code block."""
             print("Mode: Multi-turn feedback - conversation with training examples")
         
         # Show visual/text mode
-        if self.disable_text_grids:
-            print("Input mode: Visual-only (text grids disabled)")
-        elif self.use_visuals:
-            print("Input mode: Visual + text grids")
-        else:
-            print("Input mode: Text-only")
+        print("Input mode: Text-only")
             
         if self.max_workers > 1:
             print(f"Parallelization: ENABLED ({self.max_workers} workers)")
@@ -1846,11 +1442,8 @@ Make sure to include the function definition inside a proper code block."""
                 max_workers=self.max_workers,
                 rate_limit_delay=self.rate_limit_delay,
                 max_turns=self.max_turns,
-                debug_images=self.debug_images,
-                enable_images=self.enable_images,
                 run_number=run_num,
-                independent_attempts=self.independent_attempts,
-                disable_text_grids=self.disable_text_grids
+                independent_attempts=self.independent_attempts
             )
             
             # Run the subset
@@ -2025,14 +1618,6 @@ def main():
                        help="Delay between API calls in seconds (default: 0.0)")
     parser.add_argument("--max_turns", type=int, default=3,
                        help="Maximum number of turns for multi-turn execution (default: 3)")
-    parser.add_argument("--debug_images", action="store_true",
-                       help="Save debug images to debug_images/ directory")
-    parser.add_argument("--enable_images", action="store_true", default=True,
-                       help="Enable visual image generation for vision models (default: True)")
-    parser.add_argument("--disable_images", action="store_true",
-                       help="Disable visual image generation (text-only mode)")
-    parser.add_argument("--disable-text-grids", action="store_true",
-                       help="Disable text grid representation (visual-only mode, requires images)")
     parser.add_argument("--repeat-runs", type=int, default=1,
                        help="Number of times to repeat the entire test (default: 1)")
     parser.add_argument("--independent-attempts", action="store_true",
@@ -2056,13 +1641,6 @@ def main():
     if args.repeat_runs > 10:
         parser.error("--repeat-runs cannot exceed 10 (practical limit)")
     
-    # Handle image enable/disable flags
-    enable_images = args.enable_images and not args.disable_images
-    
-    # Validate disable_text_grids
-    if args.disable_text_grids and not enable_images:
-        parser.error("--disable-text-grids requires images to be enabled (cannot use with --disable_images)")
-    
     # Create runner and run tasks
     runner = ARCTaskRunner(
         model=args.model, 
@@ -2070,10 +1648,8 @@ def main():
         max_workers=args.max_workers, 
         rate_limit_delay=args.rate_limit_delay, 
         max_turns=args.max_turns, 
-        debug_images=args.debug_images, 
-        enable_images=enable_images,
-        independent_attempts=args.independent_attempts,
-        disable_text_grids=args.disable_text_grids
+        run_number=0,
+        independent_attempts=args.independent_attempts
     )
     
     if args.repeat_runs > 1:
