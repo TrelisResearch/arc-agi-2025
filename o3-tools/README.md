@@ -2,6 +2,9 @@
 
 A tool for testing OpenAI o3/o4 models on ARC-AGI tasks with and without code interpreter tools.
 
+>[!Branch notes]
+this is a frozen version of the openai o3-tools branch that still maintains functionality for adding images to the prompts and feedback.
+
 **Videos**
 [Part 5: Comments on discrete vs continuous + Ablating Sampling vs Feedback](https://share.descript.com/view/W3OEzy9PW9A)
 [Part 4 - Visualisation + Testing out Feedback and Images](https://share.descript.com/view/zfBfDlP20uA)
