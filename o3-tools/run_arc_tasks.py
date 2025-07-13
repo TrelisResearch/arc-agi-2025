@@ -152,16 +152,26 @@ You must provide all three code blocks in your response:
 Input Grid Generator:
 ```python
 def generate_input_grids():
-    # Generate all training input grids + test input grid
-    # Return list of {num_train_examples + 1} grids: [train_input_1, train_input_2, ..., test_input]
+    # DO NOT hardcode like: return [[[3,3,8],[3,7,0],[5,0,0]], ...]  ❌ WRONG!
+    # DO generate algorithmically with patterns like:  ✅ CORRECT!
+    # grids = []
+    # for config in [(3, 8, 7), (5, 2, 1), (6, 5, 8)]:
+    #     grid = create_pattern_grid(config)  # Generate based on rules
+    #     grids.append(grid)
+    # return grids
     return input_grids
 ```
 
 Output Grid Generator:
 ```python
 def generate_output_grids():
-    # Generate all training output grids
-    # Return list of {num_train_examples} grids: [train_output_1, train_output_2, ...]
+    # DO NOT hardcode like: return [[[0,0,5],[0,7,3],[8,3,3]], ...]  ❌ WRONG!
+    # DO generate algorithmically with transformations like:  ✅ CORRECT!
+    # outputs = []
+    # for input_grid in training_inputs:
+    #     output = apply_discovered_rule(input_grid)  # Transform based on pattern
+    #     outputs.append(output)
+    # return outputs
     return output_grids
 ```
 
@@ -214,8 +224,10 @@ Requirements:
 - All functions take no arguments except the transformation function
 - Values are integers from 0-9
 - You can use numpy if needed - just add 'import numpy as np' at the start of your functions
+- **CRITICAL**: Generator functions must discover and implement patterns algorithmically, NOT hardcode exact grids
 - The input generator should return a list of {num_train_examples + 1} grids (all training inputs + test input)
-- The output generator should return a list of {num_train_examples} grids (all training outputs)
+- The output generator should return a list of {num_train_examples} grids (all training outputs)  
+- Write compact, pattern-based code that could generate similar grids following the same rules
 - The transformation function should work on individual grids
 - Aim to handle the training examples as well as possible, even if not perfectly
 
@@ -224,16 +236,26 @@ You MUST end your response with the following exact format:
 Input Grid Generator:
 ```python
 def generate_input_grids():
-    # Generate all training input grids + test input grid
-    # Return list of {num_train_examples + 1} grids: [train_input_1, train_input_2, ..., test_input]
+    # DO NOT hardcode like: return [[[3,3,8],[3,7,0],[5,0,0]], ...]  ❌ WRONG!
+    # DO generate algorithmically with patterns like:  ✅ CORRECT!
+    # grids = []
+    # for config in [(3, 8, 7), (5, 2, 1), (6, 5, 8)]:
+    #     grid = create_pattern_grid(config)  # Generate based on rules
+    #     grids.append(grid)
+    # return grids
     return input_grids
 ```
 
 Output Grid Generator:
 ```python
 def generate_output_grids():
-    # Generate all training output grids
-    # Return list of {num_train_examples} grids: [train_output_1, train_output_2, ...]
+    # DO NOT hardcode like: return [[[0,0,5],[0,7,3],[8,3,3]], ...]  ❌ WRONG!
+    # DO generate algorithmically with transformations like:  ✅ CORRECT!
+    # outputs = []
+    # for input_grid in training_inputs:
+    #     output = apply_discovered_rule(input_grid)  # Transform based on pattern
+    #     outputs.append(output)
+    # return outputs
     return output_grids
 ```
 

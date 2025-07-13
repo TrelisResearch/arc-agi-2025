@@ -2,7 +2,11 @@
 
 ## 2025 13th July
 
-Having the model write out the programs for the input and output grids, and the transformation function, is working well.
+### Diagnosing input and output grid creation patterns
+
+GPT-4.1-mini ignores instructions to generate programs to represent grids. o4-mini correctly creates programs, but actually sometimes those descriptions are not correct - that is interesting!!! Points to a way to use these reasoning models to get some good data for training!
+
+### Having the model write out the programs for the input and output grids, and the transformation function, is working well.
 
 **Motivation:**
 By having grids be described by the model, perhaps it helps to better ground its solving. Further, it can be useful during the back-prop phase of training to embed this kind of knowledge.
