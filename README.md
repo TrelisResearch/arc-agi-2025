@@ -2,6 +2,10 @@
 
 This repository contains resources for working with the ARC-AGI (Abstraction and Reasoning Corpus for Artificial General Intelligence) datasets.
 
+## Branches
+
+`o3-tools-images` a frozen version of the openai o3-tools branch that still maintains functionality for adding images to the prompts and feedback.
+
 ## Data
 
 The `data/` folder contains:
