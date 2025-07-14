@@ -32,13 +32,14 @@ def execute_with_timeout(func, *args, timeout=300, **kwargs):
 class ARCTaskRunner:
     """Run ARC tasks using the OpenAI Chat Completions API"""
     
-    def __init__(self, model: str = "gpt-4.1-nano", max_workers: int = 1, rate_limit_delay: float = 0.0, max_turns: int = 3, run_number: int = 0, independent_attempts: bool = False, base_url: str = None):
+    def __init__(self, model: str = "gpt-4.1-nano", max_workers: int = 1, rate_limit_delay: float = 0.0, max_turns: int = 3, run_number: int = 0, independent_attempts: bool = False, base_url: str = None, reasoning_effort: str = "low"):
         self.model = model
         self.max_workers = max_workers
         self.rate_limit_delay = rate_limit_delay
         self.max_turns = max_turns
         self.run_number = run_number  # Track run number for repeated runs
         self.independent_attempts = independent_attempts  # Track independent attempts mode
+        self.reasoning_effort = reasoning_effort
         self.api_key = os.getenv('OPENAI_API_KEY')
         self.base_url = base_url
         
@@ -220,6 +221,17 @@ def transform(grid):
                 "messages": messages
             }
             
+            # Add reasoning parameters for OpenRouter and reasoning models
+            if self.base_url and "openrouter" in self.base_url.lower():
+                # OpenRouter reasoning token allocation
+                reasoning_tokens = {
+                    "low": 4000,
+                    "medium": 16000, 
+                    "high": 64000
+                }
+                if self.reasoning_effort in reasoning_tokens:
+                    kwargs["max_tokens"] = reasoning_tokens[self.reasoning_effort]
+            
             # Make the API call
             response = self.client.chat.completions.create(**kwargs)
             
@@ -392,9 +404,9 @@ def transform(grid):
                     'id': response.id,
                     'model': response.model,
                     'usage': {
-                        'prompt_tokens': response.usage.prompt_tokens,
-                        'completion_tokens': response.usage.completion_tokens,
-                        'total_tokens': response.usage.total_tokens
+                        'prompt_tokens': response.usage.prompt_tokens if response.usage else 0,
+                        'completion_tokens': response.usage.completion_tokens if response.usage else 0,
+                        'total_tokens': response.usage.total_tokens if response.usage else 0
                     },
                     'content': response.choices[0].message.content if response.choices else ""
                 }
@@ -410,9 +422,9 @@ def transform(grid):
                         'id': resp.id,
                         'model': resp.model,
                         'usage': {
-                            'prompt_tokens': resp.usage.prompt_tokens,
-                            'completion_tokens': resp.usage.completion_tokens,
-                            'total_tokens': resp.usage.total_tokens
+                            'prompt_tokens': resp.usage.prompt_tokens if resp.usage else 0,
+                            'completion_tokens': resp.usage.completion_tokens if resp.usage else 0,
+                            'total_tokens': resp.usage.total_tokens if resp.usage else 0
                         },
                         'content': resp.choices[0].message.content if resp.choices else ""
                     })
@@ -431,6 +443,7 @@ def transform(grid):
         result = {
             'task_id': task_id,
             'model': self.model,
+            'reasoning_effort': self.reasoning_effort,
             'api_type': api_type,
             'program': program,
             'execution_error': '',
@@ -568,6 +581,7 @@ def transform(grid):
         result = {
             'task_id': task_id,
             'model': self.model,
+            'reasoning_effort': self.reasoning_effort,
             'api_type': api_type,
             'program': program,
             'execution_error': error_msg,
@@ -672,6 +686,7 @@ def transform(grid):
         return {
             'task_id': task_id,
             'model': self.model,
+            'reasoning_effort': self.reasoning_effort,
             'api_type': 'chat_completions_multiturn',
             'program': '',
             'execution_error': 'API timeout after retries',
@@ -768,11 +783,11 @@ def transform(grid):
                 # Track costs
                 usage = response.usage
                 input_rate, output_rate = self.get_model_pricing(self.model)
-                input_tokens = usage.prompt_tokens
-                output_tokens = usage.completion_tokens
+                input_tokens = usage.prompt_tokens if usage else 0
+                output_tokens = usage.completion_tokens if usage else 0
                 attempt_cost = (input_tokens / 1_000_000) * input_rate + (output_tokens / 1_000_000) * output_rate
                 total_cost += attempt_cost
-                total_tokens += usage.total_tokens
+                total_tokens += usage.total_tokens if usage else 0
                 
                 if self.max_workers == 1:
                     print(f"     💰 Attempt cost: ${attempt_cost:.6f} (input: {input_tokens}, output: {output_tokens})")
@@ -909,11 +924,11 @@ def transform(grid):
                 # Track costs
                 usage = response.usage
                 input_rate, output_rate = self.get_model_pricing(self.model)
-                input_tokens = usage.prompt_tokens
-                output_tokens = usage.completion_tokens
+                input_tokens = usage.prompt_tokens if usage else 0
+                output_tokens = usage.completion_tokens if usage else 0
                 turn_cost = (input_tokens / 1_000_000) * input_rate + (output_tokens / 1_000_000) * output_rate
                 total_cost += turn_cost
-                total_tokens += usage.total_tokens
+                total_tokens += usage.total_tokens if usage else 0
                 
                 if self.max_workers == 1:
                     print(f"     💰 Turn cost: ${turn_cost:.6f} (input: {input_tokens}, output: {output_tokens})")
@@ -1082,6 +1097,7 @@ Make sure to include the function definition inside a proper code block."""
         # Print configuration info
         print(f"\nRunning {total_tasks} tasks from {dataset}/{subset_name}")
         print(f"Model: {self.model}")
+        print(f"Reasoning effort: {self.reasoning_effort}")
         
         # Show execution mode
         if self.independent_attempts:
@@ -1223,6 +1239,7 @@ Make sure to include the function definition inside a proper code block."""
             'dataset': dataset,
             'subset': subset_name,
             'model': self.model,
+            'reasoning_effort': self.reasoning_effort,
             'api_type': 'chat_completions',
             'run_number': self.run_number,  # NEW: Include run number
             'total_tasks': total_tasks,
@@ -1261,7 +1278,8 @@ Make sure to include the function definition inside a proper code block."""
         print(f"Dataset: {dataset}")
         print(f"Subset: {subset_name}")
         print(f"Model: {self.model}")
-
+        print(f"Reasoning effort: {self.reasoning_effort}")
+        
         if self.independent_attempts:
             print(f"API: Chat Completions (independent attempts, max {self.max_turns} attempts)")
         else:
@@ -1302,6 +1320,7 @@ Make sure to include the function definition inside a proper code block."""
         """Run the same subset multiple times and calculate aggregate statistics"""
         print(f"\nRunning {repeat_runs} repeated tests of {dataset}/{subset_name}")
         print(f"Model: {self.model}")
+        print(f"Reasoning effort: {self.reasoning_effort}")
         
         # Show execution mode
         if self.independent_attempts:
@@ -1335,7 +1354,8 @@ Make sure to include the function definition inside a proper code block."""
                 max_turns=self.max_turns,
                 run_number=run_num,
                 independent_attempts=self.independent_attempts,
-                base_url=self.base_url
+                base_url=self.base_url,
+                reasoning_effort=self.reasoning_effort
             )
             
             # Run the subset
@@ -1412,6 +1432,7 @@ Make sure to include the function definition inside a proper code block."""
                 'dataset': dataset,
                 'subset': subset_name,
                 'model': self.model,
+                'reasoning_effort': self.reasoning_effort,
                 'repeat_runs': repeat_runs,
                 'run_statistics': run_stats,
                 'turn1_success_rate_mean': turn1_mean,
@@ -1501,6 +1522,8 @@ def main():
                        help="Maximum number of tool calls allowed for the model (default: 64, legacy parameter)")
     parser.add_argument("--base-url", type=str,
                        help="Base URL for OpenAI-compatible API endpoint (default: OpenAI)")
+    parser.add_argument("--reasoning_effort", type=str, default="low", choices=["low", "medium", "high"],
+                       help="Reasoning effort for models that support it (default: low)")
     parser.add_argument("--max_workers", type=int, default=1,
                        help="Maximum number of parallel workers (default: 1)")
     parser.add_argument("--rate_limit_delay", type=float, default=0.0,
@@ -1538,7 +1561,8 @@ def main():
         max_turns=args.max_turns, 
         run_number=0,
         independent_attempts=args.independent_attempts,
-        base_url=getattr(args, 'base_url', None)
+        base_url=getattr(args, 'base_url', None),
+        reasoning_effort=args.reasoning_effort
     )
     
     if args.repeat_runs > 1:

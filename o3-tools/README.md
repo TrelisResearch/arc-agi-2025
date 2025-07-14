@@ -18,7 +18,7 @@ Objective: Define a test that is a representative measure of performance while a
 
 - MEDIUM:
 [x] Describing grids ablation: Get the model to also describe the input grid and the output grid with code (so, return three code blocks), and provide feedback on those too. DONE AND IN A DEDICATED BRANCH.
-[ ] Port the scripts to an openai style endpoint. Run Qwen and try to calibrate.
+[x] Port the scripts to an openai style endpoint. Run Qwen and try to calibrate.
 [ ] Generate training data.
 [ ] Train.
 wil
@@ -119,6 +119,9 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_
 # Run tasks with a custom API endpoint (e.g., local LLM or Claude)
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --model claude-3-haiku --base-url https://api.anthropic.com/v1
 
+# Run with OpenRouter and reasoning effort control for compatible models
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --model google/gemini-2.5-flash-reasoning --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+
 # Run tasks in parallel with 10 workers for faster execution
 uv run python run_arc_tasks.py --dataset arc-agi-2 --subset shortest_training_30 --max_workers 10
 
@@ -136,6 +139,7 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10
 #   --subset: shortest_training_1, shortest_training_10, shortest_training_30, shortest_evaluation_1, shortest_evaluation_10, shortest_evaluation_30, etc.
 #   --model: Model name (default: gpt-4.1-nano) - works with any OpenAI-compatible API
 #   --base-url: Custom API endpoint URL (default: OpenAI) - enables Claude, Qwen, local models, etc.
+#   --reasoning_effort: Reasoning effort level: low (4k tokens), medium (16k tokens), high (64k tokens) - for compatible models
 #   --limit: Limit number of tasks to run
 #   --max_turns: Maximum number of turns/attempts (default: 3) - turns for multi-turn mode, attempts for independent mode
 #   --max_workers: Number of parallel workers (default: 1, max: 30)
@@ -143,6 +147,16 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10
 #   --repeat-runs: Number of times to repeat the entire test (default: 1, max: 10)
 #   --independent-attempts: Use independent attempts mode instead of multi-turn feedback
 ```
+
+### Reasoning Effort Support
+
+For compatible models that support reasoning (e.g., Gemini Flash via OpenRouter), control reasoning token allocation:
+
+- `--reasoning_effort low`: 4,000 reasoning tokens (default)
+- `--reasoning_effort medium`: 16,000 reasoning tokens  
+- `--reasoning_effort high`: 64,000 reasoning tokens
+
+Works with OpenRouter and other compatible APIs that detect reasoning-capable models automatically.
 
 ### Available Subsets
 
