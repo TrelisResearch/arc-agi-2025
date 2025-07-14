@@ -30,23 +30,31 @@ def execute_with_timeout(func, *args, timeout=300, **kwargs):
             raise e
 
 class ARCTaskRunner:
-    """Run ARC tasks using the OpenAI Responses API (single-shot with tool execution)"""
+    """Run ARC tasks using the OpenAI Chat Completions API"""
     
-    def __init__(self, model: str = "gpt-4.1-nano", reasoning_effort: str = "low", max_workers: int = 1, rate_limit_delay: float = 0.0, max_turns: int = 3, run_number: int = 0, independent_attempts: bool = False):
+    def __init__(self, model: str = "gpt-4.1-nano", max_workers: int = 1, rate_limit_delay: float = 0.0, max_turns: int = 3, run_number: int = 0, independent_attempts: bool = False, base_url: str = None):
         self.model = model
-        self.reasoning_effort = reasoning_effort
         self.max_workers = max_workers
         self.rate_limit_delay = rate_limit_delay
         self.max_turns = max_turns
         self.run_number = run_number  # Track run number for repeated runs
         self.independent_attempts = independent_attempts  # Track independent attempts mode
         self.api_key = os.getenv('OPENAI_API_KEY')
-        self.client = OpenAI()
+        self.base_url = base_url
+        
+        # Initialize OpenAI client with optional base URL
+        if base_url:
+            self.client = OpenAI(api_key=self.api_key, base_url=base_url)
+            print(f"📝 Using custom endpoint: {base_url}")
+        else:
+            self.client = OpenAI(api_key=self.api_key)
+            print(f"📝 Using OpenAI endpoint")
+        
+        print(f"📝 Text-only mode for {self.model}")
+        
         self.task_loader = TaskLoader()
         self.scorer = GridScorer()
         self.executor = ProgramExecutor(timeout=0.5)
-        
-        print(f"📝 Text-only mode for {self.model}")
         
         # Create logs directory
         self.logs_dir = Path("logs")
@@ -82,11 +90,7 @@ class ARCTaskRunner:
                 task_info = f" ({task_id})" if task_id else ""
                 print(f"Progress: {self.completed_tasks}/{total_tasks} tasks processed ({progress_pct:.1f}%) - {status}{task_info}")
     
-    def is_reasoning_model(self, model: str = None) -> bool:
-        """Check if the model supports reasoning effort parameter"""
-        model_to_check = model or self.model
-        model_lower = model_to_check.lower()
-        return model_lower.startswith(('o3', 'o4', 'o1'))
+
     
     def get_model_pricing(self, model: str) -> tuple[float, float]:
         """Get input and output pricing rates for a model in $/1M tokens"""
@@ -136,11 +140,11 @@ class ARCTaskRunner:
         else:
             return (0.15, 0.60)
     
-    def create_prompt(self, task_data: Dict, is_first_turn: bool = True, task_id: str = None, turn: int = None) -> List:
-        """Create a prompt for the model to solve an ARC task (returns messages for responses API)"""
+    def create_prompt(self, task_data: Dict, is_first_turn: bool = True, task_id: str = None, turn: int = None) -> str:
+        """Create a prompt for the model to solve an ARC task (returns text content for chat messages)"""
         if not is_first_turn:
             # For subsequent turns, encourage partial solutions
-            return [{"type": "input_text", "text": """Please analyze the training feedback and programs from all prior turns, and write an improved transformation.
+            return """Please analyze the training feedback and programs from all prior turns, and write an improved transformation.
 
 **Important**:
 1. Always start by attempting to find a complete rule that solves all training examples and should generalize to the test input.
@@ -152,7 +156,7 @@ Final answer:
 def transform(grid):
     # Your improved transformation logic here (even if partial)
     return transformed_grid
-```"""}]
+```"""
         
         # Get the consistent output grid dimensions from the first training example
         if task_data['train'] and task_data['train'][0]['output']:
@@ -205,28 +209,19 @@ def transform(grid):
 ```
 """
         
-        # Create message content
-        messages = [{"type": "input_text", "text": text_content}]
-        
-        return messages
+        return text_content
     
-    def call_responses_api(self, input_messages: List[Dict]) -> Dict:
-        """Call the OpenAI Responses API for multi-turn local execution"""
+    def call_chat_completions_api(self, messages: List[Dict]) -> Dict:
+        """Call the OpenAI Chat Completions API"""
         try:
             # Prepare the request
             kwargs = {
                 "model": self.model,
-                "input": input_messages
+                "messages": messages
             }
             
-            # Add reasoning effort and encrypted content only for reasoning models
-            if self.is_reasoning_model():
-                kwargs["reasoning"] = {"effort": self.reasoning_effort}
-                kwargs["include"] = ["reasoning.encrypted_content"]
-                kwargs["store"] = False  # Enable stateless mode for encrypted content
-            
             # Make the API call
-            response = self.client.responses.create(**kwargs)
+            response = self.client.chat.completions.create(**kwargs)
             
             return response
             
@@ -351,18 +346,17 @@ def transform(grid):
         return feedback_messages, solved_count, overall_accuracy
     
     def extract_code_from_response(self, response) -> str:
-        """Extract Python code from the Responses API result using simple regex"""
+        """Extract Python code from the Chat Completions API result using simple regex"""
         import re
         
         # Get the full text from response
         full_text = ""
         
-        # Extract from Responses API structure (response object)
-        for output_item in response.output:
-            if output_item.type == 'message':
-                for content_item in output_item.content:
-                    if content_item.type == 'output_text':
-                        full_text += content_item.text + "\n"
+        # Extract from Chat Completions API structure
+        if hasattr(response, 'choices') and len(response.choices) > 0:
+            message = response.choices[0].message
+            if hasattr(message, 'content') and message.content:
+                full_text = message.content
         
         # First priority: look for code after "Final answer:"
         final_answer_match = re.search(r'Final answer:\s*```python\s*\n(.*?)\n```', full_text, re.DOTALL | re.IGNORECASE)
@@ -394,29 +388,15 @@ def transform(grid):
         response_dict = None
         if response:
             try:
-                # Extract content safely from response objects
-                output_items = []
-                for item in response.output:
-                    if item.type == 'message':
-                        # Extract text content from message content items
-                        content_texts = []
-                        if hasattr(item, 'content'):
-                            for content_item in item.content:
-                                if hasattr(content_item, 'text'):
-                                    content_texts.append(content_item.text)
-                        output_items.append({'type': item.type, 'content': content_texts})
-                    else:
-                        output_items.append({'type': item.type, 'content': str(getattr(item, 'content', ''))})
-                
                 response_dict = {
                     'id': response.id,
                     'model': response.model,
                     'usage': {
-                        'input_tokens': response.usage.input_tokens,
-                        'output_tokens': response.usage.output_tokens,
+                        'prompt_tokens': response.usage.prompt_tokens,
+                        'completion_tokens': response.usage.completion_tokens,
                         'total_tokens': response.usage.total_tokens
                     },
-                    'output': output_items
+                    'content': response.choices[0].message.content if response.choices else ""
                 }
             except Exception as e:
                 response_dict = {'error': f'Failed to serialize response: {str(e)}'}
@@ -426,60 +406,24 @@ def transform(grid):
         if all_responses:
             for resp in all_responses:
                 try:
-                    output_items = []
-                    for item in resp.output:
-                        if item.type == 'message':
-                            content_texts = []
-                            if hasattr(item, 'content'):
-                                for content_item in item.content:
-                                    if hasattr(content_item, 'text'):
-                                        content_texts.append(content_item.text)
-                            output_items.append({'type': item.type, 'content': content_texts})
-                        else:
-                            output_items.append({'type': item.type, 'content': str(getattr(item, 'content', ''))})
-                    
                     all_responses_dict.append({
                         'id': resp.id,
                         'model': resp.model,
                         'usage': {
-                            'input_tokens': resp.usage.input_tokens,
-                            'output_tokens': resp.usage.output_tokens,
+                            'prompt_tokens': resp.usage.prompt_tokens,
+                            'completion_tokens': resp.usage.completion_tokens,
                             'total_tokens': resp.usage.total_tokens
                         },
-                        'output': output_items
+                        'content': resp.choices[0].message.content if resp.choices else ""
                     })
                 except Exception as e:
                     all_responses_dict.append({'error': f'Failed to serialize response: {str(e)}'})
 
-        # Serialize conversation history (handle response objects)
-        conversation_history_dict = []
-        if conversation_history:
-            for item in conversation_history:
-                try:
-                    if hasattr(item, 'type'):  # Response object from API
-                        if item.type == 'message':
-                            content_texts = []
-                            if hasattr(item, 'content'):
-                                for content_item in item.content:
-                                    if hasattr(content_item, 'text'):
-                                        content_texts.append(content_item.text)
-                            conversation_history_dict.append({
-                                'type': item.type,
-                                'role': getattr(item, 'role', 'assistant'),
-                                'content': content_texts
-                            })
-                        else:
-                            conversation_history_dict.append({
-                                'type': item.type,
-                                'content': str(getattr(item, 'content', ''))
-                            })
-                    else:  # Regular dict message
-                        conversation_history_dict.append(item)
-                except Exception as e:
-                    conversation_history_dict.append({'error': f'Failed to serialize conversation item: {str(e)}'})
+        # Serialize conversation history - much simpler for chat completions
+        conversation_history_dict = conversation_history or []
 
         # Determine API type and data structure based on mode
-        api_type = 'responses_api_independent_attempts' if is_independent_attempts else 'responses_api_multiturn'
+        api_type = 'chat_completions_independent_attempts' if is_independent_attempts else 'chat_completions_multiturn'
         data_key = 'independent_attempts_data' if is_independent_attempts else 'multiturn_data'
         details_key = 'attempt_details' if is_independent_attempts else 'turn_details'
         total_key = 'total_attempts' if is_independent_attempts else 'total_turns'
@@ -487,7 +431,6 @@ def transform(grid):
         result = {
             'task_id': task_id,
             'model': self.model,
-            'reasoning_effort': self.reasoning_effort if self.is_reasoning_model() else "N/A",
             'api_type': api_type,
             'program': program,
             'execution_error': '',
@@ -617,7 +560,7 @@ def transform(grid):
                     conversation_history_dict.append({'error': f'Failed to serialize conversation item: {str(e)}'})
         
         # Determine API type and data structure based on mode
-        api_type = 'responses_api_independent_attempts' if is_independent_attempts else 'responses_api_multiturn'
+        api_type = 'chat_completions_independent_attempts' if is_independent_attempts else 'chat_completions_multiturn'
         data_key = 'independent_attempts_data' if is_independent_attempts else 'multiturn_data'
         details_key = 'attempt_details' if is_independent_attempts else 'turn_details'
         total_key = 'total_attempts' if is_independent_attempts else 'total_turns'
@@ -625,7 +568,6 @@ def transform(grid):
         result = {
             'task_id': task_id,
             'model': self.model,
-            'reasoning_effort': self.reasoning_effort if self.is_reasoning_model() else "N/A",
             'api_type': api_type,
             'program': program,
             'execution_error': error_msg,
@@ -730,8 +672,7 @@ def transform(grid):
         return {
             'task_id': task_id,
             'model': self.model,
-            'reasoning_effort': self.reasoning_effort if self.is_reasoning_model() else "N/A",
-            'api_type': 'responses_api_multiturn',
+            'api_type': 'chat_completions_multiturn',
             'program': '',
             'execution_error': 'API timeout after retries',
             'timed_out': True,
@@ -800,7 +741,7 @@ def transform(grid):
                         if self.max_workers == 1 and retry_attempt > 0:
                             print(f"     🔄 Attempt {attempt + 1} retry {retry_attempt + 1}/3...")
                         
-                        response = execute_with_timeout(self.call_responses_api, conversation_history, timeout=150)
+                        response = execute_with_timeout(self.call_chat_completions_api, conversation_history, timeout=150)
                         api_call_successful = True
                         break  # Success!
                         
@@ -827,8 +768,8 @@ def transform(grid):
                 # Track costs
                 usage = response.usage
                 input_rate, output_rate = self.get_model_pricing(self.model)
-                input_tokens = usage.input_tokens
-                output_tokens = usage.output_tokens
+                input_tokens = usage.prompt_tokens
+                output_tokens = usage.completion_tokens
                 attempt_cost = (input_tokens / 1_000_000) * input_rate + (output_tokens / 1_000_000) * output_rate
                 total_cost += attempt_cost
                 total_tokens += usage.total_tokens
@@ -941,7 +882,7 @@ def transform(grid):
                         if self.max_workers == 1 and attempt > 0:
                             print(f"     🔄 Turn {turn + 1} attempt {attempt + 1}/3...")
                         
-                        response = execute_with_timeout(self.call_responses_api, conversation_history, timeout=150)
+                        response = execute_with_timeout(self.call_chat_completions_api, conversation_history, timeout=150)
                         api_call_successful = True
                         break  # Success!
                         
@@ -968,8 +909,8 @@ def transform(grid):
                 # Track costs
                 usage = response.usage
                 input_rate, output_rate = self.get_model_pricing(self.model)
-                input_tokens = usage.input_tokens
-                output_tokens = usage.output_tokens
+                input_tokens = usage.prompt_tokens
+                output_tokens = usage.completion_tokens
                 turn_cost = (input_tokens / 1_000_000) * input_rate + (output_tokens / 1_000_000) * output_rate
                 total_cost += turn_cost
                 total_tokens += usage.total_tokens
@@ -1006,38 +947,16 @@ def transform(grid):
                         if self.max_workers == 1:
                             print(f"     ⏰ Max turns ({self.max_turns}) reached")
                         
-                        # BUGFIX: Add final response to conversation history before breaking
-                        reasoning_item = None
-                        assistant_msg = None
-                        for item in response.output:
-                            if item.type == "reasoning":
-                                reasoning_item = item
-                            elif item.type == "message" and item.role == "assistant":
-                                assistant_msg = item
-                        
-                        # Add to conversation history
-                        if reasoning_item and assistant_msg:
-                            conversation_history.extend([reasoning_item, assistant_msg])
-                        elif assistant_msg:
-                            conversation_history.append(assistant_msg)
+                        # Add assistant response to conversation history before breaking
+                        if response.choices and response.choices[0].message:
+                            conversation_history.append({"role": "assistant", "content": response.choices[0].message.content})
                         
                         break
                     
                     # Continue conversation with request for code
-                    # Extract reasoning item and assistant message for context preservation
-                    reasoning_item = None
-                    assistant_msg = None
-                    for item in response.output:
-                        if item.type == "reasoning":
-                            reasoning_item = item
-                        elif item.type == "message" and item.role == "assistant":
-                            assistant_msg = item
-                    
-                    # Add to conversation history
-                    if reasoning_item and assistant_msg:
-                        conversation_history.extend([reasoning_item, assistant_msg])
-                    elif assistant_msg:
-                        conversation_history.append(assistant_msg)
+                    # Add assistant response to conversation history
+                    if response.choices and response.choices[0].message:
+                        conversation_history.append({"role": "assistant", "content": response.choices[0].message.content})
                     
                     # Add request for code
                     code_request = """I need you to provide Python code to attempt this task. Even if you're not completely certain about the pattern, please provide your best hypothesis as a working transformation function.
@@ -1123,38 +1042,16 @@ Make sure to include the function definition inside a proper code block."""
                     if self.max_workers == 1:
                         print(f"     ⏰ Max turns ({self.max_turns}) reached")
                     
-                    # BUGFIX: Add final response to conversation history before breaking
-                    reasoning_item = None
-                    assistant_msg = None
-                    for item in response.output:
-                        if item.type == "reasoning":
-                            reasoning_item = item
-                        elif item.type == "message" and item.role == "assistant":
-                            assistant_msg = item
-                    
-                    # Add to conversation history
-                    if reasoning_item and assistant_msg:
-                        conversation_history.extend([reasoning_item, assistant_msg])
-                    elif assistant_msg:
-                        conversation_history.append(assistant_msg)
+                    # Add final response to conversation history before breaking
+                    if response.choices and response.choices[0].message:
+                        conversation_history.append({"role": "assistant", "content": response.choices[0].message.content})
                     
                     break
                 
                 # Continue conversation with feedback
-                # Extract reasoning item and assistant message for context preservation
-                reasoning_item = None
-                assistant_msg = None
-                for item in response.output:
-                    if item.type == "reasoning":
-                        reasoning_item = item
-                    elif item.type == "message" and item.role == "assistant":
-                        assistant_msg = item
-                
-                # Add to conversation history
-                if reasoning_item and assistant_msg:
-                    conversation_history.extend([reasoning_item, assistant_msg])
-                elif assistant_msg:
-                    conversation_history.append(assistant_msg)
+                # Add assistant response to conversation history
+                if response.choices and response.choices[0].message:
+                    conversation_history.append({"role": "assistant", "content": response.choices[0].message.content})
                 
                 # Add training feedback - combine prompt messages with feedback messages
                 subsequent_prompt_messages = self.create_prompt(task_data, is_first_turn=False, task_id=task_id, turn=turn + 2)
@@ -1188,10 +1085,10 @@ Make sure to include the function definition inside a proper code block."""
         
         # Show execution mode
         if self.independent_attempts:
-            print(f"API: Responses API (independent attempts, max {self.max_turns} attempts)")
+            print(f"API: Chat Completions (independent attempts, max {self.max_turns} attempts)")
             print("Mode: Independent attempts - multiple fresh starts, no feedback")
         else:
-            print(f"API: Responses API (multi-turn, max {self.max_turns} turns)")
+            print(f"API: Chat Completions (multi-turn, max {self.max_turns} turns)")
             print("Mode: Multi-turn feedback - conversation with training examples")
         
         # Show visual/text mode
@@ -1326,8 +1223,7 @@ Make sure to include the function definition inside a proper code block."""
             'dataset': dataset,
             'subset': subset_name,
             'model': self.model,
-            'reasoning_effort': self.reasoning_effort if self.is_reasoning_model() else "N/A",
-            'api_type': 'responses_api',
+            'api_type': 'chat_completions',
             'run_number': self.run_number,  # NEW: Include run number
             'total_tasks': total_tasks,
             'successful_api_calls': successful_api_calls,
@@ -1365,13 +1261,11 @@ Make sure to include the function definition inside a proper code block."""
         print(f"Dataset: {dataset}")
         print(f"Subset: {subset_name}")
         print(f"Model: {self.model}")
-        # Only show reasoning effort for reasoning models
-        if self.is_reasoning_model():
-            print(f"Reasoning effort: {self.reasoning_effort}")
+
         if self.independent_attempts:
-            print(f"API: Responses (independent attempts, max {self.max_turns} attempts)")
+            print(f"API: Chat Completions (independent attempts, max {self.max_turns} attempts)")
         else:
-            print(f"API: Responses (multi-turn, max {self.max_turns} turns)")
+            print(f"API: Chat Completions (multi-turn, max {self.max_turns} turns)")
         print(f"Total tasks attempted: {total_tasks}")
         print(f"Successful API calls: {successful_api_calls}/{total_tasks} ({summary['success_rate']:.1%})")
         if failed_tasks > 0:
@@ -1408,15 +1302,13 @@ Make sure to include the function definition inside a proper code block."""
         """Run the same subset multiple times and calculate aggregate statistics"""
         print(f"\nRunning {repeat_runs} repeated tests of {dataset}/{subset_name}")
         print(f"Model: {self.model}")
-        if self.is_reasoning_model():
-            print(f"Reasoning effort: {self.reasoning_effort}")
         
         # Show execution mode
         if self.independent_attempts:
-            print(f"API: Responses API (independent attempts, max {self.max_turns} attempts)")
+            print(f"API: Chat Completions (independent attempts, max {self.max_turns} attempts)")
             print("Mode: Independent attempts - multiple fresh starts, no feedback")
         else:
-            print(f"API: Responses API (multi-turn, max {self.max_turns} turns)")
+            print(f"API: Chat Completions (multi-turn, max {self.max_turns} turns)")
             print("Mode: Multi-turn feedback - conversation with training examples")
         
         # Show visual/text mode
@@ -1438,12 +1330,12 @@ Make sure to include the function definition inside a proper code block."""
             # Create a new runner for this run to ensure clean state
             runner = ARCTaskRunner(
                 model=self.model,
-                reasoning_effort=self.reasoning_effort,
                 max_workers=self.max_workers,
                 rate_limit_delay=self.rate_limit_delay,
                 max_turns=self.max_turns,
                 run_number=run_num,
-                independent_attempts=self.independent_attempts
+                independent_attempts=self.independent_attempts,
+                base_url=self.base_url
             )
             
             # Run the subset
@@ -1520,7 +1412,6 @@ Make sure to include the function definition inside a proper code block."""
                 'dataset': dataset,
                 'subset': subset_name,
                 'model': self.model,
-                'reasoning_effort': self.reasoning_effort if self.is_reasoning_model() else "N/A",
                 'repeat_runs': repeat_runs,
                 'run_statistics': run_stats,
                 'turn1_success_rate_mean': turn1_mean,
@@ -1542,8 +1433,6 @@ Make sure to include the function definition inside a proper code block."""
             print(f"Dataset: {dataset}")
             print(f"Subset: {subset_name}")
             print(f"Model: {self.model}")
-            if self.is_reasoning_model():
-                print(f"Reasoning effort: {self.reasoning_effort}")
             print(f"Number of runs: {repeat_runs}")
             print(f"API failures excluded from analysis: YES")
             print("")
@@ -1599,7 +1488,7 @@ Make sure to include the function definition inside a proper code block."""
             print("\n❌ No valid run statistics to aggregate")
 
 def main():
-    parser = argparse.ArgumentParser(description="Run ARC tasks with OpenAI o3/o4 models")
+    parser = argparse.ArgumentParser(description="Run ARC tasks with OpenAI Chat Completions API")
     parser.add_argument("--dataset", default="arc-agi-1", choices=["arc-agi-1", "arc-agi-2"],
                        help="Dataset to use")
     parser.add_argument("--subset", default="shortest_1",
@@ -1610,8 +1499,8 @@ def main():
                        help="Limit number of tasks to run")
     parser.add_argument("--max_tool_calls", type=int, default=64,
                        help="Maximum number of tool calls allowed for the model (default: 64, legacy parameter)")
-    parser.add_argument("--reasoning_effort", type=str, default="low", choices=["low", "medium", "high"],
-                       help="Reasoning effort for the model (default: low)")
+    parser.add_argument("--base-url", type=str,
+                       help="Base URL for OpenAI-compatible API endpoint (default: OpenAI)")
     parser.add_argument("--max_workers", type=int, default=1,
                        help="Maximum number of parallel workers (default: 1)")
     parser.add_argument("--rate_limit_delay", type=float, default=0.0,
@@ -1644,12 +1533,12 @@ def main():
     # Create runner and run tasks
     runner = ARCTaskRunner(
         model=args.model, 
-        reasoning_effort=args.reasoning_effort, 
         max_workers=args.max_workers, 
         rate_limit_delay=args.rate_limit_delay, 
         max_turns=args.max_turns, 
         run_number=0,
-        independent_attempts=args.independent_attempts
+        independent_attempts=args.independent_attempts,
+        base_url=getattr(args, 'base_url', None)
     )
     
     if args.repeat_runs > 1:

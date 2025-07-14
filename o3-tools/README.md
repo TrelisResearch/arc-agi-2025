@@ -1,6 +1,6 @@
 # o3-tools
 
-A tool for testing OpenAI o3/o4 models on ARC-AGI tasks with and without code interpreter tools.
+A tool for testing OpenAI-compatible language models on ARC-AGI tasks using the Chat Completions API.
 
 **Videos**
 [Part 5: Comments on discrete vs continuous + Ablating Sampling vs Feedback](https://share.descript.com/view/W3OEzy9PW9A)
@@ -21,7 +21,7 @@ Objective: Define a test that is a representative measure of performance while a
 [ ] Port the scripts to an openai style endpoint. Run Qwen and try to calibrate.
 [ ] Generate training data.
 [ ] Train.
-
+wil
 - SLOW:
 ...
 
@@ -71,8 +71,8 @@ Completed:
 
 ## Features
 
-- Run ARC-AGI tasks with OpenAI models (currently using gpt-4o-mini or o4-mini)
-- Support for reasoning models (o3, o4, o1)
+- Run ARC-AGI tasks with any OpenAI-compatible language model API
+- Support for custom API endpoints (Claude, Qwen, DeepSeek, local models, etc.)
 - Multi-turn execution with training examples feedback
 - **Robust timeout handling** with automatic retries (300s timeout, 3 attempts per turn)
 - Comprehensive scoring including pixel accuracy and binary correctness
@@ -114,7 +114,10 @@ uv run python run_arc_tasks.py --dataset arc-agi-2 --subset shortest_training_1
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_1 --max_turns 5
 
 # Run 30 shortest evaluation tasks from ARC-AGI-1 with model selection and a limit of 5
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_30 --model gpt-4.1-mini --limit 5
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_30 --model gpt-4o-mini --limit 5
+
+# Run tasks with a custom API endpoint (e.g., local LLM or Claude)
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --model claude-3-haiku --base-url https://api.anthropic.com/v1
 
 # Run tasks in parallel with 10 workers for faster execution
 uv run python run_arc_tasks.py --dataset arc-agi-2 --subset shortest_training_30 --max_workers 10
@@ -131,10 +134,10 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10
 # Available options:
 #   --dataset: arc-agi-1 or arc-agi-2
 #   --subset: shortest_training_1, shortest_training_10, shortest_training_30, shortest_evaluation_1, shortest_evaluation_10, shortest_evaluation_30, etc.
-#   --model: OpenAI model name (default: gpt-4.1-mini)
+#   --model: Model name (default: gpt-4.1-nano) - works with any OpenAI-compatible API
+#   --base-url: Custom API endpoint URL (default: OpenAI) - enables Claude, Qwen, local models, etc.
 #   --limit: Limit number of tasks to run
 #   --max_turns: Maximum number of turns/attempts (default: 3) - turns for multi-turn mode, attempts for independent mode
-#   --reasoning_effort: Reasoning effort for the model (low, medium, high; default: low, only applies to o3/o4/o1 models)
 #   --max_workers: Number of parallel workers (default: 1, max: 30)
 #   --rate_limit_delay: Delay between API calls in seconds (default: 0.0)
 #   --repeat-runs: Number of times to repeat the entire test (default: 1, max: 10)
@@ -830,14 +833,14 @@ Current pricing (as of 2025, $/1M tokens):
 
 ## Important: Multi-Turn Behavior
 
-We use **only the Responses API** with multi-turn mode:
+We use the **Chat Completions API** with multi-turn mode:
 
 - **Multi-turn local execution** with training feedback (up to `--max_turns`, default 3)
 - Model writes code, we test it locally on test input immediately  
 - If incorrect, we run it on training examples and provide detailed text feedback
 - Model can see training results and iterate to improve the solution
-- Uses encrypted reasoning traces to maintain context between turns
-- More expensive but potentially more accurate through iteration
+- Maintains conversation context between turns using standard chat messages
+- Works with any OpenAI-compatible API endpoint
 
 **Key Point**: We execute the final code locally to score it. The difference is whether the model gets multiple conversation turns with training feedback to improve its solution.
 
@@ -866,30 +869,39 @@ uv run python cleanup_logs.py
 
 ## Model Support
 
-- **✅ o4-mini**: Reasoning model, higher cost but better performance
-- **✅ o3**: Most powerful reasoning model (expensive!)
-- **✅ gpt-4o-mini**: Fast, cost-effective baseline
-- **✅ o3-mini**: Available for testing
+Works with any OpenAI-compatible Chat Completions API:
 
-### Model-Specific Notes
-- **o3/o4 models**: Use `max_completion_tokens` instead of `max_tokens`
-- **o3/o4 models**: Don't support `temperature=0`, use default
-- **Cost difference**: o4-mini is ~7x more expensive than gpt-4o-mini
+- **✅ OpenAI models**: gpt-4o, gpt-4o-mini, gpt-4-turbo, etc.
+- **✅ Claude (via API)**: claude-3-5-sonnet, claude-3-haiku, etc. (with --base-url)
+- **✅ Local models**: Any model running with OpenAI-compatible server (vLLM, Ollama, etc.)
+- **✅ Other APIs**: Qwen, DeepSeek, Gemini (with compatible endpoints)
+
+### Setup Examples
+```bash
+# OpenAI (default)
+uv run python run_arc_tasks.py --model gpt-4o-mini
+
+# Claude via compatible endpoint
+uv run python run_arc_tasks.py --model claude-3-haiku --base-url https://api.anthropic.com/v1
+
+# Local model
+uv run python run_arc_tasks.py --model llama-3.1-8b --base-url http://localhost:8000/v1
+```
 
 ## Implementation Notes
 
 - **Execution timeout**: Program execution has a 0.1 second timeout as specified in requirements
 - **Function interface**: All programs must define a `transform` function that takes a grid (2D list) and returns the transformed grid
 - **Grid format**: All grids are represented as 2D lists of integers (0-9)
-- **API architecture**: Uses only the Responses API - Chat Completions API has been removed
-- **Cost accuracy**: Fixed cost calculation to use correct Responses API field names
+- **API architecture**: Uses the Chat Completions API for broad compatibility with OpenAI-compatible endpoints
+- **Cost accuracy**: Uses standard prompt_tokens/completion_tokens for cost calculation
 - **Pixel counting**: Fixed pixel accuracy calculation to include failed executions in totals
 
 ## Additional Notes
 
 - You can control the maximum number of turns using --max_turns (default: 3). This is especially useful for limiting cost and runaway conversations.
-- You can also set the reasoning effort for the model using --reasoning_effort (choices: low, medium, high; default: medium). This may affect the model's thoroughness and cost.
-- **Automatic Model Detection**: The script automatically detects reasoning models (o3, o4, o1) vs non-reasoning models (GPT-4 series). Reasoning effort is only sent to models that support it, preventing API errors.
+- **API Compatibility**: Works with any endpoint that implements OpenAI's Chat Completions API format
+- **Custom Endpoints**: Use --base-url to connect to Claude, local models, or other compatible APIs
 - **Parallelization**: Use `--max_workers` (1-30) to run tasks in parallel. Start with 5 workers and increase gradually while monitoring for rate limit errors. Use `--rate_limit_delay` to add delays between requests if needed.
 - **Cost Control**: Parallel execution accumulates costs faster but maintains the same per-task costs. Monitor total spending especially when using expensive models like o3 with many workers.
 - **Thread Safety**: All file I/O, progress tracking, and cost accumulation is thread-safe. Individual task logs use unique filenames with thread IDs to prevent conflicts.
