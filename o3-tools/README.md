@@ -17,9 +17,7 @@ Objective: Define a test that is a representative measure of performance while a
 ...
 
 - MEDIUM:
-[ ] Describing grids ablation: Get the model to also describe the input grid and the output grid with code (so, return three code blocks), and provide feedback on those too.
-  [ ] Do this all in one go.
-  [ ] Do the description in separate calls to the LLM.
+[x] Describing grids ablation: Get the model to also describe the input grid and the output grid with code (so, return three code blocks), and provide feedback on those too. DONE AND IN A DEDICATED BRANCH.
 [ ] Port the scripts to an openai style endpoint. Run Qwen and try to calibrate.
 [ ] Generate training data.
 [ ] Train.
