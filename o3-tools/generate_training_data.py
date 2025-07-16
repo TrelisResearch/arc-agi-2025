@@ -502,45 +502,125 @@ def main():
         # Set random seed for reproducible splits
         random.seed(42)
         
-        # Group examples by task_id
+        # Group examples by task_id and correctness status
+        task_to_examples = {}
+        task_correctness = {}  # task_id -> has_at_least_one_correct
+        
+        for i, example in enumerate(training_examples):
+            # Extract task_id and correctness from qualified_programs
+            task_id = qualified_programs[i]['program_data']['task_id']
+            solved_count = qualified_programs[i]['program_data'].get('validated_solved_count', 0)
+            has_correct = solved_count > 0
+            
+            if task_id not in task_to_examples:
+                task_to_examples[task_id] = []
+                task_correctness[task_id] = has_correct
+            task_to_examples[task_id].append(example)
+        
+        # Separate tasks by correctness status
+        correct_tasks = [tid for tid, has_correct in task_correctness.items() if has_correct]
+        incorrect_tasks = [tid for tid, has_correct in task_correctness.items() if not has_correct]
+        
+        random.shuffle(correct_tasks)
+        random.shuffle(incorrect_tasks)
+        
+        print(f"  Task breakdown: {len(correct_tasks)} with correct examples, {len(incorrect_tasks)} with no correct examples")
+        
+        # Balance the dataset first by dropping excess tasks from the larger group
+        min_group_size = min(len(correct_tasks), len(incorrect_tasks))
+        
+        dropped_correct = 0
+        dropped_incorrect = 0
+        
+        if len(correct_tasks) > min_group_size:
+            dropped_correct = len(correct_tasks) - min_group_size
+            correct_tasks = correct_tasks[:min_group_size]
+            print(f"  Balanced dataset: dropped {dropped_correct} excess correct-example tasks")
+            
+        if len(incorrect_tasks) > min_group_size:
+            dropped_incorrect = len(incorrect_tasks) - min_group_size
+            incorrect_tasks = incorrect_tasks[:min_group_size]
+            print(f"  Balanced dataset: dropped {dropped_incorrect} excess no-correct-example tasks")
+        
+        print(f"  Balanced breakdown: {len(correct_tasks)} with correct examples, {len(incorrect_tasks)} with no correct examples")
+        
+        # Filter training examples to only include balanced tasks
+        balanced_task_ids = set(correct_tasks + incorrect_tasks)
+        balanced_training_examples = []
+        balanced_qualified_programs = []
+        
+        for i, example in enumerate(training_examples):
+            task_id = qualified_programs[i]['program_data']['task_id']
+            if task_id in balanced_task_ids:
+                balanced_training_examples.append(example)
+                balanced_qualified_programs.append(qualified_programs[i])
+        
+        print(f"  Filtered to {len(balanced_training_examples)} examples from balanced tasks")
+        
+        # Update our working variables to use balanced data
+        training_examples = balanced_training_examples
+        qualified_programs = balanced_qualified_programs
+        
+        # Rebuild task_to_examples with balanced data
         task_to_examples = {}
         for i, example in enumerate(training_examples):
-            # Extract task_id from the qualified_programs
             task_id = qualified_programs[i]['program_data']['task_id']
             if task_id not in task_to_examples:
                 task_to_examples[task_id] = []
             task_to_examples[task_id].append(example)
         
-        # Get all unique task_ids
-        all_task_ids = list(task_to_examples.keys())
-        random.shuffle(all_task_ids)
-        
-        # Calculate validation size (10% or 32 examples, whichever is smaller)
+        # Calculate target validation size
         target_validation_size = min(int(len(training_examples) * 0.1), 32)
         
-        # Select tasks for validation by accumulating examples until we reach target size
-        validation_task_ids = []
-        validation_examples = []
+        # Now do a simple 50/50 split from the balanced groups
+        target_val_correct_tasks = min(len(correct_tasks), target_validation_size // 2)
+        target_val_incorrect_tasks = min(len(incorrect_tasks), target_validation_size - target_val_correct_tasks)
         
-        for task_id in all_task_ids:
-            task_examples = task_to_examples[task_id]
-            if len(validation_examples) + len(task_examples) <= target_validation_size:
-                validation_task_ids.append(task_id)
-                validation_examples.extend(task_examples)
-            elif len(validation_examples) == 0:
-                # If we haven't selected any tasks yet and this task would exceed the limit,
-                # include it anyway to ensure we have at least some validation data
-                validation_task_ids.append(task_id)
-                validation_examples.extend(task_examples)
-                break
+        print(f"  Target validation tasks: {target_val_correct_tasks} correct, {target_val_incorrect_tasks} incorrect")
+        
+        # Helper function to select tasks for validation from a group
+        def select_validation_tasks_from_group(task_group, target_size):
+            validation_tasks = []
+            validation_examples = []
+            
+            for task_id in task_group:
+                task_examples = task_to_examples[task_id]
+                if len(validation_examples) + len(task_examples) <= target_size:
+                    validation_tasks.append(task_id)
+                    validation_examples.extend(task_examples)
+                elif len(validation_examples) == 0:
+                    # Include at least one task even if it exceeds target
+                    validation_tasks.append(task_id)
+                    validation_examples.extend(task_examples)
+                    break
+            
+            return validation_tasks, validation_examples
+        
+        # Select validation tasks from each group
+        val_correct_tasks, val_correct_examples = select_validation_tasks_from_group(correct_tasks, target_val_correct_tasks)
+        val_incorrect_tasks, val_incorrect_examples = select_validation_tasks_from_group(incorrect_tasks, target_val_incorrect_tasks)
+        
+        # Combine validation sets
+        validation_task_ids = val_correct_tasks + val_incorrect_tasks
+        validation_examples = val_correct_examples + val_incorrect_examples
         
         # All remaining tasks go to training
         train_examples = []
         train_task_ids = []
-        for task_id in all_task_ids:
+        
+        for task_id in task_to_examples.keys():
             if task_id not in validation_task_ids:
                 train_task_ids.append(task_id)
                 train_examples.extend(task_to_examples[task_id])
+        
+        # Calculate balance statistics
+        val_correct_count = len(val_correct_examples)
+        val_incorrect_count = len(val_incorrect_examples)
+        train_correct_tasks_count = len([tid for tid in train_task_ids if task_correctness[tid]])
+        train_incorrect_tasks_count = len([tid for tid in train_task_ids if not task_correctness[tid]])
+        
+        print(f"  Validation balance: {val_correct_count}/{len(validation_examples)} ({val_correct_count/len(validation_examples)*100:.1f}%) from tasks with correct examples")
+        print(f"  Training balance: {train_correct_tasks_count}/{len(train_task_ids)} ({train_correct_tasks_count/len(train_task_ids)*100:.1f}%) tasks with correct examples")
         
         # Create filenames
         base_name = args.output.replace('.jsonl', '')

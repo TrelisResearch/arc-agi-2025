@@ -286,8 +286,9 @@ The `generate_training_data.py` tool extracts programs from log files to create 
 - **Strict format validation**: Rejects entire programs that return non-2D-grid outputs (integers, 1D lists, etc.)
 - **Smart error handling**: Granular failure handling - drops individual examples for execution errors, rejects entire programs for format violations or complete failures
 - **Creates proper format**: System/user/assistant messages ready for fine-tuning APIs
-- **Validation splits**: Optional task-level validation sets (10% or 32 examples, whichever is smaller)
+- **Stratified validation splits**: Optional task-level validation sets with balanced difficulty distribution
 - **Proper task separation**: Validation uses complete tasks, ensuring no data leakage between training and validation
+- **Balanced sampling**: Dataset is first balanced by dropping excess tasks, then split to ensure both training and validation sets contain ~50% programs with at least one correct example and ~50% with zero correct examples
 - **Multi-dataset support**: Automatically finds tasks in both ARC-AGI-1 and ARC-AGI-2
 - **Validation mismatch detection**: Reports inconsistencies between logged results and re-execution results
 
@@ -318,7 +319,7 @@ uv run python generate_training_data.py --limit 1000 --validation --output arc_t
   - `training_data_YYYYMMDD_HHMMSS_train.jsonl` (examples from ~90% of tasks)
   - `training_data_YYYYMMDD_HHMMSS_val.jsonl` (examples from ~10% of tasks, targeting 32 examples max)
 
-**Note**: Validation split ensures complete task separation - no task appears in both training and validation sets.
+**Note**: Validation split ensures complete task separation and balanced difficulty distribution - no task appears in both training and validation sets, and both sets contain a balanced mix of programs with/without correct examples.
 
 ### Selection Criteria
 
@@ -369,7 +370,7 @@ The training data generation follows this pipeline:
 3. **Qualification Filtering**: Apply selection criteria to filter programs
 4. **Training Example Generation** (parallel): Create JSONL training examples with granular failure handling
 5. **Format Validation**: Ensure all outputs are proper 2D grids (rejects entire programs for violations)
-6. **Validation Split** (optional): Split examples by task to prevent data leakage
+6. **Stratified Validation Split** (optional): Split examples by task with balanced difficulty distribution
 7. **Statistics & Reporting**: Generate detailed reports on data quality
 
 **Key Quality Checks:**
@@ -438,14 +439,21 @@ Programs with at least one originally correct answer: 298/381 (78.2%)
    This suggests code extraction or execution inconsistencies
 ⚠️  Invalid output format: 89 programs returned non-2D-grid outputs
    These programs were rejected entirely for format violations
-Saved training data to: training_data/training_data_train.jsonl (341 examples from 79 tasks)
-Saved validation data to: training_data/training_data_val.jsonl (40 examples from 10 tasks)
-Validation tasks: ['1ae2feb7', '27a77e38', '40f6cd08', 'aa300dc3', 'e8686506', ...]
+  Task breakdown: 67 with correct examples, 22 with no correct examples
+  Balanced dataset: dropped 45 excess correct-example tasks
+  Balanced breakdown: 22 with correct examples, 22 with no correct examples
+  Filtered to 178 examples from balanced tasks
+  Target validation tasks: 2 correct, 2 incorrect
+  Validation balance: 16/24 (66.7%) from tasks with correct examples  
+  Training balance: 18/40 (45.0%) tasks with correct examples
+Saved training data to: training_data/training_data_train.jsonl (154 examples from 40 tasks)
+Saved validation data to: training_data/training_data_val.jsonl (24 examples from 4 tasks)
+Validation tasks: ['1ae2feb7', '27a77e38', '40f6cd08', 'aa300dc3']
 
 Statistics:
-  Unique tasks: 89
-  Average examples per task: 4.8
-  Tasks with most examples: [('task_123', 15), ('task_456', 12), ...]
+  Unique tasks: 44 (balanced dataset)
+  Average examples per task: 4.0
+  Tasks with most examples: [('task_123', 8), ('task_456', 7), ...]
 ```
 
 **Performance**: Uses parallel processing with `total_cores - 2` workers for optimal speed. Typically achieves **6-10x speedup** compared to single-threaded processing. Progress updates appear every 100 log files and every 50 programs during validation.
