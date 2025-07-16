@@ -16,6 +16,8 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-t
 
 ## Measure baseline Qwen3 performance with reasoning
 
+Runpod One-click-template [here](https://console.runpod.io/deploy?template=agyu4xrpgl&ref=jmfkcdio) - swap out the model name if using a fine-tuned model.
+
 **Conclusion**
 Qwen4 when using reasoning seems of similar capability to gpt-4.1-mini or maybe gpt-4.1 when it comes to solving ARC-AGI-1 problems. All of these models are too weak to be able to solve ARC AGI 2 problems, although they can solve some of the arc-agi-1 problems without fine-tuning.
 
