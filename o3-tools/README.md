@@ -280,17 +280,11 @@ The `generate_training_data.py` tool extracts programs from log files to create 
 
 ### Key Features
 
-- **Full parallel processing**: Both program validation AND training example generation use all CPU cores minus 2 for maximum speed
-- **Extracts valid programs**: From both multi-turn and independent attempts logs
-- **Consistent validation**: Re-executes all programs during validation to ensure consistency with training example creation
-- **Strict format validation**: Rejects entire programs that return non-2D-grid outputs (integers, 1D lists, etc.)
-- **Smart error handling**: Granular failure handling - drops individual examples for execution errors, rejects entire programs for format violations or complete failures
-- **Creates proper format**: System/user/assistant messages ready for fine-tuning APIs
-- **Stratified validation splits**: Optional task-level validation sets with balanced difficulty distribution
-- **Proper task separation**: Validation uses complete tasks, ensuring no data leakage between training and validation
-- **Balanced sampling**: Dataset is first balanced by dropping excess tasks, then split to ensure both training and validation sets contain ~50% programs with at least one correct example and ~50% with zero correct examples
-- **Multi-dataset support**: Automatically finds tasks in both ARC-AGI-1 and ARC-AGI-2
-- **Validation mismatch detection**: Reports inconsistencies between logged results and re-execution results
+- **Full parallel processing**: Uses all CPU cores for maximum speed (6-10x faster)
+- **Balanced datasets**: Balances difficulty by ensuring 50/50 split of programs with/without correct examples
+- **Stratified validation splits**: Task-level validation with balanced difficulty distribution
+- **Strict quality control**: Re-executes programs, validates 2D grid formats, ensures consistency
+- **Smart error handling**: Drops individual failed examples but rejects programs with format violations
 
 ### Usage
 
@@ -308,152 +302,61 @@ uv run python generate_training_data.py --limit 500 --output my_training_data.js
 uv run python generate_training_data.py --limit 1000 --validation --output arc_training_data.jsonl
 ```
 
-**Performance**: The script automatically uses `total_cores - 2` worker processes for all parallel operations (validation AND training example generation), leaving 2 cores available for system tasks. This typically provides **6-10x speedup** over single-threaded processing. Large datasets with thousands of programs process efficiently in minutes rather than hours.
-
 ### Output Files
 
 **Files are saved in the `o3-tools/training_data/` directory:**
 
 - **Without validation**: `training_data_YYYYMMDD_HHMMSS.jsonl`
 - **With validation**: 
-  - `training_data_YYYYMMDD_HHMMSS_train.jsonl` (examples from ~90% of tasks)
-  - `training_data_YYYYMMDD_HHMMSS_val.jsonl` (examples from ~10% of tasks, targeting 32 examples max)
+  - `training_data_YYYYMMDD_HHMMSS_train.jsonl` (balanced training set)
+  - `training_data_YYYYMMDD_HHMMSS_val.jsonl` (balanced validation set)
 
-**Note**: Validation split ensures complete task separation and balanced difficulty distribution - no task appears in both training and validation sets, and both sets contain a balanced mix of programs with/without correct examples.
+**Note**: Dataset is first balanced (50/50 difficulty split), then validation uses different tasks than training.
 
-### Selection Criteria
+### Quality Control
 
-Programs are included if they:
-- ✅ Have valid Python code that can be extracted from logs
-- ✅ Execute successfully on at least one training example (no Python errors)
-- ✅ Fail on at least one training example (provides learning opportunity)
-- ✅ Return proper 2D grid format for ALL successful executions (`[[...], [...]]`)
+**Programs included if they:**
+- ✅ Execute successfully on ≥1 training example  
+- ✅ Fail on ≥1 training example (learning opportunity)
+- ✅ Return proper 2D grids (`[[...], [...]]`)
 
-Programs are **rejected entirely** if they:
-- ❌ Cannot be executed or have no extractable code  
-- ❌ Solve all training examples correctly (no room for improvement)
-- ❌ Return invalid output formats on ANY example:
-  - Integers instead of grids: `5` instead of `[[5]]`
-  - 1D lists instead of 2D: `[1, 2, 3]` instead of `[[1, 2, 3]]`
-  - Empty grids: `[]`
-  - Non-list types: strings, None, etc.
+**Programs rejected if they:**
+- ❌ Solve all examples (no room for improvement)
+- ❌ Return invalid formats (integers, 1D lists, etc.)
+- ❌ Fail to execute on all examples
 
-### Execution Failure Handling
+**Error handling:** Execution failures drop individual examples; format violations reject entire programs.
 
-The script handles different types of failures differently:
+### Process
 
-**🔧 Execution Failures (crashes, timeouts, exceptions):**
-- **Individual examples are dropped** from the dataset row
-- **Program is kept** if at least one training example executes successfully
-- **Example:** Program with 4 training examples crashes on 2 → Dataset row contains 2 examples
+1. **Extract** programs from log files (parallel)
+2. **Validate** by re-executing programs (parallel)  
+3. **Filter** by quality criteria
+4. **Balance** dataset (50/50 difficulty split)
+5. **Split** into training/validation sets (optional)
+6. **Generate** JSONL training examples (parallel)
 
-**❌ Format Violations (wrong output type):**
-- **Entire program is rejected** immediately
-- **No dataset row is created**
-- **Example:** Program returns integer instead of 2D grid on any example → Entire program rejected
+### Output Format
 
-**🚫 Complete Execution Failure:**
-- **Entire program is rejected** if it fails to execute on ALL training examples
-- **No dataset row is created**
-- **Example:** Program crashes on all 4 training examples → Program rejected
+Each JSONL line contains a system/user/assistant conversation where:
+- **Training examples** use program-generated outputs (not ground truth)
+- **User message** contains the ARC task with training examples  
+- **Assistant message** contains the partially-correct program code
 
-**✅ Partial Success (Normal Case):**
-- **Dataset row is created** with only the successfully executed examples
-- **Example:** Program executes on 3/4 examples → Dataset row with 3 training examples
-
-### Processing Pipeline
-
-The training data generation follows this pipeline:
-
-1. **Log File Processing** (parallel): Extract programs from log files
-2. **Program Validation** (parallel): Re-execute programs on task data to ensure consistency
-3. **Qualification Filtering**: Apply selection criteria to filter programs
-4. **Training Example Generation** (parallel): Create JSONL training examples with granular failure handling
-5. **Format Validation**: Ensure all outputs are proper 2D grids (rejects entire programs for violations)
-6. **Stratified Validation Split** (optional): Split examples by task with balanced difficulty distribution
-7. **Statistics & Reporting**: Generate detailed reports on data quality
-
-**Key Quality Checks:**
-- ✅ **Consistency validation**: Compare logged vs re-executed results
-- ✅ **Format validation**: Ensure proper 2D grid outputs
-- ✅ **Execution validation**: Programs must run without errors
-- ✅ **Task separation**: Validation uses different tasks than training
-
-### Training Data Format
-
-**Important**: Training examples use **program-generated outputs**, not ground truth outputs:
-- **Training inputs**: Original task data inputs
-- **Training outputs**: What the program actually produces when run on training inputs
-- **Test input**: Original task data input  
-- **Program**: The partially-correct program that generated those outputs
-
-This ensures the model learns to generate programs that produce the specific input→output mappings shown, rather than learning from idealized correct mappings.
-
-### JSONL Format
-
-Each line contains a complete conversation:
-
-```json
-{
-  "messages": [
-    {
-      "role": "system",
-      "content": "You are an expert at solving abstract reasoning puzzles. Write clean, efficient Python code."
-    },
-    {
-      "role": "user", 
-      "content": "You are solving an ARC task...[full prompt with program-generated training outputs]"
-    },
-    {
-      "role": "assistant",
-      "content": "Final answer:\n```python\ndef transform(grid):\n    # program code\n    return transformed_grid\n```"
-    }
-  ]
-}
-```
+This trains models to generate programs that produce specific input→output mappings.
 
 ### Example Output
 
 ```
-Using 10 worker processes (total cores: 12)
-Processing 500 log files...
-  Processed 100/500 files...
-  Processed 200/500 files...
-  ...
 Found 2,847 total programs
-Validating programs in parallel...
-  Validated 50/2847 programs...
-  Validated 100/2847 programs...
-  Validated 200/2847 programs...
-  ...
 Qualified programs: 423
-Generating training examples from 423 qualified programs in parallel...
-  Generated 89 examples from 100/423 programs (23.6%)...
-  Generated 178 examples from 200/423 programs (47.3%)...
-  ⚠️  Validation mismatch - Task aa300dc3: logged=2, validated=1
-  ⚠️  Validation mismatch - Task e8686506: logged=3, validated=2
-  ...
 Generated 381 training examples
 Programs with at least one originally correct answer: 298/381 (78.2%)
-⚠️  Validation mismatches found: 47 programs had different results than logged
-   This suggests code extraction or execution inconsistencies
-⚠️  Invalid output format: 89 programs returned non-2D-grid outputs
-   These programs were rejected entirely for format violations
   Task breakdown: 67 with correct examples, 22 with no correct examples
   Balanced dataset: dropped 45 excess correct-example tasks
   Balanced breakdown: 22 with correct examples, 22 with no correct examples
-  Filtered to 178 examples from balanced tasks
-  Target validation tasks: 2 correct, 2 incorrect
-  Validation balance: 16/24 (66.7%) from tasks with correct examples  
-  Training balance: 18/40 (45.0%) tasks with correct examples
 Saved training data to: training_data/training_data_train.jsonl (154 examples from 40 tasks)
 Saved validation data to: training_data/training_data_val.jsonl (24 examples from 4 tasks)
-Validation tasks: ['1ae2feb7', '27a77e38', '40f6cd08', 'aa300dc3']
-
-Statistics:
-  Unique tasks: 44 (balanced dataset)
-  Average examples per task: 4.0
-  Tasks with most examples: [('task_123', 8), ('task_456', 7), ...]
 ```
 
 **Performance**: Uses parallel processing with `total_cores - 2` workers for optimal speed. Typically achieves **6-10x speedup** compared to single-threaded processing. Progress updates appear every 100 log files and every 50 programs during validation.

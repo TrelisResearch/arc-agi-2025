@@ -15,6 +15,10 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-t
 ...
 
 ## Measure baseline Qwen3 performance with reasoning
+
+**Conclusion**
+Qwen4 when using reasoning seems of similar capability to gpt-4.1-mini or maybe gpt-4.1 when it comes to solving ARC-AGI-1 problems. All of these models are too weak to be able to solve ARC AGI 2 problems, although they can solve some of the arc-agi-1 problems without fine-tuning.
+
 ```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 25 --max_turns 8 --model qwen/qwen3-32b --independent-attempts --base-url https://openrouter.ai/api/v1 --limit 1
 ```
@@ -50,6 +54,37 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-t
 
 Trying to beat gpt-4.1-mini (similar to gpt-4.1 in performance), so we're trying to beat about 15 and 37% with one and up to 8 attempts.
 
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url http://157.66.254.42:15712/v1
+```
+Dataset: arc-agi-1
+Subset: gpt-4.1-mini-calib-train
+Model: Qwen/Qwen3-4B
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    46         11             17             23.9%          37.0%         
+2    46         12             17             26.1%          37.0%         
+3    46         9              19             19.6%          41.3%         
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 23.2%
+  Std Dev: 3.3%
+  95% CI: [16.7%, 29.7%]
+
+All Attempts Success Rate:
+  Mean: 38.4%
+  Std Dev: 2.5%
+  95% CI: [33.5%, 43.3%]
 
 ## 2025 15th July
 
