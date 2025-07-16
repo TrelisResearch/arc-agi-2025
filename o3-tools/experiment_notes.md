@@ -2,17 +2,97 @@
 
 ## See if fine-tuning on hindsight relabelled data helps
 
+**Conclusion**
+The model works after fine-tuning, and is much much faster and cheaper to run. BUT it's weaker for the same number of samples, because it loses it's reasoning. This can be addressed next time by mixing in some reasoning traces.
+
 ### fine-tuning
-For this,  I fine-tuned on ~2,200 rows of hindsight relabelled programs (with at least one training example wrong) from the arc-agi-2025 repo. Fine-tuning took about 25 mins on a H100.
+For this,  I fine-tuned on ~4,000 rows of hindsight relabelled programs (with at least one training example wrong) from the arc-agi-2025 repo - the dataset was balanced so that roughly half have no training examples correct, and half have at least one correct. Fine-tuning took about 1h45 mins with batch size 16 on a H100SXM.
 
-For this, I split out a random 32 rows of data to use as a validation dataset during fine-tuning. Probably I need to de-dup because train and validation loss followed each other very closely, probably too closely for the validation set to be a good indicator of generalisation (note that this just means it's hard to know if I trained for long enough or too long, it doesn't mean we're cheating on testing).
+I split out a random 32 rows of data to use as a validation dataset during fine-tuning - but made sure it was also balanced between all wrong and partly wrong on the original training examples.
 
-### Running tests
+### Running tests after fine-tuning
+
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url https://9433j1ookvmo7y-8000.proxy.runpod.net/v1
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 8 --model Trelis/lorge-16-jul --independent-attempts --base-url http://213.181.122.251:13589/v1
+```
+Dataset: arc-agi-1
+Subset: gpt-4.1-mini-calib-train
+Model: Trelis/lorge-16-jul
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    46         3              9              6.5%           19.6%         
+2    46         0              7              0.0%           15.2%         
+3    46         2              6              4.3%           13.0%         
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 3.6%
+  Std Dev: 3.3%
+  95% CI: [-2.9%, 10.1%]
+
+All Attempts Success Rate:
+  Mean: 15.9%
+  Std Dev: 3.3%
+  95% CI: [9.4%, 22.5%]
+
+### Re-test with 64 samples per task instead of 8, again on this custom gpt-4.1-mini-calib-train dataset of 46 rows.
+
+**Commentary**
+I need to look at cost numbers but it seems like the cost of doing 8 samples with reasoning is similar to doing 64 samples without reasoning on the fine-tune, perhaps even the fine-tuned model ends up cheaper. And you get back to gpt-4.1/mini performance, although variance is WAY HIGHER, which probably makes it worse.
+
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 64 --model Trelis/lorge-16-jul --independent-attempts --base-url http://213.181.122.251:13589/v1
+```
+Dataset: arc-agi-1
+Subset: gpt-4.1-mini-calib-train
+Model: Trelis/lorge-16-jul
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    46         5              21             10.9%          45.7%         
+2    46         3              17             6.5%           37.0%         
+3    46         1              12             2.2%           26.1%         
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 6.5%
+  Std Dev: 4.3%
+  95% CI: [-2.0%, 15.0%]
+
+All Attempts Success Rate:
+  Mean: 36.2%
+  Std Dev: 9.8%
+  95% CI: [17.0%, 55.4%]
+
+
+and, for fun, try the shortest 100 of the ARC AGI 1 dataset:
+
+- Only got to do one of the runs and got 7/100, so it's weak on this.
+
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_100 --repeat-runs 3 --max_workers 64 --max_turns 64 --model Trelis/lorge-16-jul --independent-attempts --base-url http://213.181.122.251:13589/v1
 ```
 
-...
+
+
+
 
 ## Measure baseline Qwen3 performance with reasoning
 

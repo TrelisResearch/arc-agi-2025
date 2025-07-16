@@ -2,6 +2,10 @@
 
 A tool for testing OpenAI-compatible language models on ARC-AGI tasks using the Chat Completions API.
 
+Folders:
+- `fine-tuning` - ipynb notebooks for fine-tunign as well as a logs folder for tensorboard logs.
+- `tests` misc test scripts
+
 **Videos**
 [Part 5: Comments on discrete vs continuous + Ablating Sampling vs Feedback](https://share.descript.com/view/W3OEzy9PW9A)
 [Part 4 - Visualisation + Testing out Feedback and Images](https://share.descript.com/view/zfBfDlP20uA)
@@ -17,8 +21,6 @@ Objective: Define a test that is a representative measure of performance while a
 ...
 
 - MEDIUM:
-[x] Describing grids ablation: Get the model to also describe the input grid and the output grid with code (so, return three code blocks), and provide feedback on those too. DONE AND IN A DEDICATED BRANCH.
-[x] Port the scripts to an openai style endpoint. Run Qwen and try to calibrate.
 [x] Generate training data.
   [x] Extract programs from log files with partial success criteria
   [x] Create JSONL format for fine-tuning
@@ -53,6 +55,8 @@ Cleanups:
   [x] Run tests on low levels of reasoning effort.
 
 Completed:
+[x] Describing grids ablation: Get the model to also describe the input grid and the output grid with code (so, return three code blocks), and provide feedback on those too. DONE AND IN A DEDICATED BRANCH.
+[x] Port the scripts to an openai style endpoint. Run Qwen and try to calibrate.
 [x] Review of some samples.
 [x] Add guidance around output grid sizes, if wrong. (Enhanced: now tells model target dimensions upfront + general reminders)
 [x] Create a script that automatically will do a run three times and calculate the mean and std dev (for the number correct on one turn, and the number correct on more than one turn).
@@ -126,6 +130,9 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10
 
 # Run with OpenRouter and reasoning effort control for compatible models
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --model google/gemini-2.5-flash-reasoning --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+
+# RunPod: Use direct TCP to avoid Cloudflare 524 timeouts
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --model Qwen/Qwen3-4B --base-url http://157.66.254.42:15712/v1
 
 # Run tasks in parallel with 10 workers for faster execution
 uv run python run_arc_tasks.py --dataset arc-agi-2 --subset shortest_training_30 --max_workers 10
@@ -585,7 +592,7 @@ The tool includes robust timeout handling to prevent hanging on API calls that t
 - **3 retry attempts** per turn with 2-second backoff between retries
 - **Separate timeout failure tracking** - doesn't count as regular task failures
 - **Complete conversation preservation** during retries
-- **Detailed timeout logging** with clear failure reasons
+- **Detailed error logging** with specific failure reasons and complete API response data
 
 ### How It Works
 
@@ -606,18 +613,18 @@ Turn 1/8...
 # Timeout with retries
 Turn 2/8...
   🔄 Turn 2 attempt 1/3...
-  ⏰ Turn 2 attempt 1 timed out, retrying in 2s...
+  ⏰ Turn 2 attempt 1 failed (TimeoutError: Operation timed out after 1000 seconds), retrying in 2s...
   🔄 Turn 2 attempt 2/3...
   ✅ Turn 2 successful on attempt 2
 
 # Complete timeout failure
 Turn 3/8...
   🔄 Turn 3 attempt 1/3...
-  ⏰ Turn 3 attempt 1 timed out, retrying in 2s...
+  ⏰ Turn 3 attempt 1 failed (HTTPStatusError: 524 A timeout occurred), retrying in 2s...
   🔄 Turn 3 attempt 2/3...
-  ⏰ Turn 3 attempt 2 timed out, retrying in 2s...
+  ⏰ Turn 3 attempt 2 failed (HTTPStatusError: 524 A timeout occurred), retrying in 2s...
   🔄 Turn 3 attempt 3/3...
-  ❌ Turn 3 failed after 3 attempts: TimeoutError
+  ❌ Turn 3 failed after 3 attempts: HTTPStatusError: 524 A timeout occurred
 ```
 
 ### Summary Statistics
