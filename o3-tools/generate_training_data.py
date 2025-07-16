@@ -290,22 +290,19 @@ def create_training_example(program_data: Dict, task_data: Dict) -> Dict:
     program = program_data['program']
     
     # Run the program on each training input to get what it actually produces
-    has_invalid_output = False
     for example in task_data['train']:
         train_input = example['input']
         predicted_output, error, timed_out = execute_program(program, train_input)
         
-        # If the program runs successfully, use its output; otherwise skip this example
+        # If the program runs successfully, validate and use its output
         if predicted_output is not None and not error and not timed_out:
-            # Validate that predicted_output is a proper 2D grid, not a scalar
+            # Strict validation: reject entire program if ANY output is not a proper 2D grid
             if not isinstance(predicted_output, list):
-                # Skip this example - program returned wrong type
-                has_invalid_output = True
-                continue
-            if len(predicted_output) == 0 or not isinstance(predicted_output[0], list):
-                # Skip this example - not a proper 2D grid  
-                has_invalid_output = True
-                continue
+                raise ValueError(f"Program returned invalid output format: expected list, got {type(predicted_output).__name__}")
+            if len(predicted_output) == 0:
+                raise ValueError(f"Program returned empty grid")
+            if not isinstance(predicted_output[0], list):
+                raise ValueError(f"Program returned 1D list instead of 2D grid")
                 
             modified_example = {
                 'input': train_input,
@@ -315,8 +312,6 @@ def create_training_example(program_data: Dict, task_data: Dict) -> Dict:
     
     # Only proceed if we have at least one successful execution
     if not modified_task_data['train']:
-        if has_invalid_output:
-            raise ValueError(f"Program returned invalid output format (integers instead of 2D grids)")
         raise ValueError(f"Program failed to run on all {len(task_data['train'])} training examples")
     
     # Create system message
@@ -431,39 +426,53 @@ def main():
     
     print(f"\nQualified programs: {len(qualified_programs)}")
     
-    # Generate training examples
+    # Generate training examples (in parallel)
     training_examples = []
     programs_with_at_least_one_correct = 0
     validation_mismatches = 0
     invalid_output_programs = 0
+    processed_examples = 0
     
-    for prog_info in qualified_programs:
-        try:
-            training_example = create_training_example(
-                prog_info['program_data'], 
-                prog_info['task_data']
-            )
-            training_examples.append(training_example)
+    print(f"Generating training examples from {len(qualified_programs)} qualified programs in parallel...")
+    
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all training example generation jobs
+        future_to_info = {executor.submit(create_training_example, prog_info['program_data'], prog_info['task_data']): prog_info 
+                         for prog_info in qualified_programs}
+        
+        # Collect results as they complete
+        for future in as_completed(future_to_info):
+            prog_info = future_to_info[future]
+            processed_examples += 1
             
-            # Track programs with at least one originally correct answer
-            prog_data = prog_info['program_data']
-            solved_count = prog_data.get('validated_solved_count', 0)
+            # Progress reporting every 100 programs
+            if processed_examples % 100 == 0:
+                print(f"  Generated {len(training_examples)} examples from {processed_examples}/{len(qualified_programs)} programs ({processed_examples/len(qualified_programs)*100:.1f}%)...")
             
-            if solved_count > 0:
-                programs_with_at_least_one_correct += 1
-            
-            # Check for validation mismatches (if we have logged data to compare)
-            if 'logged_solved_count' in prog_data:
-                logged_count = prog_data['logged_solved_count']
-                if logged_count != solved_count:
-                    validation_mismatches += 1
-                    if validation_mismatches <= 3:  # Only print first few to avoid spam
-                        print(f"  ⚠️  Validation mismatch - Task {prog_data.get('task_id', 'unknown')}: logged={logged_count}, validated={solved_count}")
+            try:
+                training_example = future.result()
+                training_examples.append(training_example)
                 
-        except Exception as e:
-            if "invalid output format" in str(e):
-                invalid_output_programs += 1
-            print(f"  Warning: Error creating training example: {e}")
+                # Track programs with at least one originally correct answer
+                prog_data = prog_info['program_data']
+                solved_count = prog_data.get('validated_solved_count', 0)
+                
+                if solved_count > 0:
+                    programs_with_at_least_one_correct += 1
+                
+                # Check for validation mismatches (if we have logged data to compare)
+                if 'logged_solved_count' in prog_data:
+                    logged_count = prog_data['logged_solved_count']
+                    if logged_count != solved_count:
+                        validation_mismatches += 1
+                        if validation_mismatches <= 3:  # Only print first few to avoid spam
+                            print(f"  ⚠️  Validation mismatch - Task {prog_data.get('task_id', 'unknown')}: logged={logged_count}, validated={solved_count}")
+                    
+            except Exception as e:
+                if any(phrase in str(e) for phrase in ["invalid output format", "1D list instead", "empty grid"]):
+                    invalid_output_programs += 1
+                if processed_examples % 500 == 0:  # Only print errors occasionally to avoid spam
+                    print(f"  Warning: Error creating training example: {e}")
     
     print(f"Generated {len(training_examples)} training examples")
     
@@ -483,8 +492,8 @@ def main():
         
     # Report invalid output programs
     if invalid_output_programs > 0:
-        print(f"⚠️  Invalid output format: {invalid_output_programs} programs returned integers instead of 2D grids")
-        print(f"   This suggests programs need to return [[value]] instead of value for 1x1 grids")
+        print(f"⚠️  Invalid output format: {invalid_output_programs} programs returned non-2D-grid outputs")
+        print(f"   These programs were rejected entirely for format violations")
     else:
         print(f"✅ All programs returned valid 2D grid formats")
     
