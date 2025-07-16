@@ -1,5 +1,140 @@
 # Experiment Notes
 
+## See if fine-tuning on hindsight relabelled data helps
+
+### fine-tuning
+For this,  I fine-tuned on ~2,200 rows of hindsight relabelled programs (with at least one training example wrong) from the arc-agi-2025 repo. Fine-tuning took about 25 mins on a H100.
+
+For this, I split out a random 32 rows of data to use as a validation dataset during fine-tuning. Probably I need to de-dup because train and validation loss followed each other very closely, probably too closely for the validation set to be a good indicator of generalisation (note that this just means it's hard to know if I trained for long enough or too long, it doesn't mean we're cheating on testing).
+
+### Running tests
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url https://9433j1ookvmo7y-8000.proxy.runpod.net/v1
+```
+
+...
+
+## Measure baseline Qwen3 performance with reasoning
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 25 --max_turns 8 --model qwen/qwen3-32b --independent-attempts --base-url https://openrouter.ai/api/v1 --limit 1
+```
+is far too slow - it's 50 toks... So I tried with runpod and moving to a faster MoE model, testing first:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 1 --max_workers 64 --max_turns 1 --model Qwen/Qwen3-30B-A3B-FP8 --independent-attempts --base-url https://9433j1ookvmo7y-8000.proxy.runpod.net/v1 --limit 1
+```
+which runs at 170 toks, then running:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 16 --max_turns 8 --model Qwen/Qwen3-30B-A3B-FP8 --independent-attempts --base-url https://9433j1ookvmo7y-8000.proxy.runpod.net/v1
+```
+which runs at about 70 toks. This is still too slow for today so I'm trying the 4B model:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 16 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url https://9433j1ookvmo7y-8000.proxy.runpod.net/v1
+```
+this does about 100 toks (1705 total tokens). BTW, it's faster to increase batch size, it's just you may hit timeouts on individual requests.
+
+Running with a bit larger batch size to get speed-up:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 1 --max_workers 1 --max_turns 1 --model Qwen/Qwen3-4B --independent-attempts --base-url https://9433j1ookvmo7y-8000.proxy.runpod.net/v1 --limit 1
+```
+and then in bulk:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url https://9433j1ookvmo7y-8000.proxy.runpod.net/v1
+```
+which runs at about 87 toks (2800 total tokens per second).
+
+I realised the runpod proxy has a 100 second timeout causing issues:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url http://157.66.254.42:15712/v1
+```
+
+
+Trying to beat gpt-4.1-mini (similar to gpt-4.1 in performance), so we're trying to beat about 15 and 37% with one and up to 8 attempts.
+
+
+## 2025 15th July
+
+### Objective: Use collected programs along with hindsight relabelling to generate a training dataset for gpt-4.1-nano and then run that.
+
+**Approach:**
+I just took a small subset of ~50 samples from across my log files and made some hindsight relabelling data.
+
+I've got a trained model: `ft:gpt-4.1-nano-2025-04-14:trelis-ltd:15-jul-smol-test:BtaYzBKJ`. This is only trained on a tiny bit of data.
+
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 25 --max_turns 8 --model ft:gpt-4.1-nano-2025-04-14:trelis-ltd:15-jul-smol-test:BtaYzBKJ --independent-attempts
+```
+
+Baseline to beat is about is about 15 and 37% with one and up to 8 attempts.
+
+Problem: `ft:gpt-4.1-nano-2025-04-14:trelis-ltd:15-jul-smol-test:BtaYzBKJ` was trained with the original train outputs, not relabelled!
+
+Fixed that and will re-run:
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
+Dataset: arc-agi-1
+Subset: gpt-4.1-mini-calib-train
+Model: ft:gpt-4.1-nano-2025-04-14:trelis-ltd:jul-15-v2-smol-test:Btb3wOvs
+Number of runs: 3
+API failures excluded from analysis: YES
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 25 --max_turns 8 --model ft:gpt-4.1-nano-2025-04-14:trelis-ltd:jul-15-v2-smol-test:Btb3wOvs --independent-attempts
+```
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    46         1              3              2.2%           6.5%          
+2    46         0              6              0.0%           13.0%         
+3    46         2              4              4.3%           8.7%          
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 2.2%
+  Std Dev: 2.2%
+  95% CI: [-2.1%, 6.4%]
+
+All Attempts Success Rate:
+  Mean: 9.4%
+  Std Dev: 3.3%
+  95% CI: [2.9%, 15.9%]
+
+Which is worse than a baseline of:
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
+```bash
+ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-nano --independent-attempts
+```
+Dataset: arc-agi-1
+Subset: gpt-4.1-mini-calib-train
+Model: gpt-4.1-nano
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    46         5              9              10.9%          19.6%         
+2    46         3              12             6.5%           26.1%         
+3    46         3              11             6.5%           23.9%         
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 8.0%
+  Std Dev: 2.5%
+  95% CI: [3.1%, 12.9%]
+
+All Attempts Success Rate:
+  Mean: 23.2%
+  Std Dev: 3.3%
+  95% CI: [16.7%, 29.7%]
+
+
 ## 2025 12th July
 
 ### Testing only on images, no text grids!

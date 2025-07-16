@@ -18,12 +18,13 @@ from scoring import GridScorer, ProgramExecutor
 
 load_dotenv()
 
-def execute_with_timeout(func, *args, timeout=300, **kwargs):
+def execute_with_timeout(func, *args, timeout=1000, **kwargs):
     """Execute a function with timeout using ThreadPoolExecutor"""
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(func, *args, **kwargs)
         try:
-            return future.result(timeout=timeout)
+            result = future.result(timeout=timeout)
+            return result
         except Exception as e:
             # Cancel the future if it's still running
             future.cancel()
@@ -69,6 +70,9 @@ class ARCTaskRunner:
         # Thread-safe progress tracking
         self._progress_lock = threading.Lock()
         self.completed_tasks = 0
+        
+        # Enable debug extraction for troubleshooting
+        self._debug_extraction = True
         
         self.headers = {
             'Authorization': f'Bearer {self.api_key}',
@@ -232,6 +236,13 @@ def transform(grid):
                 if self.reasoning_effort in reasoning_tokens:
                     kwargs["max_tokens"] = reasoning_tokens[self.reasoning_effort]
             
+            # Add Qwen-specific parameters for thinking models (only for custom endpoints)
+            if "qwen" in self.model.lower() and self.base_url:
+                kwargs.update({
+                    "temperature": 0.6,
+                    "top_p": 0.95
+                })
+            
             # Make the API call
             response = self.client.chat.completions.create(**kwargs)
             
@@ -363,31 +374,41 @@ def transform(grid):
         
         # Get the full text from response
         full_text = ""
+        reasoning_text = ""
         
         # Extract from Chat Completions API structure
         if hasattr(response, 'choices') and len(response.choices) > 0:
             message = response.choices[0].message
             if hasattr(message, 'content') and message.content:
                 full_text = message.content
+            # Also check reasoning field (for models like Qwen via OpenRouter)
+            if hasattr(message, 'reasoning') and message.reasoning:
+                reasoning_text = message.reasoning
+            # Also check reasoning_content field (for models like Qwen via RunPod)
+            if hasattr(message, 'reasoning_content') and message.reasoning_content:
+                reasoning_text += "\n\n" + message.reasoning_content if reasoning_text else message.reasoning_content
+        
+        # Combine both content and reasoning for code extraction
+        combined_text = full_text + "\n\n" + reasoning_text if reasoning_text else full_text
         
         # First priority: look for code after "Final answer:"
-        final_answer_match = re.search(r'Final answer:\s*```python\s*\n(.*?)\n```', full_text, re.DOTALL | re.IGNORECASE)
+        final_answer_match = re.search(r'Final answer:\s*```python\s*\n(.*?)\n```', combined_text, re.DOTALL | re.IGNORECASE)
         if final_answer_match:
             return final_answer_match.group(1).strip()
         
         # Second priority: last ```python block 
-        python_blocks = re.findall(r'```python\s*\n(.*?)\n```', full_text, re.DOTALL)
+        python_blocks = re.findall(r'```python\s*\n(.*?)\n```', combined_text, re.DOTALL)
         if python_blocks:
             return python_blocks[-1].strip()
         
         # Third priority: any ``` block with def transform
-        code_blocks = re.findall(r'```\s*\n(.*?)\n```', full_text, re.DOTALL)
+        code_blocks = re.findall(r'```\s*\n(.*?)\n```', combined_text, re.DOTALL)
         for block in reversed(code_blocks):  # Check from last to first
             if 'def transform' in block:
                 return block.strip()
         
         # Last resort: extract def transform function without code blocks
-        transform_match = re.search(r'(def transform.*?)(?=\n\S|\n*$)', full_text, re.DOTALL)
+        transform_match = re.search(r'(def transform.*?)(?=\n\S|\n*$)', combined_text, re.DOTALL)
         if transform_match:
             return transform_match.group(1).strip()
         
@@ -408,7 +429,9 @@ def transform(grid):
                         'completion_tokens': response.usage.completion_tokens if response.usage else 0,
                         'total_tokens': response.usage.total_tokens if response.usage else 0
                     },
-                    'content': response.choices[0].message.content if response.choices else ""
+                    'content': response.choices[0].message.content if response.choices else "",
+                    'reasoning': response.choices[0].message.reasoning if response.choices and hasattr(response.choices[0].message, 'reasoning') else None,
+                    'reasoning_content': response.choices[0].message.reasoning_content if response.choices and hasattr(response.choices[0].message, 'reasoning_content') else None
                 }
             except Exception as e:
                 response_dict = {'error': f'Failed to serialize response: {str(e)}'}
@@ -426,7 +449,9 @@ def transform(grid):
                             'completion_tokens': resp.usage.completion_tokens if resp.usage else 0,
                             'total_tokens': resp.usage.total_tokens if resp.usage else 0
                         },
-                        'content': resp.choices[0].message.content if resp.choices else ""
+                        'content': resp.choices[0].message.content if resp.choices else "",
+                        'reasoning': resp.choices[0].message.reasoning if resp.choices and hasattr(resp.choices[0].message, 'reasoning') else None,
+                        'reasoning_content': resp.choices[0].message.reasoning_content if resp.choices and hasattr(resp.choices[0].message, 'reasoning_content') else None
                     })
                 except Exception as e:
                     all_responses_dict.append({'error': f'Failed to serialize response: {str(e)}'})
@@ -716,59 +741,138 @@ def transform(grid):
 
     def run_task(self, task_id: str, task_data: Dict, total_tasks: int = 1) -> Dict:
         """Run a single ARC task using multi-turn local code execution"""
-        if self.max_workers == 1:  # Only print for sequential execution
-            print(f"\nProcessing task: {task_id}")
+        print(f"🔍 DEBUG TASK: Starting run_task for {task_id}")
         
-        # Apply rate limiting if configured
-        if self.rate_limit_delay > 0:
-            time.sleep(self.rate_limit_delay)
-        
-        # Choose execution mode based on independent_attempts flag
-        if self.independent_attempts:
-            return self.run_task_independent_attempts(task_id, task_data, total_tasks)
-        else:
-            return self.run_task_multiturn(task_id, task_data, total_tasks)
+        try:
+            # Validate task_data structure
+            if not isinstance(task_data, dict):
+                raise ValueError(f"task_data is not a dict, got {type(task_data)}")
+            
+            if 'train' not in task_data:
+                raise ValueError("task_data missing 'train' key")
+            
+            if 'test' not in task_data:
+                raise ValueError("task_data missing 'test' key")
+            
+            if not isinstance(task_data['train'], list):
+                raise ValueError(f"task_data['train'] is not a list, got {type(task_data['train'])}")
+            
+            if not isinstance(task_data['test'], list):
+                raise ValueError(f"task_data['test'] is not a list, got {type(task_data['test'])}")
+            
+            if len(task_data['test']) == 0:
+                raise ValueError("task_data['test'] is empty")
+            
+            print(f"🔍 DEBUG TASK: Task data validation passed for {task_id}")
+            print(f"🔍 DEBUG TASK: Train examples: {len(task_data['train'])}, Test examples: {len(task_data['test'])}")
+            
+            if self.max_workers == 1:  # Only print for sequential execution
+                print(f"\nProcessing task: {task_id}")
+            
+            # Apply rate limiting if configured
+            if self.rate_limit_delay > 0:
+                time.sleep(self.rate_limit_delay)
+            
+            print(f"🔍 DEBUG TASK: About to choose execution mode. independent_attempts = {self.independent_attempts}")
+            
+            # Choose execution mode based on independent_attempts flag
+            if self.independent_attempts:
+                print(f"🔍 DEBUG TASK: Calling run_task_independent_attempts for {task_id}")
+                result = self.run_task_independent_attempts(task_id, task_data, total_tasks)
+            else:
+                print(f"🔍 DEBUG TASK: Calling run_task_multiturn for {task_id}")
+                result = self.run_task_multiturn(task_id, task_data, total_tasks)
+            
+            print(f"🔍 DEBUG TASK: Execution completed for {task_id}, result type: {type(result)}")
+            return result
+            
+        except Exception as e:
+            print(f"🔍 DEBUG TASK: Exception in run_task for {task_id}: {type(e).__name__}: {str(e)}")
+            import traceback
+            print(f"🔍 DEBUG TASK: Full traceback:")
+            traceback.print_exc()
+            
+            # Create a failure result for the exception
+            return {
+                'task_id': task_id,
+                'model': self.model,
+                'reasoning_effort': self.reasoning_effort,
+                'api_type': 'chat_completions_independent_attempts' if self.independent_attempts else 'chat_completions_multiturn',
+                'program': '',
+                'execution_error': f'Task setup failed: {str(e)}',
+                'timed_out': False,
+                'tokens_used': 0,
+                'request_cost': 0.0,
+                'turns_used': 0,
+                'raw_response': None,
+                'score': {
+                    'correct': False,
+                    'pixel_accuracy': 0.0,
+                    'total_pixels': 0,
+                    'correct_pixels': 0,
+                    'error': f'Task setup failed: {str(e)}'
+                },
+                'api_success': False,
+            }
     
     def run_task_independent_attempts(self, task_id: str, task_data: Dict, total_tasks: int = 1) -> Dict:
         """Run independent attempts without feedback - multiple fresh starts with the same initial prompt"""
+        print(f"🔍 DEBUG INDEPENDENT: Starting independent attempts for task {task_id}")
+        print(f"🔍 DEBUG INDEPENDENT: max_turns = {self.max_turns}")
+        
         total_cost = 0.0
         total_tokens = 0
         all_responses = []
         attempt_details = []  # Track details of each attempt
         
         try:
+            print(f"🔍 DEBUG INDEPENDENT: About to start attempt loop for {task_id}")
             for attempt in range(self.max_turns):
+                print(f"🔍 DEBUG INDEPENDENT: Starting attempt {attempt + 1}/{self.max_turns} for {task_id}")
                 attempt_start_time = datetime.datetime.now()
                 if self.max_workers == 1:  # Only print detailed logs for sequential execution
                     print(f"  🔄 Attempt {attempt + 1}/{self.max_turns}...")
                 
                 # Create fresh conversation for each attempt
+                print(f"🔍 DEBUG INDEPENDENT: Creating system message for {task_id}")
                 system_msg = {"role": "system", "content": "You are an expert at solving abstract reasoning puzzles. Write clean, efficient Python code."}
+                print(f"🔍 DEBUG INDEPENDENT: Creating initial prompt for {task_id}")
                 initial_prompt_messages = self.create_prompt(task_data, is_first_turn=True, task_id=task_id, turn=attempt + 1)
+                print(f"🔍 DEBUG INDEPENDENT: Prompt created successfully for {task_id}")
                 conversation_history = [system_msg, {"role": "user", "content": initial_prompt_messages}]
                 
                 # Make API call with timeout and retry logic
+                print(f"🔍 DEBUG INDEPENDENT: About to make API call for {task_id} attempt {attempt + 1}")
                 response = None
                 api_call_successful = False
                 
                 for retry_attempt in range(3):  # 3 attempts total (initial + 2 retries)
                     try:
-                        if self.max_workers == 1 and retry_attempt > 0:
-                            print(f"     🔄 Attempt {attempt + 1} retry {retry_attempt + 1}/3...")
+                        if retry_attempt == 0:
+                            print(f"🔍 DEBUG INDEPENDENT: API call (first attempt) for {task_id} attempt {attempt + 1}")
+                        else:
+                            print(f"🔍 DEBUG INDEPENDENT: API call (retry {retry_attempt}/2) for {task_id} attempt {attempt + 1}")
                         
-                        response = execute_with_timeout(self.call_chat_completions_api, conversation_history, timeout=150)
+                        if self.max_workers == 1 and retry_attempt > 0:
+                            print(f"     🔄 Attempt {attempt + 1} retry {retry_attempt}/2...")
+                        
+                        response = execute_with_timeout(self.call_chat_completions_api, conversation_history, timeout=1000)
                         api_call_successful = True
                         break  # Success!
                         
                     except Exception as e:
+                        error_type = type(e).__name__
+                        error_msg = str(e)
                         if retry_attempt < 2:  # Can still retry
                             if self.max_workers == 1:
-                                print(f"     ⏰ Attempt {attempt + 1} retry {retry_attempt + 1} timed out, retrying in 2s...")
+                                print(f"     ⏰ Attempt {attempt + 1} retry {retry_attempt + 1} failed ({error_type}: {error_msg}), retrying in 2s...")
+                            print(f"🔍 DEBUG INDEPENDENT: API retry {retry_attempt + 1}/2 for {task_id} attempt {attempt + 1} - Error: {error_type}: {error_msg}")
                             time.sleep(2)  # Brief backoff
                             continue
                         else:  # All retries exhausted
                             if self.max_workers == 1:
-                                print(f"     ❌ Attempt {attempt + 1} failed after 3 retries: {str(e)}")
+                                print(f"     ❌ Attempt {attempt + 1} failed after 3 retries: {error_type}: {error_msg}")
+                            print(f"🔍 DEBUG INDEPENDENT: All retries exhausted for {task_id} attempt {attempt + 1} - Final error: {error_type}: {error_msg}")
                             # Return timeout failure result
                             self._update_costs(total_cost, total_tokens)
                             return self.create_timeout_failure_result(task_id, total_cost, total_tokens, attempt, task_data, conversation_history, all_responses, attempt_details)
@@ -845,25 +949,41 @@ def transform(grid):
                         
                         return self.create_success_result(task_id, program, response, test_score, total_cost, total_tokens, attempt + 1, task_data, None, all_responses, attempt_details, is_independent_attempts=True)
                 else:
-                    # Execution failed
+                    # Execution failed - record the failure and continue to next attempt
                     attempt_detail['test_result'] = {
                         'execution_error': error,
                         'timed_out': timed_out,
                         'predicted_output': predicted_output
                     }
+                    attempt_detail['status'] = 'failed_test'
+                    attempt_details.append(attempt_detail)
+                    
+                    if self.max_workers == 1:
+                        print(f"     📊 Attempt {attempt + 1} failed test - continuing to next attempt")
+                    
+                    # Continue to next attempt (no feedback in independent mode)
+                    continue
                 
+                # If we get here, the test passed but wasn't correct - also continue to next attempt
                 attempt_detail['status'] = 'failed_test'
                 attempt_details.append(attempt_detail)
                 
                 if self.max_workers == 1:
-                    print(f"     📊 Attempt {attempt + 1} failed test")
+                    print(f"     📊 Attempt {attempt + 1} failed test - continuing to next attempt")
             
             # Failed after all attempts
+            print(f"🔍 DEBUG INDEPENDENT: Completed all {self.max_turns} attempts for {task_id}")
+            print(f"🔍 DEBUG INDEPENDENT: Total responses collected: {len(all_responses)}")
+            print(f"🔍 DEBUG INDEPENDENT: Total cost: ${total_cost:.6f}")
             self._update_costs(total_cost, total_tokens)
             
             return self.create_failure_result(task_id, program if 'program' in locals() else "", all_responses, total_cost, total_tokens, self.max_turns, task_data, "All attempts failed", None, attempt_details, is_independent_attempts=True)
         
         except Exception as e:
+            print(f"🔍 DEBUG INDEPENDENT: Exception in independent attempts for {task_id}: {type(e).__name__}: {str(e)}")
+            import traceback
+            print(f"🔍 DEBUG INDEPENDENT: Full traceback:")
+            traceback.print_exc()
             print(f"     ❌ Independent attempts execution failed: {e}")
             self._update_costs(total_cost, total_tokens)
             
@@ -895,21 +1015,28 @@ def transform(grid):
                 for attempt in range(3):  # 3 attempts total (initial + 2 retries)
                     try:
                         if self.max_workers == 1 and attempt > 0:
-                            print(f"     🔄 Turn {turn + 1} attempt {attempt + 1}/3...")
+                            print(f"     🔄 Turn {turn + 1} retry {attempt}/2...")
                         
-                        response = execute_with_timeout(self.call_chat_completions_api, conversation_history, timeout=150)
+                        response = execute_with_timeout(self.call_chat_completions_api, conversation_history, timeout=1000)
                         api_call_successful = True
                         break  # Success!
                         
                     except Exception as e:
+                        error_type = type(e).__name__
+                        error_msg = str(e)
                         if attempt < 2:  # Can still retry
                             if self.max_workers == 1:
-                                print(f"     ⏰ Turn {turn + 1} attempt {attempt + 1} timed out, retrying in 2s...")
+                                if attempt == 0:
+                                    print(f"     ⏰ Turn {turn + 1} first attempt failed ({error_type}: {error_msg}), retrying in 2s...")
+                                else:
+                                    print(f"     ⏰ Turn {turn + 1} retry {attempt} failed ({error_type}: {error_msg}), retrying in 2s...")
+                            print(f"🔍 DEBUG MULTITURN: API retry {attempt + 1}/2 for {task_id} turn {turn + 1} - Error: {error_type}: {error_msg}")
                             time.sleep(2)  # Brief backoff
                             continue
                         else:  # All retries exhausted
                             if self.max_workers == 1:
-                                print(f"     ❌ Turn {turn + 1} failed after 3 attempts: {str(e)}")
+                                print(f"     ❌ Turn {turn + 1} failed after 3 attempts: {error_type}: {error_msg}")
+                            print(f"🔍 DEBUG MULTITURN: All retries exhausted for {task_id} turn {turn + 1} - Final error: {error_type}: {error_msg}")
                             # Return timeout failure result
                             self._update_costs(total_cost, total_tokens)
                             return self.create_timeout_failure_result(task_id, total_cost, total_tokens, turn, task_data, conversation_history, all_responses, turn_details)
@@ -1087,12 +1214,29 @@ Make sure to include the function definition inside a proper code block."""
 
     def run_subset(self, subset_name: str, dataset: str = "arc-agi-1", limit: Optional[int] = None) -> List[Dict]:
         """Run all tasks in a subset with optional parallelization"""
-        tasks = self.task_loader.load_tasks_from_subset(subset_name, dataset)
+        print(f"🔍 DEBUG SUBSET: Loading tasks from {dataset}/{subset_name}")
         
-        if limit:
-            tasks = tasks[:limit]
-        
-        total_tasks = len(tasks)
+        try:
+            tasks = self.task_loader.load_tasks_from_subset(subset_name, dataset)
+            print(f"🔍 DEBUG SUBSET: Loaded {len(tasks)} tasks successfully")
+            
+            if limit:
+                tasks = tasks[:limit]
+                print(f"🔍 DEBUG SUBSET: Limited to {len(tasks)} tasks")
+            
+            total_tasks = len(tasks)
+            print(f"🔍 DEBUG SUBSET: Total tasks to process: {total_tasks}")
+            
+            # Debug first few task IDs
+            if tasks:
+                first_few = [task_id for task_id, _ in tasks[:3]]
+                print(f"🔍 DEBUG SUBSET: First few task IDs: {first_few}")
+            
+        except Exception as e:
+            print(f"🔍 DEBUG SUBSET: Error loading tasks: {type(e).__name__}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return []
         
         # Print configuration info
         print(f"\nRunning {total_tasks} tasks from {dataset}/{subset_name}")
@@ -1138,18 +1282,46 @@ Make sure to include the function definition inside a proper code block."""
             
             def process_task(task_info):
                 task_id, task_data = task_info
-                if self.max_workers > 1:
-                    print(f"[{task_id}] Starting...")
-                result = self.run_task(task_id, task_data, total_tasks)
-                # Save individual result
-                self.save_result(result)
-                if self.max_workers > 1:
-                    status = "✅ SOLVED" if result.get('score', {}).get('correct', False) else "❌ FAILED"
-                    cost = result.get('request_cost', 0.0)
-                    turns = result.get('turns_used', 1)
-                    units = "attempts" if self.independent_attempts else "turns"
-                    print(f"[{task_id}] {status} (${cost:.6f}, {turns} {units})")
-                return result
+                print(f"🔍 DEBUG PARALLEL: [Thread {threading.get_ident()}] Starting process_task for {task_id}")
+                
+                try:
+                    if self.max_workers > 1:
+                        print(f"[{task_id}] Starting...")
+                    
+                    print(f"🔍 DEBUG PARALLEL: [Thread {threading.get_ident()}] About to call run_task for {task_id}")
+                    result = self.run_task(task_id, task_data, total_tasks)
+                    print(f"🔍 DEBUG PARALLEL: [Thread {threading.get_ident()}] run_task completed for {task_id}")
+                    
+                    # Save individual result
+                    self.save_result(result)
+                    print(f"🔍 DEBUG PARALLEL: [Thread {threading.get_ident()}] Result saved for {task_id}")
+                    
+                    if self.max_workers > 1:
+                        status = "✅ SOLVED" if result.get('score', {}).get('correct', False) else "❌ FAILED"
+                        cost = result.get('request_cost', 0.0)
+                        turns = result.get('turns_used', 1)
+                        units = "attempts" if self.independent_attempts else "turns"
+                        print(f"[{task_id}] {status} (${cost:.6f}, {turns} {units})")
+                    
+                    return result
+                    
+                except Exception as e:
+                    print(f"🔍 DEBUG PARALLEL: [Thread {threading.get_ident()}] Exception in process_task for {task_id}: {type(e).__name__}: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
+                    
+                    # Return a minimal error result
+                    return {
+                        'task_id': task_id,
+                        'model': self.model,
+                        'reasoning_effort': self.reasoning_effort,
+                        'execution_error': f'process_task failed: {str(e)}',
+                        'tokens_used': 0,
+                        'request_cost': 0.0,
+                        'turns_used': 0,
+                        'score': {'correct': False, 'pixel_accuracy': 0.0, 'total_pixels': 0, 'correct_pixels': 0},
+                        'api_success': False,
+                    }
             
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                 # Submit all tasks
@@ -1540,8 +1712,8 @@ def main():
     # Validate max_workers
     if args.max_workers < 1:
         parser.error("--max_workers must be at least 1")
-    if args.max_workers > 30:
-        parser.error("--max_workers cannot exceed 30 (OpenAI rate limits)")
+    if args.max_workers > 128:
+        parser.error("--max_workers cannot exceed 128 (practical limit)")
     
     # Validate rate_limit_delay
     if args.rate_limit_delay < 0:

@@ -19,9 +19,14 @@ Objective: Define a test that is a representative measure of performance while a
 - MEDIUM:
 [x] Describing grids ablation: Get the model to also describe the input grid and the output grid with code (so, return three code blocks), and provide feedback on those too. DONE AND IN A DEDICATED BRANCH.
 [x] Port the scripts to an openai style endpoint. Run Qwen and try to calibrate.
-[ ] Generate training data.
-[ ] Train.
-wil
+[x] Generate training data.
+  [x] Extract programs from log files with partial success criteria
+  [x] Create JSONL format for fine-tuning
+  [x] Support validation splits
+  [ ] Use the hindsight relabelling trick.
+  [ ] Use the reversal trick.
+  [ ] Use the augmentation trick (how to make that directed)???
+
 - SLOW:
 ...
 
@@ -74,7 +79,7 @@ Completed:
 - Run ARC-AGI tasks with any OpenAI-compatible language model API
 - Support for custom API endpoints (Claude, Qwen, DeepSeek, local models, etc.)
 - Multi-turn execution with training examples feedback
-- **Robust timeout handling** with automatic retries (300s timeout, 3 attempts per turn)
+- **Robust timeout handling** with automatic retries (1000s timeout, 3 attempts per turn)
 - Comprehensive scoring including pixel accuracy and binary correctness
 - Budget tracking with token usage and cost estimation
 - Detailed logging of all runs for analysis
@@ -157,6 +162,16 @@ For compatible models that support reasoning (e.g., Gemini Flash via OpenRouter)
 - `--reasoning_effort high`: 64,000 reasoning tokens
 
 Works with OpenRouter and other compatible APIs that detect reasoning-capable models automatically.
+
+### Thinking Tokens Capture
+
+The tool automatically detects and logs thinking tokens from models that provide them:
+
+- **Qwen models** (via OpenRouter): Reasoning captured in separate `reasoning` field
+- **o1/o3 models** (via OpenAI): Hidden reasoning tokens captured when available
+- **Other models**: Standard content logging
+
+All reasoning data is preserved in logs for analysis. The code extraction also searches both content and reasoning fields, ensuring no code is missed regardless of where models place their solutions.
 
 ### Available Subsets
 
@@ -258,6 +273,126 @@ All plots saved in: plots/
 - **Identify patterns**: Spot when models oscillate between solutions
 - **Visual analysis**: Compare predicted vs expected outputs side-by-side
 - **Progress tracking**: Monitor training vs test performance across turns
+
+## Training Data Generation
+
+The `generate_training_data.py` tool extracts programs from log files to create fine-tuning training data in JSONL format.
+
+### Key Features
+
+- **Parallel processing**: Uses all CPU cores minus 2 for maximum speed (typically 6-10x faster)
+- **Extracts valid programs**: From both multi-turn and independent attempts logs
+- **Filters by criteria**: Only includes programs with partial success (at least one training example wrong)
+- **Creates proper format**: System/user/assistant messages ready for fine-tuning APIs
+- **Validation splits**: Optional task-level validation sets (10% or 32 examples, whichever is smaller)
+- **Proper task separation**: Validation uses complete tasks, ensuring no data leakage between training and validation
+- **Multi-dataset support**: Automatically finds tasks in both ARC-AGI-1 and ARC-AGI-2
+
+### Usage
+
+```bash
+# Generate training data from the last 100 log files (automatically uses all cores - 2)
+uv run python generate_training_data.py --limit 100
+
+# Generate from all log files with validation split
+uv run python generate_training_data.py --validation --output 16-jul-lorge.jsonl
+
+# Specify custom output filename
+uv run python generate_training_data.py --limit 500 --output my_training_data.jsonl
+
+# Generate with validation split and custom name
+uv run python generate_training_data.py --limit 1000 --validation --output arc_training_data.jsonl
+```
+
+**Performance**: The script automatically uses `total_cores - 2` worker processes for parallel processing, leaving 2 cores available for system tasks. This typically provides **6-10x speedup** over single-threaded processing.
+
+### Output Files
+
+**Files are saved in the `o3-tools/training_data/` directory:**
+
+- **Without validation**: `training_data_YYYYMMDD_HHMMSS.jsonl`
+- **With validation**: 
+  - `training_data_YYYYMMDD_HHMMSS_train.jsonl` (examples from ~90% of tasks)
+  - `training_data_YYYYMMDD_HHMMSS_val.jsonl` (examples from ~10% of tasks, targeting 32 examples max)
+
+**Note**: Validation split ensures complete task separation - no task appears in both training and validation sets.
+
+### Selection Criteria
+
+Programs are included if they:
+- ✅ Have valid Python code that runs without errors
+- ✅ Solve at least one training example correctly (shows partial understanding)
+- ✅ Fail on at least one training example (provides learning opportunity)
+- ❌ Excluded if they solve all training examples (no room for improvement)
+- ❌ Excluded if they fail to run or have no extracted code
+
+### Training Data Format
+
+**Important**: Training examples use **program-generated outputs**, not ground truth outputs:
+- **Training inputs**: Original task data inputs
+- **Training outputs**: What the program actually produces when run on training inputs
+- **Test input**: Original task data input  
+- **Program**: The partially-correct program that generated those outputs
+
+This ensures the model learns to generate programs that produce the specific input→output mappings shown, rather than learning from idealized correct mappings.
+
+### JSONL Format
+
+Each line contains a complete conversation:
+
+```json
+{
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are an expert at solving abstract reasoning puzzles. Write clean, efficient Python code."
+    },
+    {
+      "role": "user", 
+      "content": "You are solving an ARC task...[full prompt with program-generated training outputs]"
+    },
+    {
+      "role": "assistant",
+      "content": "Final answer:\n```python\ndef transform(grid):\n    # program code\n    return transformed_grid\n```"
+    }
+  ]
+}
+```
+
+### Example Output
+
+```
+Using 10 worker processes (total cores: 12)
+Processing 500 log files...
+  Processed 100/500 files...
+  Processed 200/500 files...
+  ...
+Found 2,847 total programs
+Validating programs in parallel...
+  Validated 50/2847 programs...
+  Validated 100/2847 programs...
+  Validated 200/2847 programs...
+  ...
+Qualified programs: 423
+Generated 423 training examples
+Saved training data to: training_data/training_data_train.jsonl (381 examples from 79 tasks)
+Saved validation data to: training_data/training_data_val.jsonl (42 examples from 10 tasks)
+Validation tasks: ['1ae2feb7', '27a77e38', '40f6cd08', 'aa300dc3', 'e8686506', ...]
+
+Statistics:
+  Unique tasks: 89
+  Average examples per task: 4.8
+  Tasks with most examples: [('task_123', 15), ('task_456', 12), ...]
+```
+
+**Performance**: Uses parallel processing with `total_cores - 2` workers for optimal speed. Typically achieves **6-10x speedup** compared to single-threaded processing. Progress updates appear every 100 log files and every 50 programs during validation.
+
+### Use Cases
+
+- **Fine-tune models**: Use the JSONL files directly with OpenAI's fine-tuning API
+- **Improve reasoning**: Train on partially-correct solutions to learn better pattern recognition
+- **Domain adaptation**: Adapt general models to ARC-specific reasoning patterns
+- **Validation**: Use the validation split to monitor training progress and prevent overfitting
 
 ## Repeated Runs with Statistical Analysis
 
@@ -421,7 +556,7 @@ The tool supports parallel execution to dramatically reduce wall-clock time for 
 
 ### Key Features
 
-- **Thread-based parallelization**: Up to 30 concurrent workers
+- **Thread-based parallelization**: Up to 128 concurrent workers
 - **Thread-safe execution**: Safe cost tracking, progress reporting, and file I/O
 - **Rate limiting**: Optional delays to respect API rate limits
 - **Progress tracking**: Real-time progress updates for parallel execution
@@ -433,7 +568,7 @@ The tool supports parallel execution to dramatically reduce wall-clock time for 
 # Run 10 tasks with 5 workers (2x speedup)
 uv run python run_arc_tasks.py --max_workers 5
 
-# Run 30 tasks with maximum parallelization (up to 30x speedup)
+# Run 30 tasks with high parallelization (30x speedup)
 uv run python run_arc_tasks.py --subset shortest_training_30 --max_workers 30
 
 # Run with rate limiting to avoid hitting API limits
@@ -472,7 +607,7 @@ The tool includes robust timeout handling to prevent hanging on API calls that t
 
 ### Key Features
 
-- **300-second timeout** per API call (5 minutes)
+- **1000-second timeout** per API call (16.7 minutes)
 - **3 retry attempts** per turn with 2-second backoff between retries
 - **Separate timeout failure tracking** - doesn't count as regular task failures
 - **Complete conversation preservation** during retries
@@ -482,7 +617,7 @@ The tool includes robust timeout handling to prevent hanging on API calls that t
 
 For each turn in a multi-turn conversation:
 
-1. **Initial attempt**: API call with 300-second timeout
+1. **Initial attempt**: API call with 1000-second timeout
 2. **Retry 1**: If timeout, wait 2 seconds and retry
 3. **Retry 2**: If timeout again, wait 2 seconds and final retry
 4. **Timeout failure**: If all 3 attempts fail, mark as timeout failure
@@ -526,12 +661,13 @@ Timeout failures: 2/30 (6.7%) ⏰
 Tasks solved correctly: 8/30 (26.7%)
 ```
 
-### Why 300 Seconds?
+### Why 1000 Seconds?
 
-The timeout is set to 300 seconds (5 minutes) because:
+The timeout is set to 1000 seconds (16.7 minutes) because:
 - **Medium reasoning effort** can take 2-4 minutes for complex tasks
 - **High reasoning effort** can take 4-8 minutes for difficult tasks
-- **Buffer time** accounts for network latency and API processing
+- **Very high reasoning effort** can take 8-15 minutes for extremely difficult tasks
+- **Buffer time** accounts for network latency, API processing, and RunPod response handling
 - **Balance** between patience and preventing indefinite hangs
 
 ### Log File Structure
@@ -865,8 +1001,10 @@ o3-tools/
 ├── run_arc_tasks.py             # Main script (Responses API only)
 ├── task_loader.py               # Load ARC tasks and subsets
 ├── scoring.py                   # Grid scoring
+├── generate_training_data.py    # Extract training data from logs
 ├── cleanup_logs.py             # Clean up log files
 ├── logs/                       # Results and summaries
+├── training_data/              # Generated JSONL training files
 └── README.md                   # This file
 ```
 
@@ -916,7 +1054,7 @@ uv run python run_arc_tasks.py --model llama-3.1-8b --base-url http://localhost:
 - You can control the maximum number of turns using --max_turns (default: 3). This is especially useful for limiting cost and runaway conversations.
 - **API Compatibility**: Works with any endpoint that implements OpenAI's Chat Completions API format
 - **Custom Endpoints**: Use --base-url to connect to Claude, local models, or other compatible APIs
-- **Parallelization**: Use `--max_workers` (1-30) to run tasks in parallel. Start with 5 workers and increase gradually while monitoring for rate limit errors. Use `--rate_limit_delay` to add delays between requests if needed.
+- **Parallelization**: Use `--max_workers` (1-128) to run tasks in parallel. Start with 5 workers and increase gradually while monitoring for rate limit errors. Use `--rate_limit_delay` to add delays between requests if needed.
 - **Cost Control**: Parallel execution accumulates costs faster but maintains the same per-task costs. Monitor total spending especially when using expensive models like o3 with many workers.
 - **Thread Safety**: All file I/O, progress tracking, and cost accumulation is thread-safe. Individual task logs use unique filenames with thread IDs to prevent conflicts.
 
