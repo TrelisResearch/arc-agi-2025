@@ -16,11 +16,10 @@ Folders:
 **Measuring Performance:**
 Objective: Define a test that is a representative measure of performance while also being fast to run. Currently using o4-mini on arc-agi-1 mit-medium. Will graduate to hard once we score 15+/20 consistently.
 
-**Levers/Tasks:**
-- FAST:
-...
+**Runpod One-click-template**
+Runpod One-click-template [here](https://console.runpod.io/deploy?template=agyu4xrpgl&ref=jmfkcdio) - swap out the model name if using a fine-tuned model.
 
-- MEDIUM:
+**Levers/Tasks:**
 [x] Generate training data.
   [x] Extract programs from log files with partial success criteria
   [x] Create JSONL format for fine-tuning
@@ -28,9 +27,6 @@ Objective: Define a test that is a representative measure of performance while a
   [ ] Use the hindsight relabelling trick.
   [ ] Use the reversal trick.
   [ ] Use the augmentation trick (how to make that directed)???
-
-- SLOW:
-...
 
 Other ideas:
 [ ] Ablate the costs of solving if we do o4-mini (low) versus o4-mini (high). Is it possibly better to use o4-mini (low) with 8 max turns versus o4-mini (high) with 4 max turns? Consider costs across three runs. (best to develop a script for doing this that calculates means etc.).
@@ -145,6 +141,9 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10
 
 # Use independent attempts mode instead of multi-turn feedback
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --max_turns 3 --independent-attempts
+
+# Disable thinking for Qwen models (sets enable_thinking=false and non-thinking sampling params)
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --model Qwen/Qwen3-4B --base-url http://localhost:8000/v1 --qwen-no-think
 
 # Available options:
 #   --dataset: arc-agi-1 or arc-agi-2

@@ -1,6 +1,20 @@
 # Experiment Notes
 
-## See if fine-tuning on hindsight relabelled data helps
+## 2025 17th July
+
+### Measuring a Qwen-4B no-think baseline
+
+With SGLang, you add in `"chat_template_kwargs": {"enable_thinking": false}` on calls where there is no thinking desired.
+
+The goal is to see if an un-fine-tuned Qwen-4B is worse than about 3% on single-attempt and 15% on 8-attempts.
+
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url http://157.66.254.42:10957/v1 --qwen-no-think
+```
+
+## 2025 16th July
+
+### See if fine-tuning on hindsight relabelled data helps
 
 **Conclusion**
 The model works after fine-tuning, and is much much faster and cheaper to run. BUT it's weaker for the same number of samples, because it loses it's reasoning. This can be addressed next time by mixing in some reasoning traces.

@@ -33,7 +33,7 @@ def execute_with_timeout(func, *args, timeout=1000, **kwargs):
 class ARCTaskRunner:
     """Run ARC tasks using the OpenAI Chat Completions API"""
     
-    def __init__(self, model: str = "gpt-4.1-nano", max_workers: int = 1, rate_limit_delay: float = 0.0, max_turns: int = 3, run_number: int = 0, independent_attempts: bool = False, base_url: str = None, reasoning_effort: str = "low", debug: bool = False):
+    def __init__(self, model: str = "gpt-4.1-nano", max_workers: int = 1, rate_limit_delay: float = 0.0, max_turns: int = 3, run_number: int = 0, independent_attempts: bool = False, base_url: str = None, reasoning_effort: str = "low", debug: bool = False, qwen_no_think: bool = False):
         self.model = model
         self.max_workers = max_workers
         self.rate_limit_delay = rate_limit_delay
@@ -41,6 +41,7 @@ class ARCTaskRunner:
         self.run_number = run_number  # Track run number for repeated runs
         self.independent_attempts = independent_attempts  # Track independent attempts mode
         self.reasoning_effort = reasoning_effort
+        self.qwen_no_think = qwen_no_think  # Track whether to disable thinking for Qwen models
         self.api_key = os.getenv('OPENAI_API_KEY')
         self.base_url = base_url
         self.debug = debug
@@ -239,10 +240,20 @@ def transform(grid):
             
             # Add Qwen-specific parameters for thinking models (only for custom endpoints)
             if "qwen" in self.model.lower() and self.base_url:
-                kwargs.update({
-                    "temperature": 0.6,
-                    "top_p": 0.95
-                })
+                if self.qwen_no_think:
+                    # Parameters for non-thinking Qwen models
+                    kwargs.update({
+                        "temperature": 0.7,
+                        "top_p": 0.8,
+                        "extra_body": {"top_k": 20, "chat_template_kwargs": {"enable_thinking": False}}
+                    })
+                else:
+                    # Parameters for thinking Qwen models (original behavior)
+                    kwargs.update({
+                        "temperature": 0.6,
+                        "top_p": 0.95,
+                        "extra_body": {"top_k": 20}
+                    })
             
             # Make the API call
             response = self.client.chat.completions.create(**kwargs)
@@ -1528,7 +1539,8 @@ Make sure to include the function definition inside a proper code block."""
                 independent_attempts=self.independent_attempts,
                 base_url=self.base_url,
                 reasoning_effort=self.reasoning_effort,
-                debug=self.debug
+                debug=self.debug,
+                qwen_no_think=self.qwen_no_think
             )
             
             # Run the subset
@@ -1709,6 +1721,8 @@ def main():
                        help="Use independent attempts mode instead of multi-turn feedback")
     parser.add_argument("--debug", action="store_true",
                        help="Enable debug output (default: disabled)")
+    parser.add_argument("--qwen-no-think", action="store_true",
+                       help="Disable thinking for Qwen models (sets enable_thinking=false and uses non-thinking sampling parameters)")
     
     args = parser.parse_args()
     
@@ -1738,7 +1752,8 @@ def main():
         independent_attempts=args.independent_attempts,
         base_url=getattr(args, 'base_url', None),
         reasoning_effort=args.reasoning_effort,
-        debug=args.debug
+        debug=args.debug,
+        qwen_no_think=args.qwen_no_think
     )
     
     if args.repeat_runs > 1:
