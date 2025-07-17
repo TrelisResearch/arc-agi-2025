@@ -44,9 +44,39 @@ Aggregate results saved to: logs/20250717_120114_aggregate_summary_arc-agi-1_gpt
 
 ### Re-run the fine-tuned model with the recommended (and same as above) sampling parameters.
 
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
 ```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 8 --model Trelis/lorge-16-jul --independent-attempts --base-url http://157.66.254.42:14987/v1 --qwen-no-think
 ```
+Dataset: arc-agi-1
+Subset: gpt-4.1-mini-calib-train
+Model: Trelis/lorge-16-jul
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    46         2              6              4.3%           13.0%         
+2    46         2              6              4.3%           13.0%         
+3    46         3              8              6.5%           17.4%         
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 5.1%
+  Std Dev: 1.3%
+  95% CI: [2.6%, 7.5%]
+
+All Attempts Success Rate:
+  Mean: 14.5%
+  Std Dev: 2.5%
+  95% CI: [9.6%, 19.4%]
+
+Aggregate results saved to: logs/20250717_121723_aggregate_summary_arc-agi-1_gpt-4.1-mini-calib-train_3runs.json
 
 ## 2025 16th July
 
