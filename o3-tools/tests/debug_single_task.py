@@ -55,7 +55,7 @@ def test_single_task():
             print(f"🔍 DEBUG SCRIPT: turns_used: {result.get('turns_used', 'missing')}")
             print(f"🔍 DEBUG SCRIPT: request_cost: {result.get('request_cost', 'missing')}")
             print(f"🔍 DEBUG SCRIPT: api_success: {result.get('api_success', 'missing')}")
-            print(f"🔍 DEBUG SCRIPT: execution_error: {result.get('execution_error', 'missing')}")
+            print(f"🔍 DEBUG SCRIPT: task_failure_reason: {result.get('task_failure_reason', 'missing')}")
             
     except Exception as e:
         print(f"🔍 DEBUG SCRIPT: Error running task: {type(e).__name__}: {str(e)}")

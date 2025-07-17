@@ -664,7 +664,7 @@ Timeout failures are logged with special metadata:
   "task_id": "example_task",
   "api_success": false,
   "timeout_failure": true,
-  "execution_error": "API timeout after retries",
+  "task_failure_reason": "API timeout after retries",
   "turns_used": 3,
   "multiturn_data": {
     "conversation_history": [...],
@@ -704,6 +704,38 @@ Pixel accuracy: 85/90 (94.4%)            # Very close to correct on average
 
 This shows a model that writes mostly-correct solutions.
 
+## Task Failure Analysis
+
+The `task_failure_reason` field in log files tracks **why tasks failed to complete successfully**. Understanding these failure types helps analyze model performance:
+
+### **Successful Completion**
+```json
+"task_failure_reason": ""  // Empty string = task completed successfully
+```
+
+### **Python Execution Failures**
+When the generated Python code fails to run:
+```json
+"task_failure_reason": "NameError: name 'numpy' is not defined"
+"task_failure_reason": "IndexError: list index out of range"
+"task_failure_reason": "Program exceeded timeout of 0.1s"
+"task_failure_reason": "Invalid output format: some_invalid_output"
+```
+
+### **Task Completion Failures**
+When the task process itself fails (code may have executed fine):
+```json
+"task_failure_reason": "All attempts failed"        // Independent mode: all attempts gave wrong answers
+"task_failure_reason": "Max turns reached"          // Multi-turn mode: ran out of turns before solving
+"task_failure_reason": "API timeout after retries" // API call failed after 3 attempts
+"task_failure_reason": "Task setup failed: ..."     // Setup/initialization error
+```
+
+### **Important Distinction**
+- **"All attempts failed"** ≠ execution error - means code ran but gave incorrect results
+- **Python execution errors** = actual code runtime failures
+- **Empty string** = complete success (correct answer achieved)
+
 ## Output
 
 Results are saved in multiple directories:
@@ -742,7 +774,7 @@ Summary reports aggregate across all tasks and include:
   "reasoning_effort": "medium",
   "api_type": "responses_api",
   "program": "def transform(grid):\n    return [row[::-1] for row in grid[::-1]]",
-  "execution_error": "",
+  "task_failure_reason": "",
   "timed_out": false,
   "tokens_used": 1189,
   "turns_used": 2,
@@ -768,7 +800,7 @@ Summary reports aggregate across all tasks and include:
   "reasoning_effort": "N/A",
   "api_type": "responses_api",
   "program": "def transform(grid):\n    return [row[::-1] for row in grid[::-1]]",
-  "execution_error": "",
+  "task_failure_reason": "",
   "timed_out": false,
   "tokens_used": 542,
   "turns_used": 1,
@@ -896,7 +928,7 @@ This example shows:
 - `model`: OpenAI model used (e.g., "o4-mini", "gpt-4o-mini")
 - `reasoning_effort`: Reasoning effort level for reasoning models ("low", "medium", "high") or "N/A" for non-reasoning models
 - `program`: Generated Python code 
-- `execution_error`: Any runtime errors (empty if successful)
+- `task_failure_reason`: Reason why task failed - includes Python execution errors, "All attempts failed", "Max turns reached", "API timeout after retries", etc. (empty if successful)
 - `request_cost`: Cost for this specific task in USD
 - `turns_used`: Number of conversation turns used for this task
 - `score.correct`: Boolean - whether output exactly matches expected

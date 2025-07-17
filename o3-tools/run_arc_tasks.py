@@ -483,7 +483,7 @@ def transform(grid):
             'reasoning_effort': self.reasoning_effort,
             'api_type': api_type,
             'program': program,
-            'execution_error': '',
+            'task_failure_reason': '',
             'timed_out': False,
             'tokens_used': total_tokens,
             'request_cost': total_cost,
@@ -628,7 +628,7 @@ def transform(grid):
             'reasoning_effort': self.reasoning_effort,
             'api_type': api_type,
             'program': program,
-            'execution_error': error_msg,
+            'task_failure_reason': error_msg,
             'timed_out': False,
             'tokens_used': total_tokens,
             'request_cost': total_cost,
@@ -694,7 +694,7 @@ def transform(grid):
             'reasoning_effort': self.reasoning_effort,
             'api_type': 'chat_completions_multiturn',
             'program': '',
-            'execution_error': 'API timeout after retries',
+            'task_failure_reason': 'API timeout after retries',
             'timed_out': True,
             'tokens_used': total_tokens,
             'request_cost': total_cost,
@@ -786,7 +786,7 @@ def transform(grid):
                 'reasoning_effort': self.reasoning_effort,
                 'api_type': 'chat_completions_independent_attempts' if self.independent_attempts else 'chat_completions_multiturn',
                 'program': '',
-                'execution_error': f'Task setup failed: {str(e)}',
+                'task_failure_reason': f'Task setup failed: {str(e)}',
                 'timed_out': False,
                 'tokens_used': 0,
                 'request_cost': 0.0,
@@ -948,7 +948,7 @@ def transform(grid):
                 else:
                     # Execution failed - record the failure and continue to next attempt
                     attempt_detail['test_result'] = {
-                        'execution_error': error,
+                        'task_failure_reason': error,
                         'timed_out': timed_out,
                         'predicted_output': predicted_output
                     }
@@ -1169,7 +1169,7 @@ Make sure to include the function definition inside a proper code block."""
                 else:
                     # Execution failed
                     turn_detail['test_result'] = {
-                        'execution_error': error,
+                        'task_failure_reason': error,
                         'timed_out': timed_out,
                         'predicted_output': predicted_output
                     }
@@ -1326,7 +1326,7 @@ Make sure to include the function definition inside a proper code block."""
                         'task_id': task_id,
                         'model': self.model,
                         'reasoning_effort': self.reasoning_effort,
-                        'execution_error': f'process_task failed: {str(e)}',
+                        'task_failure_reason': f'process_task failed: {str(e)}',
                         'tokens_used': 0,
                         'request_cost': 0.0,
                         'turns_used': 0,

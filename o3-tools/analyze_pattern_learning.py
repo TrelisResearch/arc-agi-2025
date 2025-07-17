@@ -59,19 +59,19 @@ def extract_metrics(summary):
         # Get basic task info
         task_id = task_result.get('task_id', 'unknown')
         correct = score.get('correct', False)
-        execution_error = task_result.get('execution_error', '')
+        task_failure_reason = task_result.get('task_failure_reason', '')
         program_length = len(task_result.get('program', ''))
         
-        # Check if program executed successfully
-        has_execution_error = bool(execution_error)
+        # Check if task completed successfully
+        has_task_failure = bool(task_failure_reason)
         
         data.append({
             'task_id': task_id,
             'pixel_accuracy': pixel_accuracy * 100,  # Convert to percentage
             'correct': correct,
-            'has_execution_error': has_execution_error,
+            'has_task_failure': has_task_failure,
             'program_length': program_length,
-            'execution_error': execution_error
+            'task_failure_reason': task_failure_reason
         })
     
     return data
@@ -86,7 +86,7 @@ def create_plot(data):
     pixel_accuracies = [d['pixel_accuracy'] for d in data]
     program_lengths = [d['program_length'] for d in data]
     correct_tasks = [d['correct'] for d in data]
-    execution_errors = [d['has_execution_error'] for d in data]
+    task_failures = [d['has_task_failure'] for d in data]
     
     # Create the plot
     plt.figure(figsize=(10, 8))
@@ -100,7 +100,7 @@ def create_plot(data):
     error_y = []
     
     for i, d in enumerate(data):
-        if d['has_execution_error']:
+        if d['has_task_failure']:
             error_x.append(d['program_length'])
             error_y.append(d['pixel_accuracy'])
         elif d['correct']:
@@ -152,13 +152,13 @@ def create_plot(data):
     print(f"Average pixel accuracy: {np.mean(pixel_accuracies):.1f}%")
     print(f"Average program length: {np.mean(program_lengths):.0f} characters")
     print(f"Tasks with >50% pixel accuracy: {sum(1 for p in pixel_accuracies if p > 50)}")
-    print(f"Tasks with execution errors: {sum(1 for d in data if d['has_execution_error'])}")
+    print(f"Tasks with failures: {sum(1 for d in data if d['has_task_failure'])}")
     print(f"Perfect solutions: {sum(correct_tasks)}")
     
     print("\nDetailed results:")
     for d in data:
         status = "✓" if d['correct'] else "✗"
-        error_info = " (ERROR)" if d['has_execution_error'] else ""
+        error_info = " (FAILED)" if d['has_task_failure'] else ""
         print(f"  {d['task_id']}: {d['pixel_accuracy']:.1f}% pixels, "
               f"{d['program_length']} chars {status}{error_info}")
 
