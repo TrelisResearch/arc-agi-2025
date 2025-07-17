@@ -4,12 +4,48 @@
 
 ### Measuring a Qwen-4B no-think baseline
 
-With SGLang, you add in `"chat_template_kwargs": {"enable_thinking": false}` on calls where there is no thinking desired.
+With SGLang, you add in `"chat_template_kwargs": {"enable_thinking": false}` on calls where there is no thinking desired. This has to be passed in via the `extra_body` parameter.
 
 The goal is to see if an un-fine-tuned Qwen-4B is worse than about 3% on single-attempt and 15% on 8-attempts.
 
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
 ```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url http://157.66.254.42:10957/v1 --qwen-no-think
+```
+Dataset: arc-agi-1
+Subset: gpt-4.1-mini-calib-train
+Model: Qwen/Qwen3-4B
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    46         2              7              4.3%           15.2%         
+2    46         1              7              2.2%           15.2%         
+3    46         2              10             4.3%           21.7%         
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 3.6%
+  Std Dev: 1.3%
+  95% CI: [1.2%, 6.1%]
+
+All Attempts Success Rate:
+  Mean: 17.4%
+  Std Dev: 3.8%
+  95% CI: [10.0%, 24.8%]
+
+Aggregate results saved to: logs/20250717_120114_aggregate_summary_arc-agi-1_gpt-4.1-mini-calib-train_3runs.json
+
+### Re-run the fine-tuned model with the recommended (and same as above) sampling parameters.
+
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 8 --model Trelis/lorge-16-jul --independent-attempts --base-url http://157.66.254.42:14987/v1 --qwen-no-think
 ```
 
 ## 2025 16th July

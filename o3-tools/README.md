@@ -142,7 +142,7 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10
 # Use independent attempts mode instead of multi-turn feedback
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --max_turns 3 --independent-attempts
 
-# Disable thinking for Qwen models (sets enable_thinking=false and non-thinking sampling params)
+# Disable thinking for Qwen models (uses temperature=0.7, top_p=0.8, top_k=20, enable_thinking=false)
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --model Qwen/Qwen3-4B --base-url http://localhost:8000/v1 --qwen-no-think
 
 # Available options:
@@ -157,6 +157,7 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10
 #   --rate_limit_delay: Delay between API calls in seconds (default: 0.0)
 #   --repeat-runs: Number of times to repeat the entire test (default: 1, max: 10)
 #   --independent-attempts: Use independent attempts mode instead of multi-turn feedback
+#   --qwen-no-think: Disable thinking for Qwen models (temperature=0.7, top_p=0.8, top_k=20, enable_thinking=false)
 ```
 
 ### Reasoning Effort Support
@@ -173,7 +174,11 @@ Works with OpenRouter and other compatible APIs that detect reasoning-capable mo
 
 The tool automatically detects and logs thinking tokens from models that provide them:
 
-- **Qwen models** (via OpenRouter): Reasoning captured in separate `reasoning` field
+- **Qwen models**: Reasoning captured in separate fields
+  - Via OpenRouter: `reasoning` field
+  - Via custom endpoints (SGLang/RunPod): `reasoning_content` field
+  - Default parameters: `temperature=0.6, top_p=0.95, top_k=20, enable_thinking=true`
+  - Automatically disabled with `--qwen-no-think` flag (sets `enable_thinking=false`)
 - **o1/o3 models** (via OpenAI): Hidden reasoning tokens captured when available
 - **Other models**: Standard content logging
 
