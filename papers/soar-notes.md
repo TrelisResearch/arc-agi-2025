@@ -22,7 +22,8 @@ Our 7B model improved from its initial 14.25% to 36.25% accuracy on ARC-test, a 
 ```
 
 ### Replication Notes on ARC AGI 1 Evaluation Set.
-- Qwen4 with no thinking, single shot: 
+- Qwen4 with no thinking, single shot: 0.5%
+- Qwen4 with no thinking, 8-shot: 0.5%
 - Qwen4 with thinking, single shot: 
 
 ---
@@ -155,7 +156,7 @@ While an un-tuned model needs ~1000 samples to saturate in performance, SOAR see
 
 ## Fastest path to a leading Kaggle leaderboard position?
 
-Phase A:
+### Phase A:
 A key graph is ![SOAR-teacher-effects.png](SOAR-teacher-effects.png) because it is the closest thing to us:
 1. Taking a a strong model (e.g. o3, or models) and generating samples.
 2. Using those samples to train the small model - even if only on sampling, no refinement.
@@ -165,14 +166,38 @@ All of this likely requires max sampling of ~32 per task to get most of the bene
 
 This should bring us to better than 30%, maybe higher (as Qwen3 is stronger than 2.5, and o3 will give better data than the paper gets from open source models), on ARC-AGI-1.
 
-Phase B:
+Open Questions:
+1. Do we generate assistant responses that only consist of a program OR whether it's best to have some explaining text before that (I don't mean reasoning). Probably best to return only a program because any explanation may be wrong when we do hindsight relabelling. (of course, one would think that adding an explanation before may help.)
+2. Do we strip comments from the code (or just prompt not to include any code comments)? May be beneficial to strip them because, again, for hindsight relabelling, comments may be wrong. (of course, one would think that code comments help to get more answers correct, we could ablate either way.)
+3. How do we de-duplicate samples?
+    - Dedup exact matches (which may be few).
+    - Dedup programs that give the same train outputs (we can print how many dedups are of programs where all train outputs are the same).
+4. How to generate the data?
+- Use the ARC-AGI-1 training data.
+- Models to run (cheap first cut):
+    - kimi k2 - single shot
+    - o4-mini - single shot
+    - claude 3.5 sonnet - single shot
+    - deepseek r1 0506 - single shot
+    - qwen3 4b, no thinking - 4-shot.
+    => Gives a dataset of 8 rows per task.
+5. Do we use ground truth data for filtering? Probably not, the dataset is anyway small so any programs that get a program correct will be included.
+6. Open question - how might reasoning capabilities be maintained? Perhaps by including lots of reasoning traces in the examples - for where a test problem is correct.
+
+This should solve a lot of the train examples when we then run Qwen3 4b with 8-shots. We can add that data to the pool, dedup and train again. Probably this brings a smaller incremental improvement, both on train and on evaluation.
+
+We can then do test time training on the evaluation set to see how high we can score.
+
+At this point, potentially we can go to phase B OR we could aim to integrate reasoning into the program generation.
+
+### Phase B:
 We could then try adding refinement, then with hindsight re-labelling to see if performance can improve further again.
 
 Hard to know where this gets us, maybe another 10%?
 
 The harder question then is how this scores on ARC-AGI-2.
 
-Phase C:
+### Phase C:
 Move to python program intermediation, where we train on intermediate programs. (more to be figured out on how this might work).)
 
 
