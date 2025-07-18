@@ -4,7 +4,11 @@
 
 ### Benchmarking Qwen3 4B Performance on ARC-AGI-1 Evaluation Set
 
-#### No thinking mode, 8-shot
+**Commentary**
+- The Qwen3 4B model gets more answers correct single attempt (3.2%) un-tuned than any open source model tested in the SOAR paper. However, it uses quite a bit more compute because of much longer responses. Roughly 5x more compute than with the same model with no thinking.
+- When running up to 8-attempt (max) it gets xyz correct, for roughly Yx more compute than Qwen3 4B single attempt. Awaiting run to finish.
+
+#### No thinking mode, 8-attempt
 
 ```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 64 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url http://91.199.227.82:13579/v1 --qwen-no-think
@@ -1020,7 +1024,7 @@ Other note: There is a case where all training examples are correct, but the tes
 - **Subset:** shortest_evaluation_30
 - **Dataset:** arc-agi-2 (evaluation)
 - **Model:** o3
-- **API:** Responses (single-shot)
+- **API:** Responses (single-attempt)
 - **Tools enabled:** True
 - **Purpose:** Test performance on shortest tasks using summaries of reasoning in assistant responses
 
