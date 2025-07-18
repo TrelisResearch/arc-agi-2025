@@ -4,6 +4,12 @@
 
 ### Benchmarking Qwen3 4B Performance on ARC-AGI-1 Evaluation Set
 
+#### No thinking mode, 8-shot
+
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 64 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url http://91.199.227.82:13579/v1 --qwen-no-think
+```
+
 #### No thinking mode
 
 **Note that the cost for one run of the 400 arc-agi-1 evaluation tasks is about $0.58 (absolute cost doesn't mean anything, but it's relative. When I run on runpod I just assign $0.15/MM input and $0.6/MM output.).**
@@ -50,11 +56,39 @@ Reasoning mode is 5x more expensive than non-thinking mode, but does score more 
 
 The motivation for reasoning would be if it is capable of reaching correct answers that cannot be reached through sampling. This is always a hot debate in RL and the answer here is not clear to me [i.e. it is sometimes argued that doing RL just reduces the need for sampling, but doesn't necessarily hit new answers].
 
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
 ```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 64 --max_turns 1 --model Qwen/Qwen3-4B --independent-attempts --base-url http://91.199.227.82:13579/v1
 ```
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Qwen/Qwen3-4B
+Number of runs: 3
+API failures excluded from analysis: YES
 
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    400        14             14             3.5%           3.5%          
+2    400        10             10             2.5%           2.5%          
+3    399        14             14             3.5%           3.5%          
 
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 3.2%
+  Std Dev: 0.6%
+  95% CI: [2.0%, 4.3%]
+
+All Attempts Success Rate:
+  Mean: 3.2%
+  Std Dev: 0.6%
+  95% CI: [2.0%, 4.3%]
+
+Aggregate results saved to: logs/20250718_153351_aggregate_summary_arc-agi-1_all_evaluation_3runs.json
 
 ## 2025 17th July
 
