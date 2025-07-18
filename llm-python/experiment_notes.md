@@ -1,5 +1,52 @@
 # Experiment Notes
 
+## 2025 18th July
+
+### Benchmarking Qwen3 4B Performance on ARC-AGI-1 Evaluation Set
+
+#### No thinking mode
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 64 --max_turns 1 --model Qwen/Qwen3-4B --independent-attempts --base-url http://91.199.227.82:13579/v1 --qwen-no-think
+```
+
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Qwen/Qwen3-4B
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    400        4              4              1.0%           1.0%          
+2    400        0              0              0.0%           0.0%          
+3    400        2              2              0.5%           0.5%          
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 0.5%
+  Std Dev: 0.5%
+  95% CI: [-0.5%, 1.5%]
+
+All Attempts Success Rate:
+  Mean: 0.5%
+  Std Dev: 0.5%
+  95% CI: [-0.5%, 1.5%]
+
+Aggregate results saved to: logs/20250718_114919_aggregate_summary_arc-agi-1_all_evaluation_3runs.json
+
+#### Thinking mode
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 64 --max_turns 1 --model Qwen/Qwen3-4B --independent-attempts --base-url http://91.199.227.82:13579/v1
+```
+
+
+
 ## 2025 17th July
 
 ### Measuring a Qwen-4B no-think baseline
