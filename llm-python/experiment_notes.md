@@ -5,14 +5,45 @@
 ### Benchmarking Qwen3 4B Performance on ARC-AGI-1 Evaluation Set
 
 **Commentary**
-- The Qwen3 4B model gets more answers correct single attempt (3.2%) un-tuned than any open source model tested in the SOAR paper. However, it uses quite a bit more compute because of much longer responses. Roughly 5x more compute than with the same model with no thinking.
-- When running up to 8-attempt (max) it gets xyz correct, for roughly Yx more compute than Qwen3 4B single attempt. Awaiting run to finish.
+- The Qwen3 4B model (with reasoning) gets more answers correct single attempt (3.2%) un-tuned than any open source model tested in the SOAR paper. However, it uses quite a bit more compute because of much longer responses. Roughly 5x more compute than with the same model with no thinking.
+- When running up to 8-attempt (max) it gets 1.3% correct, for roughly 5.5x more compute than Qwen3 4B single attempt. This indicates that reasoning is good value here - because it's roughly the same cost as 8x samples BUT gets 2.5x more correct answers. Food for thought on the value of keeping reasoning.
 
 #### No thinking mode, 8-attempt
 
+Cost is about $3.25 per run (with 8 attempts per problem max).
+
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
 ```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 64 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url http://91.199.227.82:13579/v1 --qwen-no-think
 ```
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Qwen/Qwen3-4B
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    400        0              7              0.0%           1.8%          
+2    400        0              5              0.0%           1.2%          
+3    400        2              4              0.5%           1.0%          
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 0.2%
+  Std Dev: 0.3%
+  95% CI: [-0.4%, 0.7%]
+
+All Attempts Success Rate:
+  Mean: 1.3%
+  Std Dev: 0.4%
+  95% CI: [0.6%, 2.1%]
+
+Aggregate results saved to: logs/20250718_180714_aggregate_summary_arc-agi-1_all_evaluation_3runs.json
 
 #### No thinking mode
 
@@ -264,7 +295,36 @@ and, for fun, try the shortest 100 of the ARC AGI 1 dataset:
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_100 --repeat-runs 3 --max_workers 64 --max_turns 64 --model Trelis/lorge-16-jul --independent-attempts --base-url http://213.181.122.251:13589/v1
 ```
 
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Qwen/Qwen3-4B
+Number of runs: 3
+API failures excluded from analysis: YES
 
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    400        0              7              0.0%           1.8%          
+2    400        0              5              0.0%           1.2%          
+3    400        2              4              0.5%           1.0%          
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 0.2%
+  Std Dev: 0.3%
+  95% CI: [-0.4%, 0.7%]
+
+All Attempts Success Rate:
+  Mean: 1.3%
+  Std Dev: 0.4%
+  95% CI: [0.6%, 2.1%]
+
+Aggregate results saved to: logs/20250718_180714_aggregate_summary_arc-agi-1_all_evaluation_3runs.json
 
 
 

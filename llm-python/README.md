@@ -24,9 +24,10 @@ Runpod One-click-template [here](https://console.runpod.io/deploy?template=agyu4
   [x] Extract programs from log files with partial success criteria
   [x] Create JSONL format for fine-tuning
   [x] Support validation splits
+  [ ] Run some baseline performance tests on Qwen3 4B.
   [ ] Use the hindsight relabelling trick.
   [ ] Use the reversal trick.
-  [ ] Use the augmentation trick (how to make that directed)???
+  [ ] Use the intermediation approach.
 
 Other ideas:
 [ ] Ablate the costs of solving if we do o4-mini (low) versus o4-mini (high). Is it possibly better to use o4-mini (low) with 8 max turns versus o4-mini (high) with 4 max turns? Consider costs across three runs. (best to develop a script for doing this that calculates means etc.).
