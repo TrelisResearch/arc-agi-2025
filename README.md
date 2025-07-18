@@ -3,8 +3,12 @@
 This repository contains resources for working with the ARC-AGI (Abstraction and Reasoning Corpus for Artificial General Intelligence) datasets.
 
 ## Branches
-`o3-tools-images` a frozen version of the openai o3-tools branch that still maintains functionality for adding images to the prompts and feedback.
-`input-output-prog` contains a frozen version of the o3-tools branch with a prompt to generate input and output grids AS WELL as the transformation function. It uses openai responses api so is only compatible with openai models.
+-`o3-tools-images` a frozen version of the openai o3-tools branch that still maintains functionality for adding images to the prompts and feedback. This branch only supports openai models.
+-`input-output-prog` contains a frozen version of the o3-tools branch with a prompt to generate input and output grids AS WELL as the transformation function. It uses openai responses api so is only compatible with openai models. This branch only supports openai models.
+
+## Folders
+- `data/` contains the ARC-AGI-1 and ARC-AGI-2 datasets.
+- `llm-python` contains scripts for llm-generated python solutions to ARC tasks.
 
 ## Data
 
