@@ -4,13 +4,29 @@
 
 ### Generating Gemini 2.5 Flash data on ARC-AGI-1 training dataset - single attempt
 
+This is gemini 2.5 flash with medium reasoning effort (8k tokens of reasoning). It gets 35.2% correct on one shot. We could either increase reasoning effort and/or do more sampling to gather more data. Running o4-mini would also yield some more data. Either way, each sample for the full training set of 400 costs about $12. So, to get similar data quantity to the SOAR paper, we're looking at $500. Possibly with that level of sampling I estimate we end up getting about 75%+ correct (usually I see a doubling of score with 8x sampling, plus model diversity will give some boost too).
+
 ```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_training --repeat-runs 1 --max_workers 64 --max_turns 1 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
 ```
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-1
+Subset: all_training
+Model: google/gemini-2.5-flash
+Reasoning effort: medium
+API: Chat Completions (independent attempts, max 1 attempts)
+Total tasks attempted: 400
+Successful API calls: 400/400 (100.0%)
+Tasks solved correctly: 141/400 (35.2%)
+Pixel accuracy: 12273/55726 (22.0%)
+Total attempts used: 400
+Average attempts per task: 1.0
+Total tokens used: 5,577,675
+Total cost: $11.800017
 
-
-
-
+Results saved to: logs/20250721_112639_summary_arc-agi-1_all_training.json
 
 ### Picking a model to generate some high quality data from.
 
