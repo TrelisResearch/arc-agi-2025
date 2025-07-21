@@ -2,6 +2,23 @@
 
 ## 2025 21st July
 
+### Fine-tuning on Gemini 2.5 Flash data + Evaluation
+
+#### Clean Code Fine-tune
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 64 --max_turns 8 --model Trelis/gemini-2.5-smol-21-jul --independent-attempts --base-url http://69.30.85.165:22083/v1
+```
+
+Hoping to beat about 0.5% on single attempt and ~1.5% on 8-attempt...
+
+#### Clean Code + Reasoning Fine-tune
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 64 --max_turns 8 --model Trelis/gemini-2.5-reasoning-smol-21-jul --independent-attempts --base-url http://63.141.33.85:22032/v1
+```
+
+Trying to beat about 3.5% here of the baseline reasoning model.
+
+
 ### Single Attempt Gemini Flash dataset generation
 
 The data is largely single-attempt, and has the program code cleaned of comments. There are a few problems that have a few rows of data (possibly some duplicated).
@@ -18,7 +35,7 @@ uv run python generate_training_data.py \
   --clean-code
 ```
 
-So I creaated one with clean code, and then with commented code (on all tasks!) and then with reasoning ONLY on original ground truth correct tasks (not allowed if doing test time fine-tuning).
+So I created one with clean code, and then with commented code (on all tasks!) and then with reasoning ONLY on original ground truth correct tasks (not allowed if doing test time fine-tuning).
 ```bash
 cd llm-python
 uv run python generate_training_data.py \
@@ -28,7 +45,6 @@ uv run python generate_training_data.py \
   --clean-code \
   --reasoning
 ```
-
 
 ### Generating Gemini 2.5 Flash data on ARC-AGI-1 training dataset - single attempt
 

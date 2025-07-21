@@ -885,7 +885,8 @@ def transform(grid):
                             continue
                         else:  # All retries exhausted
                             if self.max_workers == 1:
-                                print(f"     ❌ Attempt {attempt + 1} failed after 3 retries: {error_type}: {error_msg}")
+                                print(f"     ❌ Attempt {attempt + 1} failed after 3 API retries: {error_type}: {error_msg}")
+                                print(f"     🔍 STOPPING TASK - API failures prevent further attempts")
                             if self.debug:
                                 print(f"🔍 DEBUG INDEPENDENT: All retries exhausted for {task_id} attempt {attempt + 1} - Final error: {error_type}: {error_msg}")
                             # Return timeout failure result
