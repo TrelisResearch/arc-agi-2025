@@ -33,7 +33,7 @@ def execute_with_timeout(func, *args, timeout=1000, **kwargs):
 class ARCTaskRunner:
     """Run ARC tasks using the OpenAI Chat Completions API"""
     
-    def __init__(self, model: str = "gpt-4.1-nano", max_workers: int = 1, rate_limit_delay: float = 0.0, max_turns: int = 3, run_number: int = 0, independent_attempts: bool = False, base_url: str = None, reasoning_effort: str = "low", debug: bool = False, qwen_no_think: bool = False):
+    def __init__(self, model: str = "gpt-4.1-nano", max_workers: int = 1, rate_limit_delay: float = 0.0, max_turns: int = 3, run_number: int = 0, independent_attempts: bool = False, base_url: str = None, reasoning_effort: str = "low", debug: bool = False, qwen_no_think: bool = False, max_tokens: int = None):
         self.model = model
         self.max_workers = max_workers
         self.rate_limit_delay = rate_limit_delay
@@ -42,6 +42,7 @@ class ARCTaskRunner:
         self.independent_attempts = independent_attempts  # Track independent attempts mode
         self.reasoning_effort = reasoning_effort
         self.qwen_no_think = qwen_no_think  # Track whether to disable thinking for Qwen models
+        self.max_tokens = max_tokens  # Maximum tokens for model responses
         self.api_key = os.getenv('OPENAI_API_KEY')
         self.base_url = base_url
         self.debug = debug
@@ -233,6 +234,10 @@ def transform(grid):
                 "messages": messages
             }
             
+            # Add max_tokens if specified by user
+            if self.max_tokens is not None:
+                kwargs["max_tokens"] = self.max_tokens
+            
             # Add reasoning parameters for OpenRouter and reasoning models
             if self.base_url and "openrouter" in self.base_url.lower():
                 # OpenRouter reasoning token allocation
@@ -247,7 +252,9 @@ def transform(grid):
                         kwargs["extra_body"] = {"reasoning": {"max_tokens": reasoning_tokens[self.reasoning_effort]}}
                     else:
                         # Other reasoning models use max_tokens directly
-                        kwargs["max_tokens"] = reasoning_tokens[self.reasoning_effort]
+                        # Only override user-specified max_tokens if not already set
+                        if self.max_tokens is None:
+                            kwargs["max_tokens"] = reasoning_tokens[self.reasoning_effort]
             
             # Add Qwen-specific parameters for thinking models (only for custom endpoints)
             if "qwen" in self.model.lower() and self.base_url:
@@ -1559,7 +1566,8 @@ Make sure to include the function definition inside a proper code block."""
                 base_url=self.base_url,
                 reasoning_effort=self.reasoning_effort,
                 debug=self.debug,
-                qwen_no_think=self.qwen_no_think
+                qwen_no_think=self.qwen_no_think,
+                max_tokens=self.max_tokens
             )
             
             # Run the subset
@@ -1742,6 +1750,8 @@ def main():
                        help="Enable debug output (default: disabled)")
     parser.add_argument("--qwen-no-think", action="store_true",
                        help="Disable thinking for Qwen models (sets enable_thinking=false and uses non-thinking sampling parameters)")
+    parser.add_argument("--max-tokens", type=int,
+                       help="Maximum tokens for model responses (overrides reasoning effort defaults)")
     
     args = parser.parse_args()
     
@@ -1772,7 +1782,8 @@ def main():
         base_url=getattr(args, 'base_url', None),
         reasoning_effort=args.reasoning_effort,
         debug=args.debug,
-        qwen_no_think=args.qwen_no_think
+        qwen_no_think=args.qwen_no_think,
+        max_tokens=args.max_tokens
     )
     
     if args.repeat_runs > 1:

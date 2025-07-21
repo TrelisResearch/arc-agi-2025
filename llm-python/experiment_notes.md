@@ -2,18 +2,164 @@
 
 ## 2025 21st July
 
+**Learnings Today**
+- Fine-tuning hyper parameters need improvement. We are not seeing enough of an increase on the training examples, even though many of those training examples are exactly correct. Suggests needing higher r and/or a cosine learning curve and/or more epochs.
+- Need to be able to see that training is working before testing whether we get evaluation improvements.
+- Worth doing a review of the templating to ensure that is absolutely correct. More data inspection.
+
 ### Fine-tuning on Gemini 2.5 Flash data + Evaluation
+
+**Prelim results** With this small amount of data (one sample per problem), there is little obvious learning...
 
 #### Clean Code Fine-tune
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 64 --max_turns 8 --model Trelis/gemini-2.5-smol-21-jul --independent-attempts --base-url http://69.30.85.165:22083/v1
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 64 --max_turns 8 --model Trelis/gemini-2.5-smol-21-jul --independent-attempts --base-url http://69.30.85.165:22083/v1 --max-tokens 2000
 ```
 
 Hoping to beat about 0.5% on single attempt and ~1.5% on 8-attempt...
 
-#### Clean Code + Reasoning Fine-tune
+We can also check the training dataset performance:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 64 --max_turns 8 --model Trelis/gemini-2.5-reasoning-smol-21-jul --independent-attempts --base-url http://63.141.33.85:22032/v1
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 3 --max_workers 64 --max_turns 8 --model Trelis/gemini-2.5-smol-21-jul --independent-attempts --base-url http://69.30.85.165:22083/v1 --max-tokens 2000
+```
+gave:
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
+Dataset: arc-agi-1
+Subset: shortest_training_10
+Model: Trelis/gemini-2.5-smol-21-jul
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    10         2              5              20.0%          50.0%         
+2    10         0              3              0.0%           30.0%         
+3    10         0              3              0.0%           30.0%         
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 6.7%
+  Std Dev: 11.5%
+  95% CI: [-16.0%, 29.3%]
+
+All Attempts Success Rate:
+  Mean: 36.7%
+  Std Dev: 11.5%
+  95% CI: [14.0%, 59.3%]
+
+Aggregate results saved to: logs/20250721_143231_aggregate_summary_arc-agi-1_shortest_training_10_3runs.json
+
+---
+Suggests there is just insufficient training... as the loss is not plateauing. Maybe a higher learning rate is required. None were correct on the longest training examples CONCERNING REGARDING THE EFFECTIVENESS OF TRAINING.
+
+And then all of the training set, to compare with the baseline model used:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_training --repeat-runs 1 --max_workers 64 --max_turns 1 --model Trelis/gemini-2.5-smol-21-jul --independent-attempts --base-url http://69.30.85.165:22083/v1 --max-tokens 2000
+```
+
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-1
+Subset: all_training
+Model: Trelis/gemini-2.5-smol-21-jul
+Reasoning effort: low
+API: Chat Completions (independent attempts, max 1 attempts)
+Total tasks attempted: 400
+Successful API calls: 400/400 (100.0%)
+Tasks solved correctly: 3/400 (0.8%)
+Pixel accuracy: 100/55726 (0.2%)
+Total attempts used: 400
+Average attempts per task: 1.0
+Total tokens used: 1,169,773
+Total cost: $0.264235
+
+Results saved to: logs/20250721_144020_summary_arc-agi-1_all_training.json
+
+SO we need to fix training!
+
+### Fixes to fine-tuning
+Increase LR up to 1e-4.
+
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 3 --max_workers 64 --max_turns 8 --model Trelis/gemini-2.5-smol-21-jul-1e-4 --independent-attempts --base-url http://69.30.85.165:22083/v1 --max-tokens 2000
+```
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
+Dataset: arc-agi-1
+Subset: shortest_training_10
+Model: Trelis/gemini-2.5-smol-21-jul-1e-4
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    10         1              4              10.0%          40.0%         
+2    10         1              5              10.0%          50.0%         
+3    10         1              4              10.0%          40.0%         
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 10.0%
+  Std Dev: 0.0%
+  95% CI: [10.0%, 10.0%]
+
+All Attempts Success Rate:
+  Mean: 43.3%
+  Std Dev: 5.8%
+  95% CI: [32.0%, 54.6%]
+
+Aggregate results saved to: logs/20250721_144954_aggregate_summary_arc-agi-1_shortest_training_10_3runs.json
+
+
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 1 --max_workers 64 --max_turns 8 --model Trelis/gemini-2.5-smol-21-jul-1e-4 --independent-attempts --base-url http://69.30.85.165:22083/v1 --max-tokens 2000
+```
+
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-1
+Subset: middle_training_10
+Model: Trelis/gemini-2.5-smol-21-jul-1e-4
+Reasoning effort: low
+API: Chat Completions (independent attempts, max 8 attempts)
+Total tasks attempted: 10
+Successful API calls: 8/10 (80.0%)
+Timeout failures: 2/10 (20.0%) ⏰
+Tasks solved correctly: 0/10 (0.0%)
+Pixel accuracy: 0/1000 (0.0%)
+Total attempts used: 76
+Average attempts per task: 7.6
+Total tokens used: 182,262
+Total cost: $0.044275
+
+⏰ TIMEOUT FAILURES (2):
+  - 1f876c06: API timeout after 7 attempts and 3 retries
+  - d2abd087: API timeout after 5 attempts and 3 retries
+
+Results saved to: logs/20250721_145046_summary_arc-agi-1_middle_training_10.json
+
+
+#### Clean Code + Reasoning Fine-tune
+
+Quick test:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 64 --max_turns 1 --model Trelis/gemini-2.5-reasoning-smol-21-jul --independent-attempts --base-url http://63.141.33.85:22045/v1 --limit 1 --max-tokens 2000
+```
+and then a full run:
+
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 64 --max_turns 8 --model Trelis/gemini-2.5-reasoning-smol-21-jul --independent-attempts --base-url http://63.141.33.85:22045/v1
 ```
 
 Trying to beat about 3.5% here of the baseline reasoning model.

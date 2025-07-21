@@ -149,12 +149,16 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10
 # Disable thinking for Qwen models (uses temperature=0.7, top_p=0.8, top_k=20, enable_thinking=false)
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --model Qwen/Qwen3-4B --base-url http://localhost:8000/v1 --qwen-no-think
 
+# Set specific token limit for responses (overrides reasoning effort defaults)
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --model gpt-4.1-mini --max-tokens 2000
+
 # Available options:
 #   --dataset: arc-agi-1 or arc-agi-2
 #   --subset: shortest_training_1, shortest_training_10, shortest_training_30, shortest_evaluation_1, shortest_evaluation_10, shortest_evaluation_30, etc.
 #   --model: Model name (default: gpt-4.1-nano) - works with any OpenAI-compatible API
 #   --base-url: Custom API endpoint URL (default: OpenAI) - enables Claude, Qwen, local models, etc.
 #   --reasoning_effort: Reasoning effort level: low (2k tokens), medium (8k tokens), high (32k tokens) - for Gemini; other models may vary
+#   --max-tokens: Maximum tokens for model responses (overrides reasoning effort defaults)
 #   --limit: Limit number of tasks to run
 #   --max_turns: Maximum number of turns/attempts (default: 3) - turns for multi-turn mode, attempts for independent mode
 #   --max_workers: Number of parallel workers (default: 1, max: 30)
@@ -178,6 +182,11 @@ For compatible models that support reasoning, control reasoning token allocation
 **Other Reasoning Models:**
 - Uses standard `max_tokens` parameter for reasoning allocation
 - Works with OpenRouter and other compatible APIs automatically
+
+**Token Control Priority:**
+- `--max-tokens` parameter overrides all automatic reasoning effort settings
+- Without `--max-tokens`: reasoning effort controls token allocation automatically
+- With `--max-tokens`: your specified limit takes precedence for all models
 
 **Example Results:** Gemini Flash gets 7/10 correct on shortest training tasks with 2k reasoning tokens, 5/10 correct on medium difficulty tasks with 8k reasoning tokens.
 
