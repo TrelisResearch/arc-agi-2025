@@ -12,3 +12,8 @@ tensorboard --logdir logs
 ```
 
 Then open a browser to http://localhost:6006/
+
+## Runpod One-click Template
+
+**Runpod One-click-template FOR FINE-TUNING**
+Runpod One-click-template [here](https://console.runpod.io/deploy?template=ifyqsvjlzj) - swap out the model name if using a fine-tuned model.

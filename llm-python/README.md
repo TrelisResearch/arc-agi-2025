@@ -325,15 +325,82 @@ uv run python generate_training_data.py --validation --output 16-jul-lorge.jsonl
 # Generate with clean code (strips comments and whitespace)
 uv run python generate_training_data.py --limit 100 --clean-code --output clean_training.jsonl
 
+# Filter by model and include reasoning for correct solutions
+uv run python generate_training_data.py --model "google/gemini-2.5-flash" --reasoning --output gemini_with_reasoning.jsonl
+
+# Filter by date range and model
+uv run python generate_training_data.py --model "google/gemini-2.5-flash" --date-from "20250721" --date-to "20250721" --output gemini_july_21.jsonl
+
 # Specify custom output filename
 uv run python generate_training_data.py --limit 500 --output my_training_data.jsonl
 
 # Generate with validation split and custom name
 uv run python generate_training_data.py --limit 1000 --validation --output arc_training_data.jsonl
 
-# Combine clean code with other options
-uv run python generate_training_data.py --limit 500 --clean-code --validation --output clean_balanced_training.jsonl
+# Combine reasoning with other options
+uv run python generate_training_data.py --limit 500 --reasoning --validation --output reasoning_training.jsonl
 ```
+
+### Filtering Options
+
+**Model/Dataset/Subset Filtering:**
+- `--model`: Filter by model name (e.g., `"google/gemini-2.5-flash"`, `"gpt-4o-mini"`)
+- `--dataset`: Filter by dataset (e.g., `"arc-agi-1"`, `"arc-agi-2"`)
+- `--subset`: Filter by subset (e.g., `"all_training"`, `"shortest_evaluation_10"`)
+
+**Date Range Filtering:**
+- `--date-from`: Filter files from this date onwards (format: `YYYYMMDD`)
+- `--date-to`: Filter files up to this date (format: `YYYYMMDD`)
+- `--pattern`: Filter log files by filename pattern (e.g., `"20250721_112639"`)
+
+### Reasoning Content (`--reasoning`)
+
+The `--reasoning` flag enables inclusion of model reasoning traces for programs that correctly solve the test output:
+
+#### **What It Does**
+- **Checks test correctness**: For each program, executes it on the actual test input and compares with expected output
+- **Includes reasoning for correct solutions**: Only programs that solve the test correctly get reasoning content included
+- **Wraps reasoning in think tags**: Reasoning is formatted as `<think>...reasoning content...</think>` before the program code
+- **Works with all reasoning models**: Automatically extracts reasoning from Gemini, Qwen, o1/o3, and other models
+
+#### **Reasoning Sources**
+- **Gemini models**: Extracts from `choices[0]['message']['reasoning']` field
+- **Qwen models**: Extracts from `reasoning_content` or `reasoning` fields  
+- **o1/o3 models**: Extracts hidden reasoning when available
+- **Other models**: Searches various common reasoning field names
+
+#### **Example Output Format**
+
+**Without `--reasoning`:**
+```json
+{
+  "role": "assistant",
+  "content": "Final answer:\n```python\ndef transform(grid):\n    return processed_grid\n```"
+}
+```
+
+**With `--reasoning` (for correct solutions):**
+```json
+{
+  "role": "assistant", 
+  "content": "<think>\nLet me analyze the training examples to understand the pattern...\nI notice that in each case, the transformation involves...\nBased on this analysis, I should implement...\n</think>\n\nFinal answer:\n```python\ndef transform(grid):\n    return processed_grid\n```"
+}
+```
+
+#### **Use Cases**
+- **Reasoning-aware fine-tuning**: Train models to think through problems step-by-step
+- **Quality filtering**: Focus on solutions that actually work (test-correct programs)
+- **Chain-of-thought training**: Learn both reasoning patterns and implementation patterns
+- **Debugging model logic**: Understand how models arrive at correct solutions
+
+#### **Selection Criteria**
+Programs get reasoning content included only if:
+- ✅ `--reasoning` flag is specified
+- ✅ Program correctly solves the test input → expected test output  
+- ✅ Original log contains reasoning content from the model
+- ✅ Program executes successfully without errors
+
+**Note**: Since only test-correct programs get reasoning, the percentage with reasoning will typically be lower than the overall accuracy rate, as it's filtered by both correctness and reasoning availability.
 
 ### Code Cleaning (`--clean-code`)
 

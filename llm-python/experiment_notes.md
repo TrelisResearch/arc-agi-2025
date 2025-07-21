@@ -18,6 +18,18 @@ uv run python generate_training_data.py \
   --clean-code
 ```
 
+So I creaated one with clean code, and then with commented code (on all tasks!) and then with reasoning ONLY on original ground truth correct tasks (not allowed if doing test time fine-tuning).
+```bash
+cd llm-python
+uv run python generate_training_data.py \
+  --model "google/gemini-2.5-flash" \
+  --output "gemini_2_5_flash_training_data_clean_code_reasoning.jsonl" \
+  --date-from "2025-07-21" \
+  --clean-code \
+  --reasoning
+```
+
+
 ### Generating Gemini 2.5 Flash data on ARC-AGI-1 training dataset - single attempt
 
 This is gemini 2.5 flash with medium reasoning effort (8k tokens of reasoning). It gets 35.2% correct on one shot. We could either increase reasoning effort and/or do more sampling to gather more data. Running o4-mini would also yield some more data. Either way, each sample for the full training set of 400 costs about $12. So, to get similar data quantity to the SOAR paper, we're looking at $500. Possibly with that level of sampling I estimate we end up getting about 75%+ correct (usually I see a doubling of score with 8x sampling, plus model diversity will give some boost too).

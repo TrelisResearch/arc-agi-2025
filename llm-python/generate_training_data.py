@@ -120,7 +120,7 @@ def execute_program(program: str, input_grid: List[List[int]], timeout: float = 
         # Execute the program
         try:
             result = subprocess.run(
-                ['python', temp_path],
+                ['python3', temp_path],
                 capture_output=True,
                 text=True,
                 timeout=timeout
@@ -267,6 +267,24 @@ def extract_programs_from_log(log_path: str) -> List[Dict]:
                 solved_count = training_feedback.get('solved_count', 0)
                 total_examples = training_feedback.get('total_training_examples', 0)
                 
+                # Extract reasoning content from various possible fields
+                reasoning_content = None
+                raw_response = first_turn.get('raw_response', {})
+                if isinstance(raw_response, dict):
+                    # Try top-level fields first (for Gemini and some other models)
+                    reasoning_content = (raw_response.get('reasoning') or 
+                                       raw_response.get('reasoning_content') or
+                                       raw_response.get('thinking'))
+                    
+                    # If not found, try OpenAI-style nested structure
+                    if not reasoning_content and 'choices' in raw_response:
+                        choices = raw_response.get('choices', [])
+                        if choices and isinstance(choices[0], dict):
+                            message = choices[0].get('message', {})
+                            reasoning_content = (message.get('reasoning') or 
+                                               message.get('reasoning_content') or
+                                               message.get('thinking'))
+                
                 # Include if we have training examples and the program was extracted
                 if total_examples > 0:
                     programs.append({
@@ -279,7 +297,8 @@ def extract_programs_from_log(log_path: str) -> List[Dict]:
                         'model': log_data.get('model', ''),
                         'dataset': log_data.get('dataset', ''),
                         'subset': log_data.get('subset', ''),
-                        'api_type': api_type
+                        'api_type': api_type,
+                        'reasoning_content': reasoning_content
                     })
     
     elif 'independent_attempts' in api_type:
@@ -290,6 +309,43 @@ def extract_programs_from_log(log_path: str) -> List[Dict]:
         for attempt in attempt_details:
             program = attempt.get('program', '')
             if program and attempt.get('program_extracted', False):
+                # Extract reasoning content from various possible fields
+                reasoning_content = None
+                
+                # First try the attempt's raw_response
+                raw_response = attempt.get('raw_response', {})
+                if isinstance(raw_response, dict):
+                    # Try top-level fields first (for Gemini and some other models)
+                    reasoning_content = (raw_response.get('reasoning') or 
+                                       raw_response.get('reasoning_content') or
+                                       raw_response.get('thinking'))
+                    
+                    # If not found, try OpenAI-style nested structure
+                    if not reasoning_content and 'choices' in raw_response:
+                        choices = raw_response.get('choices', [])
+                        if choices and isinstance(choices[0], dict):
+                            message = choices[0].get('message', {})
+                            reasoning_content = (message.get('reasoning') or 
+                                               message.get('reasoning_content') or
+                                               message.get('thinking'))
+                
+                # If not found in attempt details, try main log data (for some API responses)
+                if not reasoning_content:
+                    main_raw_response = log_data.get('raw_response', {})
+                    if isinstance(main_raw_response, dict):
+                        reasoning_content = (main_raw_response.get('reasoning') or 
+                                           main_raw_response.get('reasoning_content') or
+                                           main_raw_response.get('thinking'))
+                        
+                        # If not found, try OpenAI-style nested structure in main response
+                        if not reasoning_content and 'choices' in main_raw_response:
+                            choices = main_raw_response.get('choices', [])
+                            if choices and isinstance(choices[0], dict):
+                                message = choices[0].get('message', {})
+                                reasoning_content = (message.get('reasoning') or 
+                                                   message.get('reasoning_content') or
+                                                   message.get('thinking'))
+                
                 programs.append({
                     'task_id': task_id,
                     'program': program,
@@ -298,7 +354,8 @@ def extract_programs_from_log(log_path: str) -> List[Dict]:
                     'model': log_data.get('model', ''),
                     'dataset': log_data.get('dataset', ''),
                     'subset': log_data.get('subset', ''),
-                    'api_type': api_type
+                    'api_type': api_type,
+                    'reasoning_content': reasoning_content
                 })
     
     return programs
@@ -338,13 +395,24 @@ def validate_single_program(prog_data: Dict) -> Optional[Dict]:
     
     return None
 
-def create_training_example(program_data: Dict, task_data: Dict) -> Dict:
+def create_training_example(program_data: Dict, task_data: Dict, args) -> Dict:
     """Create a training example in JSONL format"""
     # Create modified task data with program-generated outputs
     modified_task_data = task_data.copy()
     modified_task_data['train'] = []
     
     program = program_data['program']
+    
+    # Check if program correctly solves the test output (for reasoning inclusion)
+    test_correct = False
+    if args.reasoning and task_data.get('test') and len(task_data['test']) > 0:
+        test_input = task_data['test'][0]['input']
+        expected_test_output = task_data['test'][0]['output']
+        predicted_test_output, error, timed_out = execute_program(program, test_input)
+        
+        if (predicted_test_output is not None and not error and not timed_out and 
+            predicted_test_output == expected_test_output):
+            test_correct = True
     
     # Run the program on each training input to get what it actually produces
     for example in task_data['train']:
@@ -383,10 +451,19 @@ def create_training_example(program_data: Dict, task_data: Dict) -> Dict:
         "content": create_prompt_for_task(modified_task_data)
     }
     
-    # Create assistant message with just the program
+    # Create assistant message with program and optionally reasoning
+    assistant_content = ""
+    
+    # Include reasoning if flag is set and test is correct
+    if args.reasoning and test_correct and program_data.get('reasoning_content'):
+        reasoning_content = program_data['reasoning_content']
+        assistant_content = f"<think>\n{reasoning_content}\n</think>\n\n"
+    
+    assistant_content += f"Final answer:\n```python\n{program_data['program']}\n```"
+    
     assistant_message = {
         "role": "assistant",
-        "content": f"Final answer:\n```python\n{program_data['program']}\n```"
+        "content": assistant_content
     }
     
     # Create the training example
@@ -417,6 +494,8 @@ def main():
                        help="Filter files from this date onwards (format: YYYYMMDD)")
     parser.add_argument("--date-to", type=str, default=None,
                        help="Filter files up to this date (format: YYYYMMDD)")
+    parser.add_argument("--reasoning", action="store_true",
+                       help="Include reasoning content for programs that correctly solve the test output")
     parser.add_argument("--clean-code", action="store_true",
                        help="Strip comments and clean up code before processing")
     
@@ -596,6 +675,7 @@ def main():
     training_examples = []
     programs_with_at_least_one_correct = 0
     programs_with_all_correct = 0
+    programs_with_reasoning = 0
     validation_mismatches = 0
     invalid_output_programs = 0
     processed_examples = 0
@@ -604,7 +684,7 @@ def main():
     
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         # Submit all training example generation jobs
-        future_to_info = {executor.submit(create_training_example, prog_info['program_data'], prog_info['task_data']): prog_info 
+        future_to_info = {executor.submit(create_training_example, prog_info['program_data'], prog_info['task_data'], args): prog_info 
                          for prog_info in qualified_programs}
         
         # Collect results as they complete
@@ -619,6 +699,11 @@ def main():
             try:
                 training_example = future.result()
                 training_examples.append(training_example)
+                
+                # Check if reasoning was included in this example
+                assistant_content = training_example['messages'][2]['content']
+                if '<think>' in assistant_content:
+                    programs_with_reasoning += 1
                 
                 # Track programs with at least one originally correct answer
                 prog_data = prog_info['program_data']
@@ -651,11 +736,16 @@ def main():
     if len(training_examples) > 0:
         pct_with_correct = (programs_with_at_least_one_correct / len(training_examples)) * 100
         pct_all_correct = (programs_with_all_correct / len(training_examples)) * 100
+        pct_with_reasoning = (programs_with_reasoning / len(training_examples)) * 100
         print(f"Programs with at least one originally correct answer: {programs_with_at_least_one_correct}/{len(training_examples)} ({pct_with_correct:.1f}%)")
         print(f"Programs with all training examples correct: {programs_with_all_correct}/{len(training_examples)} ({pct_all_correct:.1f}%)")
+        if args.reasoning:
+            print(f"Programs with reasoning content included: {programs_with_reasoning}/{len(training_examples)} ({pct_with_reasoning:.1f}%)")
     else:
         print(f"Programs with at least one originally correct answer: 0/0 (0.0%)")
         print(f"Programs with all training examples correct: 0/0 (0.0%)")
+        if args.reasoning:
+            print(f"Programs with reasoning content included: 0/0 (0.0%)")
     
     # Report validation mismatches
     if validation_mismatches > 0:
