@@ -311,6 +311,7 @@ The `generate_training_data.py` tool extracts programs from log files to create 
 - **Stratified validation splits**: Task-level validation with balanced difficulty distribution
 - **Strict quality control**: Re-executes programs, validates 2D grid formats, ensures consistency
 - **Smart error handling**: Drops individual failed examples but rejects programs with format violations
+- **Code cleaning**: Optional aggressive comment stripping with `--clean-code` flag (up to 58% size reduction)
 
 ### Usage
 
@@ -321,12 +322,84 @@ uv run python generate_training_data.py --limit 100
 # Generate from all log files with validation split
 uv run python generate_training_data.py --validation --output 16-jul-lorge.jsonl
 
+# Generate with clean code (strips comments and whitespace)
+uv run python generate_training_data.py --limit 100 --clean-code --output clean_training.jsonl
+
 # Specify custom output filename
 uv run python generate_training_data.py --limit 500 --output my_training_data.jsonl
 
 # Generate with validation split and custom name
 uv run python generate_training_data.py --limit 1000 --validation --output arc_training_data.jsonl
+
+# Combine clean code with other options
+uv run python generate_training_data.py --limit 500 --clean-code --validation --output clean_balanced_training.jsonl
 ```
+
+### Code Cleaning (`--clean-code`)
+
+The `--clean-code` flag enables aggressive comment stripping and code cleanup to produce compact, professional training data:
+
+#### **What It Does**
+- **Removes comment-only lines**: Lines that start with `#` are eliminated entirely
+- **Strips inline comments**: Text after `#` on code lines is removed (respects strings)
+- **Eliminates blank lines**: Reduces excessive whitespace and empty lines
+- **Normalizes formatting**: Produces clean, compact code without documentation overhead
+
+#### **Benefits**
+- **Significant size reduction**: Typically achieves 50-60% reduction in character count
+- **Token efficiency**: Fewer tokens needed for LLM training and inference
+- **Cleaner training data**: Focuses on executable logic without comment clutter
+- **Professional formatting**: Produces code that looks hand-cleaned
+
+#### **Safety Features**
+- **Pre-validation cleaning**: Code is cleaned **before** program validation to catch issues early
+- **Compilation testing**: Each cleaned program is verified with `compile()` to ensure syntax validity
+- **Graceful fallback**: If cleaning breaks the code, the original version is preserved
+- **Zero failures tolerated**: Programs that fail cleaning are kept in original form
+- **Detailed reporting**: Shows cleaning statistics and any failures
+
+#### **Example Results**
+```
+Code cleaning results:
+  - 423 programs processed
+  - 0 cleaning failures (kept original)
+  - 7,306 → 3,076 characters
+  - 57.9% size reduction achieved
+```
+
+#### **Before vs After**
+
+**Original code (112 lines):**
+```python
+def transform(grid):
+    rows_in = len(grid)
+    cols_in = len(grid[0]) # Always 9
+
+    rows_out = 7
+    cols_out = 9 # Always 9
+
+    # Step 1: Initialize transformed_grid by copying relevant parts
+    # The first row of the output grid is always the first row of input
+    for c_out in range(cols_out):
+        transformed_grid[0][c_out] = grid[0][c_out]
+```
+
+**Cleaned code (55 lines):**
+```python
+def transform(grid):
+    rows_in = len(grid)
+    cols_in = len(grid[0])
+    rows_out = 7
+    cols_out = 9
+    for c_out in range(cols_out):
+        transformed_grid[0][c_out] = grid[0][c_out]
+```
+
+#### **Use Cases**
+- **Fine-tuning optimization**: Reduce token usage and training costs
+- **Production training data**: Clean, professional code for model training
+- **Storage efficiency**: Smaller files for faster loading and transfer
+- **Focus on logic**: Remove documentation to emphasize executable patterns
 
 ### Output Files
 

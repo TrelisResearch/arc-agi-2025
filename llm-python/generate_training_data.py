@@ -10,6 +10,7 @@ import argparse
 import datetime
 import random
 import multiprocessing
+import re
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
@@ -51,6 +52,56 @@ def format_task_for_prompt(task_data: Dict, include_test: bool = False) -> str:
         lines.append(format_grid(task_data['test'][0]['input']))
     
     return '\n'.join(lines)
+
+def strip_comments_aggressive(source_code: str) -> str:
+    """
+    Aggressive comment stripping - removes comments and cleans up whitespace.
+    This version removes comment lines entirely and normalizes whitespace.
+    """
+    if not source_code.strip():
+        return source_code
+    
+    try:
+        # First pass: identify which lines are comment-only or empty
+        lines = source_code.split('\n')
+        cleaned_lines = []
+        
+        for line in lines:
+            stripped = line.strip()
+            # Skip empty lines and comment-only lines
+            if not stripped or stripped.startswith('#'):
+                continue
+            
+            # Remove inline comments but preserve the code part
+            if '#' in line:
+                # Find the # that's not inside a string literal
+                in_string = False
+                quote_char = None
+                for i, char in enumerate(line):
+                    if char in ['"', "'"] and (i == 0 or line[i-1] != '\\'):
+                        if not in_string:
+                            in_string = True
+                            quote_char = char
+                        elif char == quote_char:
+                            in_string = False
+                            quote_char = None
+                    elif char == '#' and not in_string:
+                        line = line[:i].rstrip()
+                        break
+            
+            cleaned_lines.append(line)
+        
+        # Join lines and normalize whitespace
+        result = '\n'.join(cleaned_lines)
+        
+        # Remove excessive blank lines (more than 2 consecutive)
+        result = re.sub(r'\n\s*\n\s*\n+', '\n\n', result)
+        
+        return result.strip()
+        
+    except Exception as e:
+        print(f"Warning: Error in aggressive comment stripping: {e}")
+        return source_code
 
 def execute_program(program: str, input_grid: List[List[int]], timeout: float = 0.5) -> Tuple[Optional[List[List[int]]], Optional[str], bool]:
     """Execute a program on an input grid and return the result"""
@@ -216,15 +267,19 @@ def extract_programs_from_log(log_path: str) -> List[Dict]:
                 solved_count = training_feedback.get('solved_count', 0)
                 total_examples = training_feedback.get('total_training_examples', 0)
                 
-                # Only include if at least one training example is wrong
-                if total_examples > 0 and solved_count < total_examples:
+                # Include if we have training examples and the program was extracted
+                if total_examples > 0:
                     programs.append({
                         'task_id': task_id,
                         'program': program,
                         'turn_number': 1,
                         'logged_solved_count': solved_count,
                         'logged_total_examples': total_examples,
-                        'log_path': log_path
+                        'log_path': log_path,
+                        'model': log_data.get('model', ''),
+                        'dataset': log_data.get('dataset', ''),
+                        'subset': log_data.get('subset', ''),
+                        'api_type': api_type
                     })
     
     elif 'independent_attempts' in api_type:
@@ -239,7 +294,11 @@ def extract_programs_from_log(log_path: str) -> List[Dict]:
                     'task_id': task_id,
                     'program': program,
                     'attempt_number': attempt.get('attempt_number', 1),
-                    'log_path': log_path
+                    'log_path': log_path,
+                    'model': log_data.get('model', ''),
+                    'dataset': log_data.get('dataset', ''),
+                    'subset': log_data.get('subset', ''),
+                    'api_type': api_type
                 })
     
     return programs
@@ -270,10 +329,8 @@ def validate_single_program(prog_data: Dict) -> Optional[Dict]:
     prog_data['validated_total_examples'] = total_examples
     prog_data['successful_executions'] = successful_executions
     
-    # Only include if:
-    # 1. Program runs without error (at least one successful execution)
-    # 2. At least one training example is wrong
-    if successful_executions > 0 and solved_count < total_examples:
+    # Only include if program runs without error (at least one successful execution)
+    if successful_executions > 0:
         return {
             'program_data': prog_data,
             'task_data': task_data
@@ -348,6 +405,20 @@ def main():
                        help="Output JSONL file name")
     parser.add_argument("--validation", action="store_true",
                        help="Create a validation split (10% or 32 examples, whichever is smaller)")
+    parser.add_argument("--pattern", type=str, default=None,
+                       help="Filter log files by pattern (e.g., '20250721_112639' for specific timestamp)")
+    parser.add_argument("--model", type=str, default=None,
+                       help="Filter by model name (e.g., 'google/gemini-2.5-flash')")
+    parser.add_argument("--dataset", type=str, default=None,
+                       help="Filter by dataset (e.g., 'arc-agi-1')")
+    parser.add_argument("--subset", type=str, default=None,
+                       help="Filter by subset (e.g., 'all_training')")
+    parser.add_argument("--date-from", type=str, default=None,
+                       help="Filter files from this date onwards (format: YYYYMMDD)")
+    parser.add_argument("--date-to", type=str, default=None,
+                       help="Filter files up to this date (format: YYYYMMDD)")
+    parser.add_argument("--clean-code", action="store_true",
+                       help="Strip comments and clean up code before processing")
     
     args = parser.parse_args()
     
@@ -362,6 +433,35 @@ def main():
     # Get all log files (exclude summary files)
     log_files = glob.glob("logs/*.json")
     log_files = [f for f in log_files if 'summary' not in f]
+    
+    # Filter by pattern if provided
+    if args.pattern:
+        log_files = [f for f in log_files if args.pattern in f]
+        print(f"Filtered to {len(log_files)} log files matching pattern '{args.pattern}'")
+    
+    # Filter by date range if provided
+    if args.date_from or args.date_to:
+        def extract_date_from_filename(filename):
+            # Extract date from filename like logs/20250721_112639_task_id.json
+            basename = os.path.basename(filename)
+            if len(basename) >= 8 and basename[:8].isdigit():
+                return basename[:8]
+            return None
+        
+        filtered_files = []
+        for log_file in log_files:
+            file_date = extract_date_from_filename(log_file)
+            if file_date:
+                include_file = True
+                if args.date_from and file_date < args.date_from:
+                    include_file = False
+                if args.date_to and file_date > args.date_to:
+                    include_file = False
+                if include_file:
+                    filtered_files.append(log_file)
+        
+        print(f"Filtered to {len(filtered_files)} log files by date range")
+        log_files = filtered_files
     
     # Sort by timestamp (filename contains timestamp)
     log_files.sort()
@@ -398,6 +498,72 @@ def main():
     
     print(f"\nFound {len(all_programs)} total programs")
     
+    # Filter programs by model, dataset, subset if specified
+    if args.model or args.dataset or args.subset:
+        print(f"Applying program filters:")
+        if args.model:
+            print(f"  - Model: {args.model}")
+        if args.dataset:
+            print(f"  - Dataset: {args.dataset}")
+        if args.subset:
+            print(f"  - Subset: {args.subset}")
+            
+        filtered_programs = []
+        for program in all_programs:
+            include_program = True
+            
+            if args.model and program.get('model', '').lower() != args.model.lower():
+                include_program = False
+            if args.dataset and program.get('dataset', '').lower() != args.dataset.lower():
+                include_program = False
+            if args.subset and program.get('subset', '').lower() != args.subset.lower():
+                include_program = False
+                
+            if include_program:
+                filtered_programs.append(program)
+        
+        print(f"Filtered to {len(filtered_programs)} programs by model/dataset/subset criteria")
+        all_programs = filtered_programs
+    
+    # Clean code if requested
+    if args.clean_code:
+        print(f"Cleaning code (stripping comments and whitespace)...")
+        cleaned_programs = []
+        cleaning_stats = {'original_chars': 0, 'cleaned_chars': 0, 'failed_cleans': 0}
+        
+        for program_data in all_programs:
+            original_program = program_data['program']
+            cleaned_program = strip_comments_aggressive(original_program)
+            
+            # Test that cleaned code still compiles
+            try:
+                compile(cleaned_program, '<cleaned>', 'exec')
+                # Update the program with cleaned version
+                program_data['program'] = cleaned_program
+                program_data['original_program'] = original_program  # Keep original for reference
+                cleaned_programs.append(program_data)
+                
+                # Track stats
+                cleaning_stats['original_chars'] += len(original_program)
+                cleaning_stats['cleaned_chars'] += len(cleaned_program)
+                
+            except (SyntaxError, Exception) as e:
+                # If cleaning breaks the code, keep the original
+                print(f"  Warning: Code cleaning failed for task {program_data.get('task_id', 'unknown')}: {e}")
+                cleaned_programs.append(program_data)  # Keep original
+                cleaning_stats['failed_cleans'] += 1
+        
+        all_programs = cleaned_programs
+        
+        # Report cleaning results
+        if cleaning_stats['original_chars'] > 0:
+            reduction_pct = (1 - cleaning_stats['cleaned_chars'] / cleaning_stats['original_chars']) * 100
+            print(f"  Code cleaning results:")
+            print(f"    - {len(all_programs)} programs processed")
+            print(f"    - {cleaning_stats['failed_cleans']} cleaning failures (kept original)")
+            print(f"    - {cleaning_stats['original_chars']:,} → {cleaning_stats['cleaned_chars']:,} characters")
+            print(f"    - {reduction_pct:.1f}% size reduction achieved")
+    
     # Filter programs to only those that qualify (in parallel)
     qualified_programs = []
     validated_count = 0
@@ -429,6 +595,7 @@ def main():
     # Generate training examples (in parallel)
     training_examples = []
     programs_with_at_least_one_correct = 0
+    programs_with_all_correct = 0
     validation_mismatches = 0
     invalid_output_programs = 0
     processed_examples = 0
@@ -456,9 +623,13 @@ def main():
                 # Track programs with at least one originally correct answer
                 prog_data = prog_info['program_data']
                 solved_count = prog_data.get('validated_solved_count', 0)
+                total_examples = prog_data.get('validated_total_examples', 0)
                 
                 if solved_count > 0:
                     programs_with_at_least_one_correct += 1
+                
+                if solved_count == total_examples and total_examples > 0:
+                    programs_with_all_correct += 1
                 
                 # Check for validation mismatches (if we have logged data to compare)
                 if 'logged_solved_count' in prog_data:
@@ -479,9 +650,12 @@ def main():
     # Calculate percentage with at least one originally correct answer
     if len(training_examples) > 0:
         pct_with_correct = (programs_with_at_least_one_correct / len(training_examples)) * 100
+        pct_all_correct = (programs_with_all_correct / len(training_examples)) * 100
         print(f"Programs with at least one originally correct answer: {programs_with_at_least_one_correct}/{len(training_examples)} ({pct_with_correct:.1f}%)")
+        print(f"Programs with all training examples correct: {programs_with_all_correct}/{len(training_examples)} ({pct_all_correct:.1f}%)")
     else:
         print(f"Programs with at least one originally correct answer: 0/0 (0.0%)")
+        print(f"Programs with all training examples correct: 0/0 (0.0%)")
     
     # Report validation mismatches
     if validation_mismatches > 0:
