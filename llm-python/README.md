@@ -1,6 +1,6 @@
-# o3-tools
+# ARC-AGI Task Runner
 
-A tool for testing OpenAI-compatible language models on ARC-AGI tasks using the Chat Completions API.
+A comprehensive tool for testing OpenAI-compatible language models on ARC-AGI tasks using the Chat Completions API. Supports reasoning models (o3, Gemini Flash, Qwen) with multi-turn feedback, independent attempts, and detailed analysis.
 
 Folders:
 - `fine-tuning` - ipynb notebooks for fine-tunign as well as a logs folder for tensorboard logs.
@@ -125,8 +125,11 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_
 # Run tasks with a custom API endpoint (e.g., local LLM or Claude)
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --model claude-3-haiku --base-url https://api.anthropic.com/v1
 
-# Run with OpenRouter and reasoning effort control for compatible models
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --model google/gemini-2.5-flash-reasoning --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+# Run with OpenRouter and Gemini Flash with reasoning
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1 --reasoning_effort low
+
+# Run Gemini Flash with higher reasoning effort (8k tokens)
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
 
 # RunPod: Use direct TCP to avoid Cloudflare 524 timeouts
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --model Qwen/Qwen3-4B --base-url http://157.66.254.42:15712/v1
@@ -151,7 +154,7 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10
 #   --subset: shortest_training_1, shortest_training_10, shortest_training_30, shortest_evaluation_1, shortest_evaluation_10, shortest_evaluation_30, etc.
 #   --model: Model name (default: gpt-4.1-nano) - works with any OpenAI-compatible API
 #   --base-url: Custom API endpoint URL (default: OpenAI) - enables Claude, Qwen, local models, etc.
-#   --reasoning_effort: Reasoning effort level: low (4k tokens), medium (16k tokens), high (64k tokens) - for compatible models
+#   --reasoning_effort: Reasoning effort level: low (2k tokens), medium (8k tokens), high (32k tokens) - for Gemini; other models may vary
 #   --limit: Limit number of tasks to run
 #   --max_turns: Maximum number of turns/attempts (default: 3) - turns for multi-turn mode, attempts for independent mode
 #   --max_workers: Number of parallel workers (default: 1, max: 30)
@@ -163,18 +166,29 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10
 
 ### Reasoning Effort Support
 
-For compatible models that support reasoning (e.g., Gemini Flash via OpenRouter), control reasoning token allocation:
+For compatible models that support reasoning, control reasoning token allocation:
 
-- `--reasoning_effort low`: 4,000 reasoning tokens (default)
-- `--reasoning_effort medium`: 16,000 reasoning tokens  
-- `--reasoning_effort high`: 64,000 reasoning tokens
+**Gemini Models (via OpenRouter):**
+- `--reasoning_effort low`: 2,000 reasoning tokens (default)
+- `--reasoning_effort medium`: 8,000 reasoning tokens  
+- `--reasoning_effort high`: 32,000 reasoning tokens
+- Uses optimal `extra_body={"reasoning": {"max_tokens": X}}` parameter structure
+- Reasoning content captured in logs for analysis
 
-Works with OpenRouter and other compatible APIs that detect reasoning-capable models automatically.
+**Other Reasoning Models:**
+- Uses standard `max_tokens` parameter for reasoning allocation
+- Works with OpenRouter and other compatible APIs automatically
+
+**Example Results:** Gemini Flash gets 7/10 correct on shortest training tasks with 2k reasoning tokens, 5/10 correct on medium difficulty tasks with 8k reasoning tokens.
 
 ### Thinking Tokens Capture
 
 The tool automatically detects and logs thinking tokens from models that provide them:
 
+- **Gemini models** (via OpenRouter): 
+  - Reasoning captured in `reasoning` field with detailed internal thought processes
+  - Usage tokens: `reasoning_tokens` and `thinking_tokens` fields (when available)
+  - Example: *"**Examining Grid Transformations** I've been scrutinizing the input and output grid examples..."*
 - **Qwen models**: Reasoning captured in separate fields
   - Via OpenRouter: `reasoning` field
   - Via custom endpoints (SGLang/RunPod): `reasoning_content` field
@@ -767,29 +781,37 @@ Summary reports aggregate across all tasks and include:
 
 ### Individual Task Log (`{timestamp}_{task_id}.json`)
 
-**Reasoning Model Example (o4-mini):**
+**Reasoning Model Example (Gemini Flash):**
 ```json
 {
-  "task_id": "6150a2bd",
-  "model": "o4-mini", 
-  "reasoning_effort": "medium",
-  "api_type": "responses_api",
-  "program": "def transform(grid):\n    return [row[::-1] for row in grid[::-1]]",
+  "task_id": "007bbfb7",
+  "model": "google/gemini-2.5-flash", 
+  "reasoning_effort": "low",
+  "api_type": "chat_completions_independent_attempts",
+  "program": "def transform(grid):\n    output_grid = [[0 for _ in range(9)] for _ in range(9)]...",
   "task_failure_reason": "",
   "timed_out": false,
-  "tokens_used": 1189,
-  "turns_used": 2,
-  "request_cost": 0.004146,
-  "raw_response": { /* Full API response */ },
+  "tokens_used": 4373,
+  "turns_used": 1,
+  "request_cost": 0.007654,
+  "raw_response": {
+    "content": "The observed pattern is as follows:\nThe input grid is 3x3...",
+    "reasoning": "**Examining Grid Transformations**\n\nI've been scrutinizing the input and output grid examples to discern the core transformation logic...",
+    "usage": {
+      "prompt_tokens": 1451,
+      "completion_tokens": 2922,
+      "reasoning_tokens": null
+    }
+  },
   "score": {
     "correct": true,
     "pixel_accuracy": 1.0,
-    "total_pixels": 9,
-    "correct_pixels": 9,
+    "total_pixels": 81,
+    "correct_pixels": 81,
     "error": null
   },
-  "predicted_output": [[0,0,4], [0,8,6], [5,3,6]],
-  "actual_output": [[0,0,4], [0,8,6], [5,3,6]]
+  "predicted_output": [[7,0,7], [0,7,0], [7,0,7]],
+  "actual_output": [[7,0,7], [0,7,0], [7,0,7]]
 }
 ```
 
@@ -994,6 +1016,10 @@ Current pricing (as of 2025, $/1M tokens):
 - **gpt-4.1-nano**: Input $0.10, Output $0.40
 - **gpt-4o**: Input $2.50, Output $10.00
 - **gpt-4o-mini**: Input $0.15, Output $0.60
+
+**Google Models:**
+- **google/gemini-2.5-flash**: Input $0.30, Output $2.50
+- **google/gemini** (other models): Input $0.30, Output $2.50
 
 **Specialized Models:**
 - **computer-use-preview**: Input $3.00, Output $12.00

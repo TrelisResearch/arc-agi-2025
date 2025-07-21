@@ -1,5 +1,59 @@
 # Experiment Notes
 
+## 2025 21st July
+
+### Generating Gemini 2.5 Flash data on ARC-AGI-1 training dataset - single attempt
+
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_training --repeat-runs 1 --max_workers 64 --max_turns 1 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+```
+
+
+
+
+
+### Picking a model to generate some high quality data from.
+
+Generate answers to ARC AGI 1 Training set using Qwen3 235B A22B as it is the cheapest reasoning model that performs reasonably well. Actually, that model is cheaper but too slow, so I used Gemini 2.5 Flash (OpenRouter pricing: $0.30/M input, $2.50/M output), which is 6x more expensive per output token but perhaps 10x faster.
+
+I'll just run once through (even though this won't give great statistical scoring), just to get a first pass of data.
+
+Quick test:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_training --repeat-runs 1 --max_workers 64 --max_turns 1 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --limit 1
+```
+Gemini requires a max_tokens parameter to be passed for reasoning, which I think may be nice because it allows a limit on how much reasoning to use and saves cost - I've set the default to 2k max!
+
+Run on the longest 10 training problems to see how many tokens that burns:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset longest_training_10 --repeat-runs 1 --max_workers 64 --max_turns 1 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1
+```
+It gets none of these correct. Try the shortest 10 problems:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 1 --max_workers 64 --max_turns 1 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1
+```
+Gets 7/10 of these correct with a single attempt and 2k reasoning tokens.
+
+Then try the middle 10 problems:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 1 --max_workers 64 --max_turns 1 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1
+```
+Gets 3/10 correct with 2k reasoning tokens. Cost is $0.20 and 100k tokens used! Implying the cost for all 400 would possibly be around $80.
+
+To try and get some hard ones correct, let's increase to 8k reasoning tokens:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset longest_training_10 --repeat-runs 1 --max_workers 64 --max_turns 1 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+```
+This is getting 0 correct and now the cost is $0.35, implying a cost of $14 to do a single attempt at all 400 (probably would cost less).
+
+Going to re-run the medium difficulty with 8k reasoning tokens:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 1 --max_workers 64 --max_turns 1 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+```
+This is getting 6/10 and the cost is $0.3, implying a cost for 400 problems of about $12.
+
+To proceed, I'm going to just do a single attempt with the Gemini 2.5 Flash model. We can generate more attempts later. Note that this will be a lot more sparse in terms of data than the SOAR paper, but it will allow for a quick test run. It will also allow an ablation where we make use of reasoning data or not.
+
 ## 2025 18th July
 
 ### Benchmarking Qwen3 4B Performance on ARC-AGI-1 Evaluation Set

@@ -143,6 +143,12 @@ class ARCTaskRunner:
         elif model_lower.startswith('gpt-4o'):
             return (2.50, 10.00)
         
+        # Google models
+        elif model_lower.startswith('google/gemini-2.5-flash'):
+            return (0.30, 2.50)
+        elif model_lower.startswith('google/gemini'):
+            return (0.30, 2.50)  # Default for other Gemini models
+        
         # Default fallback (gpt-4o-mini pricing)
         else:
             return (0.15, 0.60)
@@ -231,12 +237,17 @@ def transform(grid):
             if self.base_url and "openrouter" in self.base_url.lower():
                 # OpenRouter reasoning token allocation
                 reasoning_tokens = {
-                    "low": 4000,
-                    "medium": 16000, 
-                    "high": 64000
+                    "low": 2000,
+                    "medium": 8000, 
+                    "high": 32000
                 }
                 if self.reasoning_effort in reasoning_tokens:
-                    kwargs["max_tokens"] = reasoning_tokens[self.reasoning_effort]
+                    # Gemini models need special reasoning parameter structure
+                    if "gemini" in self.model.lower():
+                        kwargs["extra_body"] = {"reasoning": {"max_tokens": reasoning_tokens[self.reasoning_effort]}}
+                    else:
+                        # Other reasoning models use max_tokens directly
+                        kwargs["max_tokens"] = reasoning_tokens[self.reasoning_effort]
             
             # Add Qwen-specific parameters for thinking models (only for custom endpoints)
             if "qwen" in self.model.lower() and self.base_url:
@@ -439,7 +450,9 @@ def transform(grid):
                     'usage': {
                         'prompt_tokens': response.usage.prompt_tokens if response.usage else 0,
                         'completion_tokens': response.usage.completion_tokens if response.usage else 0,
-                        'total_tokens': response.usage.total_tokens if response.usage else 0
+                        'total_tokens': response.usage.total_tokens if response.usage else 0,
+                        'reasoning_tokens': getattr(response.usage, 'reasoning_tokens', None) if response.usage else None,
+                        'thinking_tokens': getattr(response.usage, 'thinking_tokens', None) if response.usage else None
                     },
                     'content': response.choices[0].message.content if response.choices else "",
                     'reasoning': response.choices[0].message.reasoning if response.choices and hasattr(response.choices[0].message, 'reasoning') else None,
@@ -459,7 +472,9 @@ def transform(grid):
                         'usage': {
                             'prompt_tokens': resp.usage.prompt_tokens if resp.usage else 0,
                             'completion_tokens': resp.usage.completion_tokens if resp.usage else 0,
-                            'total_tokens': resp.usage.total_tokens if resp.usage else 0
+                            'total_tokens': resp.usage.total_tokens if resp.usage else 0,
+                            'reasoning_tokens': getattr(resp.usage, 'reasoning_tokens', None) if resp.usage else None,
+                            'thinking_tokens': getattr(resp.usage, 'thinking_tokens', None) if resp.usage else None
                         },
                         'content': resp.choices[0].message.content if resp.choices else "",
                         'reasoning': resp.choices[0].message.reasoning if resp.choices and hasattr(resp.choices[0].message, 'reasoning') else None,
@@ -527,6 +542,7 @@ def transform(grid):
                         'message': {
                             'role': getattr(choice.message, 'role', 'assistant'),
                             'content': getattr(choice.message, 'content', None),
+                            'reasoning': getattr(choice.message, 'reasoning', None),
                             'reasoning_content': getattr(choice.message, 'reasoning_content', None)
                         }
                     }
@@ -539,7 +555,9 @@ def transform(grid):
                     usage_data = {
                         'input_tokens': getattr(usage, 'input_tokens', None) or getattr(usage, 'prompt_tokens', None),
                         'output_tokens': getattr(usage, 'output_tokens', None) or getattr(usage, 'completion_tokens', None),
-                        'total_tokens': getattr(usage, 'total_tokens', None)
+                        'total_tokens': getattr(usage, 'total_tokens', None),
+                        'reasoning_tokens': getattr(usage, 'reasoning_tokens', None),
+                        'thinking_tokens': getattr(usage, 'thinking_tokens', None)
                     }
                 
                 return {
