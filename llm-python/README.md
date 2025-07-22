@@ -346,6 +346,7 @@ The `generate_training_data.py` tool extracts programs from log files to create 
 - **Strict quality control**: Re-executes programs, validates 2D grid formats, ensures consistency
 - **Smart error handling**: Drops individual failed examples but rejects programs with format violations
 - **Code cleaning**: Optional aggressive comment stripping with `--clean-code` flag (up to 58% size reduction)
+- **Automatic deduplication**: Removes duplicate programs within each task based on test correctness and output similarity
 
 ### Usage
 
@@ -385,6 +386,9 @@ uv run python generate_training_data.py --dataset "arc-agi-1" --subset "all_trai
 
 # Filter by subset only (includes that subset from both datasets)
 uv run python generate_training_data.py --subset "middle_training_10" --validation --output middle_difficulty.jsonl
+
+# Disable deduplication if you want all programs (including duplicates)
+uv run python generate_training_data.py --limit 100 --no-dedup --output all_programs_no_dedup.jsonl
 ```
 
 ### Filtering Options
@@ -572,6 +576,43 @@ Saved validation data to: training_data/training_data_val.jsonl (24 examples fro
 ```
 
 **Performance**: Uses parallel processing with `total_cores - 2` workers for optimal speed. Typically achieves **6-10x speedup** compared to single-threaded processing. Progress updates appear every 100 log files and every 50 programs during validation.
+
+### Program Deduplication (`--no-dedup`)
+
+The tool automatically deduplicates programs within each task to create higher-quality training data:
+
+#### **How Deduplication Works**
+1. **Test-correct deduplication**: If multiple programs correctly solve the test case, only the first one is kept (since they're all equivalent in terms of correctness)
+2. **Output-similarity deduplication**: For programs that don't solve the test correctly, deduplication is based on output similarity across all training examples
+
+#### **Deduplication Logic**
+- Programs are grouped by task ID
+- Within each task, programs that correctly solve the test are deduplicated (keep only first)
+- Remaining programs are deduplicated based on their output signatures (combination of outputs on all training examples)
+- Programs with identical output patterns are considered duplicates (only first is kept)
+
+#### **Benefits**
+- **Reduces training data redundancy**: Eliminates functionally identical programs
+- **Improves training efficiency**: Fewer duplicate patterns mean more diverse learning examples
+- **Maintains solution diversity**: Keeps programs with different approaches (different outputs)
+- **Preserves correctness**: Always keeps at least one test-correct program per task when available
+
+#### **Example Output**
+```
+📊 Deduplication Summary:
+  Tasks processed: 45
+  Programs before: 234
+  Programs after: 156
+  Test-correct deduped: 23
+  Output-similarity deduped: 55
+  Total deduplication: 78 programs (33.3%)
+```
+
+#### **Disable Deduplication**
+Use `--no-dedup` flag to keep all programs including duplicates:
+```bash
+uv run python generate_training_data.py --no-dedup --output all_programs.jsonl
+```
 
 ### Use Cases
 

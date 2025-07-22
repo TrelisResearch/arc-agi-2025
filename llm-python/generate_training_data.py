@@ -473,6 +473,118 @@ def create_training_example(program_data: Dict, task_data: Dict, args) -> Dict:
     
     return training_example
 
+def deduplicate_programs_by_task(qualified_programs: List[Dict], args) -> Tuple[List[Dict], Dict]:
+    """Deduplicate programs within each task based on test correctness and output similarity"""
+    
+    # Group programs by task_id
+    task_programs = {}
+    for prog_info in qualified_programs:
+        task_id = prog_info['program_data']['task_id']
+        if task_id not in task_programs:
+            task_programs[task_id] = []
+        task_programs[task_id].append(prog_info)
+    
+    deduplication_stats = {
+        'total_tasks': len(task_programs),
+        'test_correct_deduped': 0,
+        'output_deduped': 0,
+        'total_programs_before': len(qualified_programs),
+        'total_programs_after': 0
+    }
+    
+    deduplicated_programs = []
+    
+    for task_id, programs in task_programs.items():
+        # Show detailed debug info for tasks with multiple programs
+        show_debug = len(programs) > 1
+        if show_debug:
+            print(f"  🔍 Deduplicating task {task_id}: {len(programs)} programs")
+        
+        task_deduped = []
+        
+        # Step 1: Deduplicate programs that correctly solve the test
+        test_correct_programs = []
+        test_incorrect_programs = []
+        
+        for prog_info in programs:
+            prog_data = prog_info['program_data']
+            task_data = prog_info['task_data']
+            program = prog_data['program']
+            
+            # Check if program correctly solves the test
+            if task_data.get('test') and len(task_data['test']) > 0:
+                test_input = task_data['test'][0]['input']
+                expected_test_output = task_data['test'][0]['output']
+                predicted_test_output, error, timed_out = execute_program(program, test_input)
+                
+                if (predicted_test_output is not None and not error and not timed_out and 
+                    predicted_test_output == expected_test_output):
+                    test_correct_programs.append(prog_info)
+                else:
+                    test_incorrect_programs.append(prog_info)
+            else:
+                test_incorrect_programs.append(prog_info)
+        
+        # For test-correct programs, keep only the first one (they all solve the test correctly)
+        if len(test_correct_programs) > 1:
+            deduplication_stats['test_correct_deduped'] += len(test_correct_programs) - 1
+            if show_debug:
+                print(f"    ✅ Test-correct dedup: {len(test_correct_programs)} → 1 (kept first)")
+            task_deduped.append(test_correct_programs[0])  # Keep only the first test-correct program
+        elif len(test_correct_programs) == 1:
+            task_deduped.append(test_correct_programs[0])
+        
+        # Step 2: For test-incorrect programs, deduplicate by output similarity
+        if test_incorrect_programs:
+            output_signatures = {}
+            
+            for prog_info in test_incorrect_programs:
+                prog_data = prog_info['program_data']
+                task_data = prog_info['task_data']
+                program = prog_data['program']
+                
+                # Generate output signature by running program on all training inputs
+                outputs = []
+                for example in task_data['train']:
+                    predicted_output, error, timed_out = execute_program(program, example['input'])
+                    if predicted_output is not None and not error and not timed_out:
+                        # Convert to tuple for hashing
+                        output_tuple = tuple(tuple(row) for row in predicted_output)
+                    else:
+                        output_tuple = ('ERROR', str(error) if error else 'TIMEOUT')
+                    outputs.append(output_tuple)
+                
+                signature = tuple(outputs)
+                
+                # Keep first program with this signature
+                if signature not in output_signatures:
+                    output_signatures[signature] = prog_info
+                    task_deduped.append(prog_info)
+                else:
+                    deduplication_stats['output_deduped'] += 1
+            
+            if show_debug and len(test_incorrect_programs) > len([sig for sig in output_signatures]):
+                unique_outputs = len(output_signatures)
+                print(f"    🔍 Output-based dedup: {len(test_incorrect_programs)} → {unique_outputs} (removed {len(test_incorrect_programs) - unique_outputs} duplicates)")
+        
+        deduplicated_programs.extend(task_deduped)
+    
+    deduplication_stats['total_programs_after'] = len(deduplicated_programs)
+    
+    # Always show deduplication summary
+    print(f"\n📊 Deduplication Summary:")
+    print(f"  Tasks processed: {deduplication_stats['total_tasks']}")
+    print(f"  Programs before: {deduplication_stats['total_programs_before']}")
+    print(f"  Programs after: {deduplication_stats['total_programs_after']}")
+    print(f"  Test-correct deduped: {deduplication_stats['test_correct_deduped']}")
+    print(f"  Output-similarity deduped: {deduplication_stats['output_deduped']}")
+    total_deduped = deduplication_stats['test_correct_deduped'] + deduplication_stats['output_deduped']
+    if deduplication_stats['total_programs_before'] > 0:
+        dedup_pct = (total_deduped / deduplication_stats['total_programs_before']) * 100
+        print(f"  Total deduplication: {total_deduped} programs ({dedup_pct:.1f}%)")
+    
+    return deduplicated_programs, deduplication_stats
+
 def main():
     parser = argparse.ArgumentParser(description="Generate training data from log files")
     parser.add_argument("--limit", type=int, default=None, 
@@ -498,6 +610,8 @@ def main():
                        help="Include reasoning content for programs that correctly solve the test output")
     parser.add_argument("--clean-code", action="store_true",
                        help="Strip comments and clean up code before processing")
+    parser.add_argument("--no-dedup", action="store_true",
+                       help="Disable deduplication of programs within each task")
     
     args = parser.parse_args()
     
@@ -670,6 +784,14 @@ def main():
                     print(f"  Warning: Error validating program: {e}")
     
     print(f"\nQualified programs: {len(qualified_programs)}")
+    
+    # Deduplicate programs within each task (unless disabled)
+    if not args.no_dedup:
+        print(f"Deduplicating programs within each task...")
+        qualified_programs, dedup_stats = deduplicate_programs_by_task(qualified_programs, args)
+        print(f"After deduplication: {len(qualified_programs)} programs")
+    else:
+        print(f"Deduplication disabled by --no-dedup flag")
     
     # Generate training examples (in parallel)
     training_examples = []
