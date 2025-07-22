@@ -5,12 +5,14 @@
 **Tasks for Today:**
 [x] Measure performance on 1 task only, to get started. Generate 8 samples for that task. Will use middle_training_1 .
 [x] Carefully inspect all of that data.
-[ ] Generate a dataset from that.
-  [ ] Add de-duplication of programs if the test example is correct. In de-bug mode, print out info on when programs are deduped.
-  [ ] Add de-duplication based on grid outputs for hindsight relabelling examples.  In de-bug mode, print out info on when programs are deduped.
-  [ ] Add a script to remove any transductive examples. In de-bug mode, print out info on when examples are removed.
+[x] Generate a dataset from that.
+  [x] Add de-duplication of programs if the test example is correct. In de-bug mode, print out info on when programs are deduped.
+  [x] Add de-duplication based on grid outputs for hindsight relabelling examples.  In de-bug mode, print out info on when programs are deduped.
+  [x] Add a script to remove any transductive examples. In de-bug mode, print out info on when examples are removed.
 [x] Repeat for a second task to generate a validation dataset, will use middle_training_1v .
-[ ] Fine-tune a model for only one task.
+[x] Fine-tune a model for only one task. Seems to work well.
+[ ] Fine-tune on 10 tasks. PROBLEM. Currently the training tasks are incorrect... needs more diagnosis.
+  [ ] Double check that hindsight relabelling is working? And that checks on that code are correct.
 [ ] Then increase up to 32 samples and repeat. Maybe...
 [ ] Only then, expand up to trying 50 problems and add testing of the evaluation set.
 
@@ -23,6 +25,33 @@
 [x] Test out Ronan's trained Qwen3 model on that set using zero temperature. Still getting a lot of training problems wrong, indicating an issue with data generation OR with fine-tuning.
 [x] Run a baseline Qwen3 model with no reasoning on that split. Done, performs better than the Gemini fine-tune.
 [x] Carefully review the syntax of SOAR vs Qwen3 base vs Qwen3 ft. Not clear there is a syntax issue as fine-tuned models seem to be robust to prompt differences.
+
+### Diagnosing fine-tuned model issues
+
+Going to run a runpod template without the reasoning parser so I can see the raw output from the model.
+
+Re-run a fine-tuned model then to see how it does:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 1 --max_workers 10 --max_turns 8 --model qwen_gemini_synth_10-22jul --independent-attempts --base-url http://69.30.85.165:22134/v1 --qwen-no-think
+```
+
+**update** I found that the masking after think tokens was missing two new lines. Wouldn't imagine it causes issues but sometimes things like this do. 
+
+**DIAGNOSIS: --qwen-no-think flag bug found!** The script only applies the no-thinking configuration if the model name contains "qwen" (case-insensitive). Since our model is named `Trelis/gemini_synth_10-22jul`, the condition `if "qwen" in self.model.lower() and self.base_url:` evaluates to False, so the entire Qwen-specific parameter block including `{"chat_template_kwargs": {"enable_thinking": False}}` is skipped. This is why the model still shows thinking output despite the `--qwen-no-think` flag. The fix is to include "qwen" in the name.
+
+- Am aiming to see it get even one problem correct... which it doesn't.
+
+
+
+---
+In the meantime, will create some more data to use for validation using the shortest training 10 dataset.
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 1 --max_workers 10 --max_turns 8 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+```
+and then will set up a dataset using that by filtering for the model and subset and dataset:
+```bash
+uv run python generate_training_data.py --model "google/gemini-2.5-flash" --output gemini_synth_10_shortest_training_10.jsonl --dataset "arc-agi-1" --subset "shortest_training_10" --clean-code --debug
+```
 
 ### Generating data for just one task
 
@@ -190,7 +219,7 @@ Re-run a fine-tuned model then to see how it does:
 ```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 3 --max_workers 10 --max_turns 1 --model Trelis/gemini_synth_10-22jul --independent-attempts --base-url http://69.30.85.155:22131/v1 --qwen-no-think --max-tokens 2000
 ```
-
+This is not consistently producing correct text....
 
 ---
 
