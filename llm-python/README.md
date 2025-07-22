@@ -19,17 +19,11 @@ Objective: Define a test that is a representative measure of performance while a
 **Runpod One-click-template**
 Runpod One-click-template [here](https://console.runpod.io/deploy?template=agyu4xrpgl&ref=jmfkcdio) - swap out the model name if using a fine-tuned model.
 
-**Levers/Tasks:**
-[x] Generate training data.
-  [x] Extract programs from log files with partial success criteria
-  [x] Create JSONL format for fine-tuning
-  [x] Support validation splits
-  [ ] Run some baseline performance tests on Qwen3 4B.
-  [ ] Use the hindsight relabelling trick.
-  [ ] Use the reversal trick.
-  [ ] Use the intermediation approach.
-
-Other ideas:
+**Levers for Improvement:**
+[ ] Run some baseline performance tests on Qwen3 4B.
+[ ] Use the hindsight relabelling trick.
+[ ] Use the reversal trick.
+[ ] Use the intermediation approach.
 [ ] Ablate the costs of solving if we do o4-mini (low) versus o4-mini (high). Is it possibly better to use o4-mini (low) with 8 max turns versus o4-mini (high) with 4 max turns? Consider costs across three runs. (best to develop a script for doing this that calculates means etc.).
 [ ] PROBLEM: WE ARE CHEATING BY ALLOWING THE MODEL TO CONTINUE IF THE TRAINING EXAMPLES ARE ALL CORRECT, BUT THE TEST IS WRONG. THERE'S AN ABLATION TO TEST FOR THE CASE WHERE WE - BEFORE STOPPING - ASK THE MODEL TO SEE IF IT SHOULD MAKE THE PROGRAM MORE GENERAL. Fix the cheating issue whereby there is more sampling/turns if the training examples are all correct, but the test is wrong. Only applies to feedback.
 [ ] MCTS-type ablation: Sample for half of the max_turns, and then feedback for the other remaining turns (stop of course if the test is solved). Not worth it as sampling seems better than feedback.
