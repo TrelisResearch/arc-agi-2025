@@ -182,6 +182,7 @@ The following subset files are available:
 - Similar files for **middle** and **longest** (up to 30 tasks each)
 - **grid_size_distributed_30_training.txt**: 30 training tasks evenly distributed by grid size
 - **grid_size_distributed_30_evaluation.txt**: 30 evaluation tasks evenly distributed by grid size
+- **random_split_1_training.txt** through **random_split_8_training.txt**: Eight random splits of 50 training tasks each (total 400 tasks)
 
 **For arc-agi-2 (in `data/subsets/arc-agi-2/`):**
 - **shortest_training_1.txt**: Single shortest training task
@@ -200,6 +201,47 @@ The following subset files are available:
 - **tasks_with_multiple_tests.json**: Tasks with more than one test example (JSON, not a subset for evaluation)
 
 Each `.txt` file contains one task ID per line. The corresponding `_details.json` files include additional metadata like the computed size and which split (training/evaluation) the task belongs to.
+
+## Random Training Splits (ARC-AGI-1)
+
+Eight random splits of the ARC-AGI-1 training set have been created for various experimental purposes:
+
+**In `data/subsets/arc-agi-1/`:**
+
+- **random_split_1_training.txt** through **random_split_8_training.txt**: Eight non-overlapping random splits of 50 training tasks each
+  - Total coverage: All 400 ARC-AGI-1 training tasks
+  - Selection method: Random shuffling with seed 42 for reproducibility
+  - Split size: 50 tasks per split
+  - Use cases: Cross-validation, ablation studies, training subset experiments, model comparison
+
+### Random Split Properties:
+- **Reproducible**: Uses fixed random seed (42) for consistent results
+- **Non-overlapping**: Each task appears in exactly one split
+- **Balanced**: Each split contains exactly 50 tasks
+- **Complete coverage**: All 400 training tasks are included across the 8 splits
+
+### Usage Examples:
+
+Run experiments on random split 1:
+```bash
+uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset random_split_1_training
+```
+
+Run training experiments using splits 1-6 for training and split 7 for validation:
+```bash
+# Training on 300 tasks (splits 1-6)
+for i in {1..6}; do
+  uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset random_split_${i}_training
+done
+
+# Validation on 50 tasks (split 7)
+uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset random_split_7_training
+```
+
+Use split 8 as a held-out test set:
+```bash
+uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset random_split_8_training
+```
 
 ## Model Performance Subsets (ARC-AGI-1)
 

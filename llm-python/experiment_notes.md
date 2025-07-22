@@ -3,13 +3,15 @@
 ## 2025 22nd July
 
 **Tasks for Today:**
-[ ] Review Lewis' notebook.
-[ ] Create a 50 problem split from the ARC AGI 1 Evaluation dataset. Actually, create eight splits, so that others can be used as validation sets.
-[ ] Run a SOAR model on split 1o8 (1 of 8).
+[x] Review Lewis' notebook.
+[x] Create a 50 problem split from the ARC AGI 1 Evaluation dataset. Actually, create eight splits, so that others can be used as validation sets.
+[ ] Run a SOAR model on split 1o8 (1 of 8). Does it generate commented code or no?
 [ ] Test out Ronan's trained Qwen3 model on that set using zero temperature.
 [ ] Run a baseline Qwen3 model with no reasoning on that split.
 [ ] Carefully review the syntax of SOAR vs Qwen3 base vs Qwen3 ft.
 [ ] Next goal is to ensure that training is working. This means that a trained model should - at temperature zero - be getting correct programs.
+[ ] Implement deduplication of data (by program, if test passes, by grid outputs for hindsight relabelling examples).
+
 
 ## 2025 21st July
 
