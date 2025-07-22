@@ -33,7 +33,7 @@ def execute_with_timeout(func, *args, timeout=1000, **kwargs):
 class ARCTaskRunner:
     """Run ARC tasks using the OpenAI Chat Completions API"""
     
-    def __init__(self, model: str = "gpt-4.1-nano", max_workers: int = 1, rate_limit_delay: float = 0.0, max_turns: int = 3, run_number: int = 0, independent_attempts: bool = False, base_url: str = None, reasoning_effort: str = "low", debug: bool = False, qwen_no_think: bool = False, max_tokens: int = None):
+    def __init__(self, model: str = "gpt-4.1-nano", max_workers: int = 1, rate_limit_delay: float = 0.0, max_turns: int = 3, run_number: int = 0, independent_attempts: bool = False, base_url: str = None, reasoning_effort: str = "low", debug: bool = False, qwen_no_think: bool = False, max_tokens: int = None, temperature: float = None):
         self.model = model
         self.max_workers = max_workers
         self.rate_limit_delay = rate_limit_delay
@@ -43,6 +43,7 @@ class ARCTaskRunner:
         self.reasoning_effort = reasoning_effort
         self.qwen_no_think = qwen_no_think  # Track whether to disable thinking for Qwen models
         self.max_tokens = max_tokens  # Maximum tokens for model responses
+        self.temperature = temperature  # Temperature for model responses
         self.api_key = os.getenv('OPENAI_API_KEY')
         self.base_url = base_url
         self.debug = debug
@@ -238,6 +239,10 @@ def transform(grid):
             if self.max_tokens is not None:
                 kwargs["max_tokens"] = self.max_tokens
             
+            # Add temperature if specified by user
+            if self.temperature is not None:
+                kwargs["temperature"] = self.temperature
+            
             # Add reasoning parameters for OpenRouter and reasoning models
             if self.base_url and "openrouter" in self.base_url.lower():
                 # OpenRouter reasoning token allocation
@@ -260,18 +265,24 @@ def transform(grid):
             if "qwen" in self.model.lower() and self.base_url:
                 if self.qwen_no_think:
                     # Parameters for non-thinking Qwen models
-                    kwargs.update({
-                        "temperature": 0.7,
+                    qwen_params = {
                         "top_p": 0.8,
                         "extra_body": {"top_k": 20, "chat_template_kwargs": {"enable_thinking": False}}
-                    })
+                    }
+                    # Only set default temperature if user hasn't specified one
+                    if self.temperature is None:
+                        qwen_params["temperature"] = 0.7
+                    kwargs.update(qwen_params)
                 else:
                     # Parameters for thinking Qwen models (original behavior)
-                    kwargs.update({
-                        "temperature": 0.6,
+                    qwen_params = {
                         "top_p": 0.95,
                         "extra_body": {"top_k": 20}
-                    })
+                    }
+                    # Only set default temperature if user hasn't specified one
+                    if self.temperature is None:
+                        qwen_params["temperature"] = 0.6
+                    kwargs.update(qwen_params)
             
             # Make the API call
             response = self.client.chat.completions.create(**kwargs)
@@ -1567,7 +1578,8 @@ Make sure to include the function definition inside a proper code block."""
                 reasoning_effort=self.reasoning_effort,
                 debug=self.debug,
                 qwen_no_think=self.qwen_no_think,
-                max_tokens=self.max_tokens
+                max_tokens=self.max_tokens,
+                temperature=self.temperature
             )
             
             # Run the subset
@@ -1752,6 +1764,8 @@ def main():
                        help="Disable thinking for Qwen models (sets enable_thinking=false and uses non-thinking sampling parameters)")
     parser.add_argument("--max-tokens", type=int,
                        help="Maximum tokens for model responses (overrides reasoning effort defaults)")
+    parser.add_argument("--temperature", type=float,
+                       help="Temperature for model responses (0.0 to 2.0, default varies by model)")
     
     args = parser.parse_args()
     
@@ -1771,6 +1785,11 @@ def main():
     if args.repeat_runs > 10:
         parser.error("--repeat-runs cannot exceed 10 (practical limit)")
     
+    # Validate temperature
+    if args.temperature is not None:
+        if args.temperature < 0.0 or args.temperature > 2.0:
+            parser.error("--temperature must be between 0.0 and 2.0")
+    
     # Create runner and run tasks
     runner = ARCTaskRunner(
         model=args.model, 
@@ -1783,7 +1802,8 @@ def main():
         reasoning_effort=args.reasoning_effort,
         debug=args.debug,
         qwen_no_think=args.qwen_no_think,
-        max_tokens=args.max_tokens
+        max_tokens=args.max_tokens,
+        temperature=args.temperature
     )
     
     if args.repeat_runs > 1:

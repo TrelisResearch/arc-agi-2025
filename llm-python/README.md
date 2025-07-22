@@ -104,6 +104,37 @@ Run the shortest task from ARC-AGI-1:
 uv run python o3-tools/run_arc_tasks.py
 ```
 
+### Simple Direct Prompt Mode
+
+For a streamlined approach using direct prompts without feedback or multi-turn conversations, use the simple script:
+
+```bash
+# Run with simple direct prompts (no feedback)
+uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10
+
+# Multiple attempts with the same direct prompt
+uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --max_attempts 8
+
+# Run with parallelization for speed
+uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --max_attempts 8 --max_workers 10
+
+# Run repeated tests with statistics
+uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --repeat-runs 3
+```
+
+**Key differences from the main script:**
+- **Direct prompt approach**: Uses the simple prompt format like the SOAR paper
+- **No feedback**: Each attempt starts fresh with the same prompt
+- **No multi-turn**: Single request per attempt
+- **Faster execution**: Lower overhead per attempt
+- **Multiple attempts**: Use `--max_attempts` instead of `--max_turns`
+
+**When to use:**
+- For baseline comparisons with SOAR-style approaches
+- When you want multiple independent attempts without feedback
+- For faster execution with simpler prompting
+- When testing models that don't benefit from multi-turn conversations
+
 ### Advanced Usage
 
 ```bash

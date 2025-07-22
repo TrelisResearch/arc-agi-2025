@@ -5,13 +5,302 @@
 **Tasks for Today:**
 [x] Review Lewis' notebook.
 [x] Create a 50 problem split from the ARC AGI 1 Evaluation dataset. Actually, create eight splits, so that others can be used as validation sets.
-[ ] Run a SOAR model on split 1o8 (1 of 8). Does it generate commented code or no?
-[ ] Test out Ronan's trained Qwen3 model on that set using zero temperature.
-[ ] Run a baseline Qwen3 model with no reasoning on that split.
-[ ] Carefully review the syntax of SOAR vs Qwen3 base vs Qwen3 ft.
+[x] Run a SOAR model on split 1o8 (1 of 8). Does it generate commented code or no? No, doesnt' generate commented code.
+[x] Test out Ronan's trained Qwen3 model on that set using zero temperature. Still getting a lot of training problems wrong, indicating an issue with data generation OR with fine-tuning.
+[x] Run a baseline Qwen3 model with no reasoning on that split. Done, performs better than the Gemini fine-tune.
+[x] Carefully review the syntax of SOAR vs Qwen3 base vs Qwen3 ft. Not clear there is a syntax issue as fine-tuned models seem to be robust to prompt differences.
 [ ] Next goal is to ensure that training is working. This means that a trained model should - at temperature zero - be getting correct programs.
 [ ] Implement deduplication of data (by program, if test passes, by grid outputs for hindsight relabelling examples).
 
+### Run a SOAR model - the Qwen 7B model.
+
+**Commentary**
+- *Is the SOAR model performing as well as in the paper?* Test performance on 400 problems is matching (even with our prompt that is different from SOAR). Model is getting about 3.5% correct on one attempt and 14% on 8 attempts max. the paper is getting about 3% and 8%, which is a bit lower (I don't know why).
+- *Is Ronan's gemini fine-tuned model working?* Ronan's gemini tuned model is doing worse than the base model un-tuned on the train split. This indicates a data preparation or training issue.
+- *Is the Qwen 2.5 Coder 7B model better or worse than the Qwen 3 4B model?* The Qwen 3 4B model without reasoning does seem to be a little bit better than Qwen 2.5 Coder 7B. Neither fine-tuned.
+- *Does prompt matter for the SOAR model?* I ran a custom prompt (the one we have used so far) versus the one in the SOAR paper. Both prompts seem to be similar in terms of performance on the SOAR 7B fine-tuned model - this is a little surprising. If anything, our prompt seems a little better than the SOAR prompt.
+
+**Results**
+
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 64 --max_turns 8 --model julien31/Soar-qwen-7b --independent-attempts --base-url http://185.216.21.89:29830/v1 --max-tokens 2000
+```
+
+Dataset: arc-agi-1
+Subset: random_split_1_training
+Model: julien31/Soar-qwen-7b
+Number of runs: 3
+API failures excluded from analysis: YES
+
+
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    50         8              23             16.0%          46.0%         
+2    50         8              21             16.0%          42.0%         
+3    50         6              22             12.0%          44.0%         
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 14.7%
+  Std Dev: 2.3%
+  95% CI: [10.1%, 19.2%]
+
+All Attempts Success Rate:
+  Mean: 44.0%
+  Std Dev: 2.0%
+  95% CI: [40.1%, 47.9%]
+
+Aggregate results saved to: logs/20250722_115704_aggregate_summary_arc-agi-1_random_split_1_training_3runs.json
+
+### Compare to running with temperature of zero.
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 64 --max_turns 8 --model julien31/Soar-qwen-7b --independent-attempts --base-url http://185.216.21.89:29830/v1 --max-tokens 2000 --temperature 0.0
+```
+
+Dataset: arc-agi-1
+Subset: random_split_1_training
+Model: julien31/Soar-qwen-7b
+Number of runs: 3
+API failures excluded from analysis: YES
+
+
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    50         10             15             20.0%          30.0%         
+2    50         11             15             22.0%          30.0%         
+3    50         13             15             26.0%          30.0%         
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 22.7%
+  Std Dev: 3.1%
+  95% CI: [16.7%, 28.7%]
+
+All Attempts Success Rate:
+  Mean: 30.0%
+  Std Dev: 0.0%
+  95% CI: [30.0%, 30.0%]
+
+Aggregate results saved to: logs/20250722_120001_aggregate_summary_arc-agi-1_random_split_1_training_3runs.json
+
+### Compare to the Qwen3 4B Fine-tuned model with temperature zero.
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 64 --max_turns 8 --model Trelis/gemini-2.5-smol-21-jul --independent-attempts --base-url http://69.30.85.160:22086/v1 --max-tokens 2000 --temperature 0.0
+```
+Dataset: arc-agi-1
+Subset: random_split_1_training
+Model: Trelis/gemini-2.5-smol-21-jul
+Number of runs: 3
+API failures excluded from analysis: YES
+
+
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    50         2              3              4.0%           6.0%          
+2    50         2              3              4.0%           6.0%          
+3    50         2              2              4.0%           4.0%          
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 4.0%
+  Std Dev: 0.0%
+  95% CI: [4.0%, 4.0%]
+
+All Attempts Success Rate:
+  Mean: 5.3%
+  Std Dev: 1.2%
+  95% CI: [3.1%, 7.6%]
+
+Aggregate results saved to: logs/20250722_120546_aggregate_summary_arc-agi-1_random_split_1_training_3runs.json
+
+Note that was a bad idea checking with temperature zero, re-running with recommended temperature settings.
+
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 64 --max_turns 8 --model Trelis/gemini-2.5-smol-21-jul --independent-attempts --base-url http://69.30.85.160:22086/v1 --max-tokens 2000 --temperature 0.0
+```
+
+Dataset: arc-agi-1
+Subset: random_split_1_training
+Model: Trelis/gemini-2.5-smol-21-jul
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    50         1              3              2.0%           6.0%          
+2    50         0              1              0.0%           2.0%          
+3    50         0              3              0.0%           6.0%          
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 0.7%
+  Std Dev: 1.2%
+  95% CI: [-1.6%, 2.9%]
+
+All Attempts Success Rate:
+  Mean: 4.7%
+  Std Dev: 2.3%
+  95% CI: [0.1%, 9.2%]
+
+Aggregate results saved to: logs/20250722_121056_aggregate_summary_arc-agi-1_random_split_1_training_3runs.json
+
+### Compare to a baseline Qwen3 4B model.
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 64 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url http://205.196.17.106:9512/v1 --max-tokens 2000 --qwen-no-think
+```
+Dataset: arc-agi-1
+Subset: random_split_1_training
+Model: Qwen/Qwen3-4B
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    50         1              6              2.0%           12.0%         
+2    50         0              5              0.0%           10.0%         
+3    50         3              5              6.0%           10.0%         
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 2.7%
+  Std Dev: 3.1%
+  95% CI: [-3.3%, 8.7%]
+
+All Attempts Success Rate:
+  Mean: 10.7%
+  Std Dev: 1.2%
+  95% CI: [8.4%, 12.9%]
+
+### Compare to a baseline Qwen 2.5 Coder 7B model.
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 64 --max_turns 8 --model Qwen/Qwen2.5-Coder-7B-Instruct --independent-attempts --base-url http://205.196.17.106:9526/v1 --max-tokens 2000
+```
+Dataset: arc-agi-1
+Subset: random_split_1_training
+Model: Qwen/Qwen2.5-Coder-7B-Instruct
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    50         1              3              2.0%           6.0%          
+2    50         1              3              2.0%           6.0%          
+3    50         1              4              2.0%           8.0%          
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 2.0%
+  Std Dev: 0.0%
+  95% CI: [2.0%, 2.0%]
+
+All Attempts Success Rate:
+  Mean: 6.7%
+  Std Dev: 1.2%
+  95% CI: [4.4%, 8.9%]
+
+Aggregate results saved to: logs/20250722_122758_aggregate_summary_arc-agi-1_random_split_1_training_3runs.json
+
+### Compare to using the SOAR prompt on SOAR Qwen 2.5 7B.
+```bash
+uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 64 --max_attempts 8 --model julien31/Soar-qwen-7b --base-url http://185.216.21.89:29830/v1 --max-tokens 2000
+```
+Dataset: arc-agi-1
+Subset: random_split_1_training
+Model: julien31/Soar-qwen-7b
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    50         5              17             10.0%          34.0%         
+2    50         5              20             10.0%          40.0%         
+3    50         3              18             6.0%           36.0%         
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 8.7%
+  Std Dev: 2.3%
+  95% CI: [4.1%, 13.2%]
+
+All Attempts Success Rate:
+  Mean: 36.7%
+  Std Dev: 3.1%
+  95% CI: [30.7%, 42.7%]
+
+Aggregate results saved to: logs/20250722_123353_aggregate_summary_arc-agi-1_random_split_1_training_simple_3runs.json
+
+### Check the evaluation set performance of the SOAR Qwen 7B model.
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 64 --max_turns 8 --model julien31/Soar-qwen-7b --independent-attempts --base-url http://185.216.21.89:29830/v1 --max-tokens 2000
+```
+
+SUMMARY
+
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: julien31/Soar-qwen-7b
+Reasoning effort: low
+API: Chat Completions (independent attempts, max 8 attempts)
+Total tasks attempted: 400
+Successful API calls: 400/400 (100.0%)
+Tasks solved correctly: 47/400 (11.8%)
+Pixel accuracy: 6932/97320 (7.1%)
+Total attempts used: 2989
+Average attempts per task: 7.5
+Total tokens used: 12,245,435
+Total cost: $2.259769
+
+Results saved to: logs/20250722_120932_summary_arc-agi-1_all_evaluation.json
+
+Repeated then with three runs:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 64 --max_turns 8 --model julien31/Soar-qwen-7b --independent-attempts --base-url http://185.216.21.89:29830/v1 --max-tokens 2000
+```
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: julien31/Soar-qwen-7b
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    400        11             58             2.8%           14.5%         
+2    400        15             50             3.8%           12.5%         
+3    400        16             59             4.0%           14.8%         
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 3.5%
+  Std Dev: 0.7%
+  95% CI: [2.2%, 4.8%]
+
+All Attempts Success Rate:
+  Mean: 13.9%
+  Std Dev: 1.2%
+  95% CI: [11.5%, 16.3%]
+
+Aggregate results saved to: logs/20250722_122730_aggregate_summary_arc-agi-1_all_evaluation_3runs.json
 
 ## 2025 21st July
 
@@ -36,16 +325,14 @@ We can also check the training dataset performance:
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 3 --max_workers 64 --max_turns 8 --model Trelis/gemini-2.5-smol-21-jul --independent-attempts --base-url http://69.30.85.165:22083/v1 --max-tokens 2000
 ```
 gave:
-======================================================================
-AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
-======================================================================
+
 Dataset: arc-agi-1
 Subset: shortest_training_10
 Model: Trelis/gemini-2.5-smol-21-jul
 Number of runs: 3
 API failures excluded from analysis: YES
 
-INDIVIDUAL RUN RESULTS:
+
 ----------------------------------------------------------------------
 Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
 ----------------------------------------------------------------------
@@ -75,9 +362,9 @@ And then all of the training set, to compare with the baseline model used:
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_training --repeat-runs 1 --max_workers 64 --max_turns 1 --model Trelis/gemini-2.5-smol-21-jul --independent-attempts --base-url http://69.30.85.165:22083/v1 --max-tokens 2000
 ```
 
-==================================================
+
 SUMMARY
-==================================================
+
 Dataset: arc-agi-1
 Subset: all_training
 Model: Trelis/gemini-2.5-smol-21-jul
@@ -102,16 +389,14 @@ Increase LR up to 1e-4.
 ```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 3 --max_workers 64 --max_turns 8 --model Trelis/gemini-2.5-smol-21-jul-1e-4 --independent-attempts --base-url http://69.30.85.165:22083/v1 --max-tokens 2000
 ```
-======================================================================
-AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
-======================================================================
+
 Dataset: arc-agi-1
 Subset: shortest_training_10
 Model: Trelis/gemini-2.5-smol-21-jul-1e-4
 Number of runs: 3
 API failures excluded from analysis: YES
 
-INDIVIDUAL RUN RESULTS:
+
 ----------------------------------------------------------------------
 Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
 ----------------------------------------------------------------------
@@ -138,9 +423,9 @@ Aggregate results saved to: logs/20250721_144954_aggregate_summary_arc-agi-1_sho
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 1 --max_workers 64 --max_turns 8 --model Trelis/gemini-2.5-smol-21-jul-1e-4 --independent-attempts --base-url http://69.30.85.165:22083/v1 --max-tokens 2000
 ```
 
-==================================================
+
 SUMMARY
-==================================================
+
 Dataset: arc-agi-1
 Subset: middle_training_10
 Model: Trelis/gemini-2.5-smol-21-jul-1e-4
@@ -212,9 +497,9 @@ This is gemini 2.5 flash with medium reasoning effort (8k tokens of reasoning). 
 ```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_training --repeat-runs 1 --max_workers 64 --max_turns 1 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
 ```
-==================================================
+
 SUMMARY
-==================================================
+
 Dataset: arc-agi-1
 Subset: all_training
 Model: google/gemini-2.5-flash
@@ -286,7 +571,7 @@ To proceed, I'm going to just do a single attempt with the Gemini 2.5 Flash mode
 Cost is about $3.25 per run (with 8 attempts per problem max).
 
 AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
-======================================================================
+====================
 ```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 64 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url http://91.199.227.82:13579/v1 --qwen-no-think
 ```
@@ -296,7 +581,7 @@ Model: Qwen/Qwen3-4B
 Number of runs: 3
 API failures excluded from analysis: YES
 
-INDIVIDUAL RUN RESULTS:
+
 ----------------------------------------------------------------------
 Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
 ----------------------------------------------------------------------
@@ -326,16 +611,14 @@ Aggregate results saved to: logs/20250718_180714_aggregate_summary_arc-agi-1_all
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 64 --max_turns 1 --model Qwen/Qwen3-4B --independent-attempts --base-url http://91.199.227.82:13579/v1 --qwen-no-think
 ```
 
-======================================================================
-AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
-======================================================================
+
 Dataset: arc-agi-1
 Subset: all_evaluation
 Model: Qwen/Qwen3-4B
 Number of runs: 3
 API failures excluded from analysis: YES
 
-INDIVIDUAL RUN RESULTS:
+
 ----------------------------------------------------------------------
 Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
 ----------------------------------------------------------------------
@@ -364,9 +647,7 @@ Reasoning mode is 5x more expensive than non-thinking mode, but does score more 
 
 The motivation for reasoning would be if it is capable of reaching correct answers that cannot be reached through sampling. This is always a hot debate in RL and the answer here is not clear to me [i.e. it is sometimes argued that doing RL just reduces the need for sampling, but doesn't necessarily hit new answers].
 
-======================================================================
-AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
-======================================================================
+
 ```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 64 --max_turns 1 --model Qwen/Qwen3-4B --independent-attempts --base-url http://91.199.227.82:13579/v1
 ```
@@ -376,7 +657,7 @@ Model: Qwen/Qwen3-4B
 Number of runs: 3
 API failures excluded from analysis: YES
 
-INDIVIDUAL RUN RESULTS:
+
 ----------------------------------------------------------------------
 Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
 ----------------------------------------------------------------------
@@ -406,9 +687,7 @@ With SGLang, you add in `"chat_template_kwargs": {"enable_thinking": false}` on 
 
 The goal is to see if an un-fine-tuned Qwen-4B is worse than about 3% on single-attempt and 15% on 8-attempts.
 
-======================================================================
-AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
-======================================================================
+
 ```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url http://157.66.254.42:10957/v1 --qwen-no-think
 ```
@@ -418,7 +697,7 @@ Model: Qwen/Qwen3-4B
 Number of runs: 3
 API failures excluded from analysis: YES
 
-INDIVIDUAL RUN RESULTS:
+
 ----------------------------------------------------------------------
 Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
 ----------------------------------------------------------------------
@@ -442,9 +721,7 @@ Aggregate results saved to: logs/20250717_120114_aggregate_summary_arc-agi-1_gpt
 
 ### Re-run the fine-tuned model with the recommended (and same as above) sampling parameters.
 
-======================================================================
-AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
-======================================================================
+
 ```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 8 --model Trelis/lorge-16-jul --independent-attempts --base-url http://157.66.254.42:14987/v1 --qwen-no-think
 ```
@@ -454,7 +731,7 @@ Model: Trelis/lorge-16-jul
 Number of runs: 3
 API failures excluded from analysis: YES
 
-INDIVIDUAL RUN RESULTS:
+
 ----------------------------------------------------------------------
 Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
 ----------------------------------------------------------------------
@@ -490,9 +767,7 @@ I split out a random 32 rows of data to use as a validation dataset during fine-
 
 ### Running tests after fine-tuning
 
-======================================================================
-AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
-======================================================================
+
 ```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 8 --model Trelis/lorge-16-jul --independent-attempts --base-url http://213.181.122.251:13589/v1
 ```
@@ -502,7 +777,7 @@ Model: Trelis/lorge-16-jul
 Number of runs: 3
 API failures excluded from analysis: YES
 
-INDIVIDUAL RUN RESULTS:
+
 ----------------------------------------------------------------------
 Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
 ----------------------------------------------------------------------
@@ -527,9 +802,7 @@ All Attempts Success Rate:
 **Commentary**
 I need to look at cost numbers but it seems like the cost of doing 8 samples with reasoning is similar to doing 64 samples without reasoning on the fine-tune, perhaps even the fine-tuned model ends up cheaper. And you get back to gpt-4.1/mini performance, although variance is WAY HIGHER, which probably makes it worse.
 
-======================================================================
-AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
-======================================================================
+
 ```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 64 --model Trelis/lorge-16-jul --independent-attempts --base-url http://213.181.122.251:13589/v1
 ```
@@ -539,7 +812,7 @@ Model: Trelis/lorge-16-jul
 Number of runs: 3
 API failures excluded from analysis: YES
 
-INDIVIDUAL RUN RESULTS:
+
 ----------------------------------------------------------------------
 Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
 ----------------------------------------------------------------------
@@ -568,16 +841,14 @@ and, for fun, try the shortest 100 of the ARC AGI 1 dataset:
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_100 --repeat-runs 3 --max_workers 64 --max_turns 64 --model Trelis/lorge-16-jul --independent-attempts --base-url http://213.181.122.251:13589/v1
 ```
 
-======================================================================
-AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
-======================================================================
+
 Dataset: arc-agi-1
 Subset: all_evaluation
 Model: Qwen/Qwen3-4B
 Number of runs: 3
 API failures excluded from analysis: YES
 
-INDIVIDUAL RUN RESULTS:
+
 ----------------------------------------------------------------------
 Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
 ----------------------------------------------------------------------
@@ -643,9 +914,7 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-t
 
 Trying to beat gpt-4.1-mini (similar to gpt-4.1 in performance), so we're trying to beat about 15 and 37% with one and up to 8 attempts.
 
-======================================================================
-AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
-======================================================================
+
 ```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url http://157.66.254.42:15712/v1
 ```
@@ -655,7 +924,7 @@ Model: Qwen/Qwen3-4B
 Number of runs: 3
 API failures excluded from analysis: YES
 
-INDIVIDUAL RUN RESULTS:
+
 ----------------------------------------------------------------------
 Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
 ----------------------------------------------------------------------
@@ -693,9 +962,7 @@ Baseline to beat is about is about 15 and 37% with one and up to 8 attempts.
 Problem: `ft:gpt-4.1-nano-2025-04-14:trelis-ltd:15-jul-smol-test:BtaYzBKJ` was trained with the original train outputs, not relabelled!
 
 Fixed that and will re-run:
-======================================================================
-AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
-======================================================================
+
 Dataset: arc-agi-1
 Subset: gpt-4.1-mini-calib-train
 Model: ft:gpt-4.1-nano-2025-04-14:trelis-ltd:jul-15-v2-smol-test:Btb3wOvs
@@ -705,7 +972,7 @@ API failures excluded from analysis: YES
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 25 --max_turns 8 --model ft:gpt-4.1-nano-2025-04-14:trelis-ltd:jul-15-v2-smol-test:Btb3wOvs --independent-attempts
 ```
 
-INDIVIDUAL RUN RESULTS:
+
 ----------------------------------------------------------------------
 Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
 ----------------------------------------------------------------------
@@ -726,9 +993,7 @@ All Attempts Success Rate:
   95% CI: [2.9%, 15.9%]
 
 Which is worse than a baseline of:
-======================================================================
-AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
-======================================================================
+
 ```bash
  uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-nano --independent-attempts
 ```
@@ -738,7 +1003,7 @@ Model: gpt-4.1-nano
 Number of runs: 3
 API failures excluded from analysis: YES
 
-INDIVIDUAL RUN RESULTS:
+
 ----------------------------------------------------------------------
 Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
 ----------------------------------------------------------------------
@@ -967,9 +1232,9 @@ Note that the cost of the entire run is about $4.50 per run, 3x the cost of sear
 ### Figuring out how to get error down on measurement
 
 Plan is first to see how gpt-4.1-mini and nano score on the shortest arc-agi-1 tasks, 100 of them.
-==================================================
+
 SUMMARY
-==================================================
+
 ```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_100 --repeat-runs 1 --max_workers 10 --max_turns 8 --model gpt-4.1-mini --independent-attempts
 ```
@@ -986,9 +1251,9 @@ Average attempts per task: 6.5
 Total tokens used: 2,086,479
 Total cost: $1.700422
 
-==================================================
+
 SUMMARY
-==================================================
+
 ```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_100 --repeat-runs 1 --max_workers 10 --max_turns 8 --model gpt-4.1-nano --independent-attempts
 ```
