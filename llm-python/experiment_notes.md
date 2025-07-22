@@ -1,5 +1,18 @@
 # Experiment Notes
 
+## 2025 23rd July
+
+**Tasks for Today:**
+[ ] Measure performance on 1 task only, to get started. Generate 8 samples for that task.
+[ ] Carefully inspect all of that data.
+[ ] Generate a dataset from that.
+  [ ] Add de-duplication of programs if the test example is correct.
+  [ ] Add de-duplication based on grid outputs for hindsight relabelling examples.
+[ ] Repeat for a second task to generate a validation dataset.
+[ ] Fine-tune a model for only one task.
+[ ] Then increase up to 32 samples and repeat.
+[ ] Only then, expand up to trying 50 problems and add testing of the evaluation set.
+
 ## 2025 22nd July
 
 **Tasks for Today:**
@@ -9,8 +22,6 @@
 [x] Test out Ronan's trained Qwen3 model on that set using zero temperature. Still getting a lot of training problems wrong, indicating an issue with data generation OR with fine-tuning.
 [x] Run a baseline Qwen3 model with no reasoning on that split. Done, performs better than the Gemini fine-tune.
 [x] Carefully review the syntax of SOAR vs Qwen3 base vs Qwen3 ft. Not clear there is a syntax issue as fine-tuned models seem to be robust to prompt differences.
-[ ] Next goal is to ensure that training is working. This means that a trained model should - at temperature zero - be getting correct programs.
-[ ] Implement deduplication of data (by program, if test passes, by grid outputs for hindsight relabelling examples).
 
 ### Run a SOAR model - the Qwen 7B model.
 
