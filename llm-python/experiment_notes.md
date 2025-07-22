@@ -132,7 +132,7 @@ All Attempts Success Rate:
 
 Aggregate results saved to: logs/20250722_161057_aggregate_summary_arc-agi-1_middle_training_1v_3runs.json
 
-Then creating a dataset from that to use for fine-tuning:
+Then creating a dataset from that to use for fine-tuning validation:
 ```bash
 uv run python generate_training_data.py --model "google/gemini-2.5-flash" --output gemini_synth_1_validation.jsonl --dataset "arc-agi-1" --subset "middle_training_1v" --clean-code
 ```
@@ -188,7 +188,7 @@ The model is getting none correct!!! which makes sense as these are of middle le
 
 Re-run a fine-tuned model then to see how it does:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 3 --max_workers 10 --max_turns 8 --model Trelis/gemini_synth_10-22jul --independent-attempts --base-url http://69.30.85.155:22131/v1 --qwen-no-think
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 3 --max_workers 10 --max_turns 1 --model Trelis/gemini_synth_10-22jul --independent-attempts --base-url http://69.30.85.155:22131/v1 --qwen-no-think --max-tokens 2000
 ```
 
 
