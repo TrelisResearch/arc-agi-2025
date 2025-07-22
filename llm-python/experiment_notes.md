@@ -143,17 +143,94 @@ All seems to be working fine on a single row. Moving now to try 10 rows.
 
 ### 10 Tasks at a time
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 3 --max_workers 3 --max_turns 8 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 3 --max_workers 10 --max_turns 8 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
 ```
 
 Then creating a dataset from that to use for fine-tuning:
 ```bash
 uv run python generate_training_data.py --model "google/gemini-2.5-flash" --output gemini_synth_10_train.jsonl --dataset "arc-agi-1" --subset "middle_training_10" --clean-code
 ```
+Gets about 7-8 correct.
+Dataset: arc-agi-1
+Subset: middle_training_10
+Model: google/gemini-2.5-flash
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    10         7              8              70.0%          80.0%         
+2    10         6              8              60.0%          80.0%         
+3    10         5              7              50.0%          70.0%         
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 60.0%
+  Std Dev: 10.0%
+  95% CI: [40.4%, 79.6%]
+
+All Attempts Success Rate:
+  Mean: 76.7%
+  Std Dev: 5.8%
+  95% CI: [65.4%, 88.0%]
+
+Aggregate results saved to: logs/20250722_174923_aggregate_summary_arc-agi-1_middle_training_10_3runs.json
+
+And try to evaluate the untuned model on those:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 3 --max_workers 10 --max_turns 8 --model qwen/qwen3-4b --independent-attempts --base-url http://69.30.85.155:22025/v1 --qwen-no-think
+```
+The model is getting none correct!!! which makes sense as these are of middle length.
 
 
+Re-run a fine-tuned model then to see how it does:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 3 --max_workers 10 --max_turns 8 --model Trelis/gemini_synth_10-22jul --independent-attempts --base-url http://69.30.85.155:22131/v1 --qwen-no-think
+```
 
-### Run a SOAR model - the Qwen 7B model.
+
+---
+
+Run on shortest with the untuned model (for lewis):
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 3 --max_workers 10 --max_turns 8 --model qwen/qwen3-4b --independent-attempts --base-url http://69.30.85.155:22025/v1 --qwen-no-think
+```
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
+Dataset: arc-agi-1
+Subset: shortest_training_10
+Model: qwen/qwen3-4b
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    10         2              5              20.0%          50.0%         
+2    10         4              5              40.0%          50.0%         
+3    10         2              5              20.0%          50.0%         
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 26.7%
+  Std Dev: 11.5%
+  95% CI: [4.0%, 49.3%]
+
+All Attempts Success Rate:
+  Mean: 50.0%
+  Std Dev: 0.0%
+  95% CI: [50.0%, 50.0%]
+
+Aggregate results saved to: logs/20250722_172058_aggregate_summary_arc-agi-1_shortest_training_10_3runs.json
+
+----
+Morning session:
 
 **Commentary**
 - *Is the SOAR model performing as well as in the paper?* Test performance on 400 problems is matching (even with our prompt that is different from SOAR). Model is getting about 3.5% correct on one attempt and 14% on 8 attempts max. the paper is getting about 3% and 8%, which is a bit lower (I don't know why).
