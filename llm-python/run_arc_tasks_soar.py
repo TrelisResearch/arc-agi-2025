@@ -249,7 +249,7 @@ Now, solve the following ARC-AGI task:
         
         return ""
     
-    def create_success_result(self, task_id: str, program: str, response, test_score: Dict, total_cost: float, total_tokens: int, attempts_used: int, task_data: Dict, all_responses: List = None, attempt_details: List = None) -> Dict:
+    def create_success_result(self, task_id: str, program: str, response, test_score: Dict, total_cost: float, total_tokens: int, attempts_used: int, task_data: Dict, all_responses: List = None, attempt_details: List = None, dataset: str = None, subset: str = None) -> Dict:
         """Create a successful task result"""
 
         # Convert response to JSON-serializable format
@@ -291,6 +291,8 @@ Now, solve the following ARC-AGI task:
             'task_id': task_id,
             'model': self.model,
             'api_type': 'chat_completions_simple',
+            'dataset': dataset,
+            'subset': subset,
             'program': program,
             'task_failure_reason': '',
             'timed_out': False,
@@ -312,7 +314,7 @@ Now, solve the following ARC-AGI task:
             
         return result
     
-    def create_failure_result(self, task_id: str, program: str, all_responses: List, total_cost: float, total_tokens: int, attempts_used: int, task_data: Dict, error_msg: str, attempt_details: List = None) -> Dict:
+    def create_failure_result(self, task_id: str, program: str, all_responses: List, total_cost: float, total_tokens: int, attempts_used: int, task_data: Dict, error_msg: str, attempt_details: List = None, dataset: str = None, subset: str = None) -> Dict:
         """Create a failed task result"""
         # Get test output for pixel counting
         actual_output = task_data['test'][0]['output']
@@ -358,6 +360,8 @@ Now, solve the following ARC-AGI task:
             'task_id': task_id,
             'model': self.model,
             'api_type': 'chat_completions_simple',
+            'dataset': dataset,
+            'subset': subset,
             'program': program,
             'task_failure_reason': error_msg,
             'timed_out': False,
@@ -384,7 +388,7 @@ Now, solve the following ARC-AGI task:
             
         return result
     
-    def create_timeout_failure_result(self, task_id: str, total_cost: float, total_tokens: int, attempts_completed: int, task_data: Dict, all_responses: List = None, attempt_details: List = None) -> Dict:
+    def create_timeout_failure_result(self, task_id: str, total_cost: float, total_tokens: int, attempts_completed: int, task_data: Dict, all_responses: List = None, attempt_details: List = None, dataset: str = None, subset: str = None) -> Dict:
         """Create a timeout failure result"""
         # Get test output for pixel counting
         actual_output = task_data['test'][0]['output']
@@ -412,6 +416,8 @@ Now, solve the following ARC-AGI task:
             'task_id': task_id,
             'model': self.model,
             'api_type': 'chat_completions_simple',
+            'dataset': dataset,
+            'subset': subset,
             'program': '',
             'task_failure_reason': 'API timeout after retries',
             'timed_out': True,
@@ -437,7 +443,7 @@ Now, solve the following ARC-AGI task:
             }
         }
 
-    def run_task(self, task_id: str, task_data: Dict, total_tasks: int = 1) -> Dict:
+    def run_task(self, task_id: str, task_data: Dict, total_tasks: int = 1, dataset: str = None, subset: str = None) -> Dict:
         """Run a single ARC task using simple independent attempts"""
         if self.debug:
             print(f"🔍 DEBUG TASK: Starting run_task for {task_id}")
@@ -473,7 +479,7 @@ Now, solve the following ARC-AGI task:
             if self.rate_limit_delay > 0:
                 time.sleep(self.rate_limit_delay)
             
-            return self.run_task_simple_attempts(task_id, task_data, total_tasks)
+            return self.run_task_simple_attempts(task_id, task_data, total_tasks, dataset, subset)
             
         except Exception as e:
             if self.debug:
@@ -504,7 +510,7 @@ Now, solve the following ARC-AGI task:
                 'api_success': False,
             }
     
-    def run_task_simple_attempts(self, task_id: str, task_data: Dict, total_tasks: int = 1) -> Dict:
+    def run_task_simple_attempts(self, task_id: str, task_data: Dict, total_tasks: int = 1, dataset: str = None, subset: str = None) -> Dict:
         """Run simple independent attempts without feedback - fresh starts with the same prompt"""
         if self.debug:
             print(f"🔍 DEBUG SIMPLE: Starting simple attempts for task {task_id}")
@@ -573,12 +579,12 @@ Now, solve the following ARC-AGI task:
                                 print(f"🔍 DEBUG SIMPLE: All retries exhausted for {task_id} attempt {attempt + 1} - Final error: {error_type}: {error_msg}")
                             # Return timeout failure result
                             self._update_costs(total_cost, total_tokens)
-                            return self.create_timeout_failure_result(task_id, total_cost, total_tokens, attempt, task_data, all_responses, attempt_details)
+                            return self.create_timeout_failure_result(task_id, total_cost, total_tokens, attempt, task_data, all_responses, attempt_details, dataset, subset)
                 
                 if not api_call_successful or response is None:
                     # This shouldn't happen, but just in case
                     self._update_costs(total_cost, total_tokens)
-                    return self.create_timeout_failure_result(task_id, total_cost, total_tokens, attempt, task_data, all_responses, attempt_details)
+                    return self.create_timeout_failure_result(task_id, total_cost, total_tokens, attempt, task_data, all_responses, attempt_details, dataset, subset)
                 
                 all_responses.append(response)
                 
@@ -645,7 +651,7 @@ Now, solve the following ARC-AGI task:
                         test_score['predicted_output'] = predicted_output
                         test_score['actual_output'] = test_expected
                         
-                        return self.create_success_result(task_id, program, response, test_score, total_cost, total_tokens, attempt + 1, task_data, all_responses, attempt_details)
+                        return self.create_success_result(task_id, program, response, test_score, total_cost, total_tokens, attempt + 1, task_data, all_responses, attempt_details, dataset, subset)
                 else:
                     # Execution failed - record the failure and continue to next attempt
                     attempt_detail['test_result'] = {
@@ -676,7 +682,7 @@ Now, solve the following ARC-AGI task:
                 print(f"🔍 DEBUG SIMPLE: Total cost: ${total_cost:.6f}")
             self._update_costs(total_cost, total_tokens)
             
-            return self.create_failure_result(task_id, program if 'program' in locals() else "", all_responses, total_cost, total_tokens, self.max_attempts, task_data, "All attempts failed", attempt_details)
+            return self.create_failure_result(task_id, program if 'program' in locals() else "", all_responses, total_cost, total_tokens, self.max_attempts, task_data, "All attempts failed", attempt_details, dataset, subset)
         
         except Exception as e:
             if self.debug:
@@ -687,7 +693,7 @@ Now, solve the following ARC-AGI task:
             print(f"     ❌ Simple attempts execution failed: {e}")
             self._update_costs(total_cost, total_tokens)
             
-            return self.create_failure_result(task_id, "", all_responses, total_cost, total_tokens, len(attempt_details), task_data, str(e), attempt_details)
+            return self.create_failure_result(task_id, "", all_responses, total_cost, total_tokens, len(attempt_details), task_data, str(e), attempt_details, dataset, subset)
 
     def run_subset(self, subset_name: str, dataset: str = "arc-agi-1", limit: Optional[int] = None) -> List[Dict]:
         """Run all tasks in a subset with optional parallelization"""
@@ -744,7 +750,7 @@ Now, solve the following ARC-AGI task:
         if self.max_workers == 1:
             # Sequential execution (original behavior)
             for task_id, task_data in tasks:
-                result = self.run_task(task_id, task_data, total_tasks)
+                result = self.run_task(task_id, task_data, total_tasks, dataset, subset_name)
                 results.append(result)
                 
                 # Save individual result
@@ -764,7 +770,7 @@ Now, solve the following ARC-AGI task:
                     
                     if self.debug:
                         print(f"🔍 DEBUG PARALLEL: [Thread {threading.get_ident()}] About to call run_task for {task_id}")
-                    result = self.run_task(task_id, task_data, total_tasks)
+                    result = self.run_task(task_id, task_data, total_tasks, dataset, subset_name)
                     if self.debug:
                         print(f"🔍 DEBUG PARALLEL: [Thread {threading.get_ident()}] run_task completed for {task_id}")
                     

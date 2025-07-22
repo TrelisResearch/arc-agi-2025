@@ -373,6 +373,18 @@ uv run python generate_training_data.py --limit 1000 --validation --output arc_t
 
 # Combine reasoning with other options
 uv run python generate_training_data.py --limit 500 --reasoning --validation --output reasoning_training.jsonl
+
+# Filter by dataset and subset to target specific task groups
+uv run python generate_training_data.py --dataset "arc-agi-1" --subset "shortest_training_10" --output shortest_tasks.jsonl
+
+# Filter by dataset only (includes both training and evaluation tasks from that dataset)
+uv run python generate_training_data.py --dataset "arc-agi-2" --output arc_agi_2_only.jsonl
+
+# Combine dataset/subset filtering with model filtering
+uv run python generate_training_data.py --dataset "arc-agi-1" --subset "all_training" --model "google/gemini-2.5-flash" --output gemini_arc1_training.jsonl
+
+# Filter by subset only (includes that subset from both datasets)
+uv run python generate_training_data.py --subset "middle_training_10" --validation --output middle_difficulty.jsonl
 ```
 
 ### Filtering Options

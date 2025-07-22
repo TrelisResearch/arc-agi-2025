@@ -3,14 +3,15 @@
 ## 2025 23rd July
 
 **Tasks for Today:**
-[ ] Measure performance on 1 task only, to get started. Generate 8 samples for that task.
-[ ] Carefully inspect all of that data.
+[x] Measure performance on 1 task only, to get started. Generate 8 samples for that task. Will use middle_training_1 .
+[x] Carefully inspect all of that data.
 [ ] Generate a dataset from that.
-  [ ] Add de-duplication of programs if the test example is correct.
-  [ ] Add de-duplication based on grid outputs for hindsight relabelling examples.
-[ ] Repeat for a second task to generate a validation dataset.
+  [ ] Add de-duplication of programs if the test example is correct. In de-bug mode, print out info on when programs are deduped.
+  [ ] Add de-duplication based on grid outputs for hindsight relabelling examples.  In de-bug mode, print out info on when programs are deduped.
+  [ ] Add a script to remove any transductive examples. In de-bug mode, print out info on when examples are removed.
+[x] Repeat for a second task to generate a validation dataset, will use middle_training_1v .
 [ ] Fine-tune a model for only one task.
-[ ] Then increase up to 32 samples and repeat.
+[ ] Then increase up to 32 samples and repeat. Maybe...
 [ ] Only then, expand up to trying 50 problems and add testing of the evaluation set.
 
 ## 2025 22nd July
@@ -22,6 +23,123 @@
 [x] Test out Ronan's trained Qwen3 model on that set using zero temperature. Still getting a lot of training problems wrong, indicating an issue with data generation OR with fine-tuning.
 [x] Run a baseline Qwen3 model with no reasoning on that split. Done, performs better than the Gemini fine-tune.
 [x] Carefully review the syntax of SOAR vs Qwen3 base vs Qwen3 ft. Not clear there is a syntax issue as fine-tuned models seem to be robust to prompt differences.
+
+### Generating data for just one task
+
+Running the gemini flash thinking model to get some data.
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_1 --repeat-runs 3 --max_workers 3 --max_turns 8 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+```
+Gets it correct on the first or second attempt each time.
+Dataset: arc-agi-1
+Subset: shortest_training_1
+Model: google/gemini-2.5-flash
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    1          1              1              100.0%         100.0%        
+2    1          0              1              0.0%           100.0%        
+3    1          0              1              0.0%           100.0%        
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 33.3%
+  Std Dev: 57.7%
+  95% CI: [-79.8%, 146.5%]
+
+All Attempts Success Rate:
+  Mean: 100.0%
+  Std Dev: 0.0%
+  95% CI: [100.0%, 100.0%]
+
+Aggregate results saved to: logs/20250722_155732_aggregate_summary_arc-agi-1_shortest_training_1_3runs.json
+
+Evaluating baseline performance of the qwen 3 4b model:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_1 --repeat-runs 3 --max_workers 3 --max_turns 8 --model qwen/qwen3-4b --independent-attempts --base-url http://69.30.85.155:22025/v1 --qwen-no-think
+```
+Gets it wrong all of the time.
+
+Dataset: arc-agi-1
+Subset: middle_training_1
+Model: qwen/qwen3-4b
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    1          0              0              0.0%           0.0%          
+2    1          0              0              0.0%           0.0%          
+3    1          0              0              0.0%           0.0%          
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+All Attempts Success Rate:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Aggregate results saved to: logs/20250722_155740_aggregate_summary_arc-agi-1_middle_training_1_3runs.json
+
+Then creating a dataset from that to use for fine-tuning:
+```bash
+uv run python generate_training_data.py --model "google/gemini-2.5-flash" --output gemini_synth_1_train.jsonl --dataset "arc-agi-1" --subset "middle_training_1" --clean-code
+```
+
+### Create a validation dataset using Gemini as well.
+
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_1v --repeat-runs 3 --max_workers 3 --max_turns 8 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+```
+Gets that correct:
+Dataset: arc-agi-1
+Subset: middle_training_1v
+Model: google/gemini-2.5-flash
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    1          1              1              100.0%         100.0%        
+2    1          1              1              100.0%         100.0%        
+3    1          1              1              100.0%         100.0%        
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 100.0%
+  Std Dev: 0.0%
+  95% CI: [100.0%, 100.0%]
+
+All Attempts Success Rate:
+  Mean: 100.0%
+  Std Dev: 0.0%
+  95% CI: [100.0%, 100.0%]
+
+Aggregate results saved to: logs/20250722_161057_aggregate_summary_arc-agi-1_middle_training_1v_3runs.json
+
+Then creating a dataset from that to use for fine-tuning:
+```bash
+uv run python generate_training_data.py --model "google/gemini-2.5-flash" --output gemini_synth_1_validation.jsonl --dataset "arc-agi-1" --subset "middle_training_1v" --clean-code
+```
+
+### Fine-tune
+
+
 
 ### Run a SOAR model - the Qwen 7B model.
 

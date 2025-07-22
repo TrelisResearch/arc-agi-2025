@@ -455,7 +455,7 @@ def transform(grid):
         
         return ""
     
-    def create_success_result(self, task_id: str, program: str, response, test_score: Dict, total_cost: float, total_tokens: int, turns_used: int, task_data: Dict, conversation_history: List = None, all_responses: List = None, turn_details: List = None, is_independent_attempts: bool = False) -> Dict:
+    def create_success_result(self, task_id: str, program: str, response, test_score: Dict, total_cost: float, total_tokens: int, turns_used: int, task_data: Dict, conversation_history: List = None, all_responses: List = None, turn_details: List = None, is_independent_attempts: bool = False, dataset: str = None, subset: str = None) -> Dict:
         """Create a successful task result with complete multi-turn data"""
 
         # Convert response to JSON-serializable format
@@ -515,6 +515,8 @@ def transform(grid):
             'model': self.model,
             'reasoning_effort': self.reasoning_effort,
             'api_type': api_type,
+            'dataset': dataset,
+            'subset': subset,
             'program': program,
             'task_failure_reason': '',
             'timed_out': False,
@@ -623,7 +625,7 @@ def transform(grid):
         except Exception as e:
             return {'error': f'Failed to serialize response: {str(e)}'}
 
-    def create_failure_result(self, task_id: str, program: str, all_responses: List, total_cost: float, total_tokens: int, turns_used: int, task_data: Dict, error_msg: str, conversation_history: List = None, turn_details: List = None, is_independent_attempts: bool = False) -> Dict:
+    def create_failure_result(self, task_id: str, program: str, all_responses: List, total_cost: float, total_tokens: int, turns_used: int, task_data: Dict, error_msg: str, conversation_history: List = None, turn_details: List = None, is_independent_attempts: bool = False, dataset: str = None, subset: str = None) -> Dict:
         """Create a failed task result with complete multi-turn data"""
         # Get test output for pixel counting
         actual_output = task_data['test'][0]['output']
@@ -663,6 +665,8 @@ def transform(grid):
             'model': self.model,
             'reasoning_effort': self.reasoning_effort,
             'api_type': api_type,
+            'dataset': dataset,
+            'subset': subset,
             'program': program,
             'task_failure_reason': error_msg,
             'timed_out': False,
@@ -700,7 +704,7 @@ def transform(grid):
             
         return result
     
-    def create_timeout_failure_result(self, task_id: str, total_cost: float, total_tokens: int, turns_completed: int, task_data: Dict, conversation_history: List = None, all_responses: List = None, turn_details: List = None) -> Dict:
+    def create_timeout_failure_result(self, task_id: str, total_cost: float, total_tokens: int, turns_completed: int, task_data: Dict, conversation_history: List = None, all_responses: List = None, turn_details: List = None, dataset: str = None, subset: str = None) -> Dict:
         """Create a timeout failure result - separate from regular task failures"""
         # Get test output for pixel counting
         actual_output = task_data['test'][0]['output']
@@ -729,6 +733,8 @@ def transform(grid):
             'model': self.model,
             'reasoning_effort': self.reasoning_effort,
             'api_type': 'chat_completions_multiturn',
+            'dataset': dataset,
+            'subset': subset,
             'program': '',
             'task_failure_reason': 'API timeout after retries',
             'timed_out': True,
@@ -755,7 +761,7 @@ def transform(grid):
             }
         }
 
-    def run_task(self, task_id: str, task_data: Dict, total_tasks: int = 1) -> Dict:
+    def run_task(self, task_id: str, task_data: Dict, total_tasks: int = 1, dataset: str = None, subset: str = None) -> Dict:
         """Run a single ARC task using multi-turn local code execution"""
         if self.debug:
             print(f"🔍 DEBUG TASK: Starting run_task for {task_id}")
@@ -798,11 +804,11 @@ def transform(grid):
             if self.independent_attempts:
                 if self.debug:
                     print(f"🔍 DEBUG TASK: Calling run_task_independent_attempts for {task_id}")
-                result = self.run_task_independent_attempts(task_id, task_data, total_tasks)
+                result = self.run_task_independent_attempts(task_id, task_data, total_tasks, dataset, subset)
             else:
                 if self.debug:
                     print(f"🔍 DEBUG TASK: Calling run_task_multiturn for {task_id}")
-                result = self.run_task_multiturn(task_id, task_data, total_tasks)
+                result = self.run_task_multiturn(task_id, task_data, total_tasks, dataset, subset)
             
             if self.debug:
                 print(f"🔍 DEBUG TASK: Execution completed for {task_id}, result type: {type(result)}")
@@ -838,7 +844,7 @@ def transform(grid):
                 'api_success': False,
             }
     
-    def run_task_independent_attempts(self, task_id: str, task_data: Dict, total_tasks: int = 1) -> Dict:
+    def run_task_independent_attempts(self, task_id: str, task_data: Dict, total_tasks: int = 1, dataset: str = None, subset: str = None) -> Dict:
         """Run independent attempts without feedback - multiple fresh starts with the same initial prompt"""
         if self.debug:
             print(f"🔍 DEBUG INDEPENDENT: Starting independent attempts for task {task_id}")
@@ -909,12 +915,12 @@ def transform(grid):
                                 print(f"🔍 DEBUG INDEPENDENT: All retries exhausted for {task_id} attempt {attempt + 1} - Final error: {error_type}: {error_msg}")
                             # Return timeout failure result
                             self._update_costs(total_cost, total_tokens)
-                            return self.create_timeout_failure_result(task_id, total_cost, total_tokens, attempt, task_data, conversation_history, all_responses, attempt_details)
+                            return self.create_timeout_failure_result(task_id, total_cost, total_tokens, attempt, task_data, conversation_history, all_responses, attempt_details, dataset, subset)
                 
                 if not api_call_successful or response is None:
                     # This shouldn't happen, but just in case
                     self._update_costs(total_cost, total_tokens)
-                    return self.create_timeout_failure_result(task_id, total_cost, total_tokens, attempt, task_data, conversation_history, all_responses, attempt_details)
+                    return self.create_timeout_failure_result(task_id, total_cost, total_tokens, attempt, task_data, conversation_history, all_responses, attempt_details, dataset, subset)
                 
                 all_responses.append(response)
                 
@@ -981,7 +987,7 @@ def transform(grid):
                         test_score['predicted_output'] = predicted_output
                         test_score['actual_output'] = test_expected
                         
-                        return self.create_success_result(task_id, program, response, test_score, total_cost, total_tokens, attempt + 1, task_data, None, all_responses, attempt_details, is_independent_attempts=True)
+                        return self.create_success_result(task_id, program, response, test_score, total_cost, total_tokens, attempt + 1, task_data, None, all_responses, attempt_details, is_independent_attempts=True, dataset=dataset, subset=subset)
                 else:
                     # Execution failed - record the failure and continue to next attempt
                     attempt_detail['test_result'] = {
@@ -1012,7 +1018,7 @@ def transform(grid):
                 print(f"🔍 DEBUG INDEPENDENT: Total cost: ${total_cost:.6f}")
             self._update_costs(total_cost, total_tokens)
             
-            return self.create_failure_result(task_id, program if 'program' in locals() else "", all_responses, total_cost, total_tokens, self.max_turns, task_data, "All attempts failed", None, attempt_details, is_independent_attempts=True)
+            return self.create_failure_result(task_id, program if 'program' in locals() else "", all_responses, total_cost, total_tokens, self.max_turns, task_data, "All attempts failed", None, attempt_details, is_independent_attempts=True, dataset=dataset, subset=subset)
         
         except Exception as e:
             if self.debug:
@@ -1023,9 +1029,9 @@ def transform(grid):
             print(f"     ❌ Independent attempts execution failed: {e}")
             self._update_costs(total_cost, total_tokens)
             
-            return self.create_failure_result(task_id, "", all_responses, total_cost, total_tokens, len(attempt_details), task_data, str(e), None, attempt_details, is_independent_attempts=True)
+            return self.create_failure_result(task_id, "", all_responses, total_cost, total_tokens, len(attempt_details), task_data, str(e), None, attempt_details, is_independent_attempts=True, dataset=dataset, subset=subset)
 
-    def run_task_multiturn(self, task_id: str, task_data: Dict, total_tasks: int = 1) -> Dict:
+    def run_task_multiturn(self, task_id: str, task_data: Dict, total_tasks: int = 1, dataset: str = None, subset: str = None) -> Dict:
         """Run multi-turn conversation with local code execution"""
         conversation_history = []
         total_cost = 0.0
@@ -1077,12 +1083,12 @@ def transform(grid):
                                 print(f"🔍 DEBUG MULTITURN: All retries exhausted for {task_id} turn {turn + 1} - Final error: {error_type}: {error_msg}")
                             # Return timeout failure result
                             self._update_costs(total_cost, total_tokens)
-                            return self.create_timeout_failure_result(task_id, total_cost, total_tokens, turn, task_data, conversation_history, all_responses, turn_details)
+                            return self.create_timeout_failure_result(task_id, total_cost, total_tokens, turn, task_data, conversation_history, all_responses, turn_details, dataset, subset)
                 
                 if not api_call_successful or response is None:
                     # This shouldn't happen, but just in case
                     self._update_costs(total_cost, total_tokens)
-                    return self.create_timeout_failure_result(task_id, total_cost, total_tokens, turn, task_data, conversation_history, all_responses, turn_details)
+                    return self.create_timeout_failure_result(task_id, total_cost, total_tokens, turn, task_data, conversation_history, all_responses, turn_details, dataset, subset)
                 
                 all_responses.append(response)
                 
@@ -1202,7 +1208,7 @@ Make sure to include the function definition inside a proper code block."""
                         test_score['predicted_output'] = predicted_output
                         test_score['actual_output'] = test_expected
                         
-                        return self.create_success_result(task_id, program, response, test_score, total_cost, total_tokens, turn + 1, task_data, conversation_history, all_responses, turn_details)
+                        return self.create_success_result(task_id, program, response, test_score, total_cost, total_tokens, turn + 1, task_data, conversation_history, all_responses, turn_details, dataset=dataset, subset=subset)
                 else:
                     # Execution failed
                     turn_detail['test_result'] = {
@@ -1242,13 +1248,13 @@ Make sure to include the function definition inside a proper code block."""
             # Failed after max turns
             self._update_costs(total_cost, total_tokens)
             
-            return self.create_failure_result(task_id, program if 'program' in locals() else "", all_responses, total_cost, total_tokens, self.max_turns, task_data, "Max turns reached", conversation_history, turn_details)
+            return self.create_failure_result(task_id, program if 'program' in locals() else "", all_responses, total_cost, total_tokens, self.max_turns, task_data, "Max turns reached", conversation_history, turn_details, dataset=dataset, subset=subset)
         
         except Exception as e:
             print(f"     ❌ Multi-turn execution failed: {e}")
             self._update_costs(total_cost, total_tokens)
             
-            return self.create_failure_result(task_id, "", all_responses, total_cost, total_tokens, len(turn_details), task_data, str(e), conversation_history, turn_details)
+            return self.create_failure_result(task_id, "", all_responses, total_cost, total_tokens, len(turn_details), task_data, str(e), conversation_history, turn_details, dataset=dataset, subset=subset)
 
     def run_subset(self, subset_name: str, dataset: str = "arc-agi-1", limit: Optional[int] = None) -> List[Dict]:
         """Run all tasks in a subset with optional parallelization"""
@@ -1314,7 +1320,7 @@ Make sure to include the function definition inside a proper code block."""
         if self.max_workers == 1:
             # Sequential execution (original behavior)
             for task_id, task_data in tasks:
-                result = self.run_task(task_id, task_data, total_tasks)
+                result = self.run_task(task_id, task_data, total_tasks, dataset, subset_name)
                 results.append(result)
                 
                 # Save individual result
@@ -1334,7 +1340,7 @@ Make sure to include the function definition inside a proper code block."""
                     
                     if self.debug:
                         print(f"🔍 DEBUG PARALLEL: [Thread {threading.get_ident()}] About to call run_task for {task_id}")
-                    result = self.run_task(task_id, task_data, total_tasks)
+                    result = self.run_task(task_id, task_data, total_tasks, dataset, subset_name)
                     if self.debug:
                         print(f"🔍 DEBUG PARALLEL: [Thread {threading.get_ident()}] run_task completed for {task_id}")
                     
