@@ -347,6 +347,7 @@ The `generate_training_data.py` tool extracts programs from log files to create 
 - **Smart error handling**: Drops individual failed examples but rejects programs with format violations
 - **Code cleaning**: Optional aggressive comment stripping with `--clean-code` flag (up to 58% size reduction)
 - **Automatic deduplication**: Removes duplicate programs within each task based on test correctness and output similarity
+- **Transduction/cheating detection**: Identifies and removes programs that hardcode answers instead of implementing transformations
 
 ### Usage
 
@@ -389,6 +390,12 @@ uv run python generate_training_data.py --subset "middle_training_10" --validati
 
 # Disable deduplication if you want all programs (including duplicates)
 uv run python generate_training_data.py --limit 100 --no-dedup --output all_programs_no_dedup.jsonl
+
+# Enable debug mode to see detailed transduction detection info
+uv run python generate_training_data.py --limit 100 --debug --output debug_training.jsonl
+
+# Disable transduction filtering if you want to keep all programs (including cheating ones)
+uv run python generate_training_data.py --limit 100 --no-transduction-filter --output all_programs_with_cheating.jsonl
 ```
 
 ### Filtering Options
@@ -613,6 +620,73 @@ Use `--no-dedup` flag to keep all programs including duplicates:
 ```bash
 uv run python generate_training_data.py --no-dedup --output all_programs.jsonl
 ```
+
+### Transduction/Cheating Detection (`--no-transduction-filter`)
+
+The tool automatically detects and removes programs that cheat by hardcoding answers instead of implementing genuine transformations:
+
+#### **What is Transduction/Cheating?**
+Transduction occurs when a model hardcodes specific outputs in the program code rather than learning the underlying transformation pattern. This creates programs that work for the specific examples they've seen but fail to generalize.
+
+#### **Detection Methods**
+1. **Long line detection**: Programs with lines exceeding 200 characters (likely hardcoded arrays)
+2. **Hardcoded output detection**: Programs that contain the exact output values as strings in the code
+
+#### **How Detection Works**
+- **Output string matching**: Extracts all training and test outputs, converts to strings, and checks if they appear in the program code
+- **Special handling for 1x1 grids**: Uses different string cleaning rules for single-cell outputs vs. larger grids
+- **Context-aware filtering**: Only flags non-trivial outputs (>2 characters) to avoid false positives
+
+#### **Debug Mode**
+Enable `--debug` to see detailed information about detected cheating:
+
+```bash
+uv run python generate_training_data.py --debug --limit 100
+```
+
+**Debug output example:**
+```
+🔍 Deduplicating task 2281f1f4: 3 programs
+  🚫 Rejected transduction in task 2281f1f4: Output 1 hardcoded in program: [[1,0,1],[0,1,0],[1,0,1]]...
+       Code context: ...return[[1,0,1],[0,1,0],[1,0,1]]...
+
+🛡️  Transduction/Cheating Filter Results:
+  Programs rejected for cheating: 23
+  Tasks with cheating programs: 8
+  📋 Detailed breakdown by task:
+    Task abc123: 2 programs rejected
+      - Line 5 exceeds 200 characters (likely hardcoded)
+      - Output 1 hardcoded in program: [[7,0,7],[0,7,0],[7,0,7]]...
+```
+
+#### **Summary Statistics**
+Without debug mode, you get categorized statistics:
+
+```
+🛡️  Transduction/Cheating Filter Results:
+  Programs rejected for cheating: 45
+  Tasks with cheating programs: 12
+  📊 Rejection categories:
+    Hardcoded outputs: 38
+    Long lines (>200 chars): 7
+```
+
+#### **Benefits**
+- **Improves training quality**: Removes programs that don't represent genuine learning
+- **Prevents overfitting**: Eliminates hardcoded solutions that don't generalize
+- **Maintains integrity**: Ensures training data represents actual pattern recognition
+- **Reduces noise**: Filters out programs that memorize rather than understand
+
+#### **Disable Filtering**
+Use `--no-transduction-filter` to keep all programs including cheating ones:
+```bash
+uv run python generate_training_data.py --no-transduction-filter --output all_programs.jsonl
+```
+
+**When to disable:**
+- Research purposes (studying cheating patterns)
+- Debugging model behavior
+- Comparing filtered vs. unfiltered training data effects
 
 ### Use Cases
 

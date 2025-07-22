@@ -139,6 +139,18 @@ uv run python generate_training_data.py --model "google/gemini-2.5-flash" --outp
 
 ### Fine-tune
 
+All seems to be working fine on a single row. Moving now to try 10 rows.
+
+### 10 Tasks at a time
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 3 --max_workers 3 --max_turns 8 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+```
+
+Then creating a dataset from that to use for fine-tuning:
+```bash
+uv run python generate_training_data.py --model "google/gemini-2.5-flash" --output gemini_synth_10_train.jsonl --dataset "arc-agi-1" --subset "middle_training_10" --clean-code
+```
+
 
 
 ### Run a SOAR model - the Qwen 7B model.

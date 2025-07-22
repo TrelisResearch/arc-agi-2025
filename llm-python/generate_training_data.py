@@ -360,7 +360,73 @@ def extract_programs_from_log(log_path: str) -> List[Dict]:
     
     return programs
 
-def validate_single_program(prog_data: Dict) -> Optional[Dict]:
+def is_transduction_cheating(program: str, task_data: Dict, debug: bool = False) -> Tuple[bool, str]:
+    """
+    Detect if a program is cheating by hardcoding outputs (transduction).
+    Returns (is_cheating, reason).
+    """
+    
+    # Check 1: Very long lines (likely hardcoded values)
+    lines = program.split('\n')
+    for line_num, line in enumerate(lines, 1):
+        if len(line) > 200:
+            reason = f"Line {line_num} exceeds 200 characters (likely hardcoded)"
+            if debug:
+                print(f"    🚫 Transduction detected: {reason}")
+                print(f"       Line: {line[:100]}...")
+            return True, reason
+    
+    # Check 2: Hardcoded output values in code
+    # Determine if task has 1x1 outputs (special case)
+    flag_one = any((1, 1) == (len(example["output"]), len(example["output"][0]) if example["output"] else 0) 
+                   for example in task_data.get("train", []))
+    
+    # Collect all outputs (training + test)
+    all_outputs = []
+    
+    # Add training outputs
+    for example in task_data.get("train", []):
+        if example.get("output"):
+            all_outputs.append(example["output"])
+    
+    # Add test outputs if available
+    for test_example in task_data.get("test", []):
+        if test_example.get("output"):
+            all_outputs.append(test_example["output"])
+    
+    if not all_outputs:
+        return False, ""
+    
+    # Create string representations of outputs
+    if flag_one:
+        # For 1x1 outputs, only remove spaces
+        def clean_string(s):
+            return str(s).replace(' ', '')
+    else:
+        # For larger outputs, remove spaces and brackets
+        def clean_string(s):
+            return str(s).replace(' ', '').replace('[', '').replace(']', '')
+    
+    output_strings = [clean_string(output) for output in all_outputs]
+    cleaned_code = clean_string(program)
+    
+    # Check if any output appears in the code
+    for i, output_str in enumerate(output_strings):
+        if len(output_str) > 2 and output_str in cleaned_code:  # Only check non-trivial outputs
+            reason = f"Output {i+1} hardcoded in program: {output_str[:50]}..."
+            if debug:
+                print(f"    🚫 Transduction detected: {reason}")
+                # Show context around the hardcoded value
+                code_idx = cleaned_code.find(output_str)
+                context_start = max(0, code_idx - 30)
+                context_end = min(len(cleaned_code), code_idx + len(output_str) + 30)
+                context = cleaned_code[context_start:context_end]
+                print(f"       Code context: ...{context}...")
+            return True, reason
+    
+    return False, ""
+
+def validate_single_program(prog_data: Dict, args) -> Optional[Dict]:
     """Validate a single program and return qualified program data or None"""
     task_id = prog_data['task_id']
     program = prog_data['program']
@@ -369,6 +435,13 @@ def validate_single_program(prog_data: Dict) -> Optional[Dict]:
     task_data = load_task_data(task_id)
     if not task_data:
         return None
+    
+    # Check for transduction/cheating (unless disabled)
+    if not args.no_transduction_filter:
+        is_cheating, cheat_reason = is_transduction_cheating(program, task_data, debug=args.debug)
+        if is_cheating:
+            prog_data['transduction_reason'] = cheat_reason
+            return None  # Reject cheating programs
     
     # Always re-evaluate program to ensure consistency with training example creation
     evaluation = evaluate_program_on_task(program, task_data)
@@ -612,6 +685,10 @@ def main():
                        help="Strip comments and clean up code before processing")
     parser.add_argument("--no-dedup", action="store_true",
                        help="Disable deduplication of programs within each task")
+    parser.add_argument("--no-transduction-filter", action="store_true",
+                       help="Disable filtering of transduction/cheating programs")
+    parser.add_argument("--debug", action="store_true",
+                       help="Enable debug mode with detailed logging for transduction detection")
     
     args = parser.parse_args()
     
@@ -760,15 +837,23 @@ def main():
     # Filter programs to only those that qualify (in parallel)
     qualified_programs = []
     validated_count = 0
+    transduction_rejected = 0
+    transduction_stats = {}  # task_id -> list of rejection reasons
     
-    print(f"Validating programs in parallel...")
+    validation_message = "Validating programs"
+    if not args.no_transduction_filter:
+        validation_message += " and filtering transduction/cheating"
+    validation_message += " in parallel..."
+    print(validation_message)
+    
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         # Submit all validation jobs
-        future_to_prog = {executor.submit(validate_single_program, prog_data): prog_data 
+        future_to_prog = {executor.submit(validate_single_program, prog_data, args): prog_data 
                          for prog_data in all_programs}
         
         # Collect results as they complete
         for future in as_completed(future_to_prog):
+            prog_data = future_to_prog[future]
             validated_count += 1
             
             # Progress reporting every 50 programs
@@ -779,11 +864,56 @@ def main():
                 result = future.result()
                 if result is not None:
                     qualified_programs.append(result)
+                elif 'transduction_reason' in prog_data:
+                    # Track transduction rejections
+                    transduction_rejected += 1
+                    task_id = prog_data['task_id']
+                    reason = prog_data['transduction_reason']
+                    
+                    if task_id not in transduction_stats:
+                        transduction_stats[task_id] = []
+                    transduction_stats[task_id].append(reason)
+                    
+                    if args.debug:
+                        print(f"  🚫 Rejected transduction in task {task_id}: {reason}")
+                        
             except Exception as e:
                 if validated_count % 500 == 0:  # Only print errors occasionally
                     print(f"  Warning: Error validating program: {e}")
     
     print(f"\nQualified programs: {len(qualified_programs)}")
+    
+    # Report transduction filtering results
+    if not args.no_transduction_filter:
+        print(f"🛡️  Transduction/Cheating Filter Results:")
+        print(f"  Programs rejected for cheating: {transduction_rejected}")
+        if transduction_rejected > 0:
+            print(f"  Tasks with cheating programs: {len(transduction_stats)}")
+            if args.debug:
+                print(f"  📋 Detailed breakdown by task:")
+                for task_id, reasons in transduction_stats.items():
+                    print(f"    Task {task_id}: {len(reasons)} programs rejected")
+                    for reason in reasons:
+                        print(f"      - {reason}")
+            else:
+                # Show summary without debug details
+                reason_counts = {}
+                for reasons in transduction_stats.values():
+                    for reason in reasons:
+                        # Categorize reasons
+                        if "exceeds 200 characters" in reason:
+                            category = "Long lines (>200 chars)"
+                        elif "hardcoded in program" in reason:
+                            category = "Hardcoded outputs"
+                        else:
+                            category = "Other"
+                        reason_counts[category] = reason_counts.get(category, 0) + 1
+                
+                print(f"  📊 Rejection categories:")
+                for category, count in reason_counts.items():
+                    print(f"    {category}: {count}")
+    else:
+        print(f"⚠️  Transduction filtering disabled by --no-transduction-filter flag")
     
     # Deduplicate programs within each task (unless disabled)
     if not args.no_dedup:
