@@ -2,6 +2,28 @@
 
 ## 2025 23rd July
 
+### Training Datasets Generated with Fixed Deduplication
+
+**Mixed Dataset (Gemini + Qwen3-4B)**:
+- File: `training_data_refined_stats_20250723_181536.jsonl`
+- **1023 training examples** from 50 ARC tasks
+- Programs with all training AND test correct: **81/1023 (7.9%)**
+- Programs that originally solved test case: **106/1023 (10.4%)**
+- Programs with all training examples correct: **92/1023 (9.0%)**
+- Programs with at least one correct answer: **212/1023 (20.7%)**
+- **100% validation success** rate
+
+**Gemini-Only Dataset**:
+- File: `gemini-synth-arc-agi-1-50-20250723_182345.jsonl`
+- **237 training examples** from 50 ARC tasks  
+- Programs with all training AND test correct: **71/237 (30.0%)**
+- Programs that originally solved test case: **84/237 (35.4%)**
+- Programs with all training examples correct: **81/237 (34.2%)**
+- Programs with at least one correct answer: **161/237 (67.9%)**
+- **100% validation success** rate
+
+**Key Insight**: Gemini-only dataset is smaller but much higher quality - 30.0% perfect programs vs 7.9% in mixed dataset. Suggests Gemini produces more accurate solutions than Qwen3-4B.
+
 **Tasks for Today:**
 [x] Measure performance on 1 task only, to get started. Generate 8 samples for that task. Will use middle_training_1 .
 [x] Carefully inspect all of that data.
@@ -21,9 +43,42 @@
 Will re-run on the eval set 400 tasks, three times:
 
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model Trelis/Qwen3-4B-gemini_synth_50_random_split_1_training_fixed-20250723-154652 --independent-attempts --base-url http://69.30.85.155:22102/v1 --qwen-no-think --max-tokens 2000
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model Trelis/Qwen3-4B-gemini_synth_50_random_split_1_training_fixed-20250723-154652 --independent-attempts --base-url http://157.66.254.40:18942/v1 --qwen-no-think --max-tokens 2000
 ```
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B-gemini_synth_50_random_split_1_training_fixed-20250723-154652
+Number of runs: 3
+API failures excluded from analysis: YES
 
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    400        3              5              0.8%           1.2%          
+2    400        2              7              0.5%           1.8%          
+3    400        3              6              0.8%           1.5%          
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 0.7%
+  Std Dev: 0.1%
+  95% CI: [0.4%, 0.9%]
+
+All Attempts Success Rate:
+  Mean: 1.5%
+  Std Dev: 0.3%
+  95% CI: [1.0%, 2.0%]
+
+**So the results are within a similar confidence band, maybe slightly higher.**
+
+
+And then try with reasoning:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model Trelis/Qwen3-4B-gemini_synth_50_random_split_1_training_fixed-20250723-154652 --independent-attempts --base-url http://157.66.254.40:18942/v1
+```
+Looks like the model has forgotten to reason as the first few tokens are not properly formed.
 
 
 ### Training Data Validation Issue - FIXED (23 Jul 2025)
@@ -65,6 +120,32 @@ Statistics:
 uv run python tests/validate_training_data.py llm-python/training_data/gemini_synth_50_random_split_1_training_fixed.jsonl --verbose
 ```
 Result: 100% validation success rate across all 1156 training examples.
+
+### Fixed Test Case Deduplication Logic (23 Jul 2025)
+
+**Problem Identified**: The test case deduplication was incorrectly keeping only the first test-correct program per task, instead of deduplicating by code similarity.
+
+**Root Cause**: 
+- For programs that correctly solved test cases, the system kept only the first program regardless of code differences
+- This potentially removed valid diverse solutions that achieved the same test result through different approaches
+
+**Solution Implemented**:
+- Modified deduplication logic in `generate_training_data.py:636-651`
+- **Test-correct programs**: Now deduplicated by cleaned code string matching (after comment removal)
+- **Test-incorrect programs**: Continue to be deduplicated by output behavior similarity across training examples
+
+**Fixed Dataset Results**:
+```bash
+python3 generate_training_data.py --model "google/gemini-2.5-flash,qwen/qwen3-4b" --output training_data_fixed_dedup_20250723_175439.jsonl --dataset "arc-agi-1" --subset "random_split_1_training" --clean-code --debug
+```
+
+**Comparison Results**:
+- **Before fix**: 1156 training examples, 209/1156 (18.1%) with at least one correct answer
+- **After fix**: 1023 training examples, 212/1023 (20.7%) with at least one correct answer
+- **Deduplication stats**: Test-correct deduped: 5, Output-similarity deduped: 347
+- **Total deduplication**: 352 programs (25.3%) removed as duplicates
+
+**Impact**: The fix ensures that diverse test-correct solutions are preserved for training, while still removing true duplicates based on identical cleaned code.
 
 ### Testing out Qwen Coder (Qwen/Qwen2.5-Coder-7B-Instruct)
 

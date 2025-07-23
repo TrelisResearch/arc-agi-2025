@@ -233,6 +233,29 @@ The tool automatically detects and logs thinking tokens from models that provide
 
 All reasoning data is preserved in logs for analysis. The code extraction also searches both content and reasoning fields, ensuring no code is missed regardless of where models place their solutions.
 
+### Training Data Generation
+
+Generate fine-tuning datasets from logged program attempts using hindsight relabeling:
+
+```bash
+# Generate training data from Gemini and Qwen3-4B logs  
+python3 generate_training_data.py --model "google/gemini-2.5-flash,qwen/qwen3-4b" --output training_data.jsonl --dataset "arc-agi-1" --subset "random_split_1_training" --clean-code
+
+# With validation split (10% or 32 examples max)
+python3 generate_training_data.py --model "google/gemini-2.5-flash,qwen/qwen3-4b" --output training_data.jsonl --validation --clean-code
+```
+
+**Deduplication Logic:**
+- **Test-correct programs**: Deduplicated by cleaned code string matching (after comment removal)
+- **Test-incorrect programs**: Deduplicated by output behavior similarity across training examples  
+- **Hindsight relabeling**: Programs that fail tests use their actual outputs as ground truth
+
+**Key Features:**
+- Automatic transduction/cheating detection and filtering
+- Code cleaning with comment/whitespace removal (optional `--clean-code`)
+- Validation of training examples for consistency
+- Debug mode (`--debug`) for detailed deduplication information
+
 ### Available Subsets
 
 - `shortest_training_1`: Single shortest training task

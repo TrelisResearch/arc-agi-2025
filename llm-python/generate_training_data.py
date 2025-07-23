@@ -576,7 +576,8 @@ def create_training_example(program_data: Dict, task_data: Dict, args) -> Dict:
     
     # Create the training example
     training_example = {
-        "messages": [system_message, user_message, assistant_message]
+        "messages": [system_message, user_message, assistant_message],
+        "_originally_test_correct": originally_test_correct  # Metadata for stats tracking
     }
     
     return training_example
@@ -633,14 +634,22 @@ def deduplicate_programs_by_task(qualified_programs: List[Dict], args) -> Tuple[
             else:
                 test_incorrect_programs.append(prog_info)
         
-        # For test-correct programs, keep only the first one (they all solve the test correctly)
-        if len(test_correct_programs) > 1:
-            deduplication_stats['test_correct_deduped'] += len(test_correct_programs) - 1
-            if show_debug:
-                print(f"    ✅ Test-correct dedup: {len(test_correct_programs)} → 1 (kept first)")
-            task_deduped.append(test_correct_programs[0])  # Keep only the first test-correct program
-        elif len(test_correct_programs) == 1:
-            task_deduped.append(test_correct_programs[0])
+        # For test-correct programs, deduplicate by cleaned code string match
+        if len(test_correct_programs) > 0:
+            code_signatures = {}
+            for prog_info in test_correct_programs:
+                program_code = prog_info['program_data']['program']
+                
+                # Keep first program with this exact code signature
+                if program_code not in code_signatures:
+                    code_signatures[program_code] = prog_info
+                    task_deduped.append(prog_info)
+                else:
+                    deduplication_stats['test_correct_deduped'] += 1
+            
+            if show_debug and len(test_correct_programs) > len(code_signatures):
+                unique_codes = len(code_signatures)
+                print(f"    ✅ Test-correct code dedup: {len(test_correct_programs)} → {unique_codes} (removed {len(test_correct_programs) - unique_codes} duplicates)")
         
         # Step 2: For test-incorrect programs, deduplicate by output similarity
         if test_incorrect_programs:
@@ -991,6 +1000,8 @@ def main():
     programs_with_at_least_one_correct = 0
     programs_with_all_correct = 0
     programs_with_reasoning = 0
+    programs_with_test_correct = 0
+    programs_with_all_training_and_test_correct = 0
     validation_mismatches = 0
     invalid_output_programs = 0
     processed_examples = 0
@@ -1013,6 +1024,16 @@ def main():
             
             try:
                 training_example = future.result()
+                
+                # Track test correctness before removing metadata
+                test_correct = training_example.get('_originally_test_correct', False)
+                if test_correct:
+                    programs_with_test_correct += 1
+                
+                # Remove metadata before adding to final dataset
+                if '_originally_test_correct' in training_example:
+                    del training_example['_originally_test_correct']
+                
                 training_examples.append(training_example)
                 
                 # Check if reasoning was included in this example
@@ -1028,8 +1049,13 @@ def main():
                 if solved_count > 0:
                     programs_with_at_least_one_correct += 1
                 
-                if solved_count == total_examples and total_examples > 0:
+                all_training_correct = (solved_count == total_examples and total_examples > 0)
+                if all_training_correct:
                     programs_with_all_correct += 1
+                
+                # Track programs with both all training correct AND test correct
+                if all_training_correct and test_correct:
+                    programs_with_all_training_and_test_correct += 1
                 
                 # Check for validation mismatches (if we have logged data to compare)
                 if 'logged_solved_count' in prog_data:
@@ -1051,14 +1077,20 @@ def main():
     if len(training_examples) > 0:
         pct_with_correct = (programs_with_at_least_one_correct / len(training_examples)) * 100
         pct_all_correct = (programs_with_all_correct / len(training_examples)) * 100
+        pct_test_correct = (programs_with_test_correct / len(training_examples)) * 100
+        pct_all_training_and_test = (programs_with_all_training_and_test_correct / len(training_examples)) * 100
         pct_with_reasoning = (programs_with_reasoning / len(training_examples)) * 100
         print(f"Programs with at least one originally correct answer: {programs_with_at_least_one_correct}/{len(training_examples)} ({pct_with_correct:.1f}%)")
         print(f"Programs with all training examples correct: {programs_with_all_correct}/{len(training_examples)} ({pct_all_correct:.1f}%)")
+        print(f"Programs that originally solved the test case: {programs_with_test_correct}/{len(training_examples)} ({pct_test_correct:.1f}%)")
+        print(f"Programs with all training AND test correct: {programs_with_all_training_and_test_correct}/{len(training_examples)} ({pct_all_training_and_test:.1f}%)")
         if args.reasoning:
             print(f"Programs with reasoning content included: {programs_with_reasoning}/{len(training_examples)} ({pct_with_reasoning:.1f}%)")
     else:
         print(f"Programs with at least one originally correct answer: 0/0 (0.0%)")
         print(f"Programs with all training examples correct: 0/0 (0.0%)")
+        print(f"Programs that originally solved the test case: 0/0 (0.0%)")
+        print(f"Programs with all training AND test correct: 0/0 (0.0%)")
         if args.reasoning:
             print(f"Programs with reasoning content included: 0/0 (0.0%)")
     
