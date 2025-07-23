@@ -448,19 +448,22 @@ def validate_single_program(prog_data: Dict, args) -> Optional[Dict]:
     solved_count = evaluation['solved_count']
     total_examples = evaluation['total_examples']
     
-    # Check if program executes successfully on at least one example
+    # Check if program executes successfully on ALL training examples
     successful_executions = sum(1 for result in evaluation['training_results'] 
                                if result.get('predicted_output') is not None 
                                and not result.get('error') 
                                and not result.get('timed_out'))
     
+    all_successful = successful_executions == total_examples
+    
     # Store the re-evaluated counts for later use
     prog_data['validated_solved_count'] = solved_count
     prog_data['validated_total_examples'] = total_examples
     prog_data['successful_executions'] = successful_executions
+    prog_data['all_examples_execute'] = all_successful
     
-    # Only include if program runs without error (at least one successful execution)
-    if successful_executions > 0:
+    # Only include if program runs without error on ALL training examples
+    if all_successful:
         return {
             'program_data': prog_data,
             'task_data': task_data
@@ -476,16 +479,19 @@ def create_training_example(program_data: Dict, task_data: Dict, args) -> Dict:
     
     program = program_data['program']
     
-    # Check if program correctly solves the test output (for reasoning inclusion)
-    test_correct = False
-    if args.reasoning and task_data.get('test') and len(task_data['test']) > 0:
+    # Check if program originally solved the test correctly
+    originally_test_correct = False
+    if task_data.get('test') and len(task_data['test']) > 0:
         test_input = task_data['test'][0]['input']
         expected_test_output = task_data['test'][0]['output']
         predicted_test_output, error, timed_out = execute_program(program, test_input)
         
         if (predicted_test_output is not None and not error and not timed_out and 
             predicted_test_output == expected_test_output):
-            test_correct = True
+            originally_test_correct = True
+    
+    # Check if program correctly solves the test output (for reasoning inclusion)
+    test_correct = originally_test_correct  # Use the same check for reasoning
     
     # Run the program on each training input to get what it actually produces
     for example in task_data['train']:
@@ -511,6 +517,20 @@ def create_training_example(program_data: Dict, task_data: Dict, args) -> Dict:
     # Only proceed if we have at least one successful execution
     if not modified_task_data['train']:
         raise ValueError(f"Program failed to run on all {len(task_data['train'])} training examples")
+    
+    # Critical validation: If program originally solved the test, verify it still does after relabeling
+    if originally_test_correct:
+        # Re-run the test to make sure relabeling didn't break the solution
+        test_input = task_data['test'][0]['input']
+        expected_test_output = task_data['test'][0]['output']
+        predicted_test_output_after_relabel, error, timed_out = execute_program(program, test_input)
+        
+        still_test_correct = (predicted_test_output_after_relabel is not None and 
+                             not error and not timed_out and 
+                             predicted_test_output_after_relabel == expected_test_output)
+        
+        if not still_test_correct:
+            raise ValueError(f"Program originally solved test but fails after relabeling - this suggests execution inconsistency")
     
     # Create system message
     system_message = {

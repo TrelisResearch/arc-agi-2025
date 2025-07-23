@@ -16,6 +16,26 @@
 [ ] Then increase up to 32 samples and repeat. Maybe...
 [ ] Only then, expand up to trying 50 problems and add testing of the evaluation set.
 
+### Diagnosing fine-tuned model issues
+
+Start by reviewing the data prep scripts and re-running data prep, expecting 61 examples:
+
+```bash
+uv run python generate_training_data.py --model "google/gemini-2.5-flash" --output gemini_synth_10_train.jsonl --dataset "arc-agi-1" --subset "middle_training_10" --clean-code --debug
+```
+
+This is getting 60 examples.
+
+And just re-run the single train datapoint:
+
+```bash
+uv run python generate_training_data.py --model "google/gemini-2.5-flash" --output gemini_synth_1_train.jsonl --dataset "arc-agi-1" --subset "middle_training_1" --clean-code --debug
+```
+
+
+
+
+
 ## 2025 22nd July
 
 **Tasks for Today:**
