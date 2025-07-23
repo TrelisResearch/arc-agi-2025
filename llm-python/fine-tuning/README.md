@@ -20,6 +20,6 @@ Or, via runpod proxy, with https://<pod-id>-6006.proxy.runpod.net
 **Runpod One-click-template FOR FINE-TUNING**
 Runpod One-click-template [here](https://console.runpod.io/deploy?template=ifyqsvjlzj) - swap out the model name if using a fine-tuned model.
 
-OR FOR BLACKWELL:
+OR FOR BLACKWELL (not working):
 
 [HERE](https://console.runpod.io/deploy?template=njbyqyiuty&ref=jmfkcdio)
