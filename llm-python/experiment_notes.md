@@ -191,6 +191,71 @@ Statistics:
   Average examples per task: 23.5
   Tasks with most examples: [('7df24a62', 46), ('6b9890af', 45), ('264363fd', 43), ('d406998b', 39), ('f35d900a', 39)]
 
+### fine-tune on 1 epoch constant lr with 32 virtual batch size on H100
+
+Then run the model on the random split 1 training dataset:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 25 --max_turns 8 --model Trelis/gemini_synth_50_random_split_1_training-23jul-1epoch --independent-attempts --base-url http://69.30.85.155:22199/v1 --qwen-no-think --max-tokens 2000
+```
+Dataset: arc-agi-1
+Subset: random_split_1_training
+Model: Trelis/gemini_synth_50_random_split_1_training-23jul-1epoch
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    50         3              5              6.0%           10.0%         
+2    50         0              6              0.0%           12.0%         
+3    50         3              8              6.0%           16.0%         
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 4.0%
+  Std Dev: 3.5%
+  95% CI: [-2.8%, 10.8%]
+
+All Attempts Success Rate:
+  Mean: 12.7%
+  Std Dev: 3.1%
+  95% CI: [6.7%, 18.7%]
+
+Aggregate results saved to: logs/20250723_113421_aggregate_summary_arc-agi-1_random_split_1_training_3runs.json
+
+**Basically the same as before fine-tuning.**
+
+and test on the evaluation dataset:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model Trelis/gemini_synth_50_random_split_1_training-23jul-1epoch --independent-attempts --base-url http://69.30.85.155:22199/v1 --qwen-no-think --max-tokens 2000
+```
+
+==================================================
+SUMMARY (Run 1)
+==================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/gemini_synth_50_random_split_1_training-23jul-1epoch
+Reasoning effort: low
+API: Chat Completions (independent attempts, max 8 attempts)
+Total tasks attempted: 400
+Successful API calls: 400/400 (100.0%)
+Tasks solved correctly: 6/400 (1.5%)
+Pixel accuracy: 72/97320 (0.1%)
+Total attempts used: 3163
+Average attempts per task: 7.9
+Total tokens used: 16,112,504
+Total cost: $4.335001
+
+Results saved to: logs/20250723_114206_summary_arc-agi-1_all_evaluation_run1.json
+
+**Also the same as before fine-tuning.**
+
+### Trying out the qwen coder model.
+
+
 
 ## 2025 22nd July
 
