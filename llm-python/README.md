@@ -553,13 +553,17 @@ def transform(grid):
 - ✅ Execute successfully on ≥1 training example  
 - ✅ Fail on ≥1 training example (learning opportunity)
 - ✅ Return proper 2D grids (`[[...], [...]]`)
+- ✅ All cell values are integers 0-9
 
 **Programs rejected if they:**
 - ❌ Solve all examples (no room for improvement)
 - ❌ Return invalid formats (integers, 1D lists, etc.)
+- ❌ Contain invalid cell values (booleans, tuples, floats, strings, integers <0 or >9)
 - ❌ Fail to execute on all examples
 
 **Error handling:** Execution failures drop individual examples; format violations reject entire programs.
+
+**Validation improvements:** As of January 2025, strict cell value validation prevents malformed training data from boolean values (`True`/`False`), tuple coordinates `(1, 2)`, invalid integers, and other non-grid data types that previously passed validation.
 
 ### Process
 

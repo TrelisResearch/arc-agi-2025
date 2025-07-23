@@ -16,6 +16,103 @@
 [ ] Then increase up to 32 samples and repeat. Maybe...
 [ ] Only then, expand up to trying 50 problems and add testing of the evaluation set.
 
+### Re-generating the training dataset.
+
+...there are still issues here whereby training datasets are not being validated 100% by the script...
+
+### Regenerating the dataset
+
+I did some dataset checks and found that there were a few rows that were invalid. Seems there were ~21 invalid rows that may have caused some issues.
+
+Generated 1156 training examples
+Programs with at least one originally correct answer: 209/1156 (18.1%)
+Programs with all training examples correct: 43/1156 (3.7%)
+✅ No validation mismatches found - all programs behaved consistently
+✅ All programs returned valid 2D grid formats
+Saved training data to: training_data/gemini_synth_50_random_split_1_training.jsonl
+
+Statistics:
+  Unique tasks: 50
+  Average examples per task: 23.1
+  Tasks with most examples: [('7df24a62', 46), ('6b9890af', 45), ('264363fd', 43), ('d406998b', 39), ('f35d900a', 39)]
+
+Also I ran validation and found now that there is just one problem that has got incorrect outputs coming from the program.
+
+### Testing out Qwen Coder (Qwen/Qwen2.5-Coder-7B-Instruct)
+
+Start by doing one run on the full arc-agi-1 dataset all_evaluation:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 50 --max_turns 8 --model qwen/Qwen2.5-Coder-7B-Instruct --independent-attempts --base-url http://69.30.85.155:22006/v1 --qwen-no-think --max-tokens 2000
+```
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: qwen/Qwen2.5-Coder-7B-Instruct
+Reasoning effort: low
+API: Chat Completions (independent attempts, max 8 attempts)
+Total tasks attempted: 400
+Successful API calls: 400/400 (100.0%)
+Tasks solved correctly: 1/400 (0.2%)
+Pixel accuracy: 100/97320 (0.1%)
+Total attempts used: 3169
+Average attempts per task: 7.9
+Total tokens used: 14,480,050
+Total cost: $3.365933
+
+Results saved to: logs/20250723_131035_summary_arc-agi-1_all_evaluation.json
+
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: qwen/Qwen2.5-Coder-7B-Instruct
+Reasoning effort: low
+API: Chat Completions (independent attempts, max 8 attempts)
+Total tasks attempted: 400
+Successful API calls: 400/400 (100.0%)
+Tasks solved correctly: 1/400 (0.2%)
+Pixel accuracy: 4/97320 (0.0%)
+Total attempts used: 3192
+Average attempts per task: 8.0
+Total tokens used: 14,520,594
+Total cost: $3.373603
+
+Results saved to: logs/20250723_141951_summary_arc-agi-1_all_evaluation.json
+
+and then test the fine-tuned model (Trelis/Qwen2.5-Coder-7B-Instruct-gemini_synth_50_random_split_1_training-20250723-113848):
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model Trelis/Qwen2.5-Coder-7B-Instruct-gemini_synth_50_random_split_1_training-20250723-113848 --independent-attempts --base-url http://69.30.85.155:22102/v1 --qwen-no-think --max-tokens 2000
+```
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen2.5-Coder-7B-Instruct-gemini_synth_50_random_split_1_training-20250723-113848
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    400        1              4              0.2%           1.0%          
+2    400        2              3              0.5%           0.8%          
+3    400        1              3              0.2%           0.8%          
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 0.3%
+  Std Dev: 0.1%
+  95% CI: [0.1%, 0.6%]
+
+All Attempts Success Rate:
+  Mean: 0.8%
+  Std Dev: 0.1%
+  95% CI: [0.6%, 1.1%]
+
+Aggregate results saved to: logs/20250723_135758_aggregate_summary_arc-agi-1_all_evaluation_3runs.json
+
+**Seems like there is some small improvement on the evaluation set.**
+
 ### Diagnosing fine-tuned model issues
 
 Start by reviewing the data prep scripts and re-running data prep, expecting 61 examples:
@@ -255,7 +352,37 @@ Results saved to: logs/20250723_114206_summary_arc-agi-1_all_evaluation_run1.jso
 
 ### Trying out the qwen coder model.
 
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model Trelis/Qwen2.5-Coder-7B-Instruct-gemini_synth_50_random_split_1_training-20250723-113848 --independent-attempts --base-url http://69.30.85.155:22102/v1 --qwen-no-think --max-tokens 2000
+```
 
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen2.5-Coder-7B-Instruct-gemini_synth_50_random_split_1_training-20250723-113848
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    400        1              4              0.2%           1.0%          
+2    400        2              3              0.5%           0.8%          
+3    400        1              3              0.2%           0.8%          
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 0.3%
+  Std Dev: 0.1%
+  95% CI: [0.1%, 0.6%]
+
+All Attempts Success Rate:
+  Mean: 0.8%
+  Std Dev: 0.1%
+  95% CI: [0.6%, 1.1%]
+
+Aggregate results saved to: logs/20250723_135758_aggregate_summary_arc-agi-1_all_evaluation_3runs.json
 
 ## 2025 22nd July
 

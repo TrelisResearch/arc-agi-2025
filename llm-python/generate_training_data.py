@@ -507,6 +507,15 @@ def create_training_example(program_data: Dict, task_data: Dict, args) -> Dict:
                 raise ValueError(f"Program returned empty grid")
             if not isinstance(predicted_output[0], list):
                 raise ValueError(f"Program returned 1D list instead of 2D grid")
+            
+            # Validate that all cell values are integers 0-9
+            for i, row in enumerate(predicted_output):
+                if not isinstance(row, list):
+                    raise ValueError(f"Row {i} is not a list: {type(row).__name__}")
+                for j, cell in enumerate(row):
+                    # Check for boolean first since isinstance(True, int) is True in Python
+                    if isinstance(cell, bool) or not isinstance(cell, int) or not (0 <= cell <= 9):
+                        raise ValueError(f"Invalid cell value at [{i}][{j}]: {cell} (type: {type(cell).__name__}). Expected integer 0-9.")
                 
             modified_example = {
                 'input': train_input,
