@@ -3,7 +3,20 @@
 import os
 import json
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, TypedDict
+
+# Type definitions for ARC-AGI data structures
+Grid = List[List[int]]
+
+class TaskExample(TypedDict):
+    """A single training or test example"""
+    input: Grid
+    output: Grid
+
+class TaskData(TypedDict):
+    """Complete task data structure"""
+    train: List[TaskExample]
+    test: List[TaskExample]
 
 class TaskLoader:
     """Loads ARC-AGI tasks from the data directory.
@@ -22,7 +35,22 @@ class TaskLoader:
         if not self.data_root.exists():
             raise ValueError(f"Data root directory not found: {data_root}")
     
-    def load_task(self, task_id: str, dataset: str = "arc-agi-1") -> Dict:
+    def load_all_tasks(self, dataset: str = "arc-agi-1") -> Dict[str, TaskData]:
+        """Load all tasks from the specified dataset"""
+        tasks = {}
+        for split in ["training", "evaluation"]:
+            split_path = self.data_root / dataset / split
+            if not split_path.exists():
+                continue
+            
+            for task_file in split_path.glob("*.json"):
+                with open(task_file, 'r') as f:
+                    task_data = json.load(f)
+                    task_id = task_file.stem
+                    tasks[task_id] = task_data
+        return tasks
+
+    def load_task(self, task_id: str, dataset: str = "arc-agi-1") -> TaskData:
         """Load a single task by ID from the specified dataset"""
         # Check training directory first, then evaluation
         for split in ["training", "evaluation"]:
@@ -42,7 +70,7 @@ class TaskLoader:
         with open(subset_path, 'r') as f:
             return [line.strip() for line in f if line.strip()]
     
-    def load_tasks_from_subset(self, subset_name: str, dataset: str = "arc-agi-1") -> List[Tuple[str, Dict]]:
+    def load_tasks_from_subset(self, subset_name: str, dataset: str = "arc-agi-1") -> List[Tuple[str, TaskData]]:
         """Load all tasks from a subset, returning (task_id, task_data) tuples"""
         task_ids = self.load_subset(subset_name, dataset)
         tasks = []
@@ -70,7 +98,7 @@ class TaskLoader:
                 subsets.append(file.stem)
         return sorted(subsets)
     
-    def format_task_for_prompt(self, task_data: Dict, include_test: bool = False) -> str:
+    def format_task_for_prompt(self, task_data: TaskData, include_test: bool = False) -> str:
         """Format task data into a string suitable for prompting"""
         lines = []
         
@@ -90,11 +118,11 @@ class TaskLoader:
         
         return '\n'.join(lines)
     
-    def _format_grid(self, grid: List[List[int]]) -> str:
+    def _format_grid(self, grid: Grid) -> str:
         """Format a grid as a string"""
         return '\n'.join(' '.join(str(cell) for cell in row) for row in grid)
     
-    def get_test_outputs(self, task_data: Dict) -> List[List[List[int]]]:
+    def get_test_outputs(self, task_data: TaskData) -> List[Grid]:
         """Extract all test outputs from a task"""
         return [test_case['output'] for test_case in task_data.get('test', [])]
 
@@ -105,12 +133,12 @@ if __name__ == "__main__":
     
     # Show available subsets
     print("Available subsets for arc-agi-1:")
-    for subset in loader.get_available_subsets("arc-agi-1"):
-        print(f"  - {subset}")
+    for subset_name in loader.get_available_subsets("arc-agi-1"):
+        print(f"  - {subset_name}")
     
     # Load and display a single task
     print("\nLoading shortest task from arc-agi-1...")
-    task_ids = loader.load_subset("shortest_1", "arc-agi-1")
+    task_ids = loader.load_subset("shortest_training_1", "arc-agi-1")
     if task_ids:
         task_id = task_ids[0]
         task_data = loader.load_task(task_id, "arc-agi-1")
@@ -123,3 +151,8 @@ if __name__ == "__main__":
         print("\nFormatted task for prompt:")
         print("-" * 50)
         print(loader.format_task_for_prompt(task_data))
+        
+    # Show available subsets for arc-agi-2
+    print(f"\nAvailable subsets for arc-agi-2:")
+    for subset_name in loader.get_available_subsets("arc-agi-2"):
+        print(f"  - {subset_name}")
