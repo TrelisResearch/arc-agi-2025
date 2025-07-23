@@ -641,8 +641,26 @@ def deduplicate_programs_by_task(qualified_programs: List[Dict], args) -> Tuple[
                 for example in task_data['train']:
                     predicted_output, error, timed_out = execute_program(program, example['input'])
                     if predicted_output is not None and not error and not timed_out:
-                        # Convert to tuple for hashing
-                        output_tuple = tuple(tuple(row) for row in predicted_output)
+                        try:
+                            # Validate that predicted_output is a valid 2D list structure with hashable elements
+                            if (isinstance(predicted_output, list) and 
+                                all(isinstance(row, list) for row in predicted_output) and
+                                all(all(isinstance(cell, (int, float, str, bool, type(None))) for cell in row) 
+                                    for row in predicted_output if isinstance(row, list))):
+                                # Convert to tuple for hashing
+                                output_tuple = tuple(tuple(row) for row in predicted_output)
+                            else:
+                                if args.debug:
+                                    print(f"    🚫 Invalid output format for task {task_id}: {type(predicted_output)} - {predicted_output}")
+                                output_tuple = ('ERROR', f'Invalid output format: {type(predicted_output)}')
+                        except (TypeError, ValueError, AttributeError) as e:
+                            if args.debug:
+                                print(f"    🚫 Failed to convert output for task {task_id}: {str(e)} - {predicted_output}")
+                            # Fallback: create a safe string representation for hashing
+                            try:
+                                output_tuple = ('ERROR', f'Conversion failed: {str(predicted_output)[:100]}')
+                            except:
+                                output_tuple = ('ERROR', 'Failed to convert output (unprintable)')
                     else:
                         output_tuple = ('ERROR', str(error) if error else 'TIMEOUT')
                     outputs.append(output_tuple)

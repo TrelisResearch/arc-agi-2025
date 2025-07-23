@@ -111,21 +111,85 @@ Generate data with gemini first:
 ```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 25 --max_turns 8 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
 ```
+Dataset: arc-agi-1
+Subset: random_split_1_training
+Model: google/gemini-2.5-flash
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    50         24             34             48.0%          68.0%         
+2    50         23             34             46.0%          68.0%         
+3    50         21             35             42.0%          70.0%         
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 45.3%
+  Std Dev: 3.1%
+  95% CI: [39.3%, 51.3%]
+
+All Attempts Success Rate:
+  Mean: 68.7%
+  Std Dev: 1.2%
+  95% CI: [66.4%, 70.9%]
+
+Aggregate results saved to: logs/20250723_103715_aggregate_summary_arc-agi-1_random_split_1_training_3runs.json
+
+**interesting that sampling doesn't help all that much here**
 
 and test baseline performance with Qwen3 4B:
 ```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 25 --max_turns 8 --model qwen/qwen3-4b --independent-attempts --base-url http://69.30.85.155:22189/v1 --qwen-no-think
 ```
 this data can also be used for training!
+Dataset: arc-agi-1
+Subset: random_split_1_training
+Model: qwen/qwen3-4b
+Number of runs: 3
+API failures excluded from analysis: YES
 
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    50         1              7              2.0%           14.0%         
+2    50         1              7              2.0%           14.0%         
+3    50         2              8              4.0%           16.0%         
 
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 2.7%
+  Std Dev: 1.2%
+  95% CI: [0.4%, 4.9%]
+
+All Attempts Success Rate:
+  Mean: 14.7%
+  Std Dev: 1.2%
+  95% CI: [12.4%, 16.9%]
+
+Aggregate results saved to: logs/20250723_100503_aggregate_summary_arc-agi-1_random_split_1_training_3runs.json
 
 and then generate the dataset:
 ```bash
 uv run python generate_training_data.py --model "google/gemini-2.5-flash,qwen/qwen3-4b" --output gemini_synth_50_random_split_1_training.jsonl --dataset "arc-agi-1" --subset "random_split_1_training" --clean-code --debug
 ```
 
+Generated 1175 training examples
+Programs with at least one originally correct answer: 209/1175 (17.8%)
+Programs with all training examples correct: 43/1175 (3.7%)
+✅ No validation mismatches found - all programs behaved consistently
+✅ All programs returned valid 2D grid formats
+Saved training data to: training_data/gemini_synth_50_random_split_1_training.jsonl
 
+Statistics:
+  Unique tasks: 50
+  Average examples per task: 23.5
+  Tasks with most examples: [('7df24a62', 46), ('6b9890af', 45), ('264363fd', 43), ('d406998b', 39), ('f35d900a', 39)]
 
 
 ## 2025 22nd July
