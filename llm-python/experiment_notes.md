@@ -32,6 +32,98 @@ And just re-run the single train datapoint:
 uv run python generate_training_data.py --model "google/gemini-2.5-flash" --output gemini_synth_1_train.jsonl --dataset "arc-agi-1" --subset "middle_training_1" --clean-code --debug
 ```
 
+I've trained with batch size one and now will try to run on that model to test performance on the middle training 10 dataset:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 3 --max_workers 10 --max_turns 8 --model qwen_gemini_synth_10-23jul --independent-attempts --base-url http://69.30.85.155:22010/v1 --qwen-no-think --max-tokens 2000
+```
+
+Dataset: arc-agi-1
+Subset: middle_training_10
+Model: qwen_gemini_synth_10-23jul
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    10         1              2              10.0%          20.0%         
+2    10         0              3              0.0%           30.0%         
+3    10         0              1              0.0%           10.0%         
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 3.3%
+  Std Dev: 5.8%
+  95% CI: [-8.0%, 14.6%]
+
+All Attempts Success Rate:
+  Mean: 20.0%
+  Std Dev: 10.0%
+  95% CI: [0.4%, 39.6%]
+
+Aggregate results saved to: logs/20250723_093311_aggregate_summary_arc-agi-1_middle_training_10_3runs.json
+
+**Am getting some signal now on training being correct in some cases.** Note that we are overtraining from an evaluation standpoint:
+
+| Step | Training Loss | Validation Loss |
+|------|---------------|-----------------|
+| 18 | 0.337900 | 0.422697 |
+| 36 | 0.294500 | 0.387451 |
+| 54 | 0.348900 | 0.452704 |
+| 72 | 0.169600 | 0.449152 |
+| 90 | 0.152500 | 0.432770 |
+| 108 | 0.164000 | 0.435944 |
+| 126 | 0.099100 | 0.415581 |
+| 144 | 0.087000 | 0.447614 |
+| 162 | 0.078300 | 0.453060 |
+| 180 | 0.082800 | 0.451181 |
+
+
+and then test performance on the evaluation set:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 10 --max_turns 8 --model qwen_gemini_synth_10-23jul --independent-attempts --base-url http://69.30.85.155:22010/v1 --qwen-no-think --max-tokens 2000
+```
+Stopped it early but all first 108/400 tasks.
+
+### Test out batch size 16, not 1. 3 epochs
+Note that the training example fails in the notebook.
+| Step | Training Loss | Validation Loss |
+|------|---------------|-----------------|
+| 2 | 1.056900 | 0.774284 |
+| 4 | 0.397200 | 0.363959 |
+| 6 | 0.298000 | 0.334183 |
+| 8 | 0.242700 | 0.367940 |
+| 10 | 0.218900 | 0.377569 |
+| 12 | 0.198000 | 0.377700 |
+Looks overtrained as well.
+
+Run the model on the middle training 10 dataset:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 3 --max_workers 10 --max_turns 8 --model qwen_gemini_synth_10-23jul --independent-attempts --base-url http://69.30.85.155:22172/v1 --qwen-no-think --max-tokens 2000
+```
+This gets none of the training examples correct...
+
+### Prepare data on the random 50 training split, first split
+
+Generate data with gemini first:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 25 --max_turns 8 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+```
+
+and test baseline performance with Qwen3 4B:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 25 --max_turns 8 --model qwen/qwen3-4b --independent-attempts --base-url http://69.30.85.155:22189/v1 --qwen-no-think
+```
+this data can also be used for training!
+
+
+
+and then generate the dataset:
+```bash
+uv run python generate_training_data.py --model "google/gemini-2.5-flash,qwen/qwen3-4b" --output gemini_synth_50_random_split_1_training.jsonl --dataset "arc-agi-1" --subset "random_split_1_training" --clean-code --debug
+```
 
 
 

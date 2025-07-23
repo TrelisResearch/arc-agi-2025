@@ -686,11 +686,11 @@ def main():
                        default=f"training_data_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl",
                        help="Output JSONL file name")
     parser.add_argument("--validation", action="store_true",
-                       help="Create a validation split (10% or 32 examples, whichever is smaller)")
+                       help="Create a validation split (10 percent or 32 examples, whichever is smaller)")
     parser.add_argument("--pattern", type=str, default=None,
                        help="Filter log files by pattern (e.g., '20250721_112639' for specific timestamp)")
-    parser.add_argument("--model", type=str, default=None,
-                       help="Filter by model name (e.g., 'google/gemini-2.5-flash')")
+    parser.add_argument("--model", type=str, action='append', default=None,
+                       help="Filter by model name(s). Can be used multiple times or as comma-separated list (e.g., 'google/gemini-2.5-flash,gpt-4.1-mini')")
     parser.add_argument("--dataset", type=str, default=None,
                        help="Filter by dataset (e.g., 'arc-agi-1')")
     parser.add_argument("--subset", type=str, default=None,
@@ -711,6 +711,14 @@ def main():
                        help="Enable debug mode with detailed logging for transduction detection")
     
     args = parser.parse_args()
+    
+    # Process models list to handle comma-separated values
+    if args.model:
+        # Flatten the list and split comma-separated values
+        models_list = []
+        for model_arg in args.model:
+            models_list.extend([m.strip() for m in model_arg.split(',')])
+        args.model = [m for m in models_list if m]  # Remove empty strings
     
     # Create training_data directory if it doesn't exist
     output_dir = Path("training_data")
@@ -792,7 +800,7 @@ def main():
     if args.model or args.dataset or args.subset:
         print(f"Applying program filters:")
         if args.model:
-            print(f"  - Model: {args.model}")
+            print(f"  - Models: {', '.join(args.model)}")
         if args.dataset:
             print(f"  - Dataset: {args.dataset}")
         if args.subset:
@@ -802,8 +810,10 @@ def main():
         for program in all_programs:
             include_program = True
             
-            if args.model and program.get('model', '').lower() != args.model.lower():
-                include_program = False
+            if args.model:
+                program_model = program.get('model', '').lower()
+                if not any(model.lower() == program_model for model in args.model):
+                    include_program = False
             if args.dataset and program.get('dataset', '').lower() != args.dataset.lower():
                 include_program = False
             if args.subset and program.get('subset', '').lower() != args.subset.lower():

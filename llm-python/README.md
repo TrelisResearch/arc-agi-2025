@@ -338,6 +338,8 @@ All plots saved in: plots/
 
 The `generate_training_data.py` tool extracts programs from log files to create fine-tuning training data in JSONL format.
 
+**Multiple Models Support**: You can filter by multiple models using either comma-separated values (`--model "model1,model2"`) or repeated arguments (`--model "model1" --model "model2"`).
+
 ### Key Features
 
 - **Full parallel processing**: Uses all CPU cores for maximum speed (6-10x faster)
@@ -364,6 +366,12 @@ uv run python generate_training_data.py --limit 100 --clean-code --output clean_
 # Filter by model and include reasoning for correct solutions
 uv run python generate_training_data.py --model "google/gemini-2.5-flash" --reasoning --output gemini_with_reasoning.jsonl
 
+# Filter by multiple models (comma-separated)
+uv run python generate_training_data.py --model "google/gemini-2.5-flash,gpt-4.1-mini,o4-mini" --output multi_model_data.jsonl
+
+# Filter by multiple models (repeated arguments)
+uv run python generate_training_data.py --model "google/gemini-2.5-flash" --model "gpt-4.1-mini" --output multi_model_data.jsonl
+
 # Filter by date range and model
 uv run python generate_training_data.py --model "google/gemini-2.5-flash" --date-from "20250721" --date-to "20250721" --output gemini_july_21.jsonl
 
@@ -385,6 +393,9 @@ uv run python generate_training_data.py --dataset "arc-agi-2" --output arc_agi_2
 # Combine dataset/subset filtering with model filtering
 uv run python generate_training_data.py --dataset "arc-agi-1" --subset "all_training" --model "google/gemini-2.5-flash" --output gemini_arc1_training.jsonl
 
+# Combine multiple models with dataset/subset filtering
+uv run python generate_training_data.py --dataset "arc-agi-1" --subset "all_training" --model "google/gemini-2.5-flash,o4-mini" --output multi_model_arc1_training.jsonl
+
 # Filter by subset only (includes that subset from both datasets)
 uv run python generate_training_data.py --subset "middle_training_10" --validation --output middle_difficulty.jsonl
 
@@ -401,7 +412,7 @@ uv run python generate_training_data.py --limit 100 --no-transduction-filter --o
 ### Filtering Options
 
 **Model/Dataset/Subset Filtering:**
-- `--model`: Filter by model name (e.g., `"google/gemini-2.5-flash"`, `"gpt-4o-mini"`)
+- `--model`: Filter by model name(s). Supports multiple models via comma-separated list or repeated arguments (e.g., `"google/gemini-2.5-flash,gpt-4.1-mini"` or multiple `--model` flags)
 - `--dataset`: Filter by dataset (e.g., `"arc-agi-1"`, `"arc-agi-2"`)
 - `--subset`: Filter by subset (e.g., `"all_training"`, `"shortest_evaluation_10"`)
 
