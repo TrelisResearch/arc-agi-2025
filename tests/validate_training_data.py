@@ -10,12 +10,15 @@ from typing import List, Dict, Tuple, Optional
 from pathlib import Path
 
 def parse_grid_from_text(text: str) -> List[List[int]]:
-    """Parse a grid from text format like '0 1 2\n3 4 5\n6 7 8'"""
+    """Parse a grid from text format, handling empty rows marked as [EMPTY_ROW]"""
     lines = text.strip().split('\n')
     grid = []
     for line in lines:
-        if line.strip():
-            row = [int(x) for x in line.strip().split()]
+        line = line.strip()
+        if line == '[EMPTY_ROW]':
+            grid.append([])
+        elif line:
+            row = [int(x) for x in line.split()]
             grid.append(row)
     return grid
 

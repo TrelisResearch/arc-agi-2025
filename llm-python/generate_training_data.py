@@ -30,8 +30,14 @@ def load_task_data(task_id: str, dataset: str = "arc-agi-1") -> Optional[Dict]:
     return None
 
 def format_grid(grid: List[List[int]]) -> str:
-    """Format a grid as a string"""
-    return '\n'.join(' '.join(str(cell) for cell in row) for row in grid)
+    """Format a grid as a string, preserving empty rows with special marker"""
+    lines = []
+    for row in grid:
+        if len(row) == 0:
+            lines.append('[EMPTY_ROW]')
+        else:
+            lines.append(' '.join(str(cell) for cell in row))
+    return '\n'.join(lines)
 
 def format_task_for_prompt(task_data: Dict, include_test: bool = False) -> str:
     """Format task data into a string suitable for prompting"""

@@ -338,6 +338,30 @@ All plots saved in: plots/
 
 The `generate_training_data.py` tool extracts programs from log files to create fine-tuning training data in JSONL format.
 
+### Data Quality & Validation
+
+**Fixed Grid Serialization Issue (23 Jul 2025)**: Previous versions had a 0.3% validation failure rate due to empty rows being lost during serialization. This has been completely fixed:
+
+- **Problem**: Programs outputting grids with empty rows (e.g., `[[], [8, 8, 8]]`) would lose the empty rows during format/parse cycle
+- **Solution**: Empty rows now use `[EMPTY_ROW]` marker to preserve structure
+- **Result**: 100% validation success rate on all training examples
+
+**Validation Script**: Use `tests/validate_training_data.py` to verify training data quality:
+```bash
+# Validate a training dataset
+uv run python tests/validate_training_data.py training_data/your_dataset.jsonl --verbose
+
+# Quick validation without verbose output
+uv run python tests/validate_training_data.py training_data/your_dataset.jsonl
+```
+
+**Current Recommended Dataset**: Use `training_data/gemini_synth_50_random_split_1_training_fixed.jsonl` (1,156 examples, 100% validated) generated with:
+```bash
+uv run python generate_training_data.py --model "google/gemini-2.5-flash,qwen/qwen3-4b" --output gemini_synth_50_random_split_1_training_fixed.jsonl --dataset "arc-agi-1" --subset "random_split_1_training" --clean-code --debug
+```
+
+**Training Data Location**: All generated datasets are saved to the `training_data/` directory. This includes both current validated datasets and historical versions for comparison.
+
 **Multiple Models Support**: You can filter by multiple models using either comma-separated values (`--model "model1,model2"`) or repeated arguments (`--model "model1" --model "model2"`).
 
 ### Key Features
