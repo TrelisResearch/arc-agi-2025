@@ -11,14 +11,20 @@
   [x] Add a script to remove any transductive examples. In de-bug mode, print out info on when examples are removed.
 [x] Repeat for a second task to generate a validation dataset, will use middle_training_1v .
 [x] Fine-tune a model for only one task. Seems to work well.
-[ ] Fine-tune on 10 tasks. PROBLEM. Currently the training tasks are incorrect... needs more diagnosis.
-  [ ] Double check that hindsight relabelling is working? And that checks on that code are correct.
-[ ] Then increase up to 32 samples and repeat. Maybe...
-[ ] Only then, expand up to trying 50 problems and add testing of the evaluation set.
+[x] Fine-tune on 10 tasks. PROBLEM. Currently the training tasks are incorrect... needs more diagnosis.
+  [x] Double check that hindsight relabelling is working? And that checks on that code are correct.
+[x] Then increase up to 32 samples and repeat. Maybe...
+[x] Only then, expand up to trying 50 problems and add testing of the evaluation set. DONE AND SEEING SOME IMPROVEMENT (MEASURED WITH QWEN CODER MODEL).
 
-### Re-generating the training dataset.
+### Re-running a tune on Qwen with ~1k synth rows
 
-...there are still issues here whereby training datasets are not being validated 100% by the script...
+Will re-run on the eval set 400 tasks, three times:
+
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model Trelis/Qwen3-4B-gemini_synth_50_random_split_1_training_fixed-20250723-154652 --independent-attempts --base-url http://69.30.85.155:22102/v1 --qwen-no-think --max-tokens 2000
+```
+
+
 
 ### Training Data Validation Issue - FIXED (23 Jul 2025)
 

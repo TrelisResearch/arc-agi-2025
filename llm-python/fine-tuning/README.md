@@ -3,18 +3,7 @@
 Contains fine-tuning notebooks for ARC-AGI task training:
 
 ## Notebooks
-- **Qwen3-ARC-AGI-2-23-jul-B.ipynb**: Stable fine-tuning notebook with basic metrics. (note does need a little cleanuup by Ronan)
-- **Qwen3-ARC-AGI-2-23-jul-C.ipynb**: Enhanced version with custom program evaluation metrics (**NOT TESTED YET**) - but Recommend using this notebook.
-
-## Custom Metrics (Version C)
-Version C adds custom metrics during fine-tuning to evaluate program generation quality:
-- `pct_valid_programs`: % of validation rows with extractable Python programs
-- `pct_rows_at_least_one_correct`: % solving ≥1 training example correctly  
-- `pct_rows_all_correct`: % solving all training examples correctly
-- `avg_examples_correct_per_row`: Average training examples solved per row
-- `pct_examples_correct_overall`: Overall training example accuracy
-
-These metrics provide direct measurement of the model's ability to generate working Python programs that solve ARC reasoning tasks, beyond standard loss metrics.
+- **Qwen3-ARC-AGI-2-23-jul-C.ipynb**: Latest notebook, ready to integrate custom metrics as a next step.
 
 ## TensorBoard Logs
 To view training logs:
