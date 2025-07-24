@@ -1,0 +1,588 @@
+{
+  "task_id": "25d487eb",
+  "model": "qwen/qwen3-coder",
+  "reasoning_effort": "low",
+  "api_type": "chat_completions_independent_attempts",
+  "dataset": "arc-agi-1",
+  "subset": "all_training",
+  "program": "def transform(grid):\n    import numpy as np\n    from collections import Counter\n    \n    # Convert to numpy array for easier manipulation\n    input_grid = np.array(grid)\n    \n    # Create output grid initialized with zeros, sized 10x15\n    output_grid = np.zeros((10, 15), dtype=int)\n    \n    # Copy input to output (pad with zeros if needed, or truncate if too large)\n    rows, cols = input_grid.shape\n    output_rows, output_cols = output_grid.shape\n    \n    # Copy input to output (handling size differences)\n    copy_rows = min(rows, output_rows)\n    copy_cols = min(cols, output_cols)\n    output_grid[:copy_rows, :copy_cols] = input_grid[:copy_rows, :copy_cols]\n    \n    # Find non-zero elements to identify shapes\n    non_zero_positions = np.where(output_grid != 0)\n    \n    if len(non_zero_positions[0]) == 0:\n        return output_grid.tolist()\n    \n    # Group connected components (simple 4-connectivity)\n    def get_connected_components(grid):\n        visited = np.zeros_like(grid, dtype=bool)\n        components = []\n        \n        def dfs(r, c, component, target_value):\n            if (r < 0 or r >= grid.shape[0] or c < 0 or c >= grid.shape[1] or \n                visited[r, c] or grid[r, c] != target_value):\n                return\n            visited[r, c] = True\n            component.append((r, c))\n            for dr, dc in [(0, 1), (1, 0), (0, -1), (-1, 0)]:\n                dfs(r + dr, c + dc, component, target_value)\n        \n        for r in range(grid.shape[0]):\n            for c in range(grid.shape[1]):\n                if not visited[r, c] and grid[r, c] != 0:\n                    component = []\n                    dfs(r, c, component, grid[r, c])\n                    if component:\n                        components.append((grid[r, c], component))\n        return components\n    \n    # Get all connected components\n    components = get_connected_components(output_grid)\n    \n    if not components:\n        return output_grid.tolist()\n    \n    # For each component, check if it has a distinctive element\n    for component_value, positions in components:\n        if len(positions) < 2:  # Need at least 2 elements to have a pattern\n            continue\n            \n        # Get bounding box of component\n        min_r = min(r for r, c in positions)\n        max_r = max(r for r, c in positions)\n        min_c = min(c for r, c in positions)\n        max_c = max(c for r, c in positions)\n        \n        # Count values in this region\n        values_in_region = [output_grid[r, c] for r, c in positions]\n        value_counts = Counter(values_in_region)\n        \n        # If there's a minority element (appears less than others)\n        if len(value_counts) > 1:\n            # Find the least frequent value\n            minority_value = min(value_counts.items(), key=lambda x: x[1])[0]\n            majority_value = max(value_counts.items(), key=lambda x: x[1])[0]\n            \n            # Find positions of minority element\n            minority_positions = [(r, c) for r, c in positions if output_grid[r, c] == minority_value]\n            \n            if minority_positions:\n                # Determine extension direction based on pattern in examples\n                # Example 1: minority (1) at bottom -> extend right\n                # Example 2: minority (3) at top -> extend up  \n                # Example 3: minority (2) at center/bottom -> extend down\n                \n                # Calculate relative position of minority element\n                minority_center_r = np.mean([r for r, c in minority_positions])\n                minority_center_c = np.mean([r for r, c in minority_positions])\n                component_center_r = np.mean([r for r, c in positions])\n                component_center_c = np.mean([r for r, c in positions])\n                \n                # Simple heuristic: extend based on position of minority element\n                if len(minority_positions) == 1:\n                    # Single minority element - extend from its position\n                    mr, mc = minority_positions[0]\n                    \n                    # Extension patterns from examples:\n                    # If minority is at the \"bottom\" of shape, extend right\n                    # If minority is at the \"top\" of shape, extend up\n                    # If minority is at the \"middle/bottom\" extend down\n                    \n                    # Heuristic: if minority is near bottom row of component, extend right or down\n                    # if minority is near top row, extend up\n                    \n                    if mr >= max_r - 1:  # Near bottom\n                        # Extend right from bottom row\n                        bottom_row = max_r\n                        right_col = max_c + 1\n                        for c in range(right_col, 15):\n                            output_grid[bottom_row, c] = minority_value\n                    elif mr <= min_r + 1:  # Near top\n                        # Extend up from column\n                        top_row = min_r - 1\n                        col = mc\n                        for r in range(top_row, -1, -1):\n                            output_grid[r, col] = minority_value\n                    else:  # Middle - extend down\n                        # Extend down from column\n                        bottom_row = max_r + 1\n                        col = mc\n                        for r in range(bottom_row, 10):\n                            output_grid[r, col] = minority_value\n                else:\n                    # Multiple minority elements - use their position to determine direction\n                    avg_r = np.mean([r for r, c in minority_positions])\n                    \n                    if avg_r >= max_r - 0.5:  # Near bottom\n                        # Extend right from bottom row\n                        bottom_row = max_r\n                        right_col = max_c + 1\n                        # Use the minority value that appears in this extension\n                        extend_value = minority_value\n                        for c in range(right_col, min(15, right_col + 9)):  # Extend reasonably\n                            output_grid[bottom_row, c] = extend_value\n                    elif avg_r <= min_r + 0.5:  # Near top\n                        # Extend up from the column of minority elements\n                        col = minority_positions[0][1]  # Use first column\n                        top_row = min_r - 1\n                        extend_value = minority_value\n                        for r in range(top_row, max(-1, top_row - 9), -1):\n                            if 0 <= r < 10:\n                                output_grid[r, col] = extend_value\n                    else:  # Middle - extend down\n                        # Extend down from the column of minority elements\n                        col = minority_positions[0][1]  # Use first column\n                        bottom_row = max_r + 1\n                        extend_value = minority_value\n                        for r in range(bottom_row, min(10, bottom_row + 9)):\n                            output_grid[r, col] = extend_value\n    \n    return output_grid.tolist()",
+  "task_failure_reason": "All attempts failed",
+  "timed_out": false,
+  "tokens_used": 32371,
+  "request_cost": 0.0095226,
+  "turns_used": 8,
+  "raw_response": {
+    "id": "gen-1753356344-QFvOGvTF1SCHe2EyvIJf",
+    "model": "qwen/qwen3-coder",
+    "usage": {
+      "input_tokens": 2750,
+      "output_tokens": 1970,
+      "total_tokens": 4720,
+      "reasoning_tokens": null,
+      "thinking_tokens": null
+    },
+    "choices": [
+      {
+        "index": 0,
+        "finish_reason": "stop",
+        "message": {
+          "role": "assistant",
+          "content": "Let me analyze the training examples to identify the pattern.\n\nLooking at Example 1:\n- Input has a shape made of 2s and a 1 at the center\n- Output extends the 1s horizontally to the right from the bottom of the shape\n\nLooking at Example 2:\n- Input has a shape made of 8s with a 3 at the center\n- Output creates a vertical line of 3s going upward from the top of the shape\n\nLooking at Example 3:\n- Input has a shape made of 3s with a 2 at the center\n- Output creates a vertical line of 2s going downward from the bottom of the shape\n\nThe pattern seems to be:\n1. Identify the main shape (connected components)\n2. Find the \"central\" or distinctive element within that shape\n3. Extend that distinctive element in a specific direction from the shape's boundary\n\nLet me look more carefully:\n- Example 1: The 1 (distinctive element) is extended RIGHT from the bottom row of the shape\n- Example 2: The 3 (distinctive element) is extended UP from the top row of the shape  \n- Example 3: The 2 (distinctive element) is extended DOWN from the bottom row of the shape\n\nThe direction seems to depend on the position of the distinctive element relative to the rest of the shape.\n\nLet me refine my understanding:\n- Find the connected component that forms the main shape\n- Identify which element in that shape is different (appears less frequently or at a specific position)\n- Extend that element in a direction based on its relative position within the shape\n\nActually, looking more carefully:\n- Example 1: Shape is mostly 2s with a 1 in the middle - extend 1s to the right from bottom\n- Example 2: Shape is mostly 8s with a 3 in the middle - extend 3s upward from top  \n- Example 3: Shape is mostly 3s with a 2 in the middle - extend 2s downward from bottom\n\nThe pattern appears to be: extend the minority element in a direction based on its position.\n\nLet me code a solution that tries to identify this pattern:\n\nFinal answer:\n```python\ndef transform(grid):\n    import numpy as np\n    from collections import Counter\n    \n    # Convert to numpy array for easier manipulation\n    input_grid = np.array(grid)\n    \n    # Create output grid initialized with zeros, sized 10x15\n    output_grid = np.zeros((10, 15), dtype=int)\n    \n    # Copy input to output (pad with zeros if needed, or truncate if too large)\n    rows, cols = input_grid.shape\n    output_rows, output_cols = output_grid.shape\n    \n    # Copy input to output (handling size differences)\n    copy_rows = min(rows, output_rows)\n    copy_cols = min(cols, output_cols)\n    output_grid[:copy_rows, :copy_cols] = input_grid[:copy_rows, :copy_cols]\n    \n    # Find non-zero elements to identify shapes\n    non_zero_positions = np.where(output_grid != 0)\n    \n    if len(non_zero_positions[0]) == 0:\n        return output_grid.tolist()\n    \n    # Group connected components (simple 4-connectivity)\n    def get_connected_components(grid):\n        visited = np.zeros_like(grid, dtype=bool)\n        components = []\n        \n        def dfs(r, c, component, target_value):\n            if (r < 0 or r >= grid.shape[0] or c < 0 or c >= grid.shape[1] or \n                visited[r, c] or grid[r, c] != target_value):\n                return\n            visited[r, c] = True\n            component.append((r, c))\n            for dr, dc in [(0, 1), (1, 0), (0, -1), (-1, 0)]:\n                dfs(r + dr, c + dc, component, target_value)\n        \n        for r in range(grid.shape[0]):\n            for c in range(grid.shape[1]):\n                if not visited[r, c] and grid[r, c] != 0:\n                    component = []\n                    dfs(r, c, component, grid[r, c])\n                    if component:\n                        components.append((grid[r, c], component))\n        return components\n    \n    # Get all connected components\n    components = get_connected_components(output_grid)\n    \n    if not components:\n        return output_grid.tolist()\n    \n    # For each component, check if it has a distinctive element\n    for component_value, positions in components:\n        if len(positions) < 2:  # Need at least 2 elements to have a pattern\n            continue\n            \n        # Get bounding box of component\n        min_r = min(r for r, c in positions)\n        max_r = max(r for r, c in positions)\n        min_c = min(c for r, c in positions)\n        max_c = max(c for r, c in positions)\n        \n        # Count values in this region\n        values_in_region = [output_grid[r, c] for r, c in positions]\n        value_counts = Counter(values_in_region)\n        \n        # If there's a minority element (appears less than others)\n        if len(value_counts) > 1:\n            # Find the least frequent value\n            minority_value = min(value_counts.items(), key=lambda x: x[1])[0]\n            majority_value = max(value_counts.items(), key=lambda x: x[1])[0]\n            \n            # Find positions of minority element\n            minority_positions = [(r, c) for r, c in positions if output_grid[r, c] == minority_value]\n            \n            if minority_positions:\n                # Determine extension direction based on pattern in examples\n                # Example 1: minority (1) at bottom -> extend right\n                # Example 2: minority (3) at top -> extend up  \n                # Example 3: minority (2) at center/bottom -> extend down\n                \n                # Calculate relative position of minority element\n                minority_center_r = np.mean([r for r, c in minority_positions])\n                minority_center_c = np.mean([r for r, c in minority_positions])\n                component_center_r = np.mean([r for r, c in positions])\n                component_center_c = np.mean([r for r, c in positions])\n                \n                # Simple heuristic: extend based on position of minority element\n                if len(minority_positions) == 1:\n                    # Single minority element - extend from its position\n                    mr, mc = minority_positions[0]\n                    \n                    # Extension patterns from examples:\n                    # If minority is at the \"bottom\" of shape, extend right\n                    # If minority is at the \"top\" of shape, extend up\n                    # If minority is at the \"middle/bottom\" extend down\n                    \n                    # Heuristic: if minority is near bottom row of component, extend right or down\n                    # if minority is near top row, extend up\n                    \n                    if mr >= max_r - 1:  # Near bottom\n                        # Extend right from bottom row\n                        bottom_row = max_r\n                        right_col = max_c + 1\n                        for c in range(right_col, 15):\n                            output_grid[bottom_row, c] = minority_value\n                    elif mr <= min_r + 1:  # Near top\n                        # Extend up from column\n                        top_row = min_r - 1\n                        col = mc\n                        for r in range(top_row, -1, -1):\n                            output_grid[r, col] = minority_value\n                    else:  # Middle - extend down\n                        # Extend down from column\n                        bottom_row = max_r + 1\n                        col = mc\n                        for r in range(bottom_row, 10):\n                            output_grid[r, col] = minority_value\n                else:\n                    # Multiple minority elements - use their position to determine direction\n                    avg_r = np.mean([r for r, c in minority_positions])\n                    \n                    if avg_r >= max_r - 0.5:  # Near bottom\n                        # Extend right from bottom row\n                        bottom_row = max_r\n                        right_col = max_c + 1\n                        # Use the minority value that appears in this extension\n                        extend_value = minority_value\n                        for c in range(right_col, min(15, right_col + 9)):  # Extend reasonably\n                            output_grid[bottom_row, c] = extend_value\n                    elif avg_r <= min_r + 0.5:  # Near top\n                        # Extend up from the column of minority elements\n                        col = minority_positions[0][1]  # Use first column\n                        top_row = min_r - 1\n                        extend_value = minority_value\n                        for r in range(top_row, max(-1, top_row - 9), -1):\n                            if 0 <= r < 10:\n                                output_grid[r, col] = extend_value\n                    else:  # Middle - extend down\n                        # Extend down from the column of minority elements\n                        col = minority_positions[0][1]  # Use first column\n                        bottom_row = max_r + 1\n                        extend_value = minority_value\n                        for r in range(bottom_row, min(10, bottom_row + 9)):\n                            output_grid[r, col] = extend_value\n    \n    return output_grid.tolist()\n```",
+          "reasoning": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "format": "chat_completion"
+  },
+  "score": {
+    "correct": false,
+    "pixel_accuracy": 0.0,
+    "total_pixels": 176,
+    "correct_pixels": 0,
+    "error": "All attempts failed"
+  },
+  "actual_output": [
+    [
+      0,
+      0,
+      0,
+      0,
+      8,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      8,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      8,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      8,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      8,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      8,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      8,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      8,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      8,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      8,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      8,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      4,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      4,
+      4,
+      4,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      4,
+      4,
+      4,
+      4,
+      4,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      4,
+      4,
+      4,
+      8,
+      4,
+      4,
+      4,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  ],
+  "api_success": true,
+  "independent_attempts_data": {
+    "attempt_details": [
+      {
+        "attempt_number": 1,
+        "timestamp": "2025-07-24T12:20:50.501296",
+        "input_tokens": 2750,
+        "output_tokens": 922,
+        "attempt_cost": 0.0009656999999999999,
+        "program_extracted": true,
+        "program": "def transform(grid):\n    import numpy as np\n    \n    # Convert to numpy array for easier manipulation\n    grid = np.array(grid)\n    \n    # Create output grid initialized with input\n    output = grid.copy()\n    \n    # Pad to 10x15 if needed\n    if output.shape[0] < 10 or output.shape[1] < 15:\n        new_output = np.zeros((10, 15), dtype=int)\n        h, w = output.shape\n        new_output[:h, :w] = output\n        output = new_output\n    \n    # Find unique colors and their counts\n    unique, counts = np.unique(grid, return_counts=True)\n    \n    # Remove background (0) from consideration\n    non_zero_colors = unique[unique != 0]\n    \n    if len(non_zero_colors) == 0:\n        return output.tolist()\n    \n    # If only one non-zero color, return as is\n    if len(non_zero_colors) == 1:\n        return output.tolist()\n    \n    # Find the main shape color (most frequent) and special color (least frequent among non-zero)\n    color_counts = dict(zip(unique, counts))\n    if 0 in color_counts:\n        del color_counts[0]\n    \n    if len(color_counts) < 2:\n        return output.tolist()\n    \n    # Main color is the most frequent, special is the least frequent\n    main_color = max(color_counts.keys(), key=lambda x: color_counts[x])\n    special_color = min(color_counts.keys(), key=lambda x: color_counts[x])\n    \n    # Find positions of special color\n    special_positions = np.where(grid == special_color)\n    if len(special_positions[0]) == 0:\n        return output.tolist()\n    \n    # Find bounding box of the main shape\n    main_positions = np.where(grid == main_color)\n    if len(main_positions[0]) == 0:\n        return output.tolist()\n    \n    # Get the position of the special cell\n    special_row, special_col = special_positions[0][0], special_positions[1][0]\n    \n    # Determine extension direction based on relative position\n    # Find center of mass of main shape\n    main_center_row = np.mean(main_positions[0])\n    \n    # If special cell is above center, extend upward, otherwise extend downward\n    if special_row < main_center_row:\n        # Extend upward\n        for r in range(special_row, -1, -1):\n            output[r, special_col] = special_color\n    else:\n        # Extend downward\n        for r in range(special_row, output.shape[0]):\n            output[r, special_col] = special_color\n    \n    return output.tolist()",
+        "test_result": {
+          "task_failure_reason": "Traceback (most recent call last):\n  File \"/var/folders/v5/23nssdts27qd26t6dc53v2g40000gn/T/tmplyjsu1_9.py\", line 103, in <module>\n    output = transform(test_input)\n             ^^^^^^^^^^^^^^^^^^^^^\n  File \"/var/folders/v5/23nssdts27qd26t6dc53v2g40000gn/T/tmplyjsu1_9.py\", line 42, in transform\n    new_output[:h, :w] = output\n    ~~~~~~~~~~^^^^^^^^\nValueError: could not broadcast input array from shape (16,11) into shape (10,11)\n",
+          "timed_out": false,
+          "predicted_output": null
+        },
+        "status": "failed_test"
+      },
+      {
+        "attempt_number": 2,
+        "timestamp": "2025-07-24T12:21:34.317126",
+        "input_tokens": 2750,
+        "output_tokens": 1353,
+        "attempt_cost": 0.0012243,
+        "program_extracted": true,
+        "program": "def transform(grid):\n    import numpy as np\n    \n    # Convert to numpy array for easier manipulation\n    grid = np.array(grid)\n    \n    # Create output grid (10x15) filled with zeros\n    output_grid = np.zeros((10, 15), dtype=int)\n    \n    # Copy input to output (pad with zeros if needed)\n    rows, cols = grid.shape\n    output_grid[:min(rows, 10), :min(cols, 15)] = grid[:min(rows, 10), :min(cols, 15)]\n    \n    # Find unique colors and their counts\n    unique, counts = np.unique(grid, return_counts=True)\n    \n    # If only one color or no colors, return as is\n    if len(unique) <= 1:\n        return output_grid.tolist()\n    \n    # Find the background color (most frequent) and special color (second most frequent)\n    sorted_indices = np.argsort(counts)\n    background_color = unique[sorted_indices[-1]]\n    special_color = unique[sorted_indices[-2]] if len(unique) > 1 else background_color\n    \n    # If special color is same as background or is 0, try to find another approach\n    if special_color == background_color or special_color == 0:\n        # Try to find any non-zero, non-background color\n        non_bg_colors = unique[unique != background_color]\n        if len(non_bg_colors) > 0:\n            special_color = non_bg_colors[0]\n    \n    # Find all positions of the special color\n    special_positions = np.where(grid == special_color)\n    special_coords = list(zip(special_positions[0], special_positions[1]))\n    \n    # If no special positions found, return as is\n    if not special_coords:\n        return output_grid.tolist()\n    \n    # For now, use the first special position\n    special_row, special_col = special_coords[0]\n    \n    # Determine direction based on examples:\n    # Example 1: special in middle, draw right\n    # Example 2: special at bottom of structure, draw up\n    # Example 3: special at top of structure, draw down\n    \n    # Simple heuristic: \n    # If special is in upper part of grid, draw down\n    # If special is in lower part of grid, draw up\n    # If special is in middle horizontally, draw right\n    \n    center_row = rows // 2\n    center_col = cols // 2\n    \n    # Try to determine direction based on context\n    direction = \"right\"  # default\n    \n    # Check if there's a pattern around the special pixel\n    if len(special_coords) == 1:\n        # Single special pixel\n        if special_row < center_row:\n            # Special is in upper part, draw down\n            direction = \"down\"\n        elif special_row > center_row:\n            # Special is in lower part, draw up\n            direction = \"up\"\n        else:\n            # Special is in middle, draw right\n            direction = \"right\"\n    else:\n        # Multiple special pixels, find the \"center\" one\n        # For simplicity, just use the first one and draw right\n        direction = \"right\"\n    \n    # Draw the line based on determined direction\n    if direction == \"right\":\n        # Draw horizontal line to the right\n        for col in range(special_col, min(15, max(cols, 15))):\n            if special_row < 10:\n                output_grid[special_row, col] = special_color\n    elif direction == \"down\":\n        # Draw vertical line down\n        for row in range(special_row, 10):\n            if special_col < 15:\n                output_grid[row, special_col] = special_color\n    elif direction == \"up\":\n        # Draw vertical line up\n        for row in range(special_row, -1, -1):\n            if row < 10 and special_col < 15:\n                output_grid[row, special_col] = special_color\n    \n    return output_grid.tolist()",
+        "test_result": {
+          "correct": false,
+          "pixel_accuracy": 0.0,
+          "total_pixels": 176,
+          "correct_pixels": 0,
+          "error": "Grid height mismatch"
+        },
+        "status": "failed_test"
+      },
+      {
+        "attempt_number": 3,
+        "timestamp": "2025-07-24T12:22:18.429032",
+        "input_tokens": 2750,
+        "output_tokens": 1202,
+        "attempt_cost": 0.0011336999999999999,
+        "program_extracted": true,
+        "program": "def transform(grid):\n    import numpy as np\n    \n    # Convert to numpy array for easier manipulation\n    input_grid = np.array(grid)\n    rows, cols = input_grid.shape\n    \n    # Create output grid (always 10x15 as specified)\n    output_grid = np.zeros((10, 15), dtype=int)\n    \n    # Copy input to output (pad with zeros if needed)\n    output_grid[:rows, :cols] = input_grid\n    \n    # Find non-zero elements\n    non_zero_positions = np.where(input_grid != 0)\n    if len(non_zero_positions[0]) == 0:\n        return output_grid.tolist()\n    \n    # Get the unique values and their counts\n    unique_vals, counts = np.unique(input_grid, return_counts=True)\n    unique_vals = unique_vals[unique_vals != 0]  # Remove zeros\n    \n    if len(unique_vals) == 0:\n        return output_grid.tolist()\n    \n    # For each unique value, find its positions\n    for val in unique_vals:\n        positions = np.where(input_grid == val)\n        positions = list(zip(positions[0], positions[1]))\n        \n        if len(positions) == 1:\n            # Single cell - this might be our marker\n            r, c = positions[0]\n            \n            # Determine direction based on pattern analysis\n            # Check if we should extend right, up, or down\n            \n            # Simple heuristic: if it's the only cell of its kind,\n            # and there are other values around it, extend in some direction\n            \n            # Let's check the context:\n            # If there are cells to the left, extend right\n            # If there are cells below, extend up\n            # If there are cells above, extend down\n            \n            # Check if there are cells in the same row to the left\n            has_left = False\n            for cc in range(c):\n                if input_grid[r, cc] != 0:\n                    has_left = True\n                    break\n            \n            # Check if there are cells in the same column below\n            has_below = False\n            for rr in range(r + 1, rows):\n                if input_grid[rr, c] != 0:\n                    has_below = True\n                    break\n            \n            # Check if there are cells in the same column above\n            has_above = False\n            for rr in range(r):\n                if input_grid[rr, c] != 0:\n                    has_above = True\n                    break\n            \n            # Apply transformation based on context\n            if has_left and not has_above and not has_below:\n                # Extend right\n                for cc in range(c, 15):\n                    output_grid[r, cc] = val\n            elif has_below and not has_left:\n                # Extend up\n                for rr in range(r + 1):\n                    output_grid[rr, c] = val\n            elif has_above and not has_left:\n                # Extend down\n                for rr in range(r, 10):\n                    output_grid[rr, c] = val\n            else:\n                # Default: extend right\n                for cc in range(c, 15):\n                    output_grid[r, cc] = val\n                    \n        elif len(positions) > 1:\n            # Multiple cells of same value - check if one is special\n            # For now, let's just copy the input\n            pass\n    \n    return output_grid.tolist()",
+        "test_result": {
+          "task_failure_reason": "Traceback (most recent call last):\n  File \"/var/folders/v5/23nssdts27qd26t6dc53v2g40000gn/T/tmpqb1c1oiv.py\", line 124, in <module>\n    output = transform(test_input)\n             ^^^^^^^^^^^^^^^^^^^^^\n  File \"/var/folders/v5/23nssdts27qd26t6dc53v2g40000gn/T/tmpqb1c1oiv.py\", line 40, in transform\n    output_grid[:rows, :cols] = input_grid\n    ~~~~~~~~~~~^^^^^^^^^^^^^^\nValueError: could not broadcast input array from shape (16,11) into shape (10,11)\n",
+          "timed_out": false,
+          "predicted_output": null
+        },
+        "status": "failed_test"
+      },
+      {
+        "attempt_number": 4,
+        "timestamp": "2025-07-24T12:22:53.420309",
+        "input_tokens": 2750,
+        "output_tokens": 1354,
+        "attempt_cost": 0.0012249,
+        "program_extracted": true,
+        "program": "def transform(grid):\n    import copy\n    \n    # Create a deep copy of the grid to avoid modifying the original\n    result = copy.deepcopy(grid)\n    \n    # Ensure the output is always 10x15\n    # Pad with zeros if necessary\n    while len(result) < 10:\n        result.append([0] * len(result[0]) if result else [0] * 15)\n    \n    for i in range(len(result)):\n        while len(result[i]) < 15:\n            result[i].append(0)\n    \n    # Trim if too large\n    result = result[:10]\n    for i in range(len(result)):\n        result[i] = result[i][:15]\n    \n    rows = len(grid)\n    cols = len(grid[0]) if rows > 0 else 0\n    \n    # Find non-zero elements and their contexts\n    for r in range(rows):\n        for c in range(cols):\n            if grid[r][c] != 0:\n                val = grid[r][c]\n                \n                # Check if this is part of a pattern where we should extend\n                # Look for cases where this cell is different from neighbors\n                \n                # Example 1 pattern: isolated element in a row, extend right\n                if r < 10 and c < 15:\n                    # Check if this element is isolated horizontally\n                    left_different = (c == 0) or (grid[r][c-1] != val)\n                    right_different = (c == cols-1) or (grid[r][c+1] != val)\n                    \n                    # If isolated horizontally, extend right (Example 1)\n                    if left_different and right_different:\n                        # Check if this is at the right position for example 1 pattern\n                        # Extend horizontally to the right\n                        for cc in range(c+1, 15):\n                            result[r][cc] = val\n                \n                # Example 2 & 3 pattern: element at top/bottom of vertical structure\n                if r < 10 and c < 15:\n                    # Check if this element is isolated vertically\n                    top_different = (r == 0) or (grid[r-1][c] != val)\n                    bottom_different = (r == rows-1) or (grid[r+1][c] != val)\n                    \n                    # If isolated vertically, might extend up or down\n                    if top_different and bottom_different:\n                        # Heuristic: if there are more elements below, extend up\n                        # if there are more elements above, extend down\n                        \n                        # Count elements in column below\n                        below_count = 0\n                        for rr in range(r+1, min(rows, 10)):\n                            if grid[rr][c] != 0:\n                                below_count += 1\n                                \n                        # Count elements in column above\n                        above_count = 0\n                        for rr in range(max(0, r-1), -1, -1):\n                            if grid[rr][c] != 0:\n                                above_count += 1\n                        \n                        # Extend up if more elements below (Example 2)\n                        if below_count > above_count and below_count > 0:\n                            for rr in range(0, r):\n                                if rr < 10 and c < 15:\n                                    result[rr][c] = val\n                        \n                        # Extend down if more elements above (Example 3) or as default\n                        elif above_count >= below_count and above_count > 0:\n                            for rr in range(r+1, 10):\n                                if rr < 10 and c < 15:\n                                    result[rr][c] = val\n    \n    return result",
+        "test_result": {
+          "correct": false,
+          "pixel_accuracy": 0.0,
+          "total_pixels": 176,
+          "correct_pixels": 0,
+          "error": "Grid height mismatch"
+        },
+        "status": "failed_test"
+      },
+      {
+        "attempt_number": 5,
+        "timestamp": "2025-07-24T12:23:28.223885",
+        "input_tokens": 2750,
+        "output_tokens": 1247,
+        "attempt_cost": 0.0011607,
+        "program_extracted": true,
+        "program": "def transform(grid):\n    import numpy as np\n    \n    # Convert to numpy array for easier manipulation\n    input_grid = np.array(grid)\n    \n    # Create output grid initialized with input\n    output_grid = input_grid.copy()\n    \n    # If grid is not 10x15, pad it to 10x15\n    if input_grid.shape[0] != 10 or input_grid.shape[1] != 15:\n        padded_grid = np.zeros((10, 15), dtype=int)\n        h, w = input_grid.shape\n        padded_grid[:min(h, 10), :min(w, 15)] = input_grid[:min(h, 10), :min(w, 15)]\n        output_grid = padded_grid.copy()\n    \n    # Find unique non-zero values and their positions\n    non_zero_elements = np.where(output_grid != 0)\n    if len(non_zero_elements[0]) == 0:\n        return output_grid.tolist()\n    \n    # Count occurrences of each value\n    unique_vals, counts = np.unique(output_grid[output_grid != 0], return_counts=True)\n    \n    if len(unique_vals) == 0:\n        return output_grid.tolist()\n    \n    # Find the value that appears least frequently (likely the anchor)\n    if len(unique_vals) > 1:\n        min_count_idx = np.argmin(counts)\n        anchor_value = unique_vals[min_count_idx]\n    else:\n        anchor_value = unique_vals[0]\n    \n    # Find positions of the anchor value\n    anchor_positions = np.where(output_grid == anchor_value)\n    anchor_coords = list(zip(anchor_positions[0], anchor_positions[1]))\n    \n    if len(anchor_coords) == 0:\n        return output_grid.tolist()\n    \n    # Strategy: extend from the anchor in the most appropriate direction\n    # Based on examples, this seems to depend on the pattern\n    \n    # For now, let's implement a simple heuristic:\n    # If there's a clear pattern, extend accordingly\n    \n    # Find the \"center\" of the shape\n    if len(anchor_coords) > 1:\n        center_row = int(np.mean([c[0] for c in anchor_coords]))\n        center_col = int(np.mean([c[1] for c in anchor_coords]))\n    else:\n        center_row, center_col = anchor_coords[0]\n    \n    # Look for the most common value (background pattern)\n    if len(unique_vals) > 1:\n        max_count_idx = np.argmax(counts)\n        background_value = unique_vals[max_count_idx]\n        \n        # Find background positions\n        background_positions = np.where(output_grid == background_value)\n        bg_coords = list(zip(background_positions[0], background_positions[1]))\n        \n        if len(bg_coords) > 0:\n            # Calculate average position of background\n            bg_center_row = int(np.mean([c[0] for c in bg_coords]))\n            bg_center_col = int(np.mean([c[1] for c in bg_coords]))\n            \n            # Determine direction based on relative positions\n            if len(anchor_coords) >= 1:\n                # Use the anchor position\n                anchor_r, anchor_c = anchor_coords[0]\n                \n                # Check if we should extend horizontally or vertically\n                # Based on examples, let's try a rule-based approach\n                \n                # If anchor is in left part and we have a horizontal structure, extend right\n                if anchor_c < 7 and len(anchor_coords) == 1:\n                    # Extend horizontally to the right\n                    for c in range(anchor_c + 1, 15):\n                        output_grid[anchor_r, c] = anchor_value\n                # If anchor is in middle and background is below, extend up\n                elif anchor_r > 5 and bg_center_row > anchor_r:\n                    # Extend vertically up\n                    for r in range(0, anchor_r):\n                        output_grid[r, anchor_c] = anchor_value\n                # If anchor is in middle and background is above, extend down\n                elif anchor_r < 5 and bg_center_row < anchor_r:\n                    # Extend vertically down\n                    for r in range(anchor_r + 1, 10):\n                        output_grid[r, anchor_c] = anchor_value\n                else:\n                    # Default: extend down\n                    for r in range(anchor_r + 1, 10):\n                        output_grid[r, anchor_c] = anchor_value\n    \n    return output_grid.tolist()",
+        "test_result": {
+          "correct": false,
+          "pixel_accuracy": 0.0,
+          "total_pixels": 176,
+          "correct_pixels": 0,
+          "error": "Grid height mismatch"
+        },
+        "status": "failed_test"
+      },
+      {
+        "attempt_number": 6,
+        "timestamp": "2025-07-24T12:24:27.769265",
+        "input_tokens": 2750,
+        "output_tokens": 588,
+        "attempt_cost": 0.0007652999999999999,
+        "program_extracted": true,
+        "program": "def transform(grid):\n    import copy\n    \n    # Create a deep copy of the input grid\n    rows = len(grid)\n    cols = len(grid[0]) if rows > 0 else 0\n    \n    # For output grid, we need 10x15\n    output_grid = [[0 for _ in range(15)] for _ in range(10)]\n    \n    # If input is smaller, copy what we can\n    for i in range(min(10, rows)):\n        for j in range(min(15, cols)):\n            output_grid[i][j] = grid[i][j]\n    \n    # Look for trigger patterns\n    # Check for horizontal extension (like example 1 with '1')\n    for i in range(min(10, rows)):\n        for j in range(min(15, cols)):\n            if output_grid[i][j] == 1:\n                # Extend horizontally to the right with 1s\n                for k in range(j+2, 15):  # Start from 2 positions right\n                    output_grid[i][k] = 1\n    \n    # Check for vertical upward extension (like example 2 with '3')\n    for i in range(min(10, rows)):\n        for j in range(min(15, cols)):\n            if output_grid[i][j] == 3:\n                # Extend vertically upward with 3s\n                for k in range(0, i):\n                    output_grid[k][j] = 3\n    \n    # Check for vertical downward extension (like example 3 with '2')\n    for i in range(min(10, rows)):\n        for j in range(min(15, cols)):\n            if output_grid[i][j] == 2:\n                # Extend vertically downward with 2s\n                for k in range(i+1, 10):\n                    output_grid[k][j] = 2\n    \n    return output_grid",
+        "test_result": {
+          "correct": false,
+          "pixel_accuracy": 0.0,
+          "total_pixels": 176,
+          "correct_pixels": 0,
+          "error": "Grid height mismatch"
+        },
+        "status": "failed_test"
+      },
+      {
+        "attempt_number": 7,
+        "timestamp": "2025-07-24T12:24:44.830688",
+        "input_tokens": 2750,
+        "output_tokens": 1735,
+        "attempt_cost": 0.0014535,
+        "program_extracted": true,
+        "program": "def transform(grid):\n    import copy\n    \n    # Create a copy of the input grid for the output\n    rows = len(grid)\n    cols = len(grid[0]) if rows > 0 else 0\n    \n    # Pad or trim to make it 10x15\n    output_grid = [[0 for _ in range(15)] for _ in range(10)]\n    \n    # Copy the original grid content\n    for i in range(min(rows, 10)):\n        for j in range(min(cols, 15)):\n            output_grid[i][j] = grid[i][j]\n    \n    # Count occurrences of each color\n    color_count = {}\n    for i in range(rows):\n        for j in range(cols):\n            color = grid[i][j]\n            if color != 0:  # Ignore background\n                if color not in color_count:\n                    color_count[color] = []\n                color_count[color].append((i, j))\n    \n    # Find the special color (appears only once)\n    special_color = None\n    special_pos = None\n    main_color = None\n    \n    for color, positions in color_count.items():\n        if len(positions) == 1:\n            special_color = color\n            special_pos = positions[0]\n        elif len(positions) > 1:\n            main_color = color\n    \n    # If we found a special color, apply the transformation\n    if special_color is not None and special_pos is not None:\n        special_row, special_col = special_pos\n        \n        # Determine direction based on context\n        # Look at examples to infer the pattern\n        \n        # For now, let's implement a simple heuristic:\n        # If the special cell is in the middle of a horizontal structure, extend right\n        # If the special cell is in the middle of a vertical structure, extend vertically\n        \n        # Check if there are same-colored cells to the left or right\n        has_left = special_col > 0 and grid[special_row][special_col-1] == main_color\n        has_right = special_col < cols-1 and grid[special_row][special_col+1] == main_color\n        has_up = special_row > 0 and grid[special_row-1][special_col] == main_color\n        has_down = special_row < rows-1 and grid[special_row+1][special_col] == main_color\n        \n        # Heuristic: if horizontal connections, extend horizontally; if vertical, extend vertically\n        if has_left or has_right:\n            # Extend horizontally to the right\n            for j in range(special_col, 15):\n                if j < 15 and special_row < 10:\n                    output_grid[special_row][j] = special_color\n        elif has_up or has_down:\n            # Extend vertically - determine direction\n            # If at bottom, extend down; if at top, extend up\n            if has_up and not has_down:\n                # Extend down from special position\n                for i in range(special_row, 10):\n                    if i < 10 and special_col < 15:\n                        output_grid[i][special_col] = special_color\n            else:\n                # Default: extend up to special position\n                for i in range(special_row + 1):\n                    if i < 10 and special_col < 15:\n                        output_grid[i][special_col] = special_color\n    \n    return output_grid",
+        "test_result": {
+          "correct": false,
+          "pixel_accuracy": 0.0,
+          "total_pixels": 176,
+          "correct_pixels": 0,
+          "error": "Grid height mismatch"
+        },
+        "status": "failed_test"
+      },
+      {
+        "attempt_number": 8,
+        "timestamp": "2025-07-24T12:25:44.745221",
+        "input_tokens": 2750,
+        "output_tokens": 1970,
+        "attempt_cost": 0.0015944999999999998,
+        "program_extracted": true,
+        "program": "def transform(grid):\n    import numpy as np\n    from collections import Counter\n    \n    # Convert to numpy array for easier manipulation\n    input_grid = np.array(grid)\n    \n    # Create output grid initialized with zeros, sized 10x15\n    output_grid = np.zeros((10, 15), dtype=int)\n    \n    # Copy input to output (pad with zeros if needed, or truncate if too large)\n    rows, cols = input_grid.shape\n    output_rows, output_cols = output_grid.shape\n    \n    # Copy input to output (handling size differences)\n    copy_rows = min(rows, output_rows)\n    copy_cols = min(cols, output_cols)\n    output_grid[:copy_rows, :copy_cols] = input_grid[:copy_rows, :copy_cols]\n    \n    # Find non-zero elements to identify shapes\n    non_zero_positions = np.where(output_grid != 0)\n    \n    if len(non_zero_positions[0]) == 0:\n        return output_grid.tolist()\n    \n    # Group connected components (simple 4-connectivity)\n    def get_connected_components(grid):\n        visited = np.zeros_like(grid, dtype=bool)\n        components = []\n        \n        def dfs(r, c, component, target_value):\n            if (r < 0 or r >= grid.shape[0] or c < 0 or c >= grid.shape[1] or \n                visited[r, c] or grid[r, c] != target_value):\n                return\n            visited[r, c] = True\n            component.append((r, c))\n            for dr, dc in [(0, 1), (1, 0), (0, -1), (-1, 0)]:\n                dfs(r + dr, c + dc, component, target_value)\n        \n        for r in range(grid.shape[0]):\n            for c in range(grid.shape[1]):\n                if not visited[r, c] and grid[r, c] != 0:\n                    component = []\n                    dfs(r, c, component, grid[r, c])\n                    if component:\n                        components.append((grid[r, c], component))\n        return components\n    \n    # Get all connected components\n    components = get_connected_components(output_grid)\n    \n    if not components:\n        return output_grid.tolist()\n    \n    # For each component, check if it has a distinctive element\n    for component_value, positions in components:\n        if len(positions) < 2:  # Need at least 2 elements to have a pattern\n            continue\n            \n        # Get bounding box of component\n        min_r = min(r for r, c in positions)\n        max_r = max(r for r, c in positions)\n        min_c = min(c for r, c in positions)\n        max_c = max(c for r, c in positions)\n        \n        # Count values in this region\n        values_in_region = [output_grid[r, c] for r, c in positions]\n        value_counts = Counter(values_in_region)\n        \n        # If there's a minority element (appears less than others)\n        if len(value_counts) > 1:\n            # Find the least frequent value\n            minority_value = min(value_counts.items(), key=lambda x: x[1])[0]\n            majority_value = max(value_counts.items(), key=lambda x: x[1])[0]\n            \n            # Find positions of minority element\n            minority_positions = [(r, c) for r, c in positions if output_grid[r, c] == minority_value]\n            \n            if minority_positions:\n                # Determine extension direction based on pattern in examples\n                # Example 1: minority (1) at bottom -> extend right\n                # Example 2: minority (3) at top -> extend up  \n                # Example 3: minority (2) at center/bottom -> extend down\n                \n                # Calculate relative position of minority element\n                minority_center_r = np.mean([r for r, c in minority_positions])\n                minority_center_c = np.mean([r for r, c in minority_positions])\n                component_center_r = np.mean([r for r, c in positions])\n                component_center_c = np.mean([r for r, c in positions])\n                \n                # Simple heuristic: extend based on position of minority element\n                if len(minority_positions) == 1:\n                    # Single minority element - extend from its position\n                    mr, mc = minority_positions[0]\n                    \n                    # Extension patterns from examples:\n                    # If minority is at the \"bottom\" of shape, extend right\n                    # If minority is at the \"top\" of shape, extend up\n                    # If minority is at the \"middle/bottom\" extend down\n                    \n                    # Heuristic: if minority is near bottom row of component, extend right or down\n                    # if minority is near top row, extend up\n                    \n                    if mr >= max_r - 1:  # Near bottom\n                        # Extend right from bottom row\n                        bottom_row = max_r\n                        right_col = max_c + 1\n                        for c in range(right_col, 15):\n                            output_grid[bottom_row, c] = minority_value\n                    elif mr <= min_r + 1:  # Near top\n                        # Extend up from column\n                        top_row = min_r - 1\n                        col = mc\n                        for r in range(top_row, -1, -1):\n                            output_grid[r, col] = minority_value\n                    else:  # Middle - extend down\n                        # Extend down from column\n                        bottom_row = max_r + 1\n                        col = mc\n                        for r in range(bottom_row, 10):\n                            output_grid[r, col] = minority_value\n                else:\n                    # Multiple minority elements - use their position to determine direction\n                    avg_r = np.mean([r for r, c in minority_positions])\n                    \n                    if avg_r >= max_r - 0.5:  # Near bottom\n                        # Extend right from bottom row\n                        bottom_row = max_r\n                        right_col = max_c + 1\n                        # Use the minority value that appears in this extension\n                        extend_value = minority_value\n                        for c in range(right_col, min(15, right_col + 9)):  # Extend reasonably\n                            output_grid[bottom_row, c] = extend_value\n                    elif avg_r <= min_r + 0.5:  # Near top\n                        # Extend up from the column of minority elements\n                        col = minority_positions[0][1]  # Use first column\n                        top_row = min_r - 1\n                        extend_value = minority_value\n                        for r in range(top_row, max(-1, top_row - 9), -1):\n                            if 0 <= r < 10:\n                                output_grid[r, col] = extend_value\n                    else:  # Middle - extend down\n                        # Extend down from the column of minority elements\n                        col = minority_positions[0][1]  # Use first column\n                        bottom_row = max_r + 1\n                        extend_value = minority_value\n                        for r in range(bottom_row, min(10, bottom_row + 9)):\n                            output_grid[r, col] = extend_value\n    \n    return output_grid.tolist()",
+        "test_result": {
+          "correct": false,
+          "pixel_accuracy": 0.0,
+          "total_pixels": 176,
+          "correct_pixels": 0,
+          "error": "Grid height mismatch"
+        },
+        "status": "failed_test"
+      }
+    ],
+    "total_attempts": 8,
+    "all_responses": [
+      {
+        "id": "gen-1753356050-xW8EzVy1ILZnqnbdyG9Q",
+        "model": "qwen/qwen3-coder",
+        "usage": {
+          "input_tokens": 2750,
+          "output_tokens": 922,
+          "total_tokens": 3672,
+          "reasoning_tokens": null,
+          "thinking_tokens": null
+        },
+        "choices": [
+          {
+            "index": 0,
+            "finish_reason": "stop",
+            "message": {
+              "role": "assistant",
+              "content": "Let me analyze the training examples to identify the pattern.\n\nLooking at the examples:\n\nExample 1: A shape made of 2s with a 1 at the center. The output extends the 1 downward with a vertical line of 1s.\n\nExample 2: A shape made of 8s with a 3 at a specific position. The output creates a vertical line of 3s going upward from the top of the shape.\n\nExample 3: A shape made of 3s with a 2 at the center. The output creates a vertical line of 2s going downward from the bottom of the shape.\n\nThe pattern seems to be:\n1. Identify a \"special\" cell that's different from the main shape\n2. Extend that special value in a particular direction (upward or downward) to create a vertical line\n3. The direction might depend on the position of the special cell within the shape or other factors\n\nLet me look more carefully:\n- In Example 1: The 1 is at the \"bottom\" part of the shape, and the line extends downward\n- In Example 2: The 3 is at the \"top\" part of the shape, and the line extends upward  \n- In Example 3: The 2 is at the \"center\" of the shape, and the line extends downward\n\nIt seems like the algorithm identifies the special value (different from the main shape color) and then extends it vertically, possibly in the direction away from the main mass of the shape.\n\nLet me try to implement a solution that:\n1. Finds the main shape color and the special color\n2. Determines where to extend the special color\n3. Creates a vertical line extension\n\nFinal answer:\n```python\ndef transform(grid):\n    import numpy as np\n    \n    # Convert to numpy array for easier manipulation\n    grid = np.array(grid)\n    \n    # Create output grid initialized with input\n    output = grid.copy()\n    \n    # Pad to 10x15 if needed\n    if output.shape[0] < 10 or output.shape[1] < 15:\n        new_output = np.zeros((10, 15), dtype=int)\n        h, w = output.shape\n        new_output[:h, :w] = output\n        output = new_output\n    \n    # Find unique colors and their counts\n    unique, counts = np.unique(grid, return_counts=True)\n    \n    # Remove background (0) from consideration\n    non_zero_colors = unique[unique != 0]\n    \n    if len(non_zero_colors) == 0:\n        return output.tolist()\n    \n    # If only one non-zero color, return as is\n    if len(non_zero_colors) == 1:\n        return output.tolist()\n    \n    # Find the main shape color (most frequent) and special color (least frequent among non-zero)\n    color_counts = dict(zip(unique, counts))\n    if 0 in color_counts:\n        del color_counts[0]\n    \n    if len(color_counts) < 2:\n        return output.tolist()\n    \n    # Main color is the most frequent, special is the least frequent\n    main_color = max(color_counts.keys(), key=lambda x: color_counts[x])\n    special_color = min(color_counts.keys(), key=lambda x: color_counts[x])\n    \n    # Find positions of special color\n    special_positions = np.where(grid == special_color)\n    if len(special_positions[0]) == 0:\n        return output.tolist()\n    \n    # Find bounding box of the main shape\n    main_positions = np.where(grid == main_color)\n    if len(main_positions[0]) == 0:\n        return output.tolist()\n    \n    # Get the position of the special cell\n    special_row, special_col = special_positions[0][0], special_positions[1][0]\n    \n    # Determine extension direction based on relative position\n    # Find center of mass of main shape\n    main_center_row = np.mean(main_positions[0])\n    \n    # If special cell is above center, extend upward, otherwise extend downward\n    if special_row < main_center_row:\n        # Extend upward\n        for r in range(special_row, -1, -1):\n            output[r, special_col] = special_color\n    else:\n        # Extend downward\n        for r in range(special_row, output.shape[0]):\n            output[r, special_col] = special_color\n    \n    return output.tolist()\n```",
+              "reasoning": null,
+              "reasoning_content": null
+            }
+          }
+        ],
+        "format": "chat_completion"
+      },
+      {
+        "id": "gen-1753356094-RTvAMsGQlHT4Oz2adeVS",
+        "model": "qwen/qwen3-coder",
+        "usage": {
+          "input_tokens": 2750,
+          "output_tokens": 1353,
+          "total_tokens": 4103,
+          "reasoning_tokens": null,
+          "thinking_tokens": null
+        },
+        "choices": [
+          {
+            "index": 0,
+            "finish_reason": "stop",
+            "message": {
+              "role": "assistant",
+              "content": "Let me analyze the training examples to identify the pattern.\n\n**Example 1 Analysis:**\n- Input: A shape made of 2s with a single 1 at the center\n- Output: The same shape, but a horizontal line of 1s is drawn from the center (1) to the right edge of the grid\n\n**Example 2 Analysis:**\n- Input: A pyramid made of 8s with a single 3 at the center\n- Output: A vertical line of 3s is drawn from the top of the grid down to the center (3)\n\n**Example 3 Analysis:**\n- Input: A shape made of 3s with a single 2 at the center\n- Output: A vertical line of 2s is drawn from the center (2) down to the bottom of the grid\n\nLet me identify the pattern:\n1. Find the \"special\" pixel (the one that's different from the main shape)\n2. Draw a line from that special pixel in a specific direction to the edge of the grid\n3. The direction seems to depend on the relative position of the special pixel:\n   - In example 1: from center to right edge (horizontal line)\n   - In example 2: from top to center (vertical line)\n   - In example 3: from center to bottom (vertical line)\n\nLooking more carefully:\n- Example 1: The 1 is in the middle of the shape, line goes right\n- Example 2: The 3 is at the center of a pyramid, line goes up\n- Example 3: The 2 is at the center of the shape, line goes down\n\nIt seems like the direction might be determined by:\n1. Finding the special pixel\n2. Determining which direction to draw based on its position or context\n3. Drawing a line of that special pixel's color in that direction to the grid boundary\n\nLet me try a more systematic approach:\n- Find the most frequent color (background) and the special color\n- Find the special pixel's position\n- Determine the drawing direction based on context\n- Draw the line\n\nBased on the examples, it seems like:\n- When the special pixel is in the center of a horizontal structure, draw right\n- When the special pixel is at the bottom of a vertical structure, draw up\n- When the special pixel is at the top of a vertical structure, draw down\n\nLet me implement a solution:\n\nFinal answer:\n```python\ndef transform(grid):\n    import numpy as np\n    \n    # Convert to numpy array for easier manipulation\n    grid = np.array(grid)\n    \n    # Create output grid (10x15) filled with zeros\n    output_grid = np.zeros((10, 15), dtype=int)\n    \n    # Copy input to output (pad with zeros if needed)\n    rows, cols = grid.shape\n    output_grid[:min(rows, 10), :min(cols, 15)] = grid[:min(rows, 10), :min(cols, 15)]\n    \n    # Find unique colors and their counts\n    unique, counts = np.unique(grid, return_counts=True)\n    \n    # If only one color or no colors, return as is\n    if len(unique) <= 1:\n        return output_grid.tolist()\n    \n    # Find the background color (most frequent) and special color (second most frequent)\n    sorted_indices = np.argsort(counts)\n    background_color = unique[sorted_indices[-1]]\n    special_color = unique[sorted_indices[-2]] if len(unique) > 1 else background_color\n    \n    # If special color is same as background or is 0, try to find another approach\n    if special_color == background_color or special_color == 0:\n        # Try to find any non-zero, non-background color\n        non_bg_colors = unique[unique != background_color]\n        if len(non_bg_colors) > 0:\n            special_color = non_bg_colors[0]\n    \n    # Find all positions of the special color\n    special_positions = np.where(grid == special_color)\n    special_coords = list(zip(special_positions[0], special_positions[1]))\n    \n    # If no special positions found, return as is\n    if not special_coords:\n        return output_grid.tolist()\n    \n    # For now, use the first special position\n    special_row, special_col = special_coords[0]\n    \n    # Determine direction based on examples:\n    # Example 1: special in middle, draw right\n    # Example 2: special at bottom of structure, draw up\n    # Example 3: special at top of structure, draw down\n    \n    # Simple heuristic: \n    # If special is in upper part of grid, draw down\n    # If special is in lower part of grid, draw up\n    # If special is in middle horizontally, draw right\n    \n    center_row = rows // 2\n    center_col = cols // 2\n    \n    # Try to determine direction based on context\n    direction = \"right\"  # default\n    \n    # Check if there's a pattern around the special pixel\n    if len(special_coords) == 1:\n        # Single special pixel\n        if special_row < center_row:\n            # Special is in upper part, draw down\n            direction = \"down\"\n        elif special_row > center_row:\n            # Special is in lower part, draw up\n            direction = \"up\"\n        else:\n            # Special is in middle, draw right\n            direction = \"right\"\n    else:\n        # Multiple special pixels, find the \"center\" one\n        # For simplicity, just use the first one and draw right\n        direction = \"right\"\n    \n    # Draw the line based on determined direction\n    if direction == \"right\":\n        # Draw horizontal line to the right\n        for col in range(special_col, min(15, max(cols, 15))):\n            if special_row < 10:\n                output_grid[special_row, col] = special_color\n    elif direction == \"down\":\n        # Draw vertical line down\n        for row in range(special_row, 10):\n            if special_col < 15:\n                output_grid[row, special_col] = special_color\n    elif direction == \"up\":\n        # Draw vertical line up\n        for row in range(special_row, -1, -1):\n            if row < 10 and special_col < 15:\n                output_grid[row, special_col] = special_color\n    \n    return output_grid.tolist()\n```",
+              "reasoning": null,
+              "reasoning_content": null
+            }
+          }
+        ],
+        "format": "chat_completion"
+      },
+      {
+        "id": "gen-1753356138-bWpqLP4Lx3a31ln9KdUp",
+        "model": "qwen/qwen3-coder",
+        "usage": {
+          "input_tokens": 2750,
+          "output_tokens": 1202,
+          "total_tokens": 3952,
+          "reasoning_tokens": null,
+          "thinking_tokens": null
+        },
+        "choices": [
+          {
+            "index": 0,
+            "finish_reason": "stop",
+            "message": {
+              "role": "assistant",
+              "content": "Let me analyze the training examples to identify the pattern.\n\n**Example 1 Analysis:**\n- Input: A shape made of 2s and a single 1 in the middle\n- Output: The same shape, but a horizontal line of 1s is drawn from the position of the 1 to the right edge of the grid\n- The 1s are placed at row 4 (same row as the original 1) from column 6 to column 14\n\n**Example 2 Analysis:**\n- Input: A pyramid shape made of 8s with a single 3 in the middle\n- Output: A vertical line of 3s is drawn from the position of the 3 to the top of the grid\n- The 3s are placed at column 6 from row 0 to row 4 (same column as the original 3)\n\n**Example 3 Analysis:**\n- Input: A shape made of 3s with a single 2 in the middle\n- Output: A vertical line of 2s is drawn from the position of the 2 to the bottom of the grid\n- The 2s are placed at column 4 from row 5 to row 14 (same column as the original 2)\n\n**Pattern Recognition:**\nIt seems like the transformation draws a line from a specific \"marker\" cell:\n1. Find a cell with a specific value that's different from its surroundings\n2. Based on the context, draw a line either horizontally or vertically from that position\n3. The line extends to an edge of the grid (right, top, or bottom)\n\nLooking more carefully:\n- In Example 1: The 1 is part of a 2-shaped structure, line goes right\n- In Example 2: The 3 is at the bottom of an 8-shaped structure, line goes up  \n- In Example 3: The 2 is at the top of a 3-shaped structure, line goes down\n\nThe direction seems to depend on the position of the marker relative to its pattern:\n- If the marker is on the right side of its pattern, extend right\n- If the marker is at the bottom of its pattern, extend up\n- If the marker is at the top of its pattern, extend down\n\nLet me implement a solution that tries to identify these patterns:\n\nFinal answer:\n```python\ndef transform(grid):\n    import numpy as np\n    \n    # Convert to numpy array for easier manipulation\n    input_grid = np.array(grid)\n    rows, cols = input_grid.shape\n    \n    # Create output grid (always 10x15 as specified)\n    output_grid = np.zeros((10, 15), dtype=int)\n    \n    # Copy input to output (pad with zeros if needed)\n    output_grid[:rows, :cols] = input_grid\n    \n    # Find non-zero elements\n    non_zero_positions = np.where(input_grid != 0)\n    if len(non_zero_positions[0]) == 0:\n        return output_grid.tolist()\n    \n    # Get the unique values and their counts\n    unique_vals, counts = np.unique(input_grid, return_counts=True)\n    unique_vals = unique_vals[unique_vals != 0]  # Remove zeros\n    \n    if len(unique_vals) == 0:\n        return output_grid.tolist()\n    \n    # For each unique value, find its positions\n    for val in unique_vals:\n        positions = np.where(input_grid == val)\n        positions = list(zip(positions[0], positions[1]))\n        \n        if len(positions) == 1:\n            # Single cell - this might be our marker\n            r, c = positions[0]\n            \n            # Determine direction based on pattern analysis\n            # Check if we should extend right, up, or down\n            \n            # Simple heuristic: if it's the only cell of its kind,\n            # and there are other values around it, extend in some direction\n            \n            # Let's check the context:\n            # If there are cells to the left, extend right\n            # If there are cells below, extend up\n            # If there are cells above, extend down\n            \n            # Check if there are cells in the same row to the left\n            has_left = False\n            for cc in range(c):\n                if input_grid[r, cc] != 0:\n                    has_left = True\n                    break\n            \n            # Check if there are cells in the same column below\n            has_below = False\n            for rr in range(r + 1, rows):\n                if input_grid[rr, c] != 0:\n                    has_below = True\n                    break\n            \n            # Check if there are cells in the same column above\n            has_above = False\n            for rr in range(r):\n                if input_grid[rr, c] != 0:\n                    has_above = True\n                    break\n            \n            # Apply transformation based on context\n            if has_left and not has_above and not has_below:\n                # Extend right\n                for cc in range(c, 15):\n                    output_grid[r, cc] = val\n            elif has_below and not has_left:\n                # Extend up\n                for rr in range(r + 1):\n                    output_grid[rr, c] = val\n            elif has_above and not has_left:\n                # Extend down\n                for rr in range(r, 10):\n                    output_grid[rr, c] = val\n            else:\n                # Default: extend right\n                for cc in range(c, 15):\n                    output_grid[r, cc] = val\n                    \n        elif len(positions) > 1:\n            # Multiple cells of same value - check if one is special\n            # For now, let's just copy the input\n            pass\n    \n    return output_grid.tolist()\n```",
+              "reasoning": null,
+              "reasoning_content": null
+            }
+          }
+        ],
+        "format": "chat_completion"
+      },
+      {
+        "id": "gen-1753356173-E6WsQED2ewcxPzqfkBAj",
+        "model": "qwen/qwen3-coder",
+        "usage": {
+          "input_tokens": 2750,
+          "output_tokens": 1354,
+          "total_tokens": 4104,
+          "reasoning_tokens": null,
+          "thinking_tokens": null
+        },
+        "choices": [
+          {
+            "index": 0,
+            "finish_reason": "stop",
+            "message": {
+              "role": "assistant",
+              "content": "Let me analyze the training examples to identify the pattern.\n\nLooking at Example 1:\n- Input has a shape made of 2s and a 1 at the center\n- Output extends the 1s in a horizontal line to the right, filling the rest of the row\n\nLooking at Example 2:\n- Input has a pyramid shape made of 8s with a 3 at the center\n- Output creates a vertical line of 3s going upward from the top of the pyramid\n\nLooking at Example 3:\n- Input has a shape made of 3s with a 2 at the center\n- Output creates a vertical line of 2s going downward from the center\n\nThe pattern seems to be:\n1. Identify a central element that's different from its surrounding elements\n2. Extend that element in a specific direction (horizontal or vertical) to fill available space\n\nLet me look more carefully:\n- Example 1: 1 is the central element, extended horizontally to the right\n- Example 2: 3 is the central element, extended vertically upward\n- Example 3: 2 is the central element, extended vertically downward\n\nThe direction of extension seems related to the position and context:\n- In Example 1, the 1 is at the \"base\" of a structure, so it extends rightward\n- In Example 2, the 3 is at the \"top\" of a structure, so it extends upward\n- In Example 3, the 2 is at the \"top\" of a structure, so it extends downward\n\nActually, let me reconsider. Looking more carefully:\n- Example 1: The 1 extends right to fill the row (10\u00d715 grid, row 5)\n- Example 2: The 3s extend up in a column from the top of the shape\n- Example 3: The 2s extend down in a column from the center\n\nIt seems like the pattern is to find isolated or central elements and extend them in a cardinal direction until hitting a boundary or other constraint.\n\nLet me try a different approach:\n- Find elements that are different from their neighbors\n- Based on their context, extend them in a specific direction\n- For horizontal extension: fill the rest of the row with that element\n- For vertical extension: fill a column above or below with that element\n\nBased on the examples:\n1. If an element is isolated horizontally (like the 1 in example 1), extend right\n2. If an element is at the top of a vertical structure (like the 3 in example 2), extend up\n3. If an element is at the top of a vertical structure but contextually should go down (like the 2 in example 3), extend down\n\nLet me code a solution that attempts to capture these patterns:\n\nFinal answer:\n```python\ndef transform(grid):\n    import copy\n    \n    # Create a deep copy of the grid to avoid modifying the original\n    result = copy.deepcopy(grid)\n    \n    # Ensure the output is always 10x15\n    # Pad with zeros if necessary\n    while len(result) < 10:\n        result.append([0] * len(result[0]) if result else [0] * 15)\n    \n    for i in range(len(result)):\n        while len(result[i]) < 15:\n            result[i].append(0)\n    \n    # Trim if too large\n    result = result[:10]\n    for i in range(len(result)):\n        result[i] = result[i][:15]\n    \n    rows = len(grid)\n    cols = len(grid[0]) if rows > 0 else 0\n    \n    # Find non-zero elements and their contexts\n    for r in range(rows):\n        for c in range(cols):\n            if grid[r][c] != 0:\n                val = grid[r][c]\n                \n                # Check if this is part of a pattern where we should extend\n                # Look for cases where this cell is different from neighbors\n                \n                # Example 1 pattern: isolated element in a row, extend right\n                if r < 10 and c < 15:\n                    # Check if this element is isolated horizontally\n                    left_different = (c == 0) or (grid[r][c-1] != val)\n                    right_different = (c == cols-1) or (grid[r][c+1] != val)\n                    \n                    # If isolated horizontally, extend right (Example 1)\n                    if left_different and right_different:\n                        # Check if this is at the right position for example 1 pattern\n                        # Extend horizontally to the right\n                        for cc in range(c+1, 15):\n                            result[r][cc] = val\n                \n                # Example 2 & 3 pattern: element at top/bottom of vertical structure\n                if r < 10 and c < 15:\n                    # Check if this element is isolated vertically\n                    top_different = (r == 0) or (grid[r-1][c] != val)\n                    bottom_different = (r == rows-1) or (grid[r+1][c] != val)\n                    \n                    # If isolated vertically, might extend up or down\n                    if top_different and bottom_different:\n                        # Heuristic: if there are more elements below, extend up\n                        # if there are more elements above, extend down\n                        \n                        # Count elements in column below\n                        below_count = 0\n                        for rr in range(r+1, min(rows, 10)):\n                            if grid[rr][c] != 0:\n                                below_count += 1\n                                \n                        # Count elements in column above\n                        above_count = 0\n                        for rr in range(max(0, r-1), -1, -1):\n                            if grid[rr][c] != 0:\n                                above_count += 1\n                        \n                        # Extend up if more elements below (Example 2)\n                        if below_count > above_count and below_count > 0:\n                            for rr in range(0, r):\n                                if rr < 10 and c < 15:\n                                    result[rr][c] = val\n                        \n                        # Extend down if more elements above (Example 3) or as default\n                        elif above_count >= below_count and above_count > 0:\n                            for rr in range(r+1, 10):\n                                if rr < 10 and c < 15:\n                                    result[rr][c] = val\n    \n    return result\n```",
+              "reasoning": null,
+              "reasoning_content": null
+            }
+          }
+        ],
+        "format": "chat_completion"
+      },
+      {
+        "id": "gen-1753356208-fKvVR5h6Qa6Pijw8jlOi",
+        "model": "qwen/qwen3-coder",
+        "usage": {
+          "input_tokens": 2750,
+          "output_tokens": 1247,
+          "total_tokens": 3997,
+          "reasoning_tokens": null,
+          "thinking_tokens": null
+        },
+        "choices": [
+          {
+            "index": 0,
+            "finish_reason": "stop",
+            "message": {
+              "role": "assistant",
+              "content": "Let me analyze the training examples to identify the pattern.\n\nLooking at Example 1:\n- Input has a shape made of 2s and a 1, located in the middle-left\n- Output extends a line of 1s horizontally from the existing 1 to the right edge\n\nLooking at Example 2:\n- Input has a tree-like structure made of 8s with a 3 at the center\n- Output creates a vertical line of 3s going upward from the existing 3\n\nLooking at Example 3:\n- Input has a structure made of 3s with a 2 at the center\n- Output creates a vertical line of 2s going downward from the existing 2\n\nThe pattern seems to be:\n1. Identify a specific \"anchor\" cell (the cell that differs from the main pattern)\n2. Extend a line from that anchor in a specific direction based on the pattern:\n   - Example 1: Horizontal line to the right\n   - Example 2: Vertical line upward\n   - Example 3: Vertical line downward\n\nLet me look more carefully:\n- In Example 1: The 1 is the anchor, extended right\n- In Example 2: The 3 in the middle of 8s is the anchor, extended up\n- In Example 3: The 2 in the middle of 3s is the anchor, extended down\n\nThe direction seems to depend on the context or position. Let me implement a solution that tries to identify the pattern:\n\nFinal answer:\n```python\ndef transform(grid):\n    import numpy as np\n    \n    # Convert to numpy array for easier manipulation\n    input_grid = np.array(grid)\n    \n    # Create output grid initialized with input\n    output_grid = input_grid.copy()\n    \n    # If grid is not 10x15, pad it to 10x15\n    if input_grid.shape[0] != 10 or input_grid.shape[1] != 15:\n        padded_grid = np.zeros((10, 15), dtype=int)\n        h, w = input_grid.shape\n        padded_grid[:min(h, 10), :min(w, 15)] = input_grid[:min(h, 10), :min(w, 15)]\n        output_grid = padded_grid.copy()\n    \n    # Find unique non-zero values and their positions\n    non_zero_elements = np.where(output_grid != 0)\n    if len(non_zero_elements[0]) == 0:\n        return output_grid.tolist()\n    \n    # Count occurrences of each value\n    unique_vals, counts = np.unique(output_grid[output_grid != 0], return_counts=True)\n    \n    if len(unique_vals) == 0:\n        return output_grid.tolist()\n    \n    # Find the value that appears least frequently (likely the anchor)\n    if len(unique_vals) > 1:\n        min_count_idx = np.argmin(counts)\n        anchor_value = unique_vals[min_count_idx]\n    else:\n        anchor_value = unique_vals[0]\n    \n    # Find positions of the anchor value\n    anchor_positions = np.where(output_grid == anchor_value)\n    anchor_coords = list(zip(anchor_positions[0], anchor_positions[1]))\n    \n    if len(anchor_coords) == 0:\n        return output_grid.tolist()\n    \n    # Strategy: extend from the anchor in the most appropriate direction\n    # Based on examples, this seems to depend on the pattern\n    \n    # For now, let's implement a simple heuristic:\n    # If there's a clear pattern, extend accordingly\n    \n    # Find the \"center\" of the shape\n    if len(anchor_coords) > 1:\n        center_row = int(np.mean([c[0] for c in anchor_coords]))\n        center_col = int(np.mean([c[1] for c in anchor_coords]))\n    else:\n        center_row, center_col = anchor_coords[0]\n    \n    # Look for the most common value (background pattern)\n    if len(unique_vals) > 1:\n        max_count_idx = np.argmax(counts)\n        background_value = unique_vals[max_count_idx]\n        \n        # Find background positions\n        background_positions = np.where(output_grid == background_value)\n        bg_coords = list(zip(background_positions[0], background_positions[1]))\n        \n        if len(bg_coords) > 0:\n            # Calculate average position of background\n            bg_center_row = int(np.mean([c[0] for c in bg_coords]))\n            bg_center_col = int(np.mean([c[1] for c in bg_coords]))\n            \n            # Determine direction based on relative positions\n            if len(anchor_coords) >= 1:\n                # Use the anchor position\n                anchor_r, anchor_c = anchor_coords[0]\n                \n                # Check if we should extend horizontally or vertically\n                # Based on examples, let's try a rule-based approach\n                \n                # If anchor is in left part and we have a horizontal structure, extend right\n                if anchor_c < 7 and len(anchor_coords) == 1:\n                    # Extend horizontally to the right\n                    for c in range(anchor_c + 1, 15):\n                        output_grid[anchor_r, c] = anchor_value\n                # If anchor is in middle and background is below, extend up\n                elif anchor_r > 5 and bg_center_row > anchor_r:\n                    # Extend vertically up\n                    for r in range(0, anchor_r):\n                        output_grid[r, anchor_c] = anchor_value\n                # If anchor is in middle and background is above, extend down\n                elif anchor_r < 5 and bg_center_row < anchor_r:\n                    # Extend vertically down\n                    for r in range(anchor_r + 1, 10):\n                        output_grid[r, anchor_c] = anchor_value\n                else:\n                    # Default: extend down\n                    for r in range(anchor_r + 1, 10):\n                        output_grid[r, anchor_c] = anchor_value\n    \n    return output_grid.tolist()\n```",
+              "reasoning": null,
+              "reasoning_content": null
+            }
+          }
+        ],
+        "format": "chat_completion"
+      },
+      {
+        "id": "gen-1753356267-2Dusi6AhLNuSWRvXXM8d",
+        "model": "qwen/qwen3-coder",
+        "usage": {
+          "input_tokens": 2750,
+          "output_tokens": 588,
+          "total_tokens": 3338,
+          "reasoning_tokens": null,
+          "thinking_tokens": null
+        },
+        "choices": [
+          {
+            "index": 0,
+            "finish_reason": "stop",
+            "message": {
+              "role": "assistant",
+              "content": "Looking at the training examples, I can identify a pattern where certain shapes trigger the creation of vertical or horizontal lines extending from specific points.\n\nLet me analyze each example:\n\nExample 1: A shape with a '1' cell triggers a horizontal line of '1's extending to the right from that position.\nExample 2: A shape with a '3' cell triggers vertical lines of '3's extending upward from that position.  \nExample 3: A shape with a '2' cell triggers vertical lines of '2's extending downward from that position.\n\nThe pattern seems to be:\n- Identify specific \"trigger\" cells (like 1, 2, 3, etc.)\n- Based on the trigger value, extend lines in a specific direction\n- The lines continue to the edge of the grid\n\nLet me implement a solution that captures this pattern:\n\nFinal answer:\n```python\ndef transform(grid):\n    import copy\n    \n    # Create a deep copy of the input grid\n    rows = len(grid)\n    cols = len(grid[0]) if rows > 0 else 0\n    \n    # For output grid, we need 10x15\n    output_grid = [[0 for _ in range(15)] for _ in range(10)]\n    \n    # If input is smaller, copy what we can\n    for i in range(min(10, rows)):\n        for j in range(min(15, cols)):\n            output_grid[i][j] = grid[i][j]\n    \n    # Look for trigger patterns\n    # Check for horizontal extension (like example 1 with '1')\n    for i in range(min(10, rows)):\n        for j in range(min(15, cols)):\n            if output_grid[i][j] == 1:\n                # Extend horizontally to the right with 1s\n                for k in range(j+2, 15):  # Start from 2 positions right\n                    output_grid[i][k] = 1\n    \n    # Check for vertical upward extension (like example 2 with '3')\n    for i in range(min(10, rows)):\n        for j in range(min(15, cols)):\n            if output_grid[i][j] == 3:\n                # Extend vertically upward with 3s\n                for k in range(0, i):\n                    output_grid[k][j] = 3\n    \n    # Check for vertical downward extension (like example 3 with '2')\n    for i in range(min(10, rows)):\n        for j in range(min(15, cols)):\n            if output_grid[i][j] == 2:\n                # Extend vertically downward with 2s\n                for k in range(i+1, 10):\n                    output_grid[k][j] = 2\n    \n    return output_grid\n```",
+              "reasoning": null,
+              "reasoning_content": null
+            }
+          }
+        ],
+        "format": "chat_completion"
+      },
+      {
+        "id": "gen-1753356284-h2QuZ521f0QU8mnMa4le",
+        "model": "qwen/qwen3-coder",
+        "usage": {
+          "input_tokens": 2750,
+          "output_tokens": 1735,
+          "total_tokens": 4485,
+          "reasoning_tokens": null,
+          "thinking_tokens": null
+        },
+        "choices": [
+          {
+            "index": 0,
+            "finish_reason": "stop",
+            "message": {
+              "role": "assistant",
+              "content": "Let me analyze the training examples to identify the transformation pattern.\n\nLooking at each example:\n\nExample 1:\n- Input: A shape made of 2s with a single 1 in the center\n- Output: The same shape, but a horizontal line of 1s is drawn from the position of the 1 to the right edge of the grid\n\nExample 2:\n- Input: A pyramid made of 8s with a single 3 in the center\n- Output: A vertical line of 3s is drawn from the top of the grid down to the position of the 3\n\nExample 3:\n- Input: A shape made of 3s with a single 2 in the center\n- Output: A vertical line of 2s is drawn from the position of the 2 down to the bottom of the grid\n\nLet me identify the pattern:\n1. Find the special colored cell (different from the main shape)\n2. Depending on its position relative to the main shape, draw a line:\n   - In example 1: Line from the special cell to the right edge (horizontal)\n   - In example 2: Line from the top to the special cell (vertical)\n   - In example 3: Line from the special cell to the bottom edge (vertical)\n\nLooking more carefully:\n- Example 1: The 1 is at position (4,3) and we draw a horizontal line of 1s from (4,6) to (4,14)\n- Example 2: The 3 is at position (8,6) and we draw a vertical line of 3s from (0,6) to (8,6)\n- Example 3: The 2 is at position (4,4) and we draw a vertical line of 2s from (5,4) to (14,4)\n\nLet me refine the pattern:\n- Find the unique colored cell (appears only once)\n- Find the most frequent color in the shape (the main shape color)\n- If the unique cell is to the left/center of the main shape, draw a horizontal line to the right\n- If the unique cell is below/center of the main shape, draw a vertical line upward\n- If the unique cell is above/center of the main shape, draw a vertical line downward\n\nActually, let me look at the positions more systematically:\n\nExample 1: 1 is at (4,3), main shape (2s) spans from column 1-5, row 2-6. The 1 is within the shape bounds, we extend horizontally to the right.\nExample 2: 3 is at (8,6), main shape (8s) spans from column 3-9, row 5-8. The 3 is at the bottom of the shape, we extend vertically upward.\nExample 3: 2 is at (4,4), main shape (3s) spans from column 2-6, row 2-4. The 2 is at the bottom of the shape, we extend vertically downward.\n\nLet me try another approach:\n- Find the unique element\n- Determine if we should draw horizontally or vertically based on context\n- Draw the line in the appropriate direction with the value of the unique element\n\nActually, looking at the specific behavior:\n- Example 1: Draw horizontal line to the right edge from the column after the shape ends\n- Example 2: Draw vertical line from top to the special cell position\n- Example 3: Draw vertical line from special cell position to bottom\n\nLet me try to understand the trigger:\n- Find the special cell and the main shape\n- If the special cell is on the right edge of the shape, extend horizontally to the grid edge\n- If the special cell is on the top edge of the shape, extend vertically from top to that position\n- If the special cell is on the bottom edge of the shape, extend vertically from that position to bottom\n\nActually, looking more carefully:\nExample 1: The 1 is part of a right-facing pattern, so we extend the line of 1s horizontally to the right\nExample 2: The 3 is at the top of a vertical pattern, so we extend the line of 3s vertically from top\nExample 3: The 2 is at the bottom of a vertical pattern, so we extend the line of 2s vertically downward\n\nI think the pattern is:\n1. Identify the special element (the one that appears only once or is different from the main pattern)\n2. Based on its position relative to the main shape, extend a line:\n   - If it's part of a horizontal pattern, extend horizontally\n   - If it's part of a vertical pattern, extend vertically (either up or down depending on position)\n\nLet me code a solution based on finding the unique element and extending lines:\n\nFinal answer:\n```python\ndef transform(grid):\n    import copy\n    \n    # Create a copy of the input grid for the output\n    rows = len(grid)\n    cols = len(grid[0]) if rows > 0 else 0\n    \n    # Pad or trim to make it 10x15\n    output_grid = [[0 for _ in range(15)] for _ in range(10)]\n    \n    # Copy the original grid content\n    for i in range(min(rows, 10)):\n        for j in range(min(cols, 15)):\n            output_grid[i][j] = grid[i][j]\n    \n    # Count occurrences of each color\n    color_count = {}\n    for i in range(rows):\n        for j in range(cols):\n            color = grid[i][j]\n            if color != 0:  # Ignore background\n                if color not in color_count:\n                    color_count[color] = []\n                color_count[color].append((i, j))\n    \n    # Find the special color (appears only once)\n    special_color = None\n    special_pos = None\n    main_color = None\n    \n    for color, positions in color_count.items():\n        if len(positions) == 1:\n            special_color = color\n            special_pos = positions[0]\n        elif len(positions) > 1:\n            main_color = color\n    \n    # If we found a special color, apply the transformation\n    if special_color is not None and special_pos is not None:\n        special_row, special_col = special_pos\n        \n        # Determine direction based on context\n        # Look at examples to infer the pattern\n        \n        # For now, let's implement a simple heuristic:\n        # If the special cell is in the middle of a horizontal structure, extend right\n        # If the special cell is in the middle of a vertical structure, extend vertically\n        \n        # Check if there are same-colored cells to the left or right\n        has_left = special_col > 0 and grid[special_row][special_col-1] == main_color\n        has_right = special_col < cols-1 and grid[special_row][special_col+1] == main_color\n        has_up = special_row > 0 and grid[special_row-1][special_col] == main_color\n        has_down = special_row < rows-1 and grid[special_row+1][special_col] == main_color\n        \n        # Heuristic: if horizontal connections, extend horizontally; if vertical, extend vertically\n        if has_left or has_right:\n            # Extend horizontally to the right\n            for j in range(special_col, 15):\n                if j < 15 and special_row < 10:\n                    output_grid[special_row][j] = special_color\n        elif has_up or has_down:\n            # Extend vertically - determine direction\n            # If at bottom, extend down; if at top, extend up\n            if has_up and not has_down:\n                # Extend down from special position\n                for i in range(special_row, 10):\n                    if i < 10 and special_col < 15:\n                        output_grid[i][special_col] = special_color\n            else:\n                # Default: extend up to special position\n                for i in range(special_row + 1):\n                    if i < 10 and special_col < 15:\n                        output_grid[i][special_col] = special_color\n    \n    return output_grid\n```",
+              "reasoning": null,
+              "reasoning_content": null
+            }
+          }
+        ],
+        "format": "chat_completion"
+      },
+      {
+        "id": "gen-1753356344-QFvOGvTF1SCHe2EyvIJf",
+        "model": "qwen/qwen3-coder",
+        "usage": {
+          "input_tokens": 2750,
+          "output_tokens": 1970,
+          "total_tokens": 4720,
+          "reasoning_tokens": null,
+          "thinking_tokens": null
+        },
+        "choices": [
+          {
+            "index": 0,
+            "finish_reason": "stop",
+            "message": {
+              "role": "assistant",
+              "content": "Let me analyze the training examples to identify the pattern.\n\nLooking at Example 1:\n- Input has a shape made of 2s and a 1 at the center\n- Output extends the 1s horizontally to the right from the bottom of the shape\n\nLooking at Example 2:\n- Input has a shape made of 8s with a 3 at the center\n- Output creates a vertical line of 3s going upward from the top of the shape\n\nLooking at Example 3:\n- Input has a shape made of 3s with a 2 at the center\n- Output creates a vertical line of 2s going downward from the bottom of the shape\n\nThe pattern seems to be:\n1. Identify the main shape (connected components)\n2. Find the \"central\" or distinctive element within that shape\n3. Extend that distinctive element in a specific direction from the shape's boundary\n\nLet me look more carefully:\n- Example 1: The 1 (distinctive element) is extended RIGHT from the bottom row of the shape\n- Example 2: The 3 (distinctive element) is extended UP from the top row of the shape  \n- Example 3: The 2 (distinctive element) is extended DOWN from the bottom row of the shape\n\nThe direction seems to depend on the position of the distinctive element relative to the rest of the shape.\n\nLet me refine my understanding:\n- Find the connected component that forms the main shape\n- Identify which element in that shape is different (appears less frequently or at a specific position)\n- Extend that element in a direction based on its relative position within the shape\n\nActually, looking more carefully:\n- Example 1: Shape is mostly 2s with a 1 in the middle - extend 1s to the right from bottom\n- Example 2: Shape is mostly 8s with a 3 in the middle - extend 3s upward from top  \n- Example 3: Shape is mostly 3s with a 2 in the middle - extend 2s downward from bottom\n\nThe pattern appears to be: extend the minority element in a direction based on its position.\n\nLet me code a solution that tries to identify this pattern:\n\nFinal answer:\n```python\ndef transform(grid):\n    import numpy as np\n    from collections import Counter\n    \n    # Convert to numpy array for easier manipulation\n    input_grid = np.array(grid)\n    \n    # Create output grid initialized with zeros, sized 10x15\n    output_grid = np.zeros((10, 15), dtype=int)\n    \n    # Copy input to output (pad with zeros if needed, or truncate if too large)\n    rows, cols = input_grid.shape\n    output_rows, output_cols = output_grid.shape\n    \n    # Copy input to output (handling size differences)\n    copy_rows = min(rows, output_rows)\n    copy_cols = min(cols, output_cols)\n    output_grid[:copy_rows, :copy_cols] = input_grid[:copy_rows, :copy_cols]\n    \n    # Find non-zero elements to identify shapes\n    non_zero_positions = np.where(output_grid != 0)\n    \n    if len(non_zero_positions[0]) == 0:\n        return output_grid.tolist()\n    \n    # Group connected components (simple 4-connectivity)\n    def get_connected_components(grid):\n        visited = np.zeros_like(grid, dtype=bool)\n        components = []\n        \n        def dfs(r, c, component, target_value):\n            if (r < 0 or r >= grid.shape[0] or c < 0 or c >= grid.shape[1] or \n                visited[r, c] or grid[r, c] != target_value):\n                return\n            visited[r, c] = True\n            component.append((r, c))\n            for dr, dc in [(0, 1), (1, 0), (0, -1), (-1, 0)]:\n                dfs(r + dr, c + dc, component, target_value)\n        \n        for r in range(grid.shape[0]):\n            for c in range(grid.shape[1]):\n                if not visited[r, c] and grid[r, c] != 0:\n                    component = []\n                    dfs(r, c, component, grid[r, c])\n                    if component:\n                        components.append((grid[r, c], component))\n        return components\n    \n    # Get all connected components\n    components = get_connected_components(output_grid)\n    \n    if not components:\n        return output_grid.tolist()\n    \n    # For each component, check if it has a distinctive element\n    for component_value, positions in components:\n        if len(positions) < 2:  # Need at least 2 elements to have a pattern\n            continue\n            \n        # Get bounding box of component\n        min_r = min(r for r, c in positions)\n        max_r = max(r for r, c in positions)\n        min_c = min(c for r, c in positions)\n        max_c = max(c for r, c in positions)\n        \n        # Count values in this region\n        values_in_region = [output_grid[r, c] for r, c in positions]\n        value_counts = Counter(values_in_region)\n        \n        # If there's a minority element (appears less than others)\n        if len(value_counts) > 1:\n            # Find the least frequent value\n            minority_value = min(value_counts.items(), key=lambda x: x[1])[0]\n            majority_value = max(value_counts.items(), key=lambda x: x[1])[0]\n            \n            # Find positions of minority element\n            minority_positions = [(r, c) for r, c in positions if output_grid[r, c] == minority_value]\n            \n            if minority_positions:\n                # Determine extension direction based on pattern in examples\n                # Example 1: minority (1) at bottom -> extend right\n                # Example 2: minority (3) at top -> extend up  \n                # Example 3: minority (2) at center/bottom -> extend down\n                \n                # Calculate relative position of minority element\n                minority_center_r = np.mean([r for r, c in minority_positions])\n                minority_center_c = np.mean([r for r, c in minority_positions])\n                component_center_r = np.mean([r for r, c in positions])\n                component_center_c = np.mean([r for r, c in positions])\n                \n                # Simple heuristic: extend based on position of minority element\n                if len(minority_positions) == 1:\n                    # Single minority element - extend from its position\n                    mr, mc = minority_positions[0]\n                    \n                    # Extension patterns from examples:\n                    # If minority is at the \"bottom\" of shape, extend right\n                    # If minority is at the \"top\" of shape, extend up\n                    # If minority is at the \"middle/bottom\" extend down\n                    \n                    # Heuristic: if minority is near bottom row of component, extend right or down\n                    # if minority is near top row, extend up\n                    \n                    if mr >= max_r - 1:  # Near bottom\n                        # Extend right from bottom row\n                        bottom_row = max_r\n                        right_col = max_c + 1\n                        for c in range(right_col, 15):\n                            output_grid[bottom_row, c] = minority_value\n                    elif mr <= min_r + 1:  # Near top\n                        # Extend up from column\n                        top_row = min_r - 1\n                        col = mc\n                        for r in range(top_row, -1, -1):\n                            output_grid[r, col] = minority_value\n                    else:  # Middle - extend down\n                        # Extend down from column\n                        bottom_row = max_r + 1\n                        col = mc\n                        for r in range(bottom_row, 10):\n                            output_grid[r, col] = minority_value\n                else:\n                    # Multiple minority elements - use their position to determine direction\n                    avg_r = np.mean([r for r, c in minority_positions])\n                    \n                    if avg_r >= max_r - 0.5:  # Near bottom\n                        # Extend right from bottom row\n                        bottom_row = max_r\n                        right_col = max_c + 1\n                        # Use the minority value that appears in this extension\n                        extend_value = minority_value\n                        for c in range(right_col, min(15, right_col + 9)):  # Extend reasonably\n                            output_grid[bottom_row, c] = extend_value\n                    elif avg_r <= min_r + 0.5:  # Near top\n                        # Extend up from the column of minority elements\n                        col = minority_positions[0][1]  # Use first column\n                        top_row = min_r - 1\n                        extend_value = minority_value\n                        for r in range(top_row, max(-1, top_row - 9), -1):\n                            if 0 <= r < 10:\n                                output_grid[r, col] = extend_value\n                    else:  # Middle - extend down\n                        # Extend down from the column of minority elements\n                        col = minority_positions[0][1]  # Use first column\n                        bottom_row = max_r + 1\n                        extend_value = minority_value\n                        for r in range(bottom_row, min(10, bottom_row + 9)):\n                            output_grid[r, col] = extend_value\n    \n    return output_grid.tolist()\n```",
+              "reasoning": null,
+              "reasoning_content": null
+            }
+          }
+        ],
+        "format": "chat_completion"
+      }
+    ],
+    "mode": "independent_attempts"
+  }
+}

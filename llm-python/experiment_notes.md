@@ -17,7 +17,9 @@ Todo:
 [ ] Support metrics calculation - for train and validation sets.
   [x] Don't remove the columns.
   [x] Use the data to compute metrics.
-  [ ] Remove any ground truth reference.
+  [x] Remove any ground truth reference.
+  [x] Can I run as a batch?
+  [ ] Can I get these into compute metrics to be reported, or no?
 [ ] Add ability to push a grids-only set of data.
 
 >[!WARNING]
@@ -74,10 +76,33 @@ Total cost: $58.997739
 
 Results saved to: logs/20250724_112315_summary_arc-agi-1_all_training.json
 
+and create a dataset with that:
+
+```bash
+uv run python generate_training_data.py --model "google/gemini-2.5-flash" --dataset "arc-agi-1" --subset "all_training" --clean-code
+```
+
+and validate it:
+
+```bash
+uv run python validate_hf_dataset.py Trelis/synth_arc-agi-1_all_training_20250724_124848
+```
+Dataset loaded successfully. Total rows: 1462
+
+Validating 1462 dataset rows...
+Row 1100: 5/6 correct (83.3%)
+
+=== VALIDATION SUMMARY ===
+Dataset rows processed: 1462
+Errors: 0
+Individual examples tested: 4729
+Individual examples correct: 4728
+Overall success rate: 100.0%
+
 
 Now trying with the latest Qwen Coder model:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_training --repeat-runs 1 --max_workers 50 --max_turns 8 --model qwen/qwen3-coder:free --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium --limit 1
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_training --repeat-runs 1 --max_workers 50 --max_turns 8 --model qwen/qwen3-coder --independent-attempts --base-url https://openrouter.ai/api/v1
 ```
 
 ### Dataset formatting
