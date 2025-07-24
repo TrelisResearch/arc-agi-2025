@@ -30,7 +30,7 @@ I ran fine-tuning on a full-ish dataset generated from one run (8 attempts) on G
 
 **Improvements**:
 - The validation set I used currently includes hindsight relabelled examples, where the test is going to be wrong by definition (check actually whether the code relabels the test problem or not).
-- Currently my data generation script is balancing the train examples (I think), it would be better to just include them all.
+- Currently my data generation script is balancing the train examples (I think), it would be better to just include them all. Dataset is this one:`Trelis/synth_arc-agi-1_all_training_20250724_131808`. About ~750 rows.
 - A larger batch size can be used for metrics. Currently 8 but probably could be 16 or even 32.
 - The tests are all scoring 0 right now, which is not entirely unreasonable for a small split (and there is no sampling for validation). This may or may not be a concern BUT I should be manually inspecting by switching to printing grids and putting n to non zero for showing examples.
 - The ideal is to integrate and test passing in just a validation set for ARC AGI 1 with all evaluation problems. (like this one: Trelis/simple_arc-agi-1_shortest_evaluation_100_20250724_140207).
@@ -39,9 +39,38 @@ I ran fine-tuning on a full-ish dataset generated from one run (8 attempts) on G
 I did run a kind of training and evaluated it with this on the full evaluation set:
 
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model Trelis/Qwen3-4B-ds20250724_131808-20250724-123014 --independent-attempts --base-url http://157.66.254.40:18942/v1
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model Trelis/Qwen3-4B-ds20250724_131808-20250724-123014 --independent-attempts --base-url http://63.141.33.78:22154/v1
 ```
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 1 --max_turns 1 --model Trelis/Qwen3-4B-ds20250724_131808-20250724-123014 --independent-attempts --base-url http://157.66.254.40:18942/v1 --limit 1
+
+The run is looking good, seems like may get to ~3%+ on the arc-agi-1 all_evaluation set...
+
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B-ds20250724_131808-20250724-123014
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    400        1              10             0.2%           2.5%          
+2    400        0              8              0.0%           2.0%          
+3    400        3              13             0.8%           3.2%          
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 0.3%
+  Std Dev: 0.4%
+  95% CI: [-0.4%, 1.1%]
+
+All Attempts Success Rate:
+  Mean: 2.6%
+  Std Dev: 0.6%
+  95% CI: [1.4%, 3.8%]
+
+Aggregate results saved to: logs/20250724_151650_aggregate_summary_arc-agi-1_all_evaluation_3runs.json
 
 
 ### Running on high quality traces from Gemini only
