@@ -99,11 +99,55 @@ Individual examples tested: 4729
 Individual examples correct: 4728
 Overall success rate: 100.0%
 
+I also ran with --validation to create that version:
+```bash
+uv run python generate_training_data.py --model "google/gemini-2.5-flash" --dataset "arc-agi-1" --subset "all_training" --clean-code --validation
+```
+✅ No validation mismatches found - all programs behaved consistently
+✅ All programs returned valid 2D grid formats
+  Task breakdown: 314 with correct examples, 80 with no correct examples
+  Balanced dataset: dropped 234 excess correct-example tasks
+  Balanced breakdown: 80 with correct examples, 80 with no correct examples
+  Filtered to 783 examples from balanced tasks
+  Target validation tasks: 16 correct, 16 incorrect
+  Validation balance: 16/32 (50.0%) from tasks with correct examples
+  Training balance: 75/152 (49.3%) tasks with correct examples
+Validation tasks: ['10fcaaa3', '50846271', '6a1e5592', '7837ac64', '97999447', '98cf29f8', 'd90796e8', 'e48d4e1a']
+Creating Hugging Face dataset: Trelis/synth_arc-agi-1_all_training_20250724_131808
+Created training dataset with 751 examples
+Created validation dataset with 32 examples
+Creating parquet from Arrow format: 100%|█████████████| 1/1 [00:00<00:00, 27.09ba/s]
+Uploading the dataset shards: 100%|██████████████| 1/1 [00:01<00:00,  1.96s/ shards]
+Creating parquet from Arrow format: 100%|████████████| 1/1 [00:00<00:00, 224.67ba/s]
+Uploading the dataset shards: 100%|██████████████| 1/1 [00:01<00:00,  1.23s/ shards]
+README.md: 100%|███████████████████████████████████| 915/915 [00:00<00:00, 3.35MB/s]
+Successfully pushed training and validation splits to Trelis/synth_arc-agi-1_all_training_20250724_131808
+Dataset URL: https://huggingface.co/datasets/Trelis/synth_arc-agi-1_all_training_20250724_131808 (public)
+
+Statistics:
+  Unique tasks: 160
+  Average examples per task: 4.9
+  Tasks with most examples: [('36d67576', 16), ('09629e4f', 15), ('1a07d186', 13), ('264363fd', 13), ('045e512c', 12)]
 
 Now trying with the latest Qwen Coder model:
 ```bash
 uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_training --repeat-runs 1 --max_workers 50 --max_turns 8 --model qwen/qwen3-coder --independent-attempts --base-url https://openrouter.ai/api/v1
 ```
+Dataset: arc-agi-1
+Subset: all_training
+Model: qwen/qwen3-coder
+Reasoning effort: low
+API: Chat Completions (independent attempts, max 8 attempts)
+Total tasks attempted: 400
+Successful API calls: 400/400 (100.0%)
+Tasks solved correctly: 120/400 (30.0%)
+Pixel accuracy: 8433/55726 (15.1%)
+Total attempts used: 2529
+Average attempts per task: 6.3
+Total tokens used: 10,208,527
+Total cost: $3.065101
+
+Results saved to: logs/20250724_130300_summary_arc-agi-1_all_training.json
 
 ### Dataset formatting
 

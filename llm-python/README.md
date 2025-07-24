@@ -543,6 +543,34 @@ Programs get reasoning content included only if:
 
 **Note**: Since only test-correct programs get reasoning, the percentage with reasoning will typically be lower than the overall accuracy rate, as it's filtered by both correctness and reasoning availability.
 
+### Simple Dataset Generation (No Code/Reasoning)
+
+For creating datasets without code or reasoning content, use the simplified `create_simple_dataset.py` script:
+
+```bash
+# Create simple dataset from arc-agi-1 training tasks
+uv run python create_simple_dataset.py arc-agi-1 all_training --save-local --validation
+
+# Create dataset and push to Hugging Face  
+uv run python create_simple_dataset.py arc-agi-2 shortest_training_30 --hf-private
+
+# Custom dataset name and organization
+uv run python create_simple_dataset.py arc-agi-1 random_split_1_training --hf-dataset-name "simple_baseline_v1" --hf-org "YourOrg"
+```
+
+**Key differences from full training data generation:**
+- **Input**: Takes dataset and subset names directly (not log files)
+- **Simplified content**: All `reasoning`, `code`, `predicted_*`, and `correct_*` fields are empty/blank
+- **Same structure**: Maintains competition format with all expected columns and types
+- **No execution**: No program running or validation required
+- **Faster**: Much simpler processing without code analysis
+
+**Use cases:**
+- Baseline datasets for fine-tuning experiments
+- Template datasets with proper structure but empty content
+- Testing dataset loading/processing pipelines
+- Creating placeholder datasets before adding real content
+
 ### Code Cleaning (`--clean-code`)
 
 The `--clean-code` flag enables aggressive comment stripping and code cleanup to produce compact, professional training data:
