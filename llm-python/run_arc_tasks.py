@@ -15,6 +15,7 @@ from openai import OpenAI
 
 from task_loader import TaskLoader
 from scoring import GridScorer, ProgramExecutor
+from prompt_loader import PromptLoader
 
 load_dotenv()
 
@@ -33,7 +34,7 @@ def execute_with_timeout(func, *args, timeout=1000, **kwargs):
 class ARCTaskRunner:
     """Run ARC tasks using the OpenAI Chat Completions API"""
     
-    def __init__(self, model: str = "gpt-4.1-nano", max_workers: int = 1, rate_limit_delay: float = 0.0, max_turns: int = 3, run_number: int = 0, independent_attempts: bool = False, base_url: str = None, reasoning_effort: str = "low", debug: bool = False, qwen_no_think: bool = False, max_tokens: int = None, temperature: float = None):
+    def __init__(self, model: str = "gpt-4.1-nano", max_workers: int = 1, rate_limit_delay: float = 0.0, max_turns: int = 3, run_number: int = 0, independent_attempts: bool = False, base_url: str = None, reasoning_effort: str = "low", debug: bool = False, qwen_no_think: bool = False, max_tokens: int = None, temperature: float = None, prompt_version: str = "v1"):
         self.model = model
         self.max_workers = max_workers
         self.rate_limit_delay = rate_limit_delay
@@ -44,6 +45,7 @@ class ARCTaskRunner:
         self.qwen_no_think = qwen_no_think  # Track whether to disable thinking for Qwen models
         self.max_tokens = max_tokens  # Maximum tokens for model responses
         self.temperature = temperature  # Temperature for model responses
+        self.prompt_version = prompt_version  # Version of prompts to use
         self.api_key = os.getenv('OPENAI_API_KEY')
         self.base_url = base_url
         self.debug = debug
@@ -61,6 +63,7 @@ class ARCTaskRunner:
         self.task_loader = TaskLoader()
         self.scorer = GridScorer()
         self.executor = ProgramExecutor(timeout=0.5)
+        self.prompt_loader = PromptLoader()
         
         # Create logs directory
         self.logs_dir = Path("logs")
@@ -159,19 +162,7 @@ class ARCTaskRunner:
         """Create a prompt for the model to solve an ARC task (returns text content for chat messages)"""
         if not is_first_turn:
             # For subsequent turns, encourage partial solutions
-            return """Please analyze the training feedback and programs from all prior turns, and write an improved transformation.
-
-**Important**:
-1. Always start by attempting to find a complete rule that solves all training examples and should generalize to the test input.
-2. If you cannot find a perfect solution, provide your best attempt at a transformation that solves as many training examples as possible - ideally more than in the best previous turn.
-3. Even if your solution doesn't solve all examples perfectly, ensure it demonstrates meaningful pattern recognition and provides reasonable outputs that minimize pixel-level errors.
-
-Final answer:
-```python
-def transform(grid):
-    # Your improved transformation logic here (even if partial)
-    return transformed_grid
-```"""
+            return self.prompt_loader.get_subsequent_turn_prompt(self.prompt_version)
         
         # Get the consistent output grid dimensions from the first training example
         if task_data['train'] and task_data['train'][0]['output']:
@@ -185,44 +176,12 @@ def transform(grid):
         # Create the text content with text grid representation
         task_str = self.task_loader.format_task_for_prompt(task_data, include_test=True)
         
-        text_content = f"""You are solving an ARC (Abstraction and Reasoning Corpus) task. 
-I will show you training examples with input and output grids, plus a test input grid. Your task is to:
-
-1. **Analyze the training examples** to discover patterns that map input grids to output grids
-2. **Write a Python program** that implements your best understanding of the transformation  
-3. **DO NOT predict or generate the test output** - your job is only to write the transformation program
-4. **Attempt a solution** - even if the pattern isn't completely clear, provide your best hypothesis
-5. **Do not repeat the same transformation** - if you have already tried a transformation, do not repeat it.
-{grid_size_info}
-The test input is shown for context so you understand what type of grid your program will eventually process. Focus on learning patterns from training examples and writing code that captures your understanding.
-
-{task_str}
-
-Analyze the patterns in the training examples and write a Python function that performs this transformation.
-
-**Approach Guidelines:**
-- Look for patterns in shapes, colors, positions, sizes, rotations, reflections, etc.
-- Even if you can't solve all training examples perfectly, implement what patterns you do observe
-- A partial solution that captures some aspects is better than returning the input unchanged
-- If the pattern is unclear, make your best educated guess based on what you can see
-
-Requirements:
-- The function takes a 2D list (grid) where grid[row][col] gives the value at that position
-- Values are integers from 0-9
-- Return a new grid (2D list) with the transformation applied
-- You can use numpy if needed - just add 'import numpy as np' at the start of your function
-- Aim to handle the training examples as well as possible, even if not perfectly
-- Your function should attempt some meaningful transformation based on the patterns you observe
-
-You MUST end your response with the following exact format:
-
-Final answer:
-```python
-def transform(grid):
-    # Your transformation logic here (implement your best understanding)
-    return transformed_grid
-```
-"""
+        # Get the initial turn prompt template and substitute variables
+        prompt_template = self.prompt_loader.get_initial_turn_prompt(self.prompt_version)
+        text_content = prompt_template.format(
+            grid_size_info=grid_size_info,
+            task_str=task_str
+        )
         
         return text_content
     
@@ -868,7 +827,7 @@ def transform(grid):
                 # Create fresh conversation for each attempt
                 if self.debug:
                     print(f"🔍 DEBUG INDEPENDENT: Creating system message for {task_id}")
-                system_msg = {"role": "system", "content": "You are an expert at solving abstract reasoning puzzles. Write clean, efficient Python code."}
+                system_msg = {"role": "system", "content": self.prompt_loader.get_system_message(self.prompt_version)}
                 if self.debug:
                     print(f"🔍 DEBUG INDEPENDENT: Creating initial prompt for {task_id}")
                 initial_prompt_messages = self.create_prompt(task_data, is_first_turn=True, task_id=task_id, turn=attempt + 1)
@@ -1040,7 +999,7 @@ def transform(grid):
         turn_details = []  # NEW: Collect detailed turn-by-turn data
         
         # Start conversation
-        system_msg = {"role": "system", "content": "You are an expert at solving abstract reasoning puzzles. Write clean, efficient Python code."}
+        system_msg = {"role": "system", "content": self.prompt_loader.get_system_message(self.prompt_version)}
         initial_prompt_messages = self.create_prompt(task_data, is_first_turn=True, task_id=task_id, turn=1)
         conversation_history = [system_msg, {"role": "user", "content": initial_prompt_messages}]
         
@@ -1145,20 +1104,7 @@ def transform(grid):
                         conversation_history.append({"role": "assistant", "content": response.choices[0].message.content})
                     
                     # Add request for code
-                    code_request = """I need you to provide Python code to attempt this task. Even if you're not completely certain about the pattern, please provide your best hypothesis as a working transformation function.
-
-**Remember**: A partial solution that captures some observed patterns is much more valuable than refusing to attempt the task. Your goal is to implement whatever understanding you have, even if incomplete.
-
-You MUST end your response with the following exact format:
-
-Final answer:
-```python
-def transform(grid):
-    # Your transformation logic here (implement your best understanding)
-    return transformed_grid
-```
-
-Make sure to include the function definition inside a proper code block."""
+                    code_request = self.prompt_loader.get_code_request_prompt(self.prompt_version)
                     
                     conversation_history.append({"role": "user", "content": code_request})
                     turn_detail['code_request_sent'] = True
@@ -1772,6 +1718,8 @@ def main():
                        help="Maximum tokens for model responses (overrides reasoning effort defaults)")
     parser.add_argument("--temperature", type=float,
                        help="Temperature for model responses (0.0 to 2.0, default varies by model)")
+    parser.add_argument("--prompt-version", type=str, default="v1",
+                       help="Version of prompts to use (default: v1)")
     
     args = parser.parse_args()
     

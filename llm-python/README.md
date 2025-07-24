@@ -383,15 +383,6 @@ The `generate_training_data.py` tool extracts programs from log files to create 
 - **Solution**: Empty rows now use `[EMPTY_ROW]` marker to preserve structure
 - **Result**: 100% validation success rate on all training examples
 
-**Validation Script**: Use `tests/validate_training_data.py` to verify training data quality:
-```bash
-# Validate a training dataset
-uv run python tests/validate_training_data.py training_data/your_dataset.jsonl --verbose
-
-# Quick validation without verbose output
-uv run python tests/validate_training_data.py training_data/your_dataset.jsonl
-```
-
 **Validation Script**: Use `tests/validate_hf_dataset.py` to verify HF dataset quality:
 ```bash
 # Validate a HF dataset
@@ -767,7 +758,7 @@ The tool supports running the same test multiple times to calculate robust perfo
 
 ```bash
 # Run the same test 3 times with statistical analysis
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 3
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_1 --repeat-runs 3 --model google/gemini-2.5-flash --reasoning_effort medium --base-url https://openrouter.ai/api/v1
 
 # Run 5 times with parallelization for faster execution
 uv run python run_arc_tasks.py --dataset arc-agi-2 --subset shortest_evaluation_10 --repeat-runs 5 --max_workers 10
