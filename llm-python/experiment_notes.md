@@ -15,7 +15,10 @@ Todo:
     [x] Fix up reasoning.
     [x] Run validation on that dataset.
 [ ] Support metrics calculation - for train and validation sets.
-  [ ] Add ability to push a grids-only set of data.
+  [x] Don't remove the columns.
+  [x] Use the data to compute metrics.
+  [ ] Remove any ground truth reference.
+[ ] Add ability to push a grids-only set of data.
 
 >[!WARNING]
 > Dataset validation is hitting a small issue that needs fixing.
@@ -43,6 +46,38 @@ and validate it:
 
 ```bash
 uv run python validate_hf_dataset.py Trelis/synth_arc-agi-1_shortest_training_10_20250724_091954
+```
+
+### Synth data for all training problems
+
+Generate synthetic data with gemini for arc-agi-1 all_training:
+
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_training --repeat-runs 1 --max_workers 50 --max_turns 8 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium --limit 1
+```
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-1
+Subset: all_training
+Model: google/gemini-2.5-flash
+Reasoning effort: medium
+API: Chat Completions (independent attempts, max 8 attempts)
+Total tasks attempted: 400
+Successful API calls: 400/400 (100.0%)
+Tasks solved correctly: 236/400 (59.0%)
+Pixel accuracy: 21569/55726 (38.7%)
+Total attempts used: 1783
+Average attempts per task: 4.5
+Total tokens used: 28,324,268
+Total cost: $58.997739
+
+Results saved to: logs/20250724_112315_summary_arc-agi-1_all_training.json
+
+
+Now trying with the latest Qwen Coder model:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_training --repeat-runs 1 --max_workers 50 --max_turns 8 --model qwen/qwen3-coder:free --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium --limit 1
 ```
 
 ### Dataset formatting

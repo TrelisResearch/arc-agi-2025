@@ -3,7 +3,7 @@
 Contains fine-tuning notebooks for ARC-AGI task training:
 
 ## Notebooks
-- **Qwen3-ARC-AGI-2-23-jul-C.ipynb**: Latest notebook, ready to integrate custom metrics as a next step.
+- **unsloth_arc_finetuning.ipynb**: Latest notebook, ready to integrate custom metrics as a next step.
 
 ## TensorBoard Logs
 To view training logs:
