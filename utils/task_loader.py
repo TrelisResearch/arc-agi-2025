@@ -30,7 +30,7 @@ class TaskLoader:
     Legacy mixed subsets are in archive/.
     """
 
-    def __init__(self, data_root: str = Path(__file__).parent.parent / "data"):
+    def __init__(self, data_root: str = (Path(__file__).parent.parent / "data").as_posix()):
         self.data_root = Path(data_root)
         if not self.data_root.exists():
             raise ValueError(f"Data root directory not found: {data_root}")
@@ -110,34 +110,3 @@ class TaskLoader:
     def get_test_outputs(self, task_data: TaskData) -> List[Grid]:
         """Extract all test outputs from a task"""
         return [test_case['output'] for test_case in task_data.get('test', [])]
-
-
-# Example usage
-if __name__ == "__main__":
-    loader = TaskLoader()
-    
-    # Show available subsets
-    print("Available subsets for arc-agi-1:")
-    for subset_name in loader.get_available_subsets("arc-agi-1"):
-        print(f"  - {subset_name}")
-    
-    # Load and display a single task
-    print("\nLoading shortest task from arc-agi-1...")
-    task_ids = loader.load_subset("shortest_training_1", "arc-agi-1")
-    if task_ids:
-        task_id = task_ids[0]
-        task_data = loader.load_task(task_id, "arc-agi-1")
-        
-        print(f"\nTask ID: {task_id}")
-        print(f"Number of training examples: {len(task_data.get('train', []))}")
-        print(f"Number of test examples: {len(task_data.get('test', []))}")
-        
-        # Show formatted task
-        print("\nFormatted task for prompt:")
-        print("-" * 50)
-        print(loader.format_task_for_prompt(task_data))
-        
-    # Show available subsets for arc-agi-2
-    print(f"\nAvailable subsets for arc-agi-2:")
-    for subset_name in loader.get_available_subsets("arc-agi-2"):
-        print(f"  - {subset_name}")

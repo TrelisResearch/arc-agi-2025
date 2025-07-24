@@ -73,10 +73,14 @@ class DockerSandboxExecutor(BaseExecutor):
     
     def _build_image_if_needed(self) -> None:
         """Build the Docker image if it doesn't exist."""
+        if not self.client:
+            raise Exception("Docker client not initialized")
+            
         try:
             self.client.images.get(self.image_name)
-            print(f"Docker image '{self.image_name}' already exists")
+            # Image already exists - no need to print
         except docker.errors.ImageNotFound:
+            # Only print when we need to build
             print(f"Building Docker image '{self.image_name}'...")
             
             # Get the directory containing this script
@@ -93,6 +97,9 @@ class DockerSandboxExecutor(BaseExecutor):
     
     def _start_container(self) -> None:
         """Start the Docker container."""
+        if not self.client:
+            raise Exception("Docker client not initialized")
+            
         try:
             # Find an available port
             self.host_port = self._find_available_port()
@@ -106,7 +113,7 @@ class DockerSandboxExecutor(BaseExecutor):
                 name=f"python-sandbox-{int(time.time())}"
             )
             
-            print(f"Started Docker container '{self.container.name}' on port {self.host_port}")
+            # Container started successfully - no need to print
             
         except Exception as e:
             raise Exception(f"Failed to start Docker container: {e}")
@@ -121,7 +128,7 @@ class DockerSandboxExecutor(BaseExecutor):
             port = s.getsockname()[1]
         return port
     
-    def _wait_for_container_ready(self, max_wait: int = 30) -> None:
+    def _wait_for_container_ready(self, max_wait: int = 10) -> None:
         """Wait for the container to be ready to accept requests."""
         base_url = f"http://localhost:{self.host_port}"
         
@@ -129,7 +136,7 @@ class DockerSandboxExecutor(BaseExecutor):
             try:
                 response = requests.get(f"{base_url}/health", timeout=1)
                 if response.status_code == 200:
-                    print(f"Container ready after {i+1} seconds")
+                    # Container is ready - no need to print
                     return
             except requests.exceptions.RequestException:
                 pass
@@ -138,7 +145,7 @@ class DockerSandboxExecutor(BaseExecutor):
         
         raise Exception(f"Container did not become ready within {max_wait} seconds")
     
-    def execute_code(self, code: str, timeout: Optional[float] = None) -> Tuple[Any, Optional[Exception]]:
+    def execute_code(self, code: str, timeout: Optional[float] = 5) -> Tuple[Any, Optional[Exception]]:
         """
         Execute Python code in the Docker container.
         
@@ -167,13 +174,13 @@ class DockerSandboxExecutor(BaseExecutor):
             base_url = f"http://localhost:{self.host_port}"
             request_data = {
                 "code": code,
-                "timeout": timeout or 30.0
+                "timeout": timeout
             }
             
             response = requests.post(
                 f"{base_url}/execute",
                 json=request_data,
-                timeout=timeout or 30.0
+                timeout=timeout
             )
             
             if response.status_code != 200:
@@ -207,9 +214,8 @@ class DockerSandboxExecutor(BaseExecutor):
         with self._shutdown_lock:
             if self.container:
                 try:
-                    print(f"Stopping container '{self.container.name}'...")
                     self.container.stop(timeout=5)
-                    print("Container stopped")
+                    # Container stopped successfully - no need to print
                 except Exception as e:
                     print(f"Error stopping container: {e}")
                 finally:
