@@ -3,37 +3,47 @@
 ## 2025 24th July
 
 Todo:
-[ ] Create dataset structure:
+[x] Create dataset structure:
   [x] Review SOAR data
   [x] Review Lewis data
   [x] Set columns
   [x] Update data generation
-[ ] Update ipynb notebook for new dataset structure.
+[x] Update ipynb notebook for new dataset structure.
   [x] Move prompt strings in the run_arc_tasks.py script to a prompt_strings folder, and date the current prompt.
   [x] Test out run_arc_tasks.py with the new prompt strings.
   [x] Assemble the data in the ipynb notebook.
     [x] Fix up reasoning.
+    [x] Run validation on that dataset.
 [ ] Support metrics calculation - for train and validation sets.
+  [ ] Add ability to push a grids-only set of data.
+
+>[!WARNING]
+> Dataset validation is hitting a small issue that needs fixing.
 
 ### Running on high quality traces from Gemini only
 
 Generate a dataset for the random train split 1:
 
 ```bash
-uv run python generate_training_data.py --model "google/gemini-2.5-flash" --dataset "arc-agi-1" --subset "random_split_1_training" --clean-code --hf-private
+uv run python generate_training_data.py --model "google/gemini-2.5-flash" --dataset "arc-agi-1" --subset "random_split_1_training" --clean-code
 ```
 and validate it:
 
 ```bash
-uv run python tests/validate_hf_dataset.py Trelis/...
+uv run python validate_hf_dataset.py Trelis/synth_arc-agi-1_random_split_1_training_20250724_091902
 ```
+Which has 4 rows with issues, perhaps timeouts on the code.
 
+and then push another dataset - the shortest training 10 dataset:
 
+```bash
+uv run python generate_training_data.py --model "google/gemini-2.5-flash" --dataset "arc-agi-1" --subset "shortest_training_10" --clean-code
+```
+and validate it:
 
-
-
-
-
+```bash
+uv run python validate_hf_dataset.py Trelis/synth_arc-agi-1_shortest_training_10_20250724_091954
+```
 
 ### Dataset formatting
 

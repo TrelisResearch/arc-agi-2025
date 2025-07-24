@@ -383,19 +383,19 @@ The `generate_training_data.py` tool extracts programs from log files to create 
 - **Solution**: Empty rows now use `[EMPTY_ROW]` marker to preserve structure
 - **Result**: 100% validation success rate on all training examples
 
-**Validation Script**: Use `tests/validate_hf_dataset.py` to verify HF dataset quality:
+**Validation Script**: Use `validate_hf_dataset.py` to verify HF dataset quality:
 ```bash
 # Validate a HF dataset
-uv run python tests/validate_hf_dataset.py Trelis/synth_arc-agi-1_middle_training_10_20250724_081021
+uv run python validate_hf_dataset.py Trelis/synth_arc-agi-1_middle_training_10_20250724_081021
 
 # Validate with verbose output
-uv run python tests/validate_hf_dataset.py Trelis/synth_arc-agi-1_middle_training_10_20250724_081021 --verbose
+uv run python validate_hf_dataset.py Trelis/synth_arc-agi-1_middle_training_10_20250724_081021 --verbose
 
 # Validate only first 10 rows for quick testing
-uv run python tests/validate_hf_dataset.py Trelis/synth_arc-agi-1_middle_training_10_20250724_081021 --limit 10
+uv run python validate_hf_dataset.py Trelis/synth_arc-agi-1_middle_training_10_20250724_081021 --limit 10
 
 # Validate validation split
-uv run python tests/validate_hf_dataset.py Trelis/my_dataset_name --split validation
+uv run python validate_hf_dataset.py Trelis/my_dataset_name --split validation
 ```
 
 **What the validation script checks:**
