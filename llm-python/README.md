@@ -235,15 +235,29 @@ All reasoning data is preserved in logs for analysis. The code extraction also s
 
 ### Training Data Generation
 
-Generate fine-tuning datasets from logged program attempts using hindsight relabeling:
+Generate fine-tuning datasets from logged program attempts using hindsight relabeling. The script now creates **Hugging Face datasets** instead of JSONL files and pushes them directly to Hugging Face Hub.
 
 ```bash
-# Generate training data from Gemini and Qwen3-4B logs  
-python3 generate_training_data.py --model "google/gemini-2.5-flash,qwen/qwen3-4b" --output training_data.jsonl --dataset "arc-agi-1" --subset "random_split_1_training" --clean-code
+# Create HF dataset from Gemini and Qwen3-4B logs (includes reasoning by default)
+uv run python generate_training_data.py --model "google/gemini-2.5-flash,qwen/qwen3-4b" --dataset "arc-agi-1" --subset "middle_training_10" --clean-code --hf-private
 
-# With validation split (10% or 32 examples max)
-python3 generate_training_data.py --model "google/gemini-2.5-flash,qwen/qwen3-4b" --output training_data.jsonl --validation --clean-code
+# With validation split and custom name
+uv run python generate_training_data.py --model "google/gemini-2.5-flash" --validation --clean-code --hf-dataset-name "arc_gemini_training_v1" --hf-private
+
+# Basic usage (includes reasoning by default)
+uv run python generate_training_data.py --dataset "arc-agi-1" --subset "middle_training_10" --clean-code --hf-private
+
+# Disable reasoning content if desired
+uv run python generate_training_data.py --dataset "arc-agi-1" --subset "middle_training_10" --clean-code --no-reasoning --hf-private
 ```
+
+**Key Changes:**
+- ✅ **Hugging Face datasets**: Direct push to HF Hub instead of JSONL files
+- ✅ **Competition format**: Uses flat structure with all expected fields (`reasoning`, `code`, `train_input`, `predicted_train_output`, etc.)
+- ✅ **Reasoning included by default**: Automatically captures model reasoning traces (use `--no-reasoning` to disable)
+- ✅ **Auto-naming**: Default format `synth_{dataset}_{subset}_DATETIME`
+- ✅ **Trelis organization**: Pushes to `Trelis/` by default (configurable with `--hf-org`)
+- ✅ **Private datasets**: Use `--hf-private` flag for private repositories
 
 **Deduplication Logic:**
 - **Test-correct programs**: Deduplicated by cleaned code string matching (after comment removal)
@@ -378,12 +392,26 @@ uv run python tests/validate_training_data.py training_data/your_dataset.jsonl -
 uv run python tests/validate_training_data.py training_data/your_dataset.jsonl
 ```
 
-**Current Recommended Dataset**: Use `training_data/gemini_synth_50_random_split_1_training_fixed.jsonl` (1,156 examples, 100% validated) generated with:
+**Validation Script**: Use `tests/validate_hf_dataset.py` to verify HF dataset quality:
 ```bash
-uv run python generate_training_data.py --model "google/gemini-2.5-flash,qwen/qwen3-4b" --output gemini_synth_50_random_split_1_training_fixed.jsonl --dataset "arc-agi-1" --subset "random_split_1_training" --clean-code --debug
+# Validate a HF dataset
+uv run python tests/validate_hf_dataset.py Trelis/synth_arc-agi-1_middle_training_10_20250724_081021
+
+# Validate with verbose output
+uv run python tests/validate_hf_dataset.py Trelis/synth_arc-agi-1_middle_training_10_20250724_081021 --verbose
+
+# Validate only first 10 rows for quick testing
+uv run python tests/validate_hf_dataset.py Trelis/synth_arc-agi-1_middle_training_10_20250724_081021 --limit 10
+
+# Validate validation split
+uv run python tests/validate_hf_dataset.py Trelis/my_dataset_name --split validation
 ```
 
-**Training Data Location**: All generated datasets are saved to the `training_data/` directory. This includes both current validated datasets and historical versions for comparison.
+**What the validation script checks:**
+- ✅ **Format validation**: All grids are proper 2D lists with integer values 0-9
+- ✅ **Execution consistency**: Programs actually produce the claimed `predicted_train_output`
+- ✅ **Data integrity**: All field lengths match and no corrupted data
+- ✅ **Type safety**: No boolean/tuple/string values in grid cells
 
 **Multiple Models Support**: You can filter by multiple models using either comma-separated values (`--model "model1,model2"`) or repeated arguments (`--model "model1" --model "model2"`).
 
@@ -444,16 +472,23 @@ uv run python generate_training_data.py --dataset "arc-agi-1" --subset "all_trai
 uv run python generate_training_data.py --dataset "arc-agi-1" --subset "all_training" --model "google/gemini-2.5-flash,o4-mini" --output multi_model_arc1_training.jsonl
 
 # Filter by subset only (includes that subset from both datasets)
-uv run python generate_training_data.py --subset "middle_training_10" --validation --output middle_difficulty.jsonl
+uv run python generate_training_data.py --subset "middle_training_10" --validation --hf-private
 
 # Disable deduplication if you want all programs (including duplicates)
-uv run python generate_training_data.py --limit 100 --no-dedup --output all_programs_no_dedup.jsonl
+uv run python generate_training_data.py --limit 100 --no-dedup --hf-private
 
 # Enable debug mode to see detailed transduction detection info
-uv run python generate_training_data.py --limit 100 --debug --output debug_training.jsonl
+uv run python generate_training_data.py --limit 100 --debug --hf-private
 
 # Disable transduction filtering if you want to keep all programs (including cheating ones)
-uv run python generate_training_data.py --limit 100 --no-transduction-filter --output all_programs_with_cheating.jsonl
+uv run python generate_training_data.py --limit 100 --no-transduction-filter --hf-private
+
+# New HF-specific options:
+#   --hf-dataset-name: Custom dataset name (default: synth_{dataset}_{subset}_DATETIME)
+#   --hf-org: Organization to push to (default: "Trelis")
+#   --hf-private: Make dataset private (recommended)
+#   --reasoning: Include reasoning content (default: True)
+#   --no-reasoning: Disable reasoning content inclusion
 ```
 
 ### Filtering Options
@@ -583,14 +618,13 @@ def transform(grid):
 - **Storage efficiency**: Smaller files for faster loading and transfer
 - **Focus on logic**: Remove documentation to emphasize executable patterns
 
-### Output Files
+### Output
 
-**Files are saved in the `o3-tools/training_data/` directory:**
+**Datasets are pushed directly to Hugging Face Hub:**
 
-- **Without validation**: `training_data_YYYYMMDD_HHMMSS.jsonl`
-- **With validation**: 
-  - `training_data_YYYYMMDD_HHMMSS_train.jsonl` (balanced training set)
-  - `training_data_YYYYMMDD_HHMMSS_val.jsonl` (balanced validation set)
+- **Without validation**: Single `train` split in HF dataset
+- **With validation**: Both `train` and `validation` splits in HF dataset
+- **Dataset URLs**: Printed in console output (e.g., `https://huggingface.co/datasets/Trelis/synth_arc-agi-1_middle_training_10_20250724_080500`)
 
 **Note**: Dataset is first balanced (50/50 difficulty split), then validation uses different tasks than training.
 
@@ -621,14 +655,20 @@ def transform(grid):
 5. **Split** into training/validation sets (optional)
 6. **Generate** JSONL training examples (parallel)
 
-### Output Format
+### Dataset Format
 
-Each JSONL line contains a system/user/assistant conversation where:
-- **Training examples** use program-generated outputs (not ground truth)
-- **User message** contains the ARC task with training examples  
-- **Assistant message** contains the partially-correct program code
+Each dataset row contains the **competition format** with all required fields:
+- **`reasoning`**: Model's reasoning trace (if available and `--reasoning` used)
+- **`code`**: Generated Python program
+- **`train_input/train_output`**: Original training examples
+- **`predicted_train_output`**: Program's actual outputs on training inputs
+- **`correct_train_input`**: Boolean list indicating which training examples were solved correctly
+- **`test_input/test_output`**: Original test examples  
+- **`predicted_test_output`**: Program's actual outputs on test inputs
+- **`correct_test_input`**: Boolean list indicating which test examples were solved correctly
+- **`task_id/model/generation`**: Metadata fields
 
-This trains models to generate programs that produce specific input→output mappings.
+This format is compatible with the competition and enables training models that learn from partially-correct solutions.
 
 ### Example Output
 

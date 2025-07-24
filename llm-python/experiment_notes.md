@@ -1,5 +1,33 @@
 # Experiment Notes
 
+## 2025 24th July
+
+Todo:
+[ ] Create dataset structure:
+  [x] Review SOAR data
+  [x] Review Lewis data
+  [x] Set columns
+  [x] Update data generation
+[ ] Update ipynb notebook for new dataset structure.
+  [ ] Move prompt strings in the run_arc_tasks.py script to a prompt_strings folder, and date the current prompt.
+  [ ] Assemble the data in the ipynb notebook.
+[ ] Support metrics calculation - for train and validation sets.
+
+### Dataset formatting
+
+[SOAR Dataset](https://huggingface.co/datasets/julien31/soar_arc_train_5M/viewer/default/train?row=32&views%5B%5D=train):
+- code [string]; correct_train_input [list of booleans]; predicted_train_output [list of lists of lists of ints]; correct_test_input [list of booleans]; predicted_test_output [list of lists of lists of ints]; task_id [string]; model [string]; generation [int]
+
+[Lewis Dataset](https://huggingface.co/datasets/Trelis/soar-arc-sft-2025-07-23_0859):
+- messages [list of messages]
+
+Competition Dataset Format
+- *reasoning [string];* code [string]; correct_train_input [list of booleans]; *train_input [list of lists of lists of ints]; train_output [list of lists of lists of ints];* predicted_train_output [list of lists of lists of ints]; correct_test_input [list of booleans]; *test_input [list of lists of lists of ints]; test_output [list of lists of lists of ints];* predicted_test_output [list of lists of lists of ints]; task_id [string]; model [string]; generation [int]
+
+Assembly:
+1. download a hf dataset.
+2. generate formatted text using code, train_input, train_output, test_input, code.
+
 ## 2025 23rd July
 
 ### Training Datasets Generated with Fixed Deduplication

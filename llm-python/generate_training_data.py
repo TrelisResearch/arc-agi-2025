@@ -14,6 +14,8 @@ import re
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
+from datasets import Dataset
+from huggingface_hub import HfApi
 
 def load_task_data(task_id: str, dataset: str = "arc-agi-1") -> Optional[Dict]:
     """Load task data from the data folder"""
@@ -478,109 +480,147 @@ def validate_single_program(prog_data: Dict, args) -> Optional[Dict]:
     return None
 
 def create_training_example(program_data: Dict, task_data: Dict, args) -> Dict:
-    """Create a training example in JSONL format"""
-    # Create modified task data with program-generated outputs
-    modified_task_data = task_data.copy()
-    modified_task_data['train'] = []
-    
+    """Create a training example in competition dataset format"""
     program = program_data['program']
     
-    # Check if program originally solved the test correctly
-    originally_test_correct = False
-    if task_data.get('test') and len(task_data['test']) > 0:
-        test_input = task_data['test'][0]['input']
-        expected_test_output = task_data['test'][0]['output']
-        predicted_test_output, error, timed_out = execute_program(program, test_input)
-        
-        if (predicted_test_output is not None and not error and not timed_out and 
-            predicted_test_output == expected_test_output):
-            originally_test_correct = True
+    # Extract training inputs and outputs
+    train_inputs = [example['input'] for example in task_data['train']]
+    train_outputs = [example['output'] for example in task_data['train']]
     
-    # Check if program correctly solves the test output (for reasoning inclusion)
-    test_correct = originally_test_correct  # Use the same check for reasoning
+    # Extract test inputs and outputs
+    test_inputs = [example['input'] for example in task_data['test']]
+    test_outputs = [example['output'] for example in task_data['test']]
     
-    # Run the program on each training input to get what it actually produces
-    for example in task_data['train']:
-        train_input = example['input']
+    # Run the program on each training input to get predictions
+    predicted_train_outputs = []
+    correct_train_inputs = []
+    
+    for i, train_input in enumerate(train_inputs):
         predicted_output, error, timed_out = execute_program(program, train_input)
         
-        # If the program runs successfully, validate and use its output
         if predicted_output is not None and not error and not timed_out:
-            # Strict validation: reject entire program if ANY output is not a proper 2D grid
-            if not isinstance(predicted_output, list):
-                raise ValueError(f"Program returned invalid output format: expected list, got {type(predicted_output).__name__}")
-            if len(predicted_output) == 0:
-                raise ValueError(f"Program returned empty grid")
-            if not isinstance(predicted_output[0], list):
-                raise ValueError(f"Program returned 1D list instead of 2D grid")
+            # Validate output format
+            if not isinstance(predicted_output, list) or len(predicted_output) == 0 or not isinstance(predicted_output[0], list):
+                raise ValueError(f"Program returned invalid output format for training input {i}")
             
-            # Validate that all cell values are integers 0-9
-            for i, row in enumerate(predicted_output):
+            # Validate cell values
+            for row_idx, row in enumerate(predicted_output):
                 if not isinstance(row, list):
-                    raise ValueError(f"Row {i} is not a list: {type(row).__name__}")
-                for j, cell in enumerate(row):
-                    # Check for boolean first since isinstance(True, int) is True in Python
+                    raise ValueError(f"Row {row_idx} is not a list in training output {i}")
+                for col_idx, cell in enumerate(row):
                     if isinstance(cell, bool) or not isinstance(cell, int) or not (0 <= cell <= 9):
-                        raise ValueError(f"Invalid cell value at [{i}][{j}]: {cell} (type: {type(cell).__name__}). Expected integer 0-9.")
-                
-            modified_example = {
-                'input': train_input,
-                'output': predicted_output  # Use program's actual output, not ground truth
-            }
-            modified_task_data['train'].append(modified_example)
+                        raise ValueError(f"Invalid cell value at [{row_idx}][{col_idx}] in training output {i}: {cell}")
+            
+            predicted_train_outputs.append(predicted_output)
+            # Check if prediction matches ground truth
+            correct_train_inputs.append(predicted_output == train_outputs[i])
+        else:
+            raise ValueError(f"Program failed to run on training input {i}")
     
-    # Only proceed if we have at least one successful execution
-    if not modified_task_data['train']:
-        raise ValueError(f"Program failed to run on all {len(task_data['train'])} training examples")
+    # Run the program on each test input to get predictions
+    predicted_test_outputs = []
+    correct_test_inputs = []
     
-    # Critical validation: If program originally solved the test, verify it still does after relabeling
-    if originally_test_correct:
-        # Re-run the test to make sure relabeling didn't break the solution
-        test_input = task_data['test'][0]['input']
-        expected_test_output = task_data['test'][0]['output']
-        predicted_test_output_after_relabel, error, timed_out = execute_program(program, test_input)
+    for i, test_input in enumerate(test_inputs):
+        predicted_output, error, timed_out = execute_program(program, test_input)
         
-        still_test_correct = (predicted_test_output_after_relabel is not None and 
-                             not error and not timed_out and 
-                             predicted_test_output_after_relabel == expected_test_output)
-        
-        if not still_test_correct:
-            raise ValueError(f"Program originally solved test but fails after relabeling - this suggests execution inconsistency")
+        if predicted_output is not None and not error and not timed_out:
+            # Validate output format
+            if not isinstance(predicted_output, list) or len(predicted_output) == 0 or not isinstance(predicted_output[0], list):
+                raise ValueError(f"Program returned invalid output format for test input {i}")
+            
+            # Validate cell values
+            for row_idx, row in enumerate(predicted_output):
+                if not isinstance(row, list):
+                    raise ValueError(f"Row {row_idx} is not a list in test output {i}")
+                for col_idx, cell in enumerate(row):
+                    if isinstance(cell, bool) or not isinstance(cell, int) or not (0 <= cell <= 9):
+                        raise ValueError(f"Invalid cell value at [{row_idx}][{col_idx}] in test output {i}: {cell}")
+            
+            predicted_test_outputs.append(predicted_output)
+            # Check if prediction matches ground truth
+            correct_test_inputs.append(predicted_output == test_outputs[i])
+        else:
+            raise ValueError(f"Program failed to run on test input {i}")
     
-    # Create system message
-    system_message = {
-        "role": "system", 
-        "content": "You are an expert at solving abstract reasoning puzzles. Write clean, efficient Python code."
-    }
+    # Get reasoning content if available and requested
+    reasoning_content = ""
+    if args.reasoning and program_data.get('reasoning_content'):
+        reasoning_content = program_data.get('reasoning_content', '')
     
-    # Create user message with the modified prompt (using program's actual outputs)
-    user_message = {
-        "role": "user",
-        "content": create_prompt_for_task(modified_task_data)
-    }
-    
-    # Create assistant message with program and optionally reasoning
-    assistant_content = ""
-    
-    # Include reasoning if flag is set and test is correct
-    if args.reasoning and test_correct and program_data.get('reasoning_content'):
-        reasoning_content = program_data['reasoning_content']
-        assistant_content = f"<think>\n{reasoning_content}\n</think>\n\n"
-    
-    assistant_content += f"Final answer:\n```python\n{program_data['program']}\n```"
-    
-    assistant_message = {
-        "role": "assistant",
-        "content": assistant_content
-    }
-    
-    # Create the training example
+    # Create the flat format training example
     training_example = {
-        "messages": [system_message, user_message, assistant_message],
-        "_originally_test_correct": originally_test_correct  # Metadata for stats tracking
+        "reasoning": reasoning_content,
+        "code": program,
+        "correct_train_input": correct_train_inputs,
+        "train_input": train_inputs,
+        "train_output": train_outputs,
+        "predicted_train_output": predicted_train_outputs,
+        "correct_test_input": correct_test_inputs,
+        "test_input": test_inputs,
+        "test_output": test_outputs,
+        "predicted_test_output": predicted_test_outputs,
+        "task_id": program_data['task_id'],
+        "model": program_data.get('model', 'unknown'),
+        "generation": program_data.get('generation', 0)
     }
     
     return training_example
+
+def create_and_push_hf_dataset(training_examples: List[Dict], validation_examples: List[Dict], args) -> None:
+    """Create and push Hugging Face dataset to the hub"""
+    
+    # Generate dataset name if not provided
+    if args.hf_dataset_name:
+        dataset_name = args.hf_dataset_name
+    else:
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        dataset_part = args.dataset or "unknown"
+        subset_part = args.subset or "unknown"
+        dataset_name = f"synth_{dataset_part}_{subset_part}_{timestamp}"
+    
+    print(f"Creating Hugging Face dataset: {args.hf_org}/{dataset_name}")
+    
+    # Create datasets
+    if validation_examples:
+        # Create train and validation splits
+        train_dataset = Dataset.from_list(training_examples)
+        val_dataset = Dataset.from_list(validation_examples)
+        
+        print(f"Created training dataset with {len(training_examples)} examples")
+        print(f"Created validation dataset with {len(validation_examples)} examples")
+        
+        # Push both splits
+        train_dataset.push_to_hub(
+            f"{args.hf_org}/{dataset_name}",
+            split="train",
+            private=args.hf_private
+        )
+        val_dataset.push_to_hub(
+            f"{args.hf_org}/{dataset_name}",
+            split="validation",
+            private=args.hf_private
+        )
+        
+        print(f"Successfully pushed training and validation splits to {args.hf_org}/{dataset_name}")
+    else:
+        # Create single training split
+        train_dataset = Dataset.from_list(training_examples)
+        
+        print(f"Created training dataset with {len(training_examples)} examples")
+        
+        # Push training split
+        train_dataset.push_to_hub(
+            f"{args.hf_org}/{dataset_name}",
+            split="train",
+            private=args.hf_private
+        )
+        
+        print(f"Successfully pushed training split to {args.hf_org}/{dataset_name}")
+    
+    # Print dataset URL
+    visibility = "private" if args.hf_private else "public"
+    print(f"Dataset URL: https://huggingface.co/datasets/{args.hf_org}/{dataset_name} ({visibility})")
 
 def deduplicate_programs_by_task(qualified_programs: List[Dict], args) -> Tuple[List[Dict], Dict]:
     """Deduplicate programs within each task based on test correctness and output similarity"""
@@ -741,8 +781,10 @@ def main():
                        help="Filter files from this date onwards (format: YYYYMMDD)")
     parser.add_argument("--date-to", type=str, default=None,
                        help="Filter files up to this date (format: YYYYMMDD)")
-    parser.add_argument("--reasoning", action="store_true",
-                       help="Include reasoning content for programs that correctly solve the test output")
+    parser.add_argument("--reasoning", action="store_true", default=True,
+                       help="Include reasoning content for programs that correctly solve the test output (default: True)")
+    parser.add_argument("--no-reasoning", action="store_false", dest="reasoning",
+                       help="Disable reasoning content inclusion")
     parser.add_argument("--clean-code", action="store_true",
                        help="Strip comments and clean up code before processing")
     parser.add_argument("--no-dedup", action="store_true",
@@ -751,6 +793,12 @@ def main():
                        help="Disable filtering of transduction/cheating programs")
     parser.add_argument("--debug", action="store_true",
                        help="Enable debug mode with detailed logging for transduction detection")
+    parser.add_argument("--hf-dataset-name", type=str, default=None,
+                       help="Name for the Hugging Face dataset. If not provided, will use synth_{dataset}_{subset}_DATETIME format")
+    parser.add_argument("--hf-org", type=str, default="Trelis",
+                       help="Hugging Face organization to push the dataset to (default: Trelis)")
+    parser.add_argument("--hf-private", action="store_true",
+                       help="Make the Hugging Face dataset private")
     
     args = parser.parse_args()
     
@@ -1232,34 +1280,14 @@ def main():
         
         print(f"  Validation balance: {val_correct_count}/{len(validation_examples)} ({val_correct_count/len(validation_examples)*100:.1f}%) from tasks with correct examples")
         print(f"  Training balance: {train_correct_tasks_count}/{len(train_task_ids)} ({train_correct_tasks_count/len(train_task_ids)*100:.1f}%) tasks with correct examples")
-        
-        # Create filenames
-        base_name = args.output.replace('.jsonl', '')
-        train_filename = output_dir / f"{base_name}_train.jsonl"
-        val_filename = output_dir / f"{base_name}_val.jsonl"
-        
-        # Save training set
-        with open(train_filename, 'w') as f:
-            for example in train_examples:
-                f.write(json.dumps(example) + '\n')
-        
-        # Save validation set
-        with open(val_filename, 'w') as f:
-            for example in validation_examples:
-                f.write(json.dumps(example) + '\n')
-        
-        print(f"Saved training data to: {train_filename} ({len(train_examples)} examples from {len(train_task_ids)} tasks)")
-        print(f"Saved validation data to: {val_filename} ({len(validation_examples)} examples from {len(validation_task_ids)} tasks)")
         print(f"Validation tasks: {sorted(validation_task_ids)}")
         
-    else:
-        # Save all as training data
-        output_file = output_dir / args.output
-        with open(output_file, 'w') as f:
-            for example in training_examples:
-                f.write(json.dumps(example) + '\n')
+        # Create and push Hugging Face dataset with train/validation splits
+        create_and_push_hf_dataset(train_examples, validation_examples, args)
         
-        print(f"Saved training data to: {output_file}")
+    else:
+        # Create and push Hugging Face dataset with only training data
+        create_and_push_hf_dataset(training_examples, [], args)
     
     # Print some stats
     task_counts = {}
