@@ -1352,7 +1352,7 @@ grep '"total_cost"' logs/*summary*.json | sort -k2 -n
 
 Test individual components:
 ```bash
-uv run python task_loader.py  # Test task loading functionality
+uv run python utils/task_loader.py  # Test task loading functionality
 uv run python scoring.py      # Test scoring functionality
 ```
 
@@ -1419,7 +1419,8 @@ We use the **Chat Completions API** with multi-turn mode:
 ```
 o3-tools/
 ├── run_arc_tasks.py             # Main script (Responses API only)
-├── task_loader.py               # Load ARC tasks and subsets
+├── utils/
+│   └── task_loader.py           # Load ARC tasks and subsets
 ├── scoring.py                   # Grid scoring
 ├── generate_training_data.py    # Extract training data from logs
 ├── cleanup_logs.py             # Clean up log files

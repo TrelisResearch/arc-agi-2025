@@ -13,8 +13,8 @@ from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from openai import OpenAI
 
-from task_loader import TaskLoader
-from scoring import GridScorer, ProgramExecutor
+from utils.task_loader import TaskLoader
+from utils.scoring import GridScorer, ProgramExecutor
 
 load_dotenv()
 
