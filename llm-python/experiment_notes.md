@@ -25,6 +25,25 @@ Todo:
 >[!WARNING]
 > Dataset validation is hitting a small issue that needs fixing.
 
+### Running on a full-ish set for training
+I ran fine-tuning on a full-ish dataset generated from one run (8 attempts) on Gemini Flash with medium (8k) thinking. I split out a validation set, but it's not all that well defined - see notes below.
+
+**Improvements**:
+- The validation set I used currently includes hindsight relabelled examples, where the test is going to be wrong by definition (check actually whether the code relabels the test problem or not).
+- Currently my data generation script is balancing the train examples (I think), it would be better to just include them all.
+- A larger batch size can be used for metrics. Currently 8 but probably could be 16 or even 32.
+- The tests are all scoring 0 right now, which is not entirely unreasonable for a small split (and there is no sampling for validation). This may or may not be a concern BUT I should be manually inspecting by switching to printing grids and putting n to non zero for showing examples.
+- The ideal is to integrate and test passing in just a validation set for ARC AGI 1 with all evaluation problems. (like this one: Trelis/simple_arc-agi-1_shortest_evaluation_100_20250724_140207).
+- OPTION: To blend in some reasoning data, in cases where the test is correct. Requires the completions to be managed dynamically.
+
+I did run a kind of training and evaluated it with this on the full evaluation set:
+
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model Trelis/Qwen3-4B-ds20250724_131808-20250724-123014 --independent-attempts --base-url http://157.66.254.40:18942/v1
+```
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 1 --max_turns 1 --model Trelis/Qwen3-4B-ds20250724_131808-20250724-123014 --independent-attempts --base-url http://157.66.254.40:18942/v1 --limit 1
+
+
 ### Running on high quality traces from Gemini only
 
 Generate a dataset for the random train split 1:
