@@ -35,6 +35,7 @@ I ran fine-tuning on a full-ish dataset generated from one run (8 attempts) on G
 - The tests are all scoring 0 right now, which is not entirely unreasonable for a small split (and there is no sampling for validation). This may or may not be a concern BUT I should be manually inspecting by switching to printing grids and putting n to non zero for showing examples.
 - The ideal is to integrate and test passing in just a validation set for ARC AGI 1 with all evaluation problems. (like this one: Trelis/simple_arc-agi-1_shortest_evaluation_100_20250724_140207).
 - OPTION: To blend in some reasoning data, in cases where the test is correct. Requires the completions to be managed dynamically.
+- RUN on ARC-AGI-2.
 
 I did run a kind of training and evaluated it with this on the full evaluation set:
 
