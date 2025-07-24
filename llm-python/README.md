@@ -139,43 +139,43 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --r
 
 ```bash
 # Run 10 shortest training tasks from ARC-AGI-2 with multi-turn execution enabled
-uv run python run_arc_tasks.py --dataset arc-agi-2 --subset shortest_training_1
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-2 --subset shortest_training_1
 
 # Run with custom max turns for multi-turn execution  
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_1 --max_turns 5
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_1 --max_turns 5
 
 # Run 30 shortest evaluation tasks from ARC-AGI-1 with model selection and a limit of 5
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_30 --model gpt-4o-mini --limit 5
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_evaluation_30 --model gpt-4o-mini --limit 5
 
 # Run tasks with a custom API endpoint (e.g., local LLM or Claude)
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --model claude-3-haiku --base-url https://api.anthropic.com/v1
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_10 --model claude-3-haiku --base-url https://api.anthropic.com/v1
 
 # Run with OpenRouter and Gemini Flash with reasoning
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1 --reasoning_effort low
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_10 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1 --reasoning_effort low
 
 # Run Gemini Flash with higher reasoning effort (8k tokens)
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset middle_training_10 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
 
 # RunPod: Use direct TCP to avoid Cloudflare 524 timeouts
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --model Qwen/Qwen3-4B --base-url http://157.66.254.42:15712/v1
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_10 --model Qwen/Qwen3-4B --base-url http://157.66.254.42:15712/v1
 
 # Run tasks in parallel with 10 workers for faster execution
-uv run python run_arc_tasks.py --dataset arc-agi-2 --subset shortest_training_30 --max_workers 10
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-2 --subset shortest_training_30 --max_workers 10
 
 # Run tasks in parallel with rate limiting to respect API limits
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_10 --max_workers 5 --rate_limit_delay 0.5
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_evaluation_10 --max_workers 5 --rate_limit_delay 0.5
 
 # Run the same test 3 times and calculate mean/std dev statistics
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 3
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 3
 
 # Use independent attempts mode instead of multi-turn feedback
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --max_turns 3 --independent-attempts
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_10 --max_turns 3 --independent-attempts
 
 # Disable thinking for Qwen models (uses temperature=0.7, top_p=0.8, top_k=20, enable_thinking=false)
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --model Qwen/Qwen3-4B --base-url http://localhost:8000/v1 --qwen-no-think
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_10 --model Qwen/Qwen3-4B --base-url http://localhost:8000/v1 --qwen-no-think
 
 # Set specific token limit for responses (overrides reasoning effort defaults)
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --model gpt-4.1-mini --max-tokens 2000
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_10 --model gpt-4.1-mini --max-tokens 2000
 
 # Available options:
 #   --dataset: arc-agi-1 or arc-agi-2
@@ -786,13 +786,13 @@ The tool supports running the same test multiple times to calculate robust perfo
 
 ```bash
 # Run the same test 3 times with statistical analysis
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_1 --repeat-runs 3 --model google/gemini-2.5-flash --reasoning_effort medium --base-url https://openrouter.ai/api/v1
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_1 --repeat-runs 3 --model google/gemini-2.5-flash --reasoning_effort medium --base-url https://openrouter.ai/api/v1
 
 # Run 5 times with parallelization for faster execution
-uv run python run_arc_tasks.py --dataset arc-agi-2 --subset shortest_evaluation_10 --repeat-runs 5 --max_workers 10
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-2 --subset shortest_evaluation_10 --repeat-runs 5 --max_workers 10
 
 # Test model consistency with many runs
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_30 --repeat-runs 10 --model o4-mini
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_30 --repeat-runs 10 --model o4-mini
 ```
 
 ### Statistical Output
@@ -864,14 +864,14 @@ The tool supports two distinct execution strategies for solving tasks, allowing 
 
 ```bash
 # Default: Multi-turn feedback mode (3 conversation turns)
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --max_turns 3
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_10 --max_turns 3
 
 # Independent attempts mode - 3 fresh attempts per task (same --max_turns flag)
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --max_turns 3 --independent-attempts
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_10 --max_turns 3 --independent-attempts
 
 # Compare both modes with repeated runs
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --max_turns 3 --repeat-runs 5
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --max_turns 3 --repeat-runs 5 --independent-attempts
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_10 --max_turns 3 --repeat-runs 5
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_10 --max_turns 3 --repeat-runs 5 --independent-attempts
 ```
 
 ### Mode Comparison
@@ -942,16 +942,16 @@ The tool supports parallel execution to dramatically reduce wall-clock time for 
 
 ```bash
 # Run 10 tasks with 5 workers (2x speedup)
-uv run python run_arc_tasks.py --max_workers 5
+uv run python -m llm-python.run_arc_tasks --max_workers 5
 
 # Run 30 tasks with high parallelization (30x speedup)
-uv run python run_arc_tasks.py --subset shortest_training_30 --max_workers 30
+uv run python -m llm-python.run_arc_tasks --subset shortest_training_30 --max_workers 30
 
 # Run with rate limiting to avoid hitting API limits
-uv run python run_arc_tasks.py --max_workers 10 --rate_limit_delay 0.2
+uv run python -m llm-python.run_arc_tasks --max_workers 10 --rate_limit_delay 0.2
 
 # Conservative parallel execution with 5 workers and 0.5s delay
-uv run python run_arc_tasks.py --max_workers 5 --rate_limit_delay 0.5
+uv run python -m llm-python.run_arc_tasks --max_workers 5 --rate_limit_delay 0.5
 ```
 
 ### Performance Benefits
@@ -1359,7 +1359,7 @@ uv run python scoring.py      # Test scoring functionality
 Quick API test:
 ```bash
 # Test with a single task
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_1 --model gpt-4o-mini --max_turns 1
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_1 --model gpt-4o-mini --max_turns 1
 ```
 
 ## Cost Management
@@ -1452,13 +1452,13 @@ Works with any OpenAI-compatible Chat Completions API:
 ### Setup Examples
 ```bash
 # OpenAI (default)
-uv run python run_arc_tasks.py --model gpt-4o-mini
+uv run python -m llm-python.run_arc_tasks --model gpt-4o-mini
 
 # Claude via compatible endpoint
-uv run python run_arc_tasks.py --model claude-3-haiku --base-url https://api.anthropic.com/v1
+uv run python -m llm-python.run_arc_tasks --model claude-3-haiku --base-url https://api.anthropic.com/v1
 
 # Local model
-uv run python run_arc_tasks.py --model llama-3.1-8b --base-url http://localhost:8000/v1
+uv run python -m llm-python.run_arc_tasks --model llama-3.1-8b --base-url http://localhost:8000/v1
 ```
 
 ## Implementation Notes

@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import os
 import json
 import argparse
@@ -15,7 +13,7 @@ from openai import OpenAI
 
 from utils.task_loader import TaskLoader
 from utils.scoring import GridScorer, ProgramExecutor
-from prompt_loader import PromptLoader
+from .prompt_loader import PromptLoader
 
 load_dotenv()
 

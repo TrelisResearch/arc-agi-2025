@@ -40,7 +40,7 @@ I ran fine-tuning on a full-ish dataset generated from one run (8 attempts) on G
 I did run a kind of training and evaluated it with this on the full evaluation set:
 
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model Trelis/Qwen3-4B-ds20250724_131808-20250724-123014 --independent-attempts --base-url http://63.141.33.78:22154/v1
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model Trelis/Qwen3-4B-ds20250724_131808-20250724-123014 --independent-attempts --base-url http://63.141.33.78:22154/v1
 ```
 
 The run is looking good, seems like may get to ~3%+ on the arc-agi-1 all_evaluation set...
@@ -104,7 +104,7 @@ uv run python validate_hf_dataset.py Trelis/synth_arc-agi-1_shortest_training_10
 Generate synthetic data with gemini for arc-agi-1 all_training:
 
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_training --repeat-runs 1 --max_workers 50 --max_turns 8 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium --limit 1
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset all_training --repeat-runs 1 --max_workers 50 --max_turns 8 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium --limit 1
 ```
 ==================================================
 SUMMARY
@@ -180,7 +180,7 @@ Statistics:
 
 Now trying with the latest Qwen Coder model:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_training --repeat-runs 1 --max_workers 50 --max_turns 8 --model qwen/qwen3-coder --independent-attempts --base-url https://openrouter.ai/api/v1
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset all_training --repeat-runs 1 --max_workers 50 --max_turns 8 --model qwen/qwen3-coder --independent-attempts --base-url https://openrouter.ai/api/v1
 ```
 Dataset: arc-agi-1
 Subset: all_training
@@ -256,7 +256,7 @@ Assembly:
 Will re-run on the eval set 400 tasks, three times:
 
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model Trelis/Qwen3-4B-gemini_synth_50_random_split_1_training_fixed-20250723-154652 --independent-attempts --base-url http://157.66.254.40:18942/v1 --qwen-no-think --max-tokens 2000
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model Trelis/Qwen3-4B-gemini_synth_50_random_split_1_training_fixed-20250723-154652 --independent-attempts --base-url http://157.66.254.40:18942/v1 --qwen-no-think --max-tokens 2000
 ```
 Dataset: arc-agi-1
 Subset: all_evaluation
@@ -289,7 +289,7 @@ All Attempts Success Rate:
 
 And then try with reasoning:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model Trelis/Qwen3-4B-gemini_synth_50_random_split_1_training_fixed-20250723-154652 --independent-attempts --base-url http://157.66.254.40:18942/v1
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model Trelis/Qwen3-4B-gemini_synth_50_random_split_1_training_fixed-20250723-154652 --independent-attempts --base-url http://157.66.254.40:18942/v1
 ```
 Looks like the model has forgotten to reason as the first few tokens are not properly formed.
 
@@ -364,7 +364,7 @@ python3 generate_training_data.py --model "google/gemini-2.5-flash,qwen/qwen3-4b
 
 Start by doing one run on the full arc-agi-1 dataset all_evaluation:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 50 --max_turns 8 --model qwen/Qwen2.5-Coder-7B-Instruct --independent-attempts --base-url http://69.30.85.155:22006/v1 --qwen-no-think --max-tokens 2000
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 50 --max_turns 8 --model qwen/Qwen2.5-Coder-7B-Instruct --independent-attempts --base-url http://69.30.85.155:22006/v1 --qwen-no-think --max-tokens 2000
 ```
 Dataset: arc-agi-1
 Subset: all_evaluation
@@ -403,7 +403,7 @@ Results saved to: logs/20250723_141951_summary_arc-agi-1_all_evaluation.json
 
 and then test the fine-tuned model (Trelis/Qwen2.5-Coder-7B-Instruct-gemini_synth_50_random_split_1_training-20250723-113848):
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model Trelis/Qwen2.5-Coder-7B-Instruct-gemini_synth_50_random_split_1_training-20250723-113848 --independent-attempts --base-url http://69.30.85.155:22102/v1 --qwen-no-think --max-tokens 2000
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model Trelis/Qwen2.5-Coder-7B-Instruct-gemini_synth_50_random_split_1_training-20250723-113848 --independent-attempts --base-url http://69.30.85.155:22102/v1 --qwen-no-think --max-tokens 2000
 ```
 Dataset: arc-agi-1
 Subset: all_evaluation
@@ -453,7 +453,7 @@ uv run python generate_training_data.py --model "google/gemini-2.5-flash" --outp
 
 I've trained with batch size one and now will try to run on that model to test performance on the middle training 10 dataset:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 3 --max_workers 10 --max_turns 8 --model qwen_gemini_synth_10-23jul --independent-attempts --base-url http://69.30.85.155:22010/v1 --qwen-no-think --max-tokens 2000
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 3 --max_workers 10 --max_turns 8 --model qwen_gemini_synth_10-23jul --independent-attempts --base-url http://69.30.85.155:22010/v1 --qwen-no-think --max-tokens 2000
 ```
 
 Dataset: arc-agi-1
@@ -502,7 +502,7 @@ Aggregate results saved to: logs/20250723_093311_aggregate_summary_arc-agi-1_mid
 
 and then test performance on the evaluation set:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 10 --max_turns 8 --model qwen_gemini_synth_10-23jul --independent-attempts --base-url http://69.30.85.155:22010/v1 --qwen-no-think --max-tokens 2000
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 10 --max_turns 8 --model qwen_gemini_synth_10-23jul --independent-attempts --base-url http://69.30.85.155:22010/v1 --qwen-no-think --max-tokens 2000
 ```
 Stopped it early but all first 108/400 tasks.
 
@@ -520,7 +520,7 @@ Looks overtrained as well.
 
 Run the model on the middle training 10 dataset:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 3 --max_workers 10 --max_turns 8 --model qwen_gemini_synth_10-23jul --independent-attempts --base-url http://69.30.85.155:22172/v1 --qwen-no-think --max-tokens 2000
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 3 --max_workers 10 --max_turns 8 --model qwen_gemini_synth_10-23jul --independent-attempts --base-url http://69.30.85.155:22172/v1 --qwen-no-think --max-tokens 2000
 ```
 This gets none of the training examples correct...
 
@@ -528,7 +528,7 @@ This gets none of the training examples correct...
 
 Generate data with gemini first:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 25 --max_turns 8 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 25 --max_turns 8 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
 ```
 Dataset: arc-agi-1
 Subset: random_split_1_training
@@ -562,7 +562,7 @@ Aggregate results saved to: logs/20250723_103715_aggregate_summary_arc-agi-1_ran
 
 and test baseline performance with Qwen3 4B:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 25 --max_turns 8 --model qwen/qwen3-4b --independent-attempts --base-url http://69.30.85.155:22189/v1 --qwen-no-think
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 25 --max_turns 8 --model qwen/qwen3-4b --independent-attempts --base-url http://69.30.85.155:22189/v1 --qwen-no-think
 ```
 this data can also be used for training!
 Dataset: arc-agi-1
@@ -614,7 +614,7 @@ Statistics:
 
 Then run the model on the random split 1 training dataset:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 25 --max_turns 8 --model Trelis/gemini_synth_50_random_split_1_training-23jul-1epoch --independent-attempts --base-url http://69.30.85.155:22199/v1 --qwen-no-think --max-tokens 2000
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 25 --max_turns 8 --model Trelis/gemini_synth_50_random_split_1_training-23jul-1epoch --independent-attempts --base-url http://69.30.85.155:22199/v1 --qwen-no-think --max-tokens 2000
 ```
 Dataset: arc-agi-1
 Subset: random_split_1_training
@@ -648,7 +648,7 @@ Aggregate results saved to: logs/20250723_113421_aggregate_summary_arc-agi-1_ran
 
 and test on the evaluation dataset:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model Trelis/gemini_synth_50_random_split_1_training-23jul-1epoch --independent-attempts --base-url http://69.30.85.155:22199/v1 --qwen-no-think --max-tokens 2000
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model Trelis/gemini_synth_50_random_split_1_training-23jul-1epoch --independent-attempts --base-url http://69.30.85.155:22199/v1 --qwen-no-think --max-tokens 2000
 ```
 
 ==================================================
@@ -675,7 +675,7 @@ Results saved to: logs/20250723_114206_summary_arc-agi-1_all_evaluation_run1.jso
 ### Trying out the qwen coder model.
 
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model Trelis/Qwen2.5-Coder-7B-Instruct-gemini_synth_50_random_split_1_training-20250723-113848 --independent-attempts --base-url http://69.30.85.155:22102/v1 --qwen-no-think --max-tokens 2000
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model Trelis/Qwen2.5-Coder-7B-Instruct-gemini_synth_50_random_split_1_training-20250723-113848 --independent-attempts --base-url http://69.30.85.155:22102/v1 --qwen-no-think --max-tokens 2000
 ```
 
 Dataset: arc-agi-1
@@ -722,7 +722,7 @@ Going to run a runpod template without the reasoning parser so I can see the raw
 
 Re-run a fine-tuned model then to see how it does:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 1 --max_workers 10 --max_turns 8 --model qwen_gemini_synth_10-22jul --independent-attempts --base-url http://69.30.85.165:22134/v1 --qwen-no-think
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 1 --max_workers 10 --max_turns 8 --model qwen_gemini_synth_10-22jul --independent-attempts --base-url http://69.30.85.165:22134/v1 --qwen-no-think
 ```
 
 **update** I found that the masking after think tokens was missing two new lines. Wouldn't imagine it causes issues but sometimes things like this do. 
@@ -736,7 +736,7 @@ uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 -
 ---
 In the meantime, will create some more data to use for validation using the shortest training 10 dataset.
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 1 --max_workers 10 --max_turns 8 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 1 --max_workers 10 --max_turns 8 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
 ```
 and then will set up a dataset using that by filtering for the model and subset and dataset:
 ```bash
@@ -747,7 +747,7 @@ uv run python generate_training_data.py --model "google/gemini-2.5-flash" --outp
 
 Running the gemini flash thinking model to get some data.
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_1 --repeat-runs 3 --max_workers 3 --max_turns 8 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset middle_training_1 --repeat-runs 3 --max_workers 3 --max_turns 8 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
 ```
 Gets it correct on the first or second attempt each time.
 Dataset: arc-agi-1
@@ -780,7 +780,7 @@ Aggregate results saved to: logs/20250722_155732_aggregate_summary_arc-agi-1_sho
 
 Evaluating baseline performance of the qwen 3 4b model:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_1 --repeat-runs 3 --max_workers 3 --max_turns 8 --model qwen/qwen3-4b --independent-attempts --base-url http://69.30.85.155:22025/v1 --qwen-no-think
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset middle_training_1 --repeat-runs 3 --max_workers 3 --max_turns 8 --model qwen/qwen3-4b --independent-attempts --base-url http://69.30.85.155:22025/v1 --qwen-no-think
 ```
 Gets it wrong all of the time.
 
@@ -820,7 +820,7 @@ uv run python generate_training_data.py --model "google/gemini-2.5-flash" --outp
 ### Create a validation dataset using Gemini as well.
 
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_1v --repeat-runs 3 --max_workers 3 --max_turns 8 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset middle_training_1v --repeat-runs 3 --max_workers 3 --max_turns 8 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
 ```
 Gets that correct:
 Dataset: arc-agi-1
@@ -862,7 +862,7 @@ All seems to be working fine on a single row. Moving now to try 10 rows.
 
 ### 10 Tasks at a time
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 3 --max_workers 10 --max_turns 8 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 3 --max_workers 10 --max_turns 8 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
 ```
 
 Then creating a dataset from that to use for fine-tuning:
@@ -900,14 +900,14 @@ Aggregate results saved to: logs/20250722_174923_aggregate_summary_arc-agi-1_mid
 
 And try to evaluate the untuned model on those:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 3 --max_workers 10 --max_turns 8 --model qwen/qwen3-4b --independent-attempts --base-url http://69.30.85.155:22025/v1 --qwen-no-think
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 3 --max_workers 10 --max_turns 8 --model qwen/qwen3-4b --independent-attempts --base-url http://69.30.85.155:22025/v1 --qwen-no-think
 ```
 The model is getting none correct!!! which makes sense as these are of middle length.
 
 
 Re-run a fine-tuned model then to see how it does:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 3 --max_workers 10 --max_turns 1 --model Trelis/gemini_synth_10-22jul --independent-attempts --base-url http://69.30.85.155:22131/v1 --qwen-no-think --max-tokens 2000
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 3 --max_workers 10 --max_turns 1 --model Trelis/gemini_synth_10-22jul --independent-attempts --base-url http://69.30.85.155:22131/v1 --qwen-no-think --max-tokens 2000
 ```
 This is not consistently producing correct text....
 
@@ -915,7 +915,7 @@ This is not consistently producing correct text....
 
 Run on shortest with the untuned model (for lewis):
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 3 --max_workers 10 --max_turns 8 --model qwen/qwen3-4b --independent-attempts --base-url http://69.30.85.155:22025/v1 --qwen-no-think
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 3 --max_workers 10 --max_turns 8 --model qwen/qwen3-4b --independent-attempts --base-url http://69.30.85.155:22025/v1 --qwen-no-think
 ```
 ======================================================================
 AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
@@ -960,7 +960,7 @@ Morning session:
 **Results**
 
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 64 --max_turns 8 --model julien31/Soar-qwen-7b --independent-attempts --base-url http://185.216.21.89:29830/v1 --max-tokens 2000
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 64 --max_turns 8 --model julien31/Soar-qwen-7b --independent-attempts --base-url http://185.216.21.89:29830/v1 --max-tokens 2000
 ```
 
 Dataset: arc-agi-1
@@ -993,7 +993,7 @@ Aggregate results saved to: logs/20250722_115704_aggregate_summary_arc-agi-1_ran
 
 ### Compare to running with temperature of zero.
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 64 --max_turns 8 --model julien31/Soar-qwen-7b --independent-attempts --base-url http://185.216.21.89:29830/v1 --max-tokens 2000 --temperature 0.0
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 64 --max_turns 8 --model julien31/Soar-qwen-7b --independent-attempts --base-url http://185.216.21.89:29830/v1 --max-tokens 2000 --temperature 0.0
 ```
 
 Dataset: arc-agi-1
@@ -1026,7 +1026,7 @@ Aggregate results saved to: logs/20250722_120001_aggregate_summary_arc-agi-1_ran
 
 ### Compare to the Qwen3 4B Fine-tuned model with temperature zero.
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 64 --max_turns 8 --model Trelis/gemini-2.5-smol-21-jul --independent-attempts --base-url http://69.30.85.160:22086/v1 --max-tokens 2000 --temperature 0.0
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 64 --max_turns 8 --model Trelis/gemini-2.5-smol-21-jul --independent-attempts --base-url http://69.30.85.160:22086/v1 --max-tokens 2000 --temperature 0.0
 ```
 Dataset: arc-agi-1
 Subset: random_split_1_training
@@ -1059,7 +1059,7 @@ Aggregate results saved to: logs/20250722_120546_aggregate_summary_arc-agi-1_ran
 Note that was a bad idea checking with temperature zero, re-running with recommended temperature settings.
 
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 64 --max_turns 8 --model Trelis/gemini-2.5-smol-21-jul --independent-attempts --base-url http://69.30.85.160:22086/v1 --max-tokens 2000 --temperature 0.0
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 64 --max_turns 8 --model Trelis/gemini-2.5-smol-21-jul --independent-attempts --base-url http://69.30.85.160:22086/v1 --max-tokens 2000 --temperature 0.0
 ```
 
 Dataset: arc-agi-1
@@ -1092,7 +1092,7 @@ Aggregate results saved to: logs/20250722_121056_aggregate_summary_arc-agi-1_ran
 
 ### Compare to a baseline Qwen3 4B model.
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 64 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url http://205.196.17.106:9512/v1 --max-tokens 2000 --qwen-no-think
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 64 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url http://205.196.17.106:9512/v1 --max-tokens 2000 --qwen-no-think
 ```
 Dataset: arc-agi-1
 Subset: random_split_1_training
@@ -1122,7 +1122,7 @@ All Attempts Success Rate:
 
 ### Compare to a baseline Qwen 2.5 Coder 7B model.
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 64 --max_turns 8 --model Qwen/Qwen2.5-Coder-7B-Instruct --independent-attempts --base-url http://205.196.17.106:9526/v1 --max-tokens 2000
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 64 --max_turns 8 --model Qwen/Qwen2.5-Coder-7B-Instruct --independent-attempts --base-url http://205.196.17.106:9526/v1 --max-tokens 2000
 ```
 Dataset: arc-agi-1
 Subset: random_split_1_training
@@ -1186,7 +1186,7 @@ Aggregate results saved to: logs/20250722_123353_aggregate_summary_arc-agi-1_ran
 
 ### Check the evaluation set performance of the SOAR Qwen 7B model.
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 64 --max_turns 8 --model julien31/Soar-qwen-7b --independent-attempts --base-url http://185.216.21.89:29830/v1 --max-tokens 2000
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 64 --max_turns 8 --model julien31/Soar-qwen-7b --independent-attempts --base-url http://185.216.21.89:29830/v1 --max-tokens 2000
 ```
 
 SUMMARY
@@ -1209,7 +1209,7 @@ Results saved to: logs/20250722_120932_summary_arc-agi-1_all_evaluation.json
 
 Repeated then with three runs:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 64 --max_turns 8 --model julien31/Soar-qwen-7b --independent-attempts --base-url http://185.216.21.89:29830/v1 --max-tokens 2000
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 64 --max_turns 8 --model julien31/Soar-qwen-7b --independent-attempts --base-url http://185.216.21.89:29830/v1 --max-tokens 2000
 ```
 Dataset: arc-agi-1
 Subset: all_evaluation
@@ -1252,14 +1252,14 @@ Aggregate results saved to: logs/20250722_122730_aggregate_summary_arc-agi-1_all
 
 #### Clean Code Fine-tune
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 64 --max_turns 8 --model Trelis/gemini-2.5-smol-21-jul --independent-attempts --base-url http://69.30.85.165:22083/v1 --max-tokens 2000
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 64 --max_turns 8 --model Trelis/gemini-2.5-smol-21-jul --independent-attempts --base-url http://69.30.85.165:22083/v1 --max-tokens 2000
 ```
 
 Hoping to beat about 0.5% on single attempt and ~1.5% on 8-attempt...
 
 We can also check the training dataset performance:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 3 --max_workers 64 --max_turns 8 --model Trelis/gemini-2.5-smol-21-jul --independent-attempts --base-url http://69.30.85.165:22083/v1 --max-tokens 2000
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 3 --max_workers 64 --max_turns 8 --model Trelis/gemini-2.5-smol-21-jul --independent-attempts --base-url http://69.30.85.165:22083/v1 --max-tokens 2000
 ```
 gave:
 
@@ -1296,7 +1296,7 @@ Suggests there is just insufficient training... as the loss is not plateauing. M
 
 And then all of the training set, to compare with the baseline model used:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_training --repeat-runs 1 --max_workers 64 --max_turns 1 --model Trelis/gemini-2.5-smol-21-jul --independent-attempts --base-url http://69.30.85.165:22083/v1 --max-tokens 2000
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset all_training --repeat-runs 1 --max_workers 64 --max_turns 1 --model Trelis/gemini-2.5-smol-21-jul --independent-attempts --base-url http://69.30.85.165:22083/v1 --max-tokens 2000
 ```
 
 
@@ -1324,7 +1324,7 @@ SO we need to fix training!
 Increase LR up to 1e-4.
 
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 3 --max_workers 64 --max_turns 8 --model Trelis/gemini-2.5-smol-21-jul-1e-4 --independent-attempts --base-url http://69.30.85.165:22083/v1 --max-tokens 2000
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 3 --max_workers 64 --max_turns 8 --model Trelis/gemini-2.5-smol-21-jul-1e-4 --independent-attempts --base-url http://69.30.85.165:22083/v1 --max-tokens 2000
 ```
 
 Dataset: arc-agi-1
@@ -1357,7 +1357,7 @@ Aggregate results saved to: logs/20250721_144954_aggregate_summary_arc-agi-1_sho
 
 
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 1 --max_workers 64 --max_turns 8 --model Trelis/gemini-2.5-smol-21-jul-1e-4 --independent-attempts --base-url http://69.30.85.165:22083/v1 --max-tokens 2000
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 1 --max_workers 64 --max_turns 8 --model Trelis/gemini-2.5-smol-21-jul-1e-4 --independent-attempts --base-url http://69.30.85.165:22083/v1 --max-tokens 2000
 ```
 
 
@@ -1389,12 +1389,12 @@ Results saved to: logs/20250721_145046_summary_arc-agi-1_middle_training_10.json
 
 Quick test:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 64 --max_turns 1 --model Trelis/gemini-2.5-reasoning-smol-21-jul --independent-attempts --base-url http://63.141.33.85:22045/v1 --limit 1 --max-tokens 2000
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 64 --max_turns 1 --model Trelis/gemini-2.5-reasoning-smol-21-jul --independent-attempts --base-url http://63.141.33.85:22045/v1 --limit 1 --max-tokens 2000
 ```
 and then a full run:
 
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 64 --max_turns 8 --model Trelis/gemini-2.5-reasoning-smol-21-jul --independent-attempts --base-url http://63.141.33.85:22045/v1
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 64 --max_turns 8 --model Trelis/gemini-2.5-reasoning-smol-21-jul --independent-attempts --base-url http://63.141.33.85:22045/v1
 ```
 
 Trying to beat about 3.5% here of the baseline reasoning model.
@@ -1432,7 +1432,7 @@ uv run python generate_training_data.py \
 This is gemini 2.5 flash with medium reasoning effort (8k tokens of reasoning). It gets 35.2% correct on one shot. We could either increase reasoning effort and/or do more sampling to gather more data. Running o4-mini would also yield some more data. Either way, each sample for the full training set of 400 costs about $12. So, to get similar data quantity to the SOAR paper, we're looking at $500. Possibly with that level of sampling I estimate we end up getting about 75%+ correct (usually I see a doubling of score with 8x sampling, plus model diversity will give some boost too).
 
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_training --repeat-runs 1 --max_workers 64 --max_turns 1 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset all_training --repeat-runs 1 --max_workers 64 --max_turns 1 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
 ```
 
 SUMMARY
@@ -1461,35 +1461,35 @@ I'll just run once through (even though this won't give great statistical scorin
 
 Quick test:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_training --repeat-runs 1 --max_workers 64 --max_turns 1 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --limit 1
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset all_training --repeat-runs 1 --max_workers 64 --max_turns 1 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --limit 1
 ```
 Gemini requires a max_tokens parameter to be passed for reasoning, which I think may be nice because it allows a limit on how much reasoning to use and saves cost - I've set the default to 2k max!
 
 Run on the longest 10 training problems to see how many tokens that burns:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset longest_training_10 --repeat-runs 1 --max_workers 64 --max_turns 1 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset longest_training_10 --repeat-runs 1 --max_workers 64 --max_turns 1 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1
 ```
 It gets none of these correct. Try the shortest 10 problems:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 1 --max_workers 64 --max_turns 1 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 1 --max_workers 64 --max_turns 1 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1
 ```
 Gets 7/10 of these correct with a single attempt and 2k reasoning tokens.
 
 Then try the middle 10 problems:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 1 --max_workers 64 --max_turns 1 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 1 --max_workers 64 --max_turns 1 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1
 ```
 Gets 3/10 correct with 2k reasoning tokens. Cost is $0.20 and 100k tokens used! Implying the cost for all 400 would possibly be around $80.
 
 To try and get some hard ones correct, let's increase to 8k reasoning tokens:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset longest_training_10 --repeat-runs 1 --max_workers 64 --max_turns 1 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset longest_training_10 --repeat-runs 1 --max_workers 64 --max_turns 1 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
 ```
 This is getting 0 correct and now the cost is $0.35, implying a cost of $14 to do a single attempt at all 400 (probably would cost less).
 
 Going to re-run the medium difficulty with 8k reasoning tokens:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 1 --max_workers 64 --max_turns 1 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 1 --max_workers 64 --max_turns 1 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
 ```
 This is getting 6/10 and the cost is $0.3, implying a cost for 400 problems of about $12.
 
@@ -1510,7 +1510,7 @@ Cost is about $3.25 per run (with 8 attempts per problem max).
 AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
 ====================
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 64 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url http://91.199.227.82:13579/v1 --qwen-no-think
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 64 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url http://91.199.227.82:13579/v1 --qwen-no-think
 ```
 Dataset: arc-agi-1
 Subset: all_evaluation
@@ -1545,7 +1545,7 @@ Aggregate results saved to: logs/20250718_180714_aggregate_summary_arc-agi-1_all
 **Note that the cost for one run of the 400 arc-agi-1 evaluation tasks is about $0.58 (absolute cost doesn't mean anything, but it's relative. When I run on runpod I just assign $0.15/MM input and $0.6/MM output.).**
 
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 64 --max_turns 1 --model Qwen/Qwen3-4B --independent-attempts --base-url http://91.199.227.82:13579/v1 --qwen-no-think
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 64 --max_turns 1 --model Qwen/Qwen3-4B --independent-attempts --base-url http://91.199.227.82:13579/v1 --qwen-no-think
 ```
 
 
@@ -1586,7 +1586,7 @@ The motivation for reasoning would be if it is capable of reaching correct answe
 
 
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 64 --max_turns 1 --model Qwen/Qwen3-4B --independent-attempts --base-url http://91.199.227.82:13579/v1
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 64 --max_turns 1 --model Qwen/Qwen3-4B --independent-attempts --base-url http://91.199.227.82:13579/v1
 ```
 Dataset: arc-agi-1
 Subset: all_evaluation
@@ -1626,7 +1626,7 @@ The goal is to see if an un-fine-tuned Qwen-4B is worse than about 3% on single-
 
 
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url http://157.66.254.42:10957/v1 --qwen-no-think
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url http://157.66.254.42:10957/v1 --qwen-no-think
 ```
 Dataset: arc-agi-1
 Subset: gpt-4.1-mini-calib-train
@@ -1660,7 +1660,7 @@ Aggregate results saved to: logs/20250717_120114_aggregate_summary_arc-agi-1_gpt
 
 
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 8 --model Trelis/lorge-16-jul --independent-attempts --base-url http://157.66.254.42:14987/v1 --qwen-no-think
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 8 --model Trelis/lorge-16-jul --independent-attempts --base-url http://157.66.254.42:14987/v1 --qwen-no-think
 ```
 Dataset: arc-agi-1
 Subset: gpt-4.1-mini-calib-train
@@ -1706,7 +1706,7 @@ I split out a random 32 rows of data to use as a validation dataset during fine-
 
 
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 8 --model Trelis/lorge-16-jul --independent-attempts --base-url http://213.181.122.251:13589/v1
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 8 --model Trelis/lorge-16-jul --independent-attempts --base-url http://213.181.122.251:13589/v1
 ```
 Dataset: arc-agi-1
 Subset: gpt-4.1-mini-calib-train
@@ -1741,7 +1741,7 @@ I need to look at cost numbers but it seems like the cost of doing 8 samples wit
 
 
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 64 --model Trelis/lorge-16-jul --independent-attempts --base-url http://213.181.122.251:13589/v1
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 64 --model Trelis/lorge-16-jul --independent-attempts --base-url http://213.181.122.251:13589/v1
 ```
 Dataset: arc-agi-1
 Subset: gpt-4.1-mini-calib-train
@@ -1775,7 +1775,7 @@ and, for fun, try the shortest 100 of the ARC AGI 1 dataset:
 - Only got to do one of the runs and got 7/100, so it's weak on this.
 
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_100 --repeat-runs 3 --max_workers 64 --max_turns 64 --model Trelis/lorge-16-jul --independent-attempts --base-url http://213.181.122.251:13589/v1
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_evaluation_100 --repeat-runs 3 --max_workers 64 --max_turns 64 --model Trelis/lorge-16-jul --independent-attempts --base-url http://213.181.122.251:13589/v1
 ```
 
 
@@ -1817,35 +1817,35 @@ Runpod One-click-template [here](https://console.runpod.io/deploy?template=agyu4
 Qwen4 when using reasoning seems of similar capability to gpt-4.1-mini or maybe gpt-4.1 when it comes to solving ARC-AGI-1 problems. All of these models are too weak to be able to solve ARC AGI 2 problems, although they can solve some of the arc-agi-1 problems without fine-tuning.
 
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 25 --max_turns 8 --model qwen/qwen3-32b --independent-attempts --base-url https://openrouter.ai/api/v1 --limit 1
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 25 --max_turns 8 --model qwen/qwen3-32b --independent-attempts --base-url https://openrouter.ai/api/v1 --limit 1
 ```
 is far too slow - it's 50 toks... So I tried with runpod and moving to a faster MoE model, testing first:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 1 --max_workers 64 --max_turns 1 --model Qwen/Qwen3-30B-A3B-FP8 --independent-attempts --base-url https://9433j1ookvmo7y-8000.proxy.runpod.net/v1 --limit 1
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 1 --max_workers 64 --max_turns 1 --model Qwen/Qwen3-30B-A3B-FP8 --independent-attempts --base-url https://9433j1ookvmo7y-8000.proxy.runpod.net/v1 --limit 1
 ```
 which runs at 170 toks, then running:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 16 --max_turns 8 --model Qwen/Qwen3-30B-A3B-FP8 --independent-attempts --base-url https://9433j1ookvmo7y-8000.proxy.runpod.net/v1
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 16 --max_turns 8 --model Qwen/Qwen3-30B-A3B-FP8 --independent-attempts --base-url https://9433j1ookvmo7y-8000.proxy.runpod.net/v1
 ```
 which runs at about 70 toks. This is still too slow for today so I'm trying the 4B model:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 16 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url https://9433j1ookvmo7y-8000.proxy.runpod.net/v1
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 16 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url https://9433j1ookvmo7y-8000.proxy.runpod.net/v1
 ```
 this does about 100 toks (1705 total tokens). BTW, it's faster to increase batch size, it's just you may hit timeouts on individual requests.
 
 Running with a bit larger batch size to get speed-up:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 1 --max_workers 1 --max_turns 1 --model Qwen/Qwen3-4B --independent-attempts --base-url https://9433j1ookvmo7y-8000.proxy.runpod.net/v1 --limit 1
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 1 --max_workers 1 --max_turns 1 --model Qwen/Qwen3-4B --independent-attempts --base-url https://9433j1ookvmo7y-8000.proxy.runpod.net/v1 --limit 1
 ```
 and then in bulk:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url https://9433j1ookvmo7y-8000.proxy.runpod.net/v1
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url https://9433j1ookvmo7y-8000.proxy.runpod.net/v1
 ```
 which runs at about 87 toks (2800 total tokens per second).
 
 I realised the runpod proxy has a 100 second timeout causing issues:
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url http://157.66.254.42:15712/v1
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url http://157.66.254.42:15712/v1
 ```
 
 
@@ -1853,7 +1853,7 @@ Trying to beat gpt-4.1-mini (similar to gpt-4.1 in performance), so we're trying
 
 
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url http://157.66.254.42:15712/v1
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 32 --max_turns 8 --model Qwen/Qwen3-4B --independent-attempts --base-url http://157.66.254.42:15712/v1
 ```
 Dataset: arc-agi-1
 Subset: gpt-4.1-mini-calib-train
@@ -1891,7 +1891,7 @@ I just took a small subset of ~50 samples from across my log files and made some
 I've got a trained model: `ft:gpt-4.1-nano-2025-04-14:trelis-ltd:15-jul-smol-test:BtaYzBKJ`. This is only trained on a tiny bit of data.
 
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 25 --max_turns 8 --model ft:gpt-4.1-nano-2025-04-14:trelis-ltd:15-jul-smol-test:BtaYzBKJ --independent-attempts
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 25 --max_turns 8 --model ft:gpt-4.1-nano-2025-04-14:trelis-ltd:15-jul-smol-test:BtaYzBKJ --independent-attempts
 ```
 
 Baseline to beat is about is about 15 and 37% with one and up to 8 attempts.
@@ -1906,7 +1906,7 @@ Model: ft:gpt-4.1-nano-2025-04-14:trelis-ltd:jul-15-v2-smol-test:Btb3wOvs
 Number of runs: 3
 API failures excluded from analysis: YES
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 25 --max_turns 8 --model ft:gpt-4.1-nano-2025-04-14:trelis-ltd:jul-15-v2-smol-test:Btb3wOvs --independent-attempts
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 25 --max_turns 8 --model ft:gpt-4.1-nano-2025-04-14:trelis-ltd:jul-15-v2-smol-test:Btb3wOvs --independent-attempts
 ```
 
 
@@ -1932,7 +1932,7 @@ All Attempts Success Rate:
 Which is worse than a baseline of:
 
 ```bash
- uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-nano --independent-attempts
+ uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-nano --independent-attempts
 ```
 Dataset: arc-agi-1
 Subset: gpt-4.1-mini-calib-train
@@ -1975,7 +1975,7 @@ All Attempts Success Rate:
 AGGREGATE STATISTICS:
 ----------------------------------------------------------------------
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini --disable-text-grids --independent-attempts
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini --disable-text-grids --independent-attempts
 ```
 Attempt 1 Only Success Rate:
   Mean: 3.6%
@@ -1998,7 +1998,7 @@ All Attempts Success Rate:
 AGGREGATE STATISTICS - with images:
 ----------------------------------------------------------------------
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini --independent-attempts
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini --independent-attempts
 ```
 Attempt 1 Only Success Rate:
   Mean: 15.2%
@@ -2014,7 +2014,7 @@ Rough cost per run: $0.63
 AGGREGATE STATISTICS:
 ----------------------------------------------------------------------
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini --disable_images  --independent-attempts
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini --disable_images  --independent-attempts
 ```
 Attempt 1 Only Success Rate:
   Mean: 14.5%
@@ -2036,13 +2036,13 @@ Idea is to run the longest 100 training examples from the arc-agi-1 dataset:
 I think o4-mini solves are too hard for gpt-4.1-mini.
 
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_100 --repeat-runs 1 --max_workers 25 --max_turns 1 --model gpt-4.1-nano --independent-attempts
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_100 --repeat-runs 1 --max_workers 25 --max_turns 1 --model gpt-4.1-nano --independent-attempts
 
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_100 --repeat-runs 1 --max_workers 25 --max_turns 1 --model gpt-4.1-mini --independent-attempts
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_100 --repeat-runs 1 --max_workers 25 --max_turns 1 --model gpt-4.1-mini --independent-attempts
 
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_100 --repeat-runs 1 --max_workers 25 --max_turns 1 --model gpt-4.1 --independent-attempts
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_100 --repeat-runs 1 --max_workers 25 --max_turns 1 --model gpt-4.1 --independent-attempts
 
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_100 --repeat-runs 1 --max_workers 25 --max_turns 1 --model o4-mini --independent-attempts
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_100 --repeat-runs 1 --max_workers 25 --max_turns 1 --model o4-mini --independent-attempts
 ```
 
 **Results Summary:**
@@ -2060,7 +2060,7 @@ This dataset contains problems that stronger models (o4-mini/gpt-4.1) can solve 
 
 **Usage:**
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 1 --max_workers 25 --max_turns 1 --model gpt-4.1-mini --independent-attempts
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train --repeat-runs 1 --max_workers 25 --max_turns 1 --model gpt-4.1-mini --independent-attempts
 ```
 
 ## 2025 11th July
@@ -2083,7 +2083,7 @@ BTW the whole motivation is to try and remove problems that are too easy and als
 AGGREGATE STATISTICS - independent attempts:
 ----------------------------------------------------------------------
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini --independent-attempts
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset gpt-4.1-mini-calib --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini --independent-attempts
 ```
 Attempt 1 Only Success Rate:
   Mean: 16.5%
@@ -2099,7 +2099,7 @@ Cost per run about $1.70.
 AGGREGATE STATISTICS:
 ----------------------------------------------------------------------
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset gpt-4.1-mini-calib --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini
 ```
 Turn 1 Only Success Rate:
   Mean: 15.1%
@@ -2137,7 +2137,7 @@ The base is the arc-agi-1 dataset, evaluation split.
 AGGREGATE STATISTICS - with independent attempts (i.e. sampling):
 ----------------------------------------------------------------------
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_100 --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini --independent-attempts
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_evaluation_100 --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini --independent-attempts
 ```
 Attempt 1 Only Success Rate:
   Mean: 11.7%
@@ -2153,7 +2153,7 @@ Note that cost of the entire run is about $1.70 per run.
 AGGREGATE STATISTICS - with feedback:
 ----------------------------------------------------------------------
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_100 --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_evaluation_100 --repeat-runs 3 --max_workers 25 --max_turns 8 --model gpt-4.1-mini
 ```
 Turn 1 Only Success Rate:
   Mean: 13.0%
@@ -2173,7 +2173,7 @@ Plan is first to see how gpt-4.1-mini and nano score on the shortest arc-agi-1 t
 SUMMARY
 
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_100 --repeat-runs 1 --max_workers 10 --max_turns 8 --model gpt-4.1-mini --independent-attempts
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_evaluation_100 --repeat-runs 1 --max_workers 10 --max_turns 8 --model gpt-4.1-mini --independent-attempts
 ```
 Dataset: arc-agi-1
 Subset: shortest_evaluation_100
@@ -2192,7 +2192,7 @@ Total cost: $1.700422
 SUMMARY
 
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_100 --repeat-runs 1 --max_workers 10 --max_turns 8 --model gpt-4.1-nano --independent-attempts
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_evaluation_100 --repeat-runs 1 --max_workers 10 --max_turns 8 --model gpt-4.1-nano --independent-attempts
 ```
 Dataset: arc-agi-1
 Subset: shortest_evaluation_100
@@ -2225,7 +2225,7 @@ Re-run this time with 10 runs of each.
 AGGREGATE STATISTICS - with independent attempts (i.e. sampling):
 ----------------------------------------------------------------------
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset mit-easy --repeat-runs 10 --max_workers 10 --max_turns 8 --model gpt-4.1-mini --independent-attempts
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset mit-easy --repeat-runs 10 --max_workers 10 --max_turns 8 --model gpt-4.1-mini --independent-attempts
 ```
 Attempt 1 Only Success Rate:
   Mean: 23.0%
@@ -2240,7 +2240,7 @@ All Attempts Success Rate:
 AGGREGATE STATISTICS - with feedback:
 ----------------------------------------------------------------------
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset mit-easy --repeat-runs 10 --max_workers 10 --max_turns 8 --model gpt-4.1-mini
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset mit-easy --repeat-runs 10 --max_workers 10 --max_turns 8 --model gpt-4.1-mini
 ```
 Turn 1 Only Success Rate:
   Mean: 22.5%
@@ -2255,7 +2255,7 @@ All Turns Success Rate:
 AGGREGATE STATISTICS - with independent attempts (i.e. sampling):
 ----------------------------------------------------------------------
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset mit-easy --repeat-runs 3 --max_workers 10 --max_turns 8 --model gpt-4.1-mini --independent-attempts
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset mit-easy --repeat-runs 3 --max_workers 10 --max_turns 8 --model gpt-4.1-mini --independent-attempts
 ```
 Attempt 1 Only Success Rate:
   Mean: 33.3%
@@ -2270,7 +2270,7 @@ All Attempts Success Rate:
 AGGREGATE STATISTICS - with feedback:
 ----------------------------------------------------------------------
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset mit-easy --repeat-runs 3 --max_workers 10 --max_turns 8 --model gpt-4.1-mini
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset mit-easy --repeat-runs 3 --max_workers 10 --max_turns 8 --model gpt-4.1-mini
 ```
 Turn 1 Only Success Rate:
   Mean: 26.7%
@@ -2287,7 +2287,7 @@ o4-mini:
 AGGREGATE STATISTICS - with independent attempts (i.e. sampling):
 ----------------------------------------------------------------------
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset mit-medium --repeat-runs 3 --max_workers 10 --max_turns 8 --model o4-mini --independent-attempts
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset mit-medium --repeat-runs 3 --max_workers 10 --max_turns 8 --model o4-mini --independent-attempts
 ```
 Attempt 1 Only Success Rate:
   Mean: 13.3%
@@ -2302,7 +2302,7 @@ All Attempts Success Rate:
 AGGREGATE STATISTICS - with feedback:
 ----------------------------------------------------------------------
 ```bash
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset mit-medium --repeat-runs 3 --max_workers 10 --max_turns 8 --model o4-mini
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset mit-medium --repeat-runs 3 --max_workers 10 --max_turns 8 --model o4-mini
 ```
 Turn 1 Only Success Rate:
   Mean: 22.9%
