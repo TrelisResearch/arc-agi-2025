@@ -6,9 +6,9 @@ from typing import Dict
 class PromptLoader:
     """Load versioned prompt strings from the prompt-strings directory"""
 
-    def __init__(self, base_dir: str = Path(__file__).parent / "prompt-strings"):
+    def __init__(self, base_dir: str = str(Path(__file__).parent / "prompt-strings")):
         self.base_dir = Path(base_dir)
-        self._prompt_cache = {}
+        self._prompt_cache: Dict[str, str] = {}
     
     def load_prompt(self, prompt_type: str, version: str = "v1") -> str:
         """Load a prompt from file, with caching"""
