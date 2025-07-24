@@ -14,6 +14,8 @@ import re
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
+from datasets import Dataset
+from huggingface_hub import HfApi
 
 def load_task_data(task_id: str, dataset: str = "arc-agi-1") -> Optional[Dict]:
     """Load task data from the data folder"""
@@ -30,8 +32,14 @@ def load_task_data(task_id: str, dataset: str = "arc-agi-1") -> Optional[Dict]:
     return None
 
 def format_grid(grid: List[List[int]]) -> str:
-    """Format a grid as a string"""
-    return '\n'.join(' '.join(str(cell) for cell in row) for row in grid)
+    """Format a grid as a string, preserving empty rows with special marker"""
+    lines = []
+    for row in grid:
+        if len(row) == 0:
+            lines.append('[EMPTY_ROW]')
+        else:
+            lines.append(' '.join(str(cell) for cell in row))
+    return '\n'.join(lines)
 
 def format_task_for_prompt(task_data: Dict, include_test: bool = False) -> str:
     """Format task data into a string suitable for prompting"""
@@ -360,7 +368,73 @@ def extract_programs_from_log(log_path: str) -> List[Dict]:
     
     return programs
 
-def validate_single_program(prog_data: Dict) -> Optional[Dict]:
+def is_transduction_cheating(program: str, task_data: Dict, debug: bool = False) -> Tuple[bool, str]:
+    """
+    Detect if a program is cheating by hardcoding outputs (transduction).
+    Returns (is_cheating, reason).
+    """
+    
+    # Check 1: Very long lines (likely hardcoded values)
+    lines = program.split('\n')
+    for line_num, line in enumerate(lines, 1):
+        if len(line) > 200:
+            reason = f"Line {line_num} exceeds 200 characters (likely hardcoded)"
+            if debug:
+                print(f"    🚫 Transduction detected: {reason}")
+                print(f"       Line: {line[:100]}...")
+            return True, reason
+    
+    # Check 2: Hardcoded output values in code
+    # Determine if task has 1x1 outputs (special case)
+    flag_one = any((1, 1) == (len(example["output"]), len(example["output"][0]) if example["output"] else 0) 
+                   for example in task_data.get("train", []))
+    
+    # Collect all outputs (training + test)
+    all_outputs = []
+    
+    # Add training outputs
+    for example in task_data.get("train", []):
+        if example.get("output"):
+            all_outputs.append(example["output"])
+    
+    # Add test outputs if available
+    for test_example in task_data.get("test", []):
+        if test_example.get("output"):
+            all_outputs.append(test_example["output"])
+    
+    if not all_outputs:
+        return False, ""
+    
+    # Create string representations of outputs
+    if flag_one:
+        # For 1x1 outputs, only remove spaces
+        def clean_string(s):
+            return str(s).replace(' ', '')
+    else:
+        # For larger outputs, remove spaces and brackets
+        def clean_string(s):
+            return str(s).replace(' ', '').replace('[', '').replace(']', '')
+    
+    output_strings = [clean_string(output) for output in all_outputs]
+    cleaned_code = clean_string(program)
+    
+    # Check if any output appears in the code
+    for i, output_str in enumerate(output_strings):
+        if len(output_str) > 2 and output_str in cleaned_code:  # Only check non-trivial outputs
+            reason = f"Output {i+1} hardcoded in program: {output_str[:50]}..."
+            if debug:
+                print(f"    🚫 Transduction detected: {reason}")
+                # Show context around the hardcoded value
+                code_idx = cleaned_code.find(output_str)
+                context_start = max(0, code_idx - 30)
+                context_end = min(len(cleaned_code), code_idx + len(output_str) + 30)
+                context = cleaned_code[context_start:context_end]
+                print(f"       Code context: ...{context}...")
+            return True, reason
+    
+    return False, ""
+
+def validate_single_program(prog_data: Dict, args) -> Optional[Dict]:
     """Validate a single program and return qualified program data or None"""
     task_id = prog_data['task_id']
     program = prog_data['program']
@@ -370,24 +444,34 @@ def validate_single_program(prog_data: Dict) -> Optional[Dict]:
     if not task_data:
         return None
     
+    # Check for transduction/cheating (unless disabled)
+    if not args.no_transduction_filter:
+        is_cheating, cheat_reason = is_transduction_cheating(program, task_data, debug=args.debug)
+        if is_cheating:
+            prog_data['transduction_reason'] = cheat_reason
+            return None  # Reject cheating programs
+    
     # Always re-evaluate program to ensure consistency with training example creation
     evaluation = evaluate_program_on_task(program, task_data)
     solved_count = evaluation['solved_count']
     total_examples = evaluation['total_examples']
     
-    # Check if program executes successfully on at least one example
+    # Check if program executes successfully on ALL training examples
     successful_executions = sum(1 for result in evaluation['training_results'] 
                                if result.get('predicted_output') is not None 
                                and not result.get('error') 
                                and not result.get('timed_out'))
     
+    all_successful = successful_executions == total_examples
+    
     # Store the re-evaluated counts for later use
     prog_data['validated_solved_count'] = solved_count
     prog_data['validated_total_examples'] = total_examples
     prog_data['successful_executions'] = successful_executions
+    prog_data['all_examples_execute'] = all_successful
     
-    # Only include if program runs without error (at least one successful execution)
-    if successful_executions > 0:
+    # Only include if program runs without error on ALL training examples
+    if all_successful:
         return {
             'program_data': prog_data,
             'task_data': task_data
@@ -396,82 +480,285 @@ def validate_single_program(prog_data: Dict) -> Optional[Dict]:
     return None
 
 def create_training_example(program_data: Dict, task_data: Dict, args) -> Dict:
-    """Create a training example in JSONL format"""
-    # Create modified task data with program-generated outputs
-    modified_task_data = task_data.copy()
-    modified_task_data['train'] = []
-    
+    """Create a training example in competition dataset format"""
     program = program_data['program']
     
-    # Check if program correctly solves the test output (for reasoning inclusion)
-    test_correct = False
-    if args.reasoning and task_data.get('test') and len(task_data['test']) > 0:
-        test_input = task_data['test'][0]['input']
-        expected_test_output = task_data['test'][0]['output']
-        predicted_test_output, error, timed_out = execute_program(program, test_input)
-        
-        if (predicted_test_output is not None and not error and not timed_out and 
-            predicted_test_output == expected_test_output):
-            test_correct = True
+    # Extract training inputs and outputs
+    train_inputs = [example['input'] for example in task_data['train']]
+    train_outputs = [example['output'] for example in task_data['train']]
     
-    # Run the program on each training input to get what it actually produces
-    for example in task_data['train']:
-        train_input = example['input']
+    # Extract test inputs and outputs
+    test_inputs = [example['input'] for example in task_data['test']]
+    test_outputs = [example['output'] for example in task_data['test']]
+    
+    # Run the program on each training input to get predictions
+    predicted_train_outputs = []
+    correct_train_inputs = []
+    
+    for i, train_input in enumerate(train_inputs):
         predicted_output, error, timed_out = execute_program(program, train_input)
         
-        # If the program runs successfully, validate and use its output
         if predicted_output is not None and not error and not timed_out:
-            # Strict validation: reject entire program if ANY output is not a proper 2D grid
-            if not isinstance(predicted_output, list):
-                raise ValueError(f"Program returned invalid output format: expected list, got {type(predicted_output).__name__}")
-            if len(predicted_output) == 0:
-                raise ValueError(f"Program returned empty grid")
-            if not isinstance(predicted_output[0], list):
-                raise ValueError(f"Program returned 1D list instead of 2D grid")
-                
-            modified_example = {
-                'input': train_input,
-                'output': predicted_output  # Use program's actual output, not ground truth
-            }
-            modified_task_data['train'].append(modified_example)
+            # Validate output format
+            if not isinstance(predicted_output, list) or len(predicted_output) == 0 or not isinstance(predicted_output[0], list):
+                raise ValueError(f"Program returned invalid output format for training input {i}")
+            
+            # Validate cell values
+            for row_idx, row in enumerate(predicted_output):
+                if not isinstance(row, list):
+                    raise ValueError(f"Row {row_idx} is not a list in training output {i}")
+                for col_idx, cell in enumerate(row):
+                    if isinstance(cell, bool) or not isinstance(cell, int) or not (0 <= cell <= 9):
+                        raise ValueError(f"Invalid cell value at [{row_idx}][{col_idx}] in training output {i}: {cell}")
+            
+            predicted_train_outputs.append(predicted_output)
+            # Check if prediction matches ground truth
+            correct_train_inputs.append(predicted_output == train_outputs[i])
+        else:
+            raise ValueError(f"Program failed to run on training input {i}")
     
-    # Only proceed if we have at least one successful execution
-    if not modified_task_data['train']:
-        raise ValueError(f"Program failed to run on all {len(task_data['train'])} training examples")
+    # Run the program on each test input to get predictions
+    predicted_test_outputs = []
+    correct_test_inputs = []
     
-    # Create system message
-    system_message = {
-        "role": "system", 
-        "content": "You are an expert at solving abstract reasoning puzzles. Write clean, efficient Python code."
-    }
+    for i, test_input in enumerate(test_inputs):
+        predicted_output, error, timed_out = execute_program(program, test_input)
+        
+        if predicted_output is not None and not error and not timed_out:
+            # Validate output format
+            if not isinstance(predicted_output, list) or len(predicted_output) == 0 or not isinstance(predicted_output[0], list):
+                raise ValueError(f"Program returned invalid output format for test input {i}")
+            
+            # Validate cell values
+            for row_idx, row in enumerate(predicted_output):
+                if not isinstance(row, list):
+                    raise ValueError(f"Row {row_idx} is not a list in test output {i}")
+                for col_idx, cell in enumerate(row):
+                    if isinstance(cell, bool) or not isinstance(cell, int) or not (0 <= cell <= 9):
+                        raise ValueError(f"Invalid cell value at [{row_idx}][{col_idx}] in test output {i}: {cell}")
+            
+            predicted_test_outputs.append(predicted_output)
+            # Check if prediction matches ground truth
+            correct_test_inputs.append(predicted_output == test_outputs[i])
+        else:
+            raise ValueError(f"Program failed to run on test input {i}")
     
-    # Create user message with the modified prompt (using program's actual outputs)
-    user_message = {
-        "role": "user",
-        "content": create_prompt_for_task(modified_task_data)
-    }
+    # Get reasoning content if available and requested
+    reasoning_content = ""
+    if args.reasoning and program_data.get('reasoning_content'):
+        reasoning_content = program_data.get('reasoning_content', '')
     
-    # Create assistant message with program and optionally reasoning
-    assistant_content = ""
-    
-    # Include reasoning if flag is set and test is correct
-    if args.reasoning and test_correct and program_data.get('reasoning_content'):
-        reasoning_content = program_data['reasoning_content']
-        assistant_content = f"<think>\n{reasoning_content}\n</think>\n\n"
-    
-    assistant_content += f"Final answer:\n```python\n{program_data['program']}\n```"
-    
-    assistant_message = {
-        "role": "assistant",
-        "content": assistant_content
-    }
-    
-    # Create the training example
+    # Create the flat format training example
     training_example = {
-        "messages": [system_message, user_message, assistant_message]
+        "reasoning": reasoning_content,
+        "code": program,
+        "correct_train_input": correct_train_inputs,
+        "train_input": train_inputs,
+        "train_output": train_outputs,
+        "predicted_train_output": predicted_train_outputs,
+        "correct_test_input": correct_test_inputs,
+        "test_input": test_inputs,
+        "test_output": test_outputs,
+        "predicted_test_output": predicted_test_outputs,
+        "task_id": program_data['task_id'],
+        "model": program_data.get('model', 'unknown'),
+        "generation": program_data.get('generation', 0)
     }
     
     return training_example
+
+def create_and_push_hf_dataset(training_examples: List[Dict], validation_examples: List[Dict], args) -> None:
+    """Create and push Hugging Face dataset to the hub"""
+    
+    # Generate dataset name if not provided
+    if args.hf_dataset_name:
+        dataset_name = args.hf_dataset_name
+    else:
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        dataset_part = args.dataset or "unknown"
+        subset_part = args.subset or "unknown"
+        dataset_name = f"synth_{dataset_part}_{subset_part}_{timestamp}"
+    
+    print(f"Creating Hugging Face dataset: {args.hf_org}/{dataset_name}")
+    
+    # Create datasets
+    if validation_examples:
+        # Create train and validation splits
+        train_dataset = Dataset.from_list(training_examples)
+        val_dataset = Dataset.from_list(validation_examples)
+        
+        print(f"Created training dataset with {len(training_examples)} examples")
+        print(f"Created validation dataset with {len(validation_examples)} examples")
+        
+        # Push both splits
+        train_dataset.push_to_hub(
+            f"{args.hf_org}/{dataset_name}",
+            split="train",
+            private=args.hf_private
+        )
+        val_dataset.push_to_hub(
+            f"{args.hf_org}/{dataset_name}",
+            split="validation",
+            private=args.hf_private
+        )
+        
+        print(f"Successfully pushed training and validation splits to {args.hf_org}/{dataset_name}")
+    else:
+        # Create single training split
+        train_dataset = Dataset.from_list(training_examples)
+        
+        print(f"Created training dataset with {len(training_examples)} examples")
+        
+        # Push training split
+        train_dataset.push_to_hub(
+            f"{args.hf_org}/{dataset_name}",
+            split="train",
+            private=args.hf_private
+        )
+        
+        print(f"Successfully pushed training split to {args.hf_org}/{dataset_name}")
+    
+    # Print dataset URL
+    visibility = "private" if args.hf_private else "public"
+    print(f"Dataset URL: https://huggingface.co/datasets/{args.hf_org}/{dataset_name} ({visibility})")
+
+def deduplicate_programs_by_task(qualified_programs: List[Dict], args) -> Tuple[List[Dict], Dict]:
+    """Deduplicate programs within each task based on test correctness and output similarity"""
+    
+    # Group programs by task_id
+    task_programs = {}
+    for prog_info in qualified_programs:
+        task_id = prog_info['program_data']['task_id']
+        if task_id not in task_programs:
+            task_programs[task_id] = []
+        task_programs[task_id].append(prog_info)
+    
+    deduplication_stats = {
+        'total_tasks': len(task_programs),
+        'test_correct_deduped': 0,
+        'output_deduped': 0,
+        'total_programs_before': len(qualified_programs),
+        'total_programs_after': 0
+    }
+    
+    deduplicated_programs = []
+    
+    for task_id, programs in task_programs.items():
+        # Show detailed debug info for tasks with multiple programs
+        show_debug = len(programs) > 1
+        if show_debug:
+            print(f"  🔍 Deduplicating task {task_id}: {len(programs)} programs")
+        
+        task_deduped = []
+        
+        # Step 1: Deduplicate programs that correctly solve the test
+        test_correct_programs = []
+        test_incorrect_programs = []
+        
+        for prog_info in programs:
+            prog_data = prog_info['program_data']
+            task_data = prog_info['task_data']
+            program = prog_data['program']
+            
+            # Check if program correctly solves the test
+            if task_data.get('test') and len(task_data['test']) > 0:
+                test_input = task_data['test'][0]['input']
+                expected_test_output = task_data['test'][0]['output']
+                predicted_test_output, error, timed_out = execute_program(program, test_input)
+                
+                if (predicted_test_output is not None and not error and not timed_out and 
+                    predicted_test_output == expected_test_output):
+                    test_correct_programs.append(prog_info)
+                else:
+                    test_incorrect_programs.append(prog_info)
+            else:
+                test_incorrect_programs.append(prog_info)
+        
+        # For test-correct programs, deduplicate by cleaned code string match
+        if len(test_correct_programs) > 0:
+            code_signatures = {}
+            for prog_info in test_correct_programs:
+                program_code = prog_info['program_data']['program']
+                
+                # Keep first program with this exact code signature
+                if program_code not in code_signatures:
+                    code_signatures[program_code] = prog_info
+                    task_deduped.append(prog_info)
+                else:
+                    deduplication_stats['test_correct_deduped'] += 1
+            
+            if show_debug and len(test_correct_programs) > len(code_signatures):
+                unique_codes = len(code_signatures)
+                print(f"    ✅ Test-correct code dedup: {len(test_correct_programs)} → {unique_codes} (removed {len(test_correct_programs) - unique_codes} duplicates)")
+        
+        # Step 2: For test-incorrect programs, deduplicate by output similarity
+        if test_incorrect_programs:
+            output_signatures = {}
+            
+            for prog_info in test_incorrect_programs:
+                prog_data = prog_info['program_data']
+                task_data = prog_info['task_data']
+                program = prog_data['program']
+                
+                # Generate output signature by running program on all training inputs
+                outputs = []
+                for example in task_data['train']:
+                    predicted_output, error, timed_out = execute_program(program, example['input'])
+                    if predicted_output is not None and not error and not timed_out:
+                        try:
+                            # Validate that predicted_output is a valid 2D list structure with hashable elements
+                            if (isinstance(predicted_output, list) and 
+                                all(isinstance(row, list) for row in predicted_output) and
+                                all(all(isinstance(cell, (int, float, str, bool, type(None))) for cell in row) 
+                                    for row in predicted_output if isinstance(row, list))):
+                                # Convert to tuple for hashing
+                                output_tuple = tuple(tuple(row) for row in predicted_output)
+                            else:
+                                if args.debug:
+                                    print(f"    🚫 Invalid output format for task {task_id}: {type(predicted_output)} - {predicted_output}")
+                                output_tuple = ('ERROR', f'Invalid output format: {type(predicted_output)}')
+                        except (TypeError, ValueError, AttributeError) as e:
+                            if args.debug:
+                                print(f"    🚫 Failed to convert output for task {task_id}: {str(e)} - {predicted_output}")
+                            # Fallback: create a safe string representation for hashing
+                            try:
+                                output_tuple = ('ERROR', f'Conversion failed: {str(predicted_output)[:100]}')
+                            except:
+                                output_tuple = ('ERROR', 'Failed to convert output (unprintable)')
+                    else:
+                        output_tuple = ('ERROR', str(error) if error else 'TIMEOUT')
+                    outputs.append(output_tuple)
+                
+                signature = tuple(outputs)
+                
+                # Keep first program with this signature
+                if signature not in output_signatures:
+                    output_signatures[signature] = prog_info
+                    task_deduped.append(prog_info)
+                else:
+                    deduplication_stats['output_deduped'] += 1
+            
+            if show_debug and len(test_incorrect_programs) > len([sig for sig in output_signatures]):
+                unique_outputs = len(output_signatures)
+                print(f"    🔍 Output-based dedup: {len(test_incorrect_programs)} → {unique_outputs} (removed {len(test_incorrect_programs) - unique_outputs} duplicates)")
+        
+        deduplicated_programs.extend(task_deduped)
+    
+    deduplication_stats['total_programs_after'] = len(deduplicated_programs)
+    
+    # Always show deduplication summary
+    print(f"\n📊 Deduplication Summary:")
+    print(f"  Tasks processed: {deduplication_stats['total_tasks']}")
+    print(f"  Programs before: {deduplication_stats['total_programs_before']}")
+    print(f"  Programs after: {deduplication_stats['total_programs_after']}")
+    print(f"  Test-correct deduped: {deduplication_stats['test_correct_deduped']}")
+    print(f"  Output-similarity deduped: {deduplication_stats['output_deduped']}")
+    total_deduped = deduplication_stats['test_correct_deduped'] + deduplication_stats['output_deduped']
+    if deduplication_stats['total_programs_before'] > 0:
+        dedup_pct = (total_deduped / deduplication_stats['total_programs_before']) * 100
+        print(f"  Total deduplication: {total_deduped} programs ({dedup_pct:.1f}%)")
+    
+    return deduplicated_programs, deduplication_stats
 
 def main():
     parser = argparse.ArgumentParser(description="Generate training data from log files")
@@ -481,11 +768,11 @@ def main():
                        default=f"training_data_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl",
                        help="Output JSONL file name")
     parser.add_argument("--validation", action="store_true",
-                       help="Create a validation split (10% or 32 examples, whichever is smaller)")
+                       help="Create a validation split (10 percent or 32 examples, whichever is smaller)")
     parser.add_argument("--pattern", type=str, default=None,
                        help="Filter log files by pattern (e.g., '20250721_112639' for specific timestamp)")
-    parser.add_argument("--model", type=str, default=None,
-                       help="Filter by model name (e.g., 'google/gemini-2.5-flash')")
+    parser.add_argument("--model", type=str, action='append', default=None,
+                       help="Filter by model name(s). Can be used multiple times or as comma-separated list (e.g., 'google/gemini-2.5-flash,gpt-4.1-mini')")
     parser.add_argument("--dataset", type=str, default=None,
                        help="Filter by dataset (e.g., 'arc-agi-1')")
     parser.add_argument("--subset", type=str, default=None,
@@ -494,12 +781,34 @@ def main():
                        help="Filter files from this date onwards (format: YYYYMMDD)")
     parser.add_argument("--date-to", type=str, default=None,
                        help="Filter files up to this date (format: YYYYMMDD)")
-    parser.add_argument("--reasoning", action="store_true",
-                       help="Include reasoning content for programs that correctly solve the test output")
+    parser.add_argument("--reasoning", action="store_true", default=True,
+                       help="Include reasoning content for programs that correctly solve the test output (default: True)")
+    parser.add_argument("--no-reasoning", action="store_false", dest="reasoning",
+                       help="Disable reasoning content inclusion")
     parser.add_argument("--clean-code", action="store_true",
                        help="Strip comments and clean up code before processing")
+    parser.add_argument("--no-dedup", action="store_true",
+                       help="Disable deduplication of programs within each task")
+    parser.add_argument("--no-transduction-filter", action="store_true",
+                       help="Disable filtering of transduction/cheating programs")
+    parser.add_argument("--debug", action="store_true",
+                       help="Enable debug mode with detailed logging for transduction detection")
+    parser.add_argument("--hf-dataset-name", type=str, default=None,
+                       help="Name for the Hugging Face dataset. If not provided, will use synth_{dataset}_{subset}_DATETIME format")
+    parser.add_argument("--hf-org", type=str, default="Trelis",
+                       help="Hugging Face organization to push the dataset to (default: Trelis)")
+    parser.add_argument("--hf-private", action="store_true",
+                       help="Make the Hugging Face dataset private")
     
     args = parser.parse_args()
+    
+    # Process models list to handle comma-separated values
+    if args.model:
+        # Flatten the list and split comma-separated values
+        models_list = []
+        for model_arg in args.model:
+            models_list.extend([m.strip() for m in model_arg.split(',')])
+        args.model = [m for m in models_list if m]  # Remove empty strings
     
     # Create training_data directory if it doesn't exist
     output_dir = Path("training_data")
@@ -581,7 +890,7 @@ def main():
     if args.model or args.dataset or args.subset:
         print(f"Applying program filters:")
         if args.model:
-            print(f"  - Model: {args.model}")
+            print(f"  - Models: {', '.join(args.model)}")
         if args.dataset:
             print(f"  - Dataset: {args.dataset}")
         if args.subset:
@@ -591,8 +900,10 @@ def main():
         for program in all_programs:
             include_program = True
             
-            if args.model and program.get('model', '').lower() != args.model.lower():
-                include_program = False
+            if args.model:
+                program_model = program.get('model', '').lower()
+                if not any(model.lower() == program_model for model in args.model):
+                    include_program = False
             if args.dataset and program.get('dataset', '').lower() != args.dataset.lower():
                 include_program = False
             if args.subset and program.get('subset', '').lower() != args.subset.lower():
@@ -646,15 +957,23 @@ def main():
     # Filter programs to only those that qualify (in parallel)
     qualified_programs = []
     validated_count = 0
+    transduction_rejected = 0
+    transduction_stats = {}  # task_id -> list of rejection reasons
     
-    print(f"Validating programs in parallel...")
+    validation_message = "Validating programs"
+    if not args.no_transduction_filter:
+        validation_message += " and filtering transduction/cheating"
+    validation_message += " in parallel..."
+    print(validation_message)
+    
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         # Submit all validation jobs
-        future_to_prog = {executor.submit(validate_single_program, prog_data): prog_data 
+        future_to_prog = {executor.submit(validate_single_program, prog_data, args): prog_data 
                          for prog_data in all_programs}
         
         # Collect results as they complete
         for future in as_completed(future_to_prog):
+            prog_data = future_to_prog[future]
             validated_count += 1
             
             # Progress reporting every 50 programs
@@ -665,17 +984,72 @@ def main():
                 result = future.result()
                 if result is not None:
                     qualified_programs.append(result)
+                elif 'transduction_reason' in prog_data:
+                    # Track transduction rejections
+                    transduction_rejected += 1
+                    task_id = prog_data['task_id']
+                    reason = prog_data['transduction_reason']
+                    
+                    if task_id not in transduction_stats:
+                        transduction_stats[task_id] = []
+                    transduction_stats[task_id].append(reason)
+                    
+                    if args.debug:
+                        print(f"  🚫 Rejected transduction in task {task_id}: {reason}")
+                        
             except Exception as e:
                 if validated_count % 500 == 0:  # Only print errors occasionally
                     print(f"  Warning: Error validating program: {e}")
     
     print(f"\nQualified programs: {len(qualified_programs)}")
     
+    # Report transduction filtering results
+    if not args.no_transduction_filter:
+        print(f"🛡️  Transduction/Cheating Filter Results:")
+        print(f"  Programs rejected for cheating: {transduction_rejected}")
+        if transduction_rejected > 0:
+            print(f"  Tasks with cheating programs: {len(transduction_stats)}")
+            if args.debug:
+                print(f"  📋 Detailed breakdown by task:")
+                for task_id, reasons in transduction_stats.items():
+                    print(f"    Task {task_id}: {len(reasons)} programs rejected")
+                    for reason in reasons:
+                        print(f"      - {reason}")
+            else:
+                # Show summary without debug details
+                reason_counts = {}
+                for reasons in transduction_stats.values():
+                    for reason in reasons:
+                        # Categorize reasons
+                        if "exceeds 200 characters" in reason:
+                            category = "Long lines (>200 chars)"
+                        elif "hardcoded in program" in reason:
+                            category = "Hardcoded outputs"
+                        else:
+                            category = "Other"
+                        reason_counts[category] = reason_counts.get(category, 0) + 1
+                
+                print(f"  📊 Rejection categories:")
+                for category, count in reason_counts.items():
+                    print(f"    {category}: {count}")
+    else:
+        print(f"⚠️  Transduction filtering disabled by --no-transduction-filter flag")
+    
+    # Deduplicate programs within each task (unless disabled)
+    if not args.no_dedup:
+        print(f"Deduplicating programs within each task...")
+        qualified_programs, dedup_stats = deduplicate_programs_by_task(qualified_programs, args)
+        print(f"After deduplication: {len(qualified_programs)} programs")
+    else:
+        print(f"Deduplication disabled by --no-dedup flag")
+    
     # Generate training examples (in parallel)
     training_examples = []
     programs_with_at_least_one_correct = 0
     programs_with_all_correct = 0
     programs_with_reasoning = 0
+    programs_with_test_correct = 0
+    programs_with_all_training_and_test_correct = 0
     validation_mismatches = 0
     invalid_output_programs = 0
     processed_examples = 0
@@ -698,6 +1072,16 @@ def main():
             
             try:
                 training_example = future.result()
+                
+                # Track test correctness before removing metadata
+                test_correct = training_example.get('_originally_test_correct', False)
+                if test_correct:
+                    programs_with_test_correct += 1
+                
+                # Remove metadata before adding to final dataset
+                if '_originally_test_correct' in training_example:
+                    del training_example['_originally_test_correct']
+                
                 training_examples.append(training_example)
                 
                 # Check if reasoning was included in this example
@@ -713,8 +1097,13 @@ def main():
                 if solved_count > 0:
                     programs_with_at_least_one_correct += 1
                 
-                if solved_count == total_examples and total_examples > 0:
+                all_training_correct = (solved_count == total_examples and total_examples > 0)
+                if all_training_correct:
                     programs_with_all_correct += 1
+                
+                # Track programs with both all training correct AND test correct
+                if all_training_correct and test_correct:
+                    programs_with_all_training_and_test_correct += 1
                 
                 # Check for validation mismatches (if we have logged data to compare)
                 if 'logged_solved_count' in prog_data:
@@ -736,14 +1125,20 @@ def main():
     if len(training_examples) > 0:
         pct_with_correct = (programs_with_at_least_one_correct / len(training_examples)) * 100
         pct_all_correct = (programs_with_all_correct / len(training_examples)) * 100
+        pct_test_correct = (programs_with_test_correct / len(training_examples)) * 100
+        pct_all_training_and_test = (programs_with_all_training_and_test_correct / len(training_examples)) * 100
         pct_with_reasoning = (programs_with_reasoning / len(training_examples)) * 100
         print(f"Programs with at least one originally correct answer: {programs_with_at_least_one_correct}/{len(training_examples)} ({pct_with_correct:.1f}%)")
         print(f"Programs with all training examples correct: {programs_with_all_correct}/{len(training_examples)} ({pct_all_correct:.1f}%)")
+        print(f"Programs that originally solved the test case: {programs_with_test_correct}/{len(training_examples)} ({pct_test_correct:.1f}%)")
+        print(f"Programs with all training AND test correct: {programs_with_all_training_and_test_correct}/{len(training_examples)} ({pct_all_training_and_test:.1f}%)")
         if args.reasoning:
             print(f"Programs with reasoning content included: {programs_with_reasoning}/{len(training_examples)} ({pct_with_reasoning:.1f}%)")
     else:
         print(f"Programs with at least one originally correct answer: 0/0 (0.0%)")
         print(f"Programs with all training examples correct: 0/0 (0.0%)")
+        print(f"Programs that originally solved the test case: 0/0 (0.0%)")
+        print(f"Programs with all training AND test correct: 0/0 (0.0%)")
         if args.reasoning:
             print(f"Programs with reasoning content included: 0/0 (0.0%)")
     
@@ -885,34 +1280,14 @@ def main():
         
         print(f"  Validation balance: {val_correct_count}/{len(validation_examples)} ({val_correct_count/len(validation_examples)*100:.1f}%) from tasks with correct examples")
         print(f"  Training balance: {train_correct_tasks_count}/{len(train_task_ids)} ({train_correct_tasks_count/len(train_task_ids)*100:.1f}%) tasks with correct examples")
-        
-        # Create filenames
-        base_name = args.output.replace('.jsonl', '')
-        train_filename = output_dir / f"{base_name}_train.jsonl"
-        val_filename = output_dir / f"{base_name}_val.jsonl"
-        
-        # Save training set
-        with open(train_filename, 'w') as f:
-            for example in train_examples:
-                f.write(json.dumps(example) + '\n')
-        
-        # Save validation set
-        with open(val_filename, 'w') as f:
-            for example in validation_examples:
-                f.write(json.dumps(example) + '\n')
-        
-        print(f"Saved training data to: {train_filename} ({len(train_examples)} examples from {len(train_task_ids)} tasks)")
-        print(f"Saved validation data to: {val_filename} ({len(validation_examples)} examples from {len(validation_task_ids)} tasks)")
         print(f"Validation tasks: {sorted(validation_task_ids)}")
         
-    else:
-        # Save all as training data
-        output_file = output_dir / args.output
-        with open(output_file, 'w') as f:
-            for example in training_examples:
-                f.write(json.dumps(example) + '\n')
+        # Create and push Hugging Face dataset with train/validation splits
+        create_and_push_hf_dataset(train_examples, validation_examples, args)
         
-        print(f"Saved training data to: {output_file}")
+    else:
+        # Create and push Hugging Face dataset with only training data
+        create_and_push_hf_dataset(training_examples, [], args)
     
     # Print some stats
     task_counts = {}

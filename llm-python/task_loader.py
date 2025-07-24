@@ -91,8 +91,14 @@ class TaskLoader:
         return '\n'.join(lines)
     
     def _format_grid(self, grid: List[List[int]]) -> str:
-        """Format a grid as a string"""
-        return '\n'.join(' '.join(str(cell) for cell in row) for row in grid)
+        """Format a grid as a string, preserving empty rows with special marker"""
+        lines = []
+        for row in grid:
+            if len(row) == 0:
+                lines.append('[EMPTY_ROW]')
+            else:
+                lines.append(' '.join(str(cell) for cell in row))
+        return '\n'.join(lines)
     
     def get_test_outputs(self, task_data: Dict) -> List[List[List[int]]]:
         """Extract all test outputs from a task"""

@@ -233,6 +233,43 @@ The tool automatically detects and logs thinking tokens from models that provide
 
 All reasoning data is preserved in logs for analysis. The code extraction also searches both content and reasoning fields, ensuring no code is missed regardless of where models place their solutions.
 
+### Training Data Generation
+
+Generate fine-tuning datasets from logged program attempts using hindsight relabeling. The script now creates **Hugging Face datasets** instead of JSONL files and pushes them directly to Hugging Face Hub.
+
+```bash
+# Create HF dataset from Gemini and Qwen3-4B logs (includes reasoning by default)
+uv run python generate_training_data.py --model "google/gemini-2.5-flash,qwen/qwen3-4b" --dataset "arc-agi-1" --subset "middle_training_10" --clean-code --hf-private
+
+# With validation split and custom name
+uv run python generate_training_data.py --model "google/gemini-2.5-flash" --validation --clean-code --hf-dataset-name "arc_gemini_training_v1" --hf-private
+
+# Basic usage (includes reasoning by default)
+uv run python generate_training_data.py --dataset "arc-agi-1" --subset "middle_training_10" --clean-code --hf-private
+
+# Disable reasoning content if desired
+uv run python generate_training_data.py --dataset "arc-agi-1" --subset "middle_training_10" --clean-code --no-reasoning --hf-private
+```
+
+**Key Changes:**
+- ✅ **Hugging Face datasets**: Direct push to HF Hub instead of JSONL files
+- ✅ **Competition format**: Uses flat structure with all expected fields (`reasoning`, `code`, `train_input`, `predicted_train_output`, etc.)
+- ✅ **Reasoning included by default**: Automatically captures model reasoning traces (use `--no-reasoning` to disable)
+- ✅ **Auto-naming**: Default format `synth_{dataset}_{subset}_DATETIME`
+- ✅ **Trelis organization**: Pushes to `Trelis/` by default (configurable with `--hf-org`)
+- ✅ **Private datasets**: Use `--hf-private` flag for private repositories
+
+**Deduplication Logic:**
+- **Test-correct programs**: Deduplicated by cleaned code string matching (after comment removal)
+- **Test-incorrect programs**: Deduplicated by output behavior similarity across training examples  
+- **Hindsight relabeling**: Programs that fail tests use their actual outputs as ground truth
+
+**Key Features:**
+- Automatic transduction/cheating detection and filtering
+- Code cleaning with comment/whitespace removal (optional `--clean-code`)
+- Validation of training examples for consistency
+- Debug mode (`--debug`) for detailed deduplication information
+
 ### Available Subsets
 
 - `shortest_training_1`: Single shortest training task
@@ -338,6 +375,37 @@ All plots saved in: plots/
 
 The `generate_training_data.py` tool extracts programs from log files to create fine-tuning training data in JSONL format.
 
+### Data Quality & Validation
+
+**Fixed Grid Serialization Issue (23 Jul 2025)**: Previous versions had a 0.3% validation failure rate due to empty rows being lost during serialization. This has been completely fixed:
+
+- **Problem**: Programs outputting grids with empty rows (e.g., `[[], [8, 8, 8]]`) would lose the empty rows during format/parse cycle
+- **Solution**: Empty rows now use `[EMPTY_ROW]` marker to preserve structure
+- **Result**: 100% validation success rate on all training examples
+
+**Validation Script**: Use `validate_hf_dataset.py` to verify HF dataset quality:
+```bash
+# Validate a HF dataset
+uv run python validate_hf_dataset.py Trelis/synth_arc-agi-1_middle_training_10_20250724_081021
+
+# Validate with verbose output
+uv run python validate_hf_dataset.py Trelis/synth_arc-agi-1_middle_training_10_20250724_081021 --verbose
+
+# Validate only first 10 rows for quick testing
+uv run python validate_hf_dataset.py Trelis/synth_arc-agi-1_middle_training_10_20250724_081021 --limit 10
+
+# Validate validation split
+uv run python validate_hf_dataset.py Trelis/my_dataset_name --split validation
+```
+
+**What the validation script checks:**
+- ✅ **Format validation**: All grids are proper 2D lists with integer values 0-9
+- ✅ **Execution consistency**: Programs actually produce the claimed `predicted_train_output`
+- ✅ **Data integrity**: All field lengths match and no corrupted data
+- ✅ **Type safety**: No boolean/tuple/string values in grid cells
+
+**Multiple Models Support**: You can filter by multiple models using either comma-separated values (`--model "model1,model2"`) or repeated arguments (`--model "model1" --model "model2"`).
+
 ### Key Features
 
 - **Full parallel processing**: Uses all CPU cores for maximum speed (6-10x faster)
@@ -346,6 +414,8 @@ The `generate_training_data.py` tool extracts programs from log files to create 
 - **Strict quality control**: Re-executes programs, validates 2D grid formats, ensures consistency
 - **Smart error handling**: Drops individual failed examples but rejects programs with format violations
 - **Code cleaning**: Optional aggressive comment stripping with `--clean-code` flag (up to 58% size reduction)
+- **Automatic deduplication**: Removes duplicate programs within each task based on test correctness and output similarity
+- **Transduction/cheating detection**: Identifies and removes programs that hardcode answers instead of implementing transformations
 
 ### Usage
 
@@ -362,6 +432,12 @@ uv run python generate_training_data.py --limit 100 --clean-code --output clean_
 # Filter by model and include reasoning for correct solutions
 uv run python generate_training_data.py --model "google/gemini-2.5-flash" --reasoning --output gemini_with_reasoning.jsonl
 
+# Filter by multiple models (comma-separated)
+uv run python generate_training_data.py --model "google/gemini-2.5-flash,gpt-4.1-mini,o4-mini" --output multi_model_data.jsonl
+
+# Filter by multiple models (repeated arguments)
+uv run python generate_training_data.py --model "google/gemini-2.5-flash" --model "gpt-4.1-mini" --output multi_model_data.jsonl
+
 # Filter by date range and model
 uv run python generate_training_data.py --model "google/gemini-2.5-flash" --date-from "20250721" --date-to "20250721" --output gemini_july_21.jsonl
 
@@ -373,12 +449,43 @@ uv run python generate_training_data.py --limit 1000 --validation --output arc_t
 
 # Combine reasoning with other options
 uv run python generate_training_data.py --limit 500 --reasoning --validation --output reasoning_training.jsonl
+
+# Filter by dataset and subset to target specific task groups
+uv run python generate_training_data.py --dataset "arc-agi-1" --subset "shortest_training_10" --output shortest_tasks.jsonl
+
+# Filter by dataset only (includes both training and evaluation tasks from that dataset)
+uv run python generate_training_data.py --dataset "arc-agi-2" --output arc_agi_2_only.jsonl
+
+# Combine dataset/subset filtering with model filtering
+uv run python generate_training_data.py --dataset "arc-agi-1" --subset "all_training" --model "google/gemini-2.5-flash" --output gemini_arc1_training.jsonl
+
+# Combine multiple models with dataset/subset filtering
+uv run python generate_training_data.py --dataset "arc-agi-1" --subset "all_training" --model "google/gemini-2.5-flash,o4-mini" --output multi_model_arc1_training.jsonl
+
+# Filter by subset only (includes that subset from both datasets)
+uv run python generate_training_data.py --subset "middle_training_10" --validation --hf-private
+
+# Disable deduplication if you want all programs (including duplicates)
+uv run python generate_training_data.py --limit 100 --no-dedup --hf-private
+
+# Enable debug mode to see detailed transduction detection info
+uv run python generate_training_data.py --limit 100 --debug --hf-private
+
+# Disable transduction filtering if you want to keep all programs (including cheating ones)
+uv run python generate_training_data.py --limit 100 --no-transduction-filter --hf-private
+
+# New HF-specific options:
+#   --hf-dataset-name: Custom dataset name (default: synth_{dataset}_{subset}_DATETIME)
+#   --hf-org: Organization to push to (default: "Trelis")
+#   --hf-private: Make dataset private (recommended)
+#   --reasoning: Include reasoning content (default: True)
+#   --no-reasoning: Disable reasoning content inclusion
 ```
 
 ### Filtering Options
 
 **Model/Dataset/Subset Filtering:**
-- `--model`: Filter by model name (e.g., `"google/gemini-2.5-flash"`, `"gpt-4o-mini"`)
+- `--model`: Filter by model name(s). Supports multiple models via comma-separated list or repeated arguments (e.g., `"google/gemini-2.5-flash,gpt-4.1-mini"` or multiple `--model` flags)
 - `--dataset`: Filter by dataset (e.g., `"arc-agi-1"`, `"arc-agi-2"`)
 - `--subset`: Filter by subset (e.g., `"all_training"`, `"shortest_evaluation_10"`)
 
@@ -435,6 +542,34 @@ Programs get reasoning content included only if:
 - ✅ Program executes successfully without errors
 
 **Note**: Since only test-correct programs get reasoning, the percentage with reasoning will typically be lower than the overall accuracy rate, as it's filtered by both correctness and reasoning availability.
+
+### Simple Dataset Generation (No Code/Reasoning)
+
+For creating datasets without code or reasoning content, use the simplified `create_simple_dataset.py` script:
+
+```bash
+# Create simple dataset from arc-agi-1 training tasks
+uv run python create_simple_dataset.py arc-agi-1 all_training --save-local --validation
+
+# Create dataset and push to Hugging Face  
+uv run python create_simple_dataset.py arc-agi-2 shortest_training_30 --hf-private
+
+# Custom dataset name and organization
+uv run python create_simple_dataset.py arc-agi-1 random_split_1_training --hf-dataset-name "simple_baseline_v1" --hf-org "YourOrg"
+```
+
+**Key differences from full training data generation:**
+- **Input**: Takes dataset and subset names directly (not log files)
+- **Simplified content**: All `reasoning`, `code`, `predicted_*`, and `correct_*` fields are empty/blank
+- **Same structure**: Maintains competition format with all expected columns and types
+- **No execution**: No program running or validation required
+- **Faster**: Much simpler processing without code analysis
+
+**Use cases:**
+- Baseline datasets for fine-tuning experiments
+- Template datasets with proper structure but empty content
+- Testing dataset loading/processing pipelines
+- Creating placeholder datasets before adding real content
 
 ### Code Cleaning (`--clean-code`)
 
@@ -502,14 +637,13 @@ def transform(grid):
 - **Storage efficiency**: Smaller files for faster loading and transfer
 - **Focus on logic**: Remove documentation to emphasize executable patterns
 
-### Output Files
+### Output
 
-**Files are saved in the `o3-tools/training_data/` directory:**
+**Datasets are pushed directly to Hugging Face Hub:**
 
-- **Without validation**: `training_data_YYYYMMDD_HHMMSS.jsonl`
-- **With validation**: 
-  - `training_data_YYYYMMDD_HHMMSS_train.jsonl` (balanced training set)
-  - `training_data_YYYYMMDD_HHMMSS_val.jsonl` (balanced validation set)
+- **Without validation**: Single `train` split in HF dataset
+- **With validation**: Both `train` and `validation` splits in HF dataset
+- **Dataset URLs**: Printed in console output (e.g., `https://huggingface.co/datasets/Trelis/synth_arc-agi-1_middle_training_10_20250724_080500`)
 
 **Note**: Dataset is first balanced (50/50 difficulty split), then validation uses different tasks than training.
 
@@ -519,13 +653,17 @@ def transform(grid):
 - ✅ Execute successfully on ≥1 training example  
 - ✅ Fail on ≥1 training example (learning opportunity)
 - ✅ Return proper 2D grids (`[[...], [...]]`)
+- ✅ All cell values are integers 0-9
 
 **Programs rejected if they:**
 - ❌ Solve all examples (no room for improvement)
 - ❌ Return invalid formats (integers, 1D lists, etc.)
+- ❌ Contain invalid cell values (booleans, tuples, floats, strings, integers <0 or >9)
 - ❌ Fail to execute on all examples
 
 **Error handling:** Execution failures drop individual examples; format violations reject entire programs.
+
+**Validation improvements:** As of January 2025, strict cell value validation prevents malformed training data from boolean values (`True`/`False`), tuple coordinates `(1, 2)`, invalid integers, and other non-grid data types that previously passed validation.
 
 ### Process
 
@@ -536,14 +674,20 @@ def transform(grid):
 5. **Split** into training/validation sets (optional)
 6. **Generate** JSONL training examples (parallel)
 
-### Output Format
+### Dataset Format
 
-Each JSONL line contains a system/user/assistant conversation where:
-- **Training examples** use program-generated outputs (not ground truth)
-- **User message** contains the ARC task with training examples  
-- **Assistant message** contains the partially-correct program code
+Each dataset row contains the **competition format** with all required fields:
+- **`reasoning`**: Model's reasoning trace (if available and `--reasoning` used)
+- **`code`**: Generated Python program
+- **`train_input/train_output`**: Original training examples
+- **`predicted_train_output`**: Program's actual outputs on training inputs
+- **`correct_train_input`**: Boolean list indicating which training examples were solved correctly
+- **`test_input/test_output`**: Original test examples  
+- **`predicted_test_output`**: Program's actual outputs on test inputs
+- **`correct_test_input`**: Boolean list indicating which test examples were solved correctly
+- **`task_id/model/generation`**: Metadata fields
 
-This trains models to generate programs that produce specific input→output mappings.
+This format is compatible with the competition and enables training models that learn from partially-correct solutions.
 
 ### Example Output
 
@@ -560,6 +704,64 @@ Saved validation data to: training_data/training_data_val.jsonl (24 examples fro
 ```
 
 **Performance**: Uses parallel processing with `total_cores - 2` workers for optimal speed. Typically achieves **6-10x speedup** compared to single-threaded processing. Progress updates appear every 100 log files and every 50 programs during validation.
+
+### Program Deduplication (`--no-dedup`)
+
+The tool automatically deduplicates programs within each task to create higher-quality training data:
+
+#### **How Deduplication Works**
+1. **Test-correct deduplication**: If multiple programs correctly solve the test case, only the first one is kept (since they're all equivalent in terms of correctness)
+2. **Output-similarity deduplication**: For programs that don't solve the test correctly, deduplication is based on output similarity across all training examples
+
+#### **Deduplication Logic**
+- Programs are grouped by task ID
+- Within each task, programs that correctly solve the test are deduplicated (keep only first)
+- Remaining programs are deduplicated based on their output signatures (combination of outputs on all training examples)
+- Programs with identical output patterns are considered duplicates (only first is kept)
+
+#### **Benefits**
+- **Reduces training data redundancy**: Eliminates functionally identical programs
+- **Improves training efficiency**: Fewer duplicate patterns mean more diverse learning examples
+- **Maintains solution diversity**: Keeps programs with different approaches (different outputs)
+- **Preserves correctness**: Always keeps at least one test-correct program per task when available
+
+#### **Example Output**
+```
+📊 Deduplication Summary:
+  Tasks processed: 45
+  Programs before: 234
+  Programs after: 156
+  Test-correct deduped: 23
+  Output-similarity deduped: 55
+  Total deduplication: 78 programs (33.3%)
+```
+
+#### **Disable Deduplication**
+Use `--no-dedup` flag to keep all programs including duplicates:
+```bash
+uv run python generate_training_data.py --no-dedup --output all_programs.jsonl
+```
+
+### Transduction/Cheating Detection
+
+Automatically detects and removes programs that hardcode answers instead of implementing genuine transformations.
+
+**Detection methods:**
+- Programs with lines >200 characters (likely hardcoded arrays)
+- Programs containing exact output values as strings in the code
+
+**Debug mode** (`--debug`): Shows detailed info about detected cheating per task
+**Disable filtering** (`--no-transduction-filter`): Keep all programs including cheating ones
+
+**Example output:**
+```
+🛡️ Transduction/Cheating Filter Results:
+  Programs rejected for cheating: 45
+  Tasks with cheating programs: 12
+  📊 Rejection categories:
+    Hardcoded outputs: 38
+    Long lines (>200 chars): 7
+```
 
 ### Use Cases
 
@@ -584,7 +786,7 @@ The tool supports running the same test multiple times to calculate robust perfo
 
 ```bash
 # Run the same test 3 times with statistical analysis
-uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 3
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_1 --repeat-runs 3 --model google/gemini-2.5-flash --reasoning_effort medium --base-url https://openrouter.ai/api/v1
 
 # Run 5 times with parallelization for faster execution
 uv run python run_arc_tasks.py --dataset arc-agi-2 --subset shortest_evaluation_10 --repeat-runs 5 --max_workers 10

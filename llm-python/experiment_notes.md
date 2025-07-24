@@ -1,5 +1,662 @@
 # Experiment Notes
 
+## 2025 24th July
+
+Todo:
+[x] Create dataset structure:
+  [x] Review SOAR data
+  [x] Review Lewis data
+  [x] Set columns
+  [x] Update data generation
+[x] Update ipynb notebook for new dataset structure.
+  [x] Move prompt strings in the run_arc_tasks.py script to a prompt_strings folder, and date the current prompt.
+  [x] Test out run_arc_tasks.py with the new prompt strings.
+  [x] Assemble the data in the ipynb notebook.
+    [x] Fix up reasoning.
+    [x] Run validation on that dataset.
+[ ] Support metrics calculation - for train and validation sets.
+  [x] Don't remove the columns.
+  [x] Use the data to compute metrics.
+  [x] Remove any ground truth reference.
+  [x] Can I run as a batch?
+  [ ] Can I get these into compute metrics to be reported, or no?
+[ ] Add ability to push a grids-only set of data.
+
+>[!WARNING]
+> Dataset validation is hitting a small issue that needs fixing.
+
+### Running on high quality traces from Gemini only
+
+Generate a dataset for the random train split 1:
+
+```bash
+uv run python generate_training_data.py --model "google/gemini-2.5-flash" --dataset "arc-agi-1" --subset "random_split_1_training" --clean-code
+```
+and validate it:
+
+```bash
+uv run python validate_hf_dataset.py Trelis/synth_arc-agi-1_random_split_1_training_20250724_091902
+```
+Which has 4 rows with issues, perhaps timeouts on the code.
+
+and then push another dataset - the shortest training 10 dataset:
+
+```bash
+uv run python generate_training_data.py --model "google/gemini-2.5-flash" --dataset "arc-agi-1" --subset "shortest_training_10" --clean-code
+```
+and validate it:
+
+```bash
+uv run python validate_hf_dataset.py Trelis/synth_arc-agi-1_shortest_training_10_20250724_091954
+```
+
+### Synth data for all training problems
+
+Generate synthetic data with gemini for arc-agi-1 all_training:
+
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_training --repeat-runs 1 --max_workers 50 --max_turns 8 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium --limit 1
+```
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-1
+Subset: all_training
+Model: google/gemini-2.5-flash
+Reasoning effort: medium
+API: Chat Completions (independent attempts, max 8 attempts)
+Total tasks attempted: 400
+Successful API calls: 400/400 (100.0%)
+Tasks solved correctly: 236/400 (59.0%)
+Pixel accuracy: 21569/55726 (38.7%)
+Total attempts used: 1783
+Average attempts per task: 4.5
+Total tokens used: 28,324,268
+Total cost: $58.997739
+
+Results saved to: logs/20250724_112315_summary_arc-agi-1_all_training.json
+
+and create a dataset with that:
+
+```bash
+uv run python generate_training_data.py --model "google/gemini-2.5-flash" --dataset "arc-agi-1" --subset "all_training" --clean-code
+```
+
+and validate it:
+
+```bash
+uv run python validate_hf_dataset.py Trelis/synth_arc-agi-1_all_training_20250724_124848
+```
+Dataset loaded successfully. Total rows: 1462
+
+Validating 1462 dataset rows...
+Row 1100: 5/6 correct (83.3%)
+
+=== VALIDATION SUMMARY ===
+Dataset rows processed: 1462
+Errors: 0
+Individual examples tested: 4729
+Individual examples correct: 4728
+Overall success rate: 100.0%
+
+I also ran with --validation to create that version:
+```bash
+uv run python generate_training_data.py --model "google/gemini-2.5-flash" --dataset "arc-agi-1" --subset "all_training" --clean-code --validation
+```
+✅ No validation mismatches found - all programs behaved consistently
+✅ All programs returned valid 2D grid formats
+  Task breakdown: 314 with correct examples, 80 with no correct examples
+  Balanced dataset: dropped 234 excess correct-example tasks
+  Balanced breakdown: 80 with correct examples, 80 with no correct examples
+  Filtered to 783 examples from balanced tasks
+  Target validation tasks: 16 correct, 16 incorrect
+  Validation balance: 16/32 (50.0%) from tasks with correct examples
+  Training balance: 75/152 (49.3%) tasks with correct examples
+Validation tasks: ['10fcaaa3', '50846271', '6a1e5592', '7837ac64', '97999447', '98cf29f8', 'd90796e8', 'e48d4e1a']
+Creating Hugging Face dataset: Trelis/synth_arc-agi-1_all_training_20250724_131808
+Created training dataset with 751 examples
+Created validation dataset with 32 examples
+Creating parquet from Arrow format: 100%|█████████████| 1/1 [00:00<00:00, 27.09ba/s]
+Uploading the dataset shards: 100%|██████████████| 1/1 [00:01<00:00,  1.96s/ shards]
+Creating parquet from Arrow format: 100%|████████████| 1/1 [00:00<00:00, 224.67ba/s]
+Uploading the dataset shards: 100%|██████████████| 1/1 [00:01<00:00,  1.23s/ shards]
+README.md: 100%|███████████████████████████████████| 915/915 [00:00<00:00, 3.35MB/s]
+Successfully pushed training and validation splits to Trelis/synth_arc-agi-1_all_training_20250724_131808
+Dataset URL: https://huggingface.co/datasets/Trelis/synth_arc-agi-1_all_training_20250724_131808 (public)
+
+Statistics:
+  Unique tasks: 160
+  Average examples per task: 4.9
+  Tasks with most examples: [('36d67576', 16), ('09629e4f', 15), ('1a07d186', 13), ('264363fd', 13), ('045e512c', 12)]
+
+Now trying with the latest Qwen Coder model:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_training --repeat-runs 1 --max_workers 50 --max_turns 8 --model qwen/qwen3-coder --independent-attempts --base-url https://openrouter.ai/api/v1
+```
+Dataset: arc-agi-1
+Subset: all_training
+Model: qwen/qwen3-coder
+Reasoning effort: low
+API: Chat Completions (independent attempts, max 8 attempts)
+Total tasks attempted: 400
+Successful API calls: 400/400 (100.0%)
+Tasks solved correctly: 120/400 (30.0%)
+Pixel accuracy: 8433/55726 (15.1%)
+Total attempts used: 2529
+Average attempts per task: 6.3
+Total tokens used: 10,208,527
+Total cost: $3.065101
+
+Results saved to: logs/20250724_130300_summary_arc-agi-1_all_training.json
+
+### Dataset formatting
+
+[SOAR Dataset](https://huggingface.co/datasets/julien31/soar_arc_train_5M/viewer/default/train?row=32&views%5B%5D=train):
+- code [string]; correct_train_input [list of booleans]; predicted_train_output [list of lists of lists of ints]; correct_test_input [list of booleans]; predicted_test_output [list of lists of lists of ints]; task_id [string]; model [string]; generation [int]
+
+[Lewis Dataset](https://huggingface.co/datasets/Trelis/soar-arc-sft-2025-07-23_0859):
+- messages [list of messages]
+
+Competition Dataset Format
+- *reasoning [string];* code [string]; correct_train_input [list of booleans]; *train_input [list of lists of lists of ints]; train_output [list of lists of lists of ints];* predicted_train_output [list of lists of lists of ints]; correct_test_input [list of booleans]; *test_input [list of lists of lists of ints]; test_output [list of lists of lists of ints];* predicted_test_output [list of lists of lists of ints]; task_id [string]; model [string]; generation [int]
+
+Assembly:
+1. download a hf dataset.
+2. generate formatted text using code, train_input, train_output, test_input, code.
+
+## 2025 23rd July
+
+### Training Datasets Generated with Fixed Deduplication
+
+**Mixed Dataset (Gemini + Qwen3-4B)**:
+- File: `training_data_refined_stats_20250723_181536.jsonl`
+- **1023 training examples** from 50 ARC tasks
+- Programs with all training AND test correct: **81/1023 (7.9%)**
+- Programs that originally solved test case: **106/1023 (10.4%)**
+- Programs with all training examples correct: **92/1023 (9.0%)**
+- Programs with at least one correct answer: **212/1023 (20.7%)**
+- **100% validation success** rate
+
+**Gemini-Only Dataset**:
+- File: `gemini-synth-arc-agi-1-50-20250723_182345.jsonl`
+- **237 training examples** from 50 ARC tasks  
+- Programs with all training AND test correct: **71/237 (30.0%)**
+- Programs that originally solved test case: **84/237 (35.4%)**
+- Programs with all training examples correct: **81/237 (34.2%)**
+- Programs with at least one correct answer: **161/237 (67.9%)**
+- **100% validation success** rate
+
+**Key Insight**: Gemini-only dataset is smaller but much higher quality - 30.0% perfect programs vs 7.9% in mixed dataset. Suggests Gemini produces more accurate solutions than Qwen3-4B.
+
+**Tasks for Today:**
+[x] Measure performance on 1 task only, to get started. Generate 8 samples for that task. Will use middle_training_1 .
+[x] Carefully inspect all of that data.
+[x] Generate a dataset from that.
+  [x] Add de-duplication of programs if the test example is correct. In de-bug mode, print out info on when programs are deduped.
+  [x] Add de-duplication based on grid outputs for hindsight relabelling examples.  In de-bug mode, print out info on when programs are deduped.
+  [x] Add a script to remove any transductive examples. In de-bug mode, print out info on when examples are removed.
+[x] Repeat for a second task to generate a validation dataset, will use middle_training_1v .
+[x] Fine-tune a model for only one task. Seems to work well.
+[x] Fine-tune on 10 tasks. PROBLEM. Currently the training tasks are incorrect... needs more diagnosis.
+  [x] Double check that hindsight relabelling is working? And that checks on that code are correct.
+[x] Then increase up to 32 samples and repeat. Maybe...
+[x] Only then, expand up to trying 50 problems and add testing of the evaluation set. DONE AND SEEING SOME IMPROVEMENT (MEASURED WITH QWEN CODER MODEL).
+
+### Re-running a tune on Qwen with ~1k synth rows
+
+Will re-run on the eval set 400 tasks, three times:
+
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model Trelis/Qwen3-4B-gemini_synth_50_random_split_1_training_fixed-20250723-154652 --independent-attempts --base-url http://157.66.254.40:18942/v1 --qwen-no-think --max-tokens 2000
+```
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B-gemini_synth_50_random_split_1_training_fixed-20250723-154652
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    400        3              5              0.8%           1.2%          
+2    400        2              7              0.5%           1.8%          
+3    400        3              6              0.8%           1.5%          
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 0.7%
+  Std Dev: 0.1%
+  95% CI: [0.4%, 0.9%]
+
+All Attempts Success Rate:
+  Mean: 1.5%
+  Std Dev: 0.3%
+  95% CI: [1.0%, 2.0%]
+
+**So the results are within a similar confidence band, maybe slightly higher.**
+
+
+And then try with reasoning:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model Trelis/Qwen3-4B-gemini_synth_50_random_split_1_training_fixed-20250723-154652 --independent-attempts --base-url http://157.66.254.40:18942/v1
+```
+Looks like the model has forgotten to reason as the first few tokens are not properly formed.
+
+
+### Training Data Validation Issue - FIXED (23 Jul 2025)
+
+**Problem Identified**: Validation was failing on 0.3% of training examples (11 out of 3606) due to grid serialization losing empty rows.
+
+**Root Cause**: 
+- Programs that output grids with empty rows (e.g., `[[], [8, 8, 8], [4, 4, 4]]`) 
+- During serialization, empty rows became blank lines in text format
+- `parse_grid_from_text()` function skipped blank lines with `if line.strip():`
+- This caused shape mismatches: 5-row program output vs 4-row parsed expected output
+
+**Solution Implemented**:
+- Modified `format_grid()` functions to use `[EMPTY_ROW]` marker for empty rows
+- Updated `parse_grid_from_text()` to handle the special marker
+- Files modified: `generate_training_data.py`, `task_loader.py`, `tests/validate_training_data.py`
+
+**Fixed Dataset Generated**:
+```bash
+uv run python generate_training_data.py --model "google/gemini-2.5-flash,qwen/qwen3-4b" --output gemini_synth_50_random_split_1_training_fixed.jsonl --dataset "arc-agi-1" --subset "random_split_1_training" --clean-code --debug
+```
+
+Results:
+- Generated 1156 training examples  
+- Programs with at least one originally correct answer: 209/1156 (18.1%)
+- Programs with all training examples correct: 43/1156 (3.7%)
+- ✅ **100% validation success rate** - all examples now validate correctly
+- ✅ No validation mismatches found - all programs behaved consistently
+- ✅ All programs returned valid 2D grid formats
+- Saved training data to: `training_data/gemini_synth_50_random_split_1_training_fixed.jsonl`
+
+Statistics:
+  Unique tasks: 50
+  Average examples per task: 23.1
+  Tasks with most examples: [('7df24a62', 46), ('6b9890af', 45), ('264363fd', 43), ('d406998b', 39), ('f35d900a', 39)]
+
+**Validation Confirmed**: 
+```bash
+uv run python tests/validate_training_data.py llm-python/training_data/gemini_synth_50_random_split_1_training_fixed.jsonl --verbose
+```
+Result: 100% validation success rate across all 1156 training examples.
+
+### Fixed Test Case Deduplication Logic (23 Jul 2025)
+
+**Problem Identified**: The test case deduplication was incorrectly keeping only the first test-correct program per task, instead of deduplicating by code similarity.
+
+**Root Cause**: 
+- For programs that correctly solved test cases, the system kept only the first program regardless of code differences
+- This potentially removed valid diverse solutions that achieved the same test result through different approaches
+
+**Solution Implemented**:
+- Modified deduplication logic in `generate_training_data.py:636-651`
+- **Test-correct programs**: Now deduplicated by cleaned code string matching (after comment removal)
+- **Test-incorrect programs**: Continue to be deduplicated by output behavior similarity across training examples
+
+**Fixed Dataset Results**:
+```bash
+python3 generate_training_data.py --model "google/gemini-2.5-flash,qwen/qwen3-4b" --output training_data_fixed_dedup_20250723_175439.jsonl --dataset "arc-agi-1" --subset "random_split_1_training" --clean-code --debug
+```
+
+**Comparison Results**:
+- **Before fix**: 1156 training examples, 209/1156 (18.1%) with at least one correct answer
+- **After fix**: 1023 training examples, 212/1023 (20.7%) with at least one correct answer
+- **Deduplication stats**: Test-correct deduped: 5, Output-similarity deduped: 347
+- **Total deduplication**: 352 programs (25.3%) removed as duplicates
+
+**Impact**: The fix ensures that diverse test-correct solutions are preserved for training, while still removing true duplicates based on identical cleaned code.
+
+### Testing out Qwen Coder (Qwen/Qwen2.5-Coder-7B-Instruct)
+
+Start by doing one run on the full arc-agi-1 dataset all_evaluation:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 50 --max_turns 8 --model qwen/Qwen2.5-Coder-7B-Instruct --independent-attempts --base-url http://69.30.85.155:22006/v1 --qwen-no-think --max-tokens 2000
+```
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: qwen/Qwen2.5-Coder-7B-Instruct
+Reasoning effort: low
+API: Chat Completions (independent attempts, max 8 attempts)
+Total tasks attempted: 400
+Successful API calls: 400/400 (100.0%)
+Tasks solved correctly: 1/400 (0.2%)
+Pixel accuracy: 100/97320 (0.1%)
+Total attempts used: 3169
+Average attempts per task: 7.9
+Total tokens used: 14,480,050
+Total cost: $3.365933
+
+Results saved to: logs/20250723_131035_summary_arc-agi-1_all_evaluation.json
+
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: qwen/Qwen2.5-Coder-7B-Instruct
+Reasoning effort: low
+API: Chat Completions (independent attempts, max 8 attempts)
+Total tasks attempted: 400
+Successful API calls: 400/400 (100.0%)
+Tasks solved correctly: 1/400 (0.2%)
+Pixel accuracy: 4/97320 (0.0%)
+Total attempts used: 3192
+Average attempts per task: 8.0
+Total tokens used: 14,520,594
+Total cost: $3.373603
+
+Results saved to: logs/20250723_141951_summary_arc-agi-1_all_evaluation.json
+
+and then test the fine-tuned model (Trelis/Qwen2.5-Coder-7B-Instruct-gemini_synth_50_random_split_1_training-20250723-113848):
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model Trelis/Qwen2.5-Coder-7B-Instruct-gemini_synth_50_random_split_1_training-20250723-113848 --independent-attempts --base-url http://69.30.85.155:22102/v1 --qwen-no-think --max-tokens 2000
+```
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen2.5-Coder-7B-Instruct-gemini_synth_50_random_split_1_training-20250723-113848
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    400        1              4              0.2%           1.0%          
+2    400        2              3              0.5%           0.8%          
+3    400        1              3              0.2%           0.8%          
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 0.3%
+  Std Dev: 0.1%
+  95% CI: [0.1%, 0.6%]
+
+All Attempts Success Rate:
+  Mean: 0.8%
+  Std Dev: 0.1%
+  95% CI: [0.6%, 1.1%]
+
+Aggregate results saved to: logs/20250723_135758_aggregate_summary_arc-agi-1_all_evaluation_3runs.json
+
+**Seems like there is some small improvement on the evaluation set.**
+
+### Diagnosing fine-tuned model issues
+
+Start by reviewing the data prep scripts and re-running data prep, expecting 61 examples:
+
+```bash
+uv run python generate_training_data.py --model "google/gemini-2.5-flash" --output gemini_synth_10_train.jsonl --dataset "arc-agi-1" --subset "middle_training_10" --clean-code --debug
+```
+
+This is getting 60 examples.
+
+And just re-run the single train datapoint:
+
+```bash
+uv run python generate_training_data.py --model "google/gemini-2.5-flash" --output gemini_synth_1_train.jsonl --dataset "arc-agi-1" --subset "middle_training_1" --clean-code --debug
+```
+
+I've trained with batch size one and now will try to run on that model to test performance on the middle training 10 dataset:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 3 --max_workers 10 --max_turns 8 --model qwen_gemini_synth_10-23jul --independent-attempts --base-url http://69.30.85.155:22010/v1 --qwen-no-think --max-tokens 2000
+```
+
+Dataset: arc-agi-1
+Subset: middle_training_10
+Model: qwen_gemini_synth_10-23jul
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    10         1              2              10.0%          20.0%         
+2    10         0              3              0.0%           30.0%         
+3    10         0              1              0.0%           10.0%         
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 3.3%
+  Std Dev: 5.8%
+  95% CI: [-8.0%, 14.6%]
+
+All Attempts Success Rate:
+  Mean: 20.0%
+  Std Dev: 10.0%
+  95% CI: [0.4%, 39.6%]
+
+Aggregate results saved to: logs/20250723_093311_aggregate_summary_arc-agi-1_middle_training_10_3runs.json
+
+**Am getting some signal now on training being correct in some cases.** Note that we are overtraining from an evaluation standpoint:
+
+| Step | Training Loss | Validation Loss |
+|------|---------------|-----------------|
+| 18 | 0.337900 | 0.422697 |
+| 36 | 0.294500 | 0.387451 |
+| 54 | 0.348900 | 0.452704 |
+| 72 | 0.169600 | 0.449152 |
+| 90 | 0.152500 | 0.432770 |
+| 108 | 0.164000 | 0.435944 |
+| 126 | 0.099100 | 0.415581 |
+| 144 | 0.087000 | 0.447614 |
+| 162 | 0.078300 | 0.453060 |
+| 180 | 0.082800 | 0.451181 |
+
+
+and then test performance on the evaluation set:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 10 --max_turns 8 --model qwen_gemini_synth_10-23jul --independent-attempts --base-url http://69.30.85.155:22010/v1 --qwen-no-think --max-tokens 2000
+```
+Stopped it early but all first 108/400 tasks.
+
+### Test out batch size 16, not 1. 3 epochs
+Note that the training example fails in the notebook.
+| Step | Training Loss | Validation Loss |
+|------|---------------|-----------------|
+| 2 | 1.056900 | 0.774284 |
+| 4 | 0.397200 | 0.363959 |
+| 6 | 0.298000 | 0.334183 |
+| 8 | 0.242700 | 0.367940 |
+| 10 | 0.218900 | 0.377569 |
+| 12 | 0.198000 | 0.377700 |
+Looks overtrained as well.
+
+Run the model on the middle training 10 dataset:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 3 --max_workers 10 --max_turns 8 --model qwen_gemini_synth_10-23jul --independent-attempts --base-url http://69.30.85.155:22172/v1 --qwen-no-think --max-tokens 2000
+```
+This gets none of the training examples correct...
+
+### Prepare data on the random 50 training split, first split
+
+Generate data with gemini first:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 25 --max_turns 8 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+```
+Dataset: arc-agi-1
+Subset: random_split_1_training
+Model: google/gemini-2.5-flash
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    50         24             34             48.0%          68.0%         
+2    50         23             34             46.0%          68.0%         
+3    50         21             35             42.0%          70.0%         
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 45.3%
+  Std Dev: 3.1%
+  95% CI: [39.3%, 51.3%]
+
+All Attempts Success Rate:
+  Mean: 68.7%
+  Std Dev: 1.2%
+  95% CI: [66.4%, 70.9%]
+
+Aggregate results saved to: logs/20250723_103715_aggregate_summary_arc-agi-1_random_split_1_training_3runs.json
+
+**interesting that sampling doesn't help all that much here**
+
+and test baseline performance with Qwen3 4B:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 25 --max_turns 8 --model qwen/qwen3-4b --independent-attempts --base-url http://69.30.85.155:22189/v1 --qwen-no-think
+```
+this data can also be used for training!
+Dataset: arc-agi-1
+Subset: random_split_1_training
+Model: qwen/qwen3-4b
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    50         1              7              2.0%           14.0%         
+2    50         1              7              2.0%           14.0%         
+3    50         2              8              4.0%           16.0%         
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 2.7%
+  Std Dev: 1.2%
+  95% CI: [0.4%, 4.9%]
+
+All Attempts Success Rate:
+  Mean: 14.7%
+  Std Dev: 1.2%
+  95% CI: [12.4%, 16.9%]
+
+Aggregate results saved to: logs/20250723_100503_aggregate_summary_arc-agi-1_random_split_1_training_3runs.json
+
+and then generate the dataset:
+```bash
+uv run python generate_training_data.py --model "google/gemini-2.5-flash,qwen/qwen3-4b" --output gemini_synth_50_random_split_1_training.jsonl --dataset "arc-agi-1" --subset "random_split_1_training" --clean-code --debug
+```
+
+Generated 1175 training examples
+Programs with at least one originally correct answer: 209/1175 (17.8%)
+Programs with all training examples correct: 43/1175 (3.7%)
+✅ No validation mismatches found - all programs behaved consistently
+✅ All programs returned valid 2D grid formats
+Saved training data to: training_data/gemini_synth_50_random_split_1_training.jsonl
+
+Statistics:
+  Unique tasks: 50
+  Average examples per task: 23.5
+  Tasks with most examples: [('7df24a62', 46), ('6b9890af', 45), ('264363fd', 43), ('d406998b', 39), ('f35d900a', 39)]
+
+### fine-tune on 1 epoch constant lr with 32 virtual batch size on H100
+
+Then run the model on the random split 1 training dataset:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset random_split_1_training --repeat-runs 3 --max_workers 25 --max_turns 8 --model Trelis/gemini_synth_50_random_split_1_training-23jul-1epoch --independent-attempts --base-url http://69.30.85.155:22199/v1 --qwen-no-think --max-tokens 2000
+```
+Dataset: arc-agi-1
+Subset: random_split_1_training
+Model: Trelis/gemini_synth_50_random_split_1_training-23jul-1epoch
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    50         3              5              6.0%           10.0%         
+2    50         0              6              0.0%           12.0%         
+3    50         3              8              6.0%           16.0%         
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 4.0%
+  Std Dev: 3.5%
+  95% CI: [-2.8%, 10.8%]
+
+All Attempts Success Rate:
+  Mean: 12.7%
+  Std Dev: 3.1%
+  95% CI: [6.7%, 18.7%]
+
+Aggregate results saved to: logs/20250723_113421_aggregate_summary_arc-agi-1_random_split_1_training_3runs.json
+
+**Basically the same as before fine-tuning.**
+
+and test on the evaluation dataset:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model Trelis/gemini_synth_50_random_split_1_training-23jul-1epoch --independent-attempts --base-url http://69.30.85.155:22199/v1 --qwen-no-think --max-tokens 2000
+```
+
+==================================================
+SUMMARY (Run 1)
+==================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/gemini_synth_50_random_split_1_training-23jul-1epoch
+Reasoning effort: low
+API: Chat Completions (independent attempts, max 8 attempts)
+Total tasks attempted: 400
+Successful API calls: 400/400 (100.0%)
+Tasks solved correctly: 6/400 (1.5%)
+Pixel accuracy: 72/97320 (0.1%)
+Total attempts used: 3163
+Average attempts per task: 7.9
+Total tokens used: 16,112,504
+Total cost: $4.335001
+
+Results saved to: logs/20250723_114206_summary_arc-agi-1_all_evaluation_run1.json
+
+**Also the same as before fine-tuning.**
+
+### Trying out the qwen coder model.
+
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model Trelis/Qwen2.5-Coder-7B-Instruct-gemini_synth_50_random_split_1_training-20250723-113848 --independent-attempts --base-url http://69.30.85.155:22102/v1 --qwen-no-think --max-tokens 2000
+```
+
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen2.5-Coder-7B-Instruct-gemini_synth_50_random_split_1_training-20250723-113848
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    400        1              4              0.2%           1.0%          
+2    400        2              3              0.5%           0.8%          
+3    400        1              3              0.2%           0.8%          
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 0.3%
+  Std Dev: 0.1%
+  95% CI: [0.1%, 0.6%]
+
+All Attempts Success Rate:
+  Mean: 0.8%
+  Std Dev: 0.1%
+  95% CI: [0.6%, 1.1%]
+
+Aggregate results saved to: logs/20250723_135758_aggregate_summary_arc-agi-1_all_evaluation_3runs.json
+
 ## 2025 22nd July
 
 **Tasks for Today:**
@@ -9,10 +666,241 @@
 [x] Test out Ronan's trained Qwen3 model on that set using zero temperature. Still getting a lot of training problems wrong, indicating an issue with data generation OR with fine-tuning.
 [x] Run a baseline Qwen3 model with no reasoning on that split. Done, performs better than the Gemini fine-tune.
 [x] Carefully review the syntax of SOAR vs Qwen3 base vs Qwen3 ft. Not clear there is a syntax issue as fine-tuned models seem to be robust to prompt differences.
-[ ] Next goal is to ensure that training is working. This means that a trained model should - at temperature zero - be getting correct programs.
-[ ] Implement deduplication of data (by program, if test passes, by grid outputs for hindsight relabelling examples).
 
-### Run a SOAR model - the Qwen 7B model.
+### Diagnosing fine-tuned model issues
+
+Going to run a runpod template without the reasoning parser so I can see the raw output from the model.
+
+Re-run a fine-tuned model then to see how it does:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 1 --max_workers 10 --max_turns 8 --model qwen_gemini_synth_10-22jul --independent-attempts --base-url http://69.30.85.165:22134/v1 --qwen-no-think
+```
+
+**update** I found that the masking after think tokens was missing two new lines. Wouldn't imagine it causes issues but sometimes things like this do. 
+
+**DIAGNOSIS: --qwen-no-think flag bug found!** The script only applies the no-thinking configuration if the model name contains "qwen" (case-insensitive). Since our model is named `Trelis/gemini_synth_10-22jul`, the condition `if "qwen" in self.model.lower() and self.base_url:` evaluates to False, so the entire Qwen-specific parameter block including `{"chat_template_kwargs": {"enable_thinking": False}}` is skipped. This is why the model still shows thinking output despite the `--qwen-no-think` flag. The fix is to include "qwen" in the name.
+
+- Am aiming to see it get even one problem correct... which it doesn't.
+
+
+
+---
+In the meantime, will create some more data to use for validation using the shortest training 10 dataset.
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 1 --max_workers 10 --max_turns 8 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+```
+and then will set up a dataset using that by filtering for the model and subset and dataset:
+```bash
+uv run python generate_training_data.py --model "google/gemini-2.5-flash" --output gemini_synth_10_shortest_training_10.jsonl --dataset "arc-agi-1" --subset "shortest_training_10" --clean-code --debug
+```
+
+### Generating data for just one task
+
+Running the gemini flash thinking model to get some data.
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_1 --repeat-runs 3 --max_workers 3 --max_turns 8 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+```
+Gets it correct on the first or second attempt each time.
+Dataset: arc-agi-1
+Subset: shortest_training_1
+Model: google/gemini-2.5-flash
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    1          1              1              100.0%         100.0%        
+2    1          0              1              0.0%           100.0%        
+3    1          0              1              0.0%           100.0%        
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 33.3%
+  Std Dev: 57.7%
+  95% CI: [-79.8%, 146.5%]
+
+All Attempts Success Rate:
+  Mean: 100.0%
+  Std Dev: 0.0%
+  95% CI: [100.0%, 100.0%]
+
+Aggregate results saved to: logs/20250722_155732_aggregate_summary_arc-agi-1_shortest_training_1_3runs.json
+
+Evaluating baseline performance of the qwen 3 4b model:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_1 --repeat-runs 3 --max_workers 3 --max_turns 8 --model qwen/qwen3-4b --independent-attempts --base-url http://69.30.85.155:22025/v1 --qwen-no-think
+```
+Gets it wrong all of the time.
+
+Dataset: arc-agi-1
+Subset: middle_training_1
+Model: qwen/qwen3-4b
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    1          0              0              0.0%           0.0%          
+2    1          0              0              0.0%           0.0%          
+3    1          0              0              0.0%           0.0%          
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+All Attempts Success Rate:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Aggregate results saved to: logs/20250722_155740_aggregate_summary_arc-agi-1_middle_training_1_3runs.json
+
+Then creating a dataset from that to use for fine-tuning:
+```bash
+uv run python generate_training_data.py --model "google/gemini-2.5-flash" --output gemini_synth_1_train.jsonl --dataset "arc-agi-1" --subset "middle_training_1" --clean-code
+```
+
+### Create a validation dataset using Gemini as well.
+
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_1v --repeat-runs 3 --max_workers 3 --max_turns 8 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+```
+Gets that correct:
+Dataset: arc-agi-1
+Subset: middle_training_1v
+Model: google/gemini-2.5-flash
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    1          1              1              100.0%         100.0%        
+2    1          1              1              100.0%         100.0%        
+3    1          1              1              100.0%         100.0%        
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 100.0%
+  Std Dev: 0.0%
+  95% CI: [100.0%, 100.0%]
+
+All Attempts Success Rate:
+  Mean: 100.0%
+  Std Dev: 0.0%
+  95% CI: [100.0%, 100.0%]
+
+Aggregate results saved to: logs/20250722_161057_aggregate_summary_arc-agi-1_middle_training_1v_3runs.json
+
+Then creating a dataset from that to use for fine-tuning validation:
+```bash
+uv run python generate_training_data.py --model "google/gemini-2.5-flash" --output gemini_synth_1_validation.jsonl --dataset "arc-agi-1" --subset "middle_training_1v" --clean-code
+```
+
+### Fine-tune
+
+All seems to be working fine on a single row. Moving now to try 10 rows.
+
+### 10 Tasks at a time
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 3 --max_workers 10 --max_turns 8 --model google/gemini-2.5-flash --independent-attempts --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+```
+
+Then creating a dataset from that to use for fine-tuning:
+```bash
+uv run python generate_training_data.py --model "google/gemini-2.5-flash" --output gemini_synth_10_train.jsonl --dataset "arc-agi-1" --subset "middle_training_10" --clean-code
+```
+Gets about 7-8 correct.
+Dataset: arc-agi-1
+Subset: middle_training_10
+Model: google/gemini-2.5-flash
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    10         7              8              70.0%          80.0%         
+2    10         6              8              60.0%          80.0%         
+3    10         5              7              50.0%          70.0%         
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 60.0%
+  Std Dev: 10.0%
+  95% CI: [40.4%, 79.6%]
+
+All Attempts Success Rate:
+  Mean: 76.7%
+  Std Dev: 5.8%
+  95% CI: [65.4%, 88.0%]
+
+Aggregate results saved to: logs/20250722_174923_aggregate_summary_arc-agi-1_middle_training_10_3runs.json
+
+And try to evaluate the untuned model on those:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 3 --max_workers 10 --max_turns 8 --model qwen/qwen3-4b --independent-attempts --base-url http://69.30.85.155:22025/v1 --qwen-no-think
+```
+The model is getting none correct!!! which makes sense as these are of middle length.
+
+
+Re-run a fine-tuned model then to see how it does:
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset middle_training_10 --repeat-runs 3 --max_workers 10 --max_turns 1 --model Trelis/gemini_synth_10-22jul --independent-attempts --base-url http://69.30.85.155:22131/v1 --qwen-no-think --max-tokens 2000
+```
+This is not consistently producing correct text....
+
+---
+
+Run on shortest with the untuned model (for lewis):
+```bash
+uv run python run_arc_tasks.py --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 3 --max_workers 10 --max_turns 8 --model qwen/qwen3-4b --independent-attempts --base-url http://69.30.85.155:22025/v1 --qwen-no-think
+```
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
+Dataset: arc-agi-1
+Subset: shortest_training_10
+Model: qwen/qwen3-4b
+Number of runs: 3
+API failures excluded from analysis: YES
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    10         2              5              20.0%          50.0%         
+2    10         4              5              40.0%          50.0%         
+3    10         2              5              20.0%          50.0%         
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 26.7%
+  Std Dev: 11.5%
+  95% CI: [4.0%, 49.3%]
+
+All Attempts Success Rate:
+  Mean: 50.0%
+  Std Dev: 0.0%
+  95% CI: [50.0%, 50.0%]
+
+Aggregate results saved to: logs/20250722_172058_aggregate_summary_arc-agi-1_shortest_training_10_3runs.json
+
+----
+Morning session:
 
 **Commentary**
 - *Is the SOAR model performing as well as in the paper?* Test performance on 400 problems is matching (even with our prompt that is different from SOAR). Model is getting about 3.5% correct on one attempt and 14% on 8 attempts max. the paper is getting about 3% and 8%, which is a bit lower (I don't know why).
