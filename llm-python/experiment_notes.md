@@ -1,32 +1,194 @@
 # Experiment Notes
 
+## 26-28 July 2025
+[ ] Script consolidation:
+  [ ] Decide on using run_arc_tasks.py or run_arc_tasks_soar.py as the baseline. Will consolidate around Soar, since there is no obvious improvement with our prompting. Clean up the repo to just use that.
+  [ ] Double check the prompt.
+  [ ] Split out utils, where needed.
+  [ ] Employ the same data prep and prompt strings in the ipynb as in the run_arc_tasks.py script.
+[ ] Grading fix - whereby testing stops if test is correct, should be if all train examples are correct AND there is no transduction detected.
+[ ] Ablate reasoning vs non-reasoning training.
+  [ ] Using synthetic Gemini data with and without the reasoning traces.
+  [ ] Generate clean data with Geminin for all training problems.
+  [ ] Train without reasoning.
+  [ ] Train with reasoning ONLY ON FULLY CORRECT TASKS.
+
 ## 2025 25th July
 
-[ ] Metrics:
-  [ ] Inspect metrics in verbose mode when using a SOAR model (which should give some correct test data).
-  [ ] Add ability to use a grids-only set of data for validation data.
-    [ ] Just run the script.
-    [ ] How to turn off the teacher forced decoding?
-[ ] SOAR testing on ARC-AGI-2.
-  [x] Run on ARC-AGI-2 with a SOAR model. Scores zero with 8 attempts on qwen2.5-7b-coder. With 64 attempts, scores ...
+**Learnings:**
+- It seems we are perhaps undertraining and could benefit from training for more epochs (at least on smaller datasets).
+- Prompt matters for fine-tuned models. The SOAR model performs badly if not using the SOAR prompt.
+- It seems that the SOAR model scores 16% with up to eight attempts on the ARC-AGI-1 all_evaluation set. This is higher than the paper, which gets to 7.5% with majority vote. Hard to understand how this is possible.
+- Fishy that I can't replicate Qwen/Qwen3-4b getting around 1-2%....
+
+[x] Metrics:
+  [x] Inspect metrics in verbose mode when using a SOAR model (which should give some correct test data).
+  [x] Add ability to use a grids-only set of data for validation data.
+    [x] Just run the script.
+    [x] How to turn off the teacher forced decoding? No need.
+[x] SOAR testing on ARC-AGI-2.
+  [x] Run on ARC-AGI-2 with a SOAR model. Scores zero with 8 attempts on qwen2.5-7b-coder. With 64 attempts, scores 0...
 
 ## Ablation of Prompts
 I'll run with run_arc_tasks_soar.py and then with run_arc_tasks.py.
 
+To do this I'll start a qwen/qwen3-4b model with the following command:
 ```bash
-uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_attempts 8 --model qwen/qwen3-4b --base-url http://216.81.245.97:30890/v1 --max-tokens 1000 --qwen-no-think --limit 1
+uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path qwen/qwen3-4b --reasoning-parser qwen3
 ```
-and then with run_arc_tasks.py using the v1 prompt (which has a mistake because it over-constrains the grid outputs!):
 
 ```bash
-uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model qwen/qwen3-4b --independent-attempts --base-url http://216.81.245.97:30890/v1 --max-tokens 4000 --qwen-no-think
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 50 --max_attempts 8 --model qwen/qwen3-4b --base-url http://216.81.245.26:16969/v1 --max-tokens 4000 --qwen-no-think
 ```
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: qwen/qwen3-4b
+API: Simple Chat Completions (max 8 attempts)
+Total tasks attempted: 400
+Successful API calls: 400/400 (100.0%)
+Tasks solved correctly: 2/400 (0.5%)
+Pixel accuracy: 101/97320 (0.1%)
+Total attempts used: 3179
+Average attempts per task: 7.9
+Total tokens used: 14,885,114
+Total cost: $3.580154
+
+Results saved to: llm-python/logs/20250725_163446_summary_arc-agi-1_all_evaluation_simple.json
+
+And then with run_arc_tasks.py using the v1 prompt (which has a mistake because it over-constrains the grid outputs!):
+
+```bash
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 50 --max_turns 8 --model qwen/qwen3-4b --independent-attempts --base-url http://216.81.245.26:16969/v1 --max-tokens 4000 --qwen-no-think --prompt-version v1
+```
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: qwen/qwen3-4b
+Reasoning effort: low
+API: Chat Completions (independent attempts, max 8 attempts)
+Total tasks attempted: 400
+Successful API calls: 400/400 (100.0%)
+Tasks solved correctly: 1/400 (0.2%)
+Pixel accuracy: 36/97320 (0.0%)
+Total attempts used: 3190
+Average attempts per task: 8.0
+Total tokens used: 14,060,222
+Total cost: $3.110465
+
+Results saved to: llm-python/logs/20250725_155717_summary_arc-agi-1_all_evaluation.json
+
 and then run with v2, which is fixed from v1:
 ```bash
-uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model qwen/qwen3-4b --independent-attempts --base-url http://216.81.245.97:30890/v1 --max-tokens 4000 --qwen-no-think --prompt-version v2
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 50 --max_turns 8 --model qwen/qwen3-4b --independent-attempts --base-url http://216.81.245.26:16969/v1 --max-tokens 4000 --qwen-no-think
 ```
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: qwen/qwen3-4b
+Reasoning effort: low
+API: Chat Completions (independent attempts, max 8 attempts)
+Total tasks attempted: 400
+Successful API calls: 400/400 (100.0%)
+Tasks solved correctly: 0/400 (0.0%)
+Pixel accuracy: 0/97320 (0.0%)
+Total attempts used: 3200
+Average attempts per task: 8.0
+Total tokens used: 14,090,403
+Total cost: $3.124168
 
+Results saved to: llm-python/logs/20250725_165916_summary_arc-agi-1_all_evaluation.json
 
+Very odd that this is getting zero. Seems fishy...
+--------------------------------
+And then to compare with the soar model, I'll start a Soar-qwen-7b model with the following command:
+
+```bash
+uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path julien31/Soar-qwen-7b --reasoning-parser qwen3
+```
+and test it on the soar script:
+
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 50 --max_attempts 8 --model julien31/Soar-qwen-7b --base-url http://216.81.245.26:16968/v1 --max-tokens 4000 --limit 1
+```
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: julien31/Soar-qwen-7b
+API: Simple Chat Completions (max 8 attempts)
+Total tasks attempted: 400
+Successful API calls: 400/400 (100.0%)
+Tasks solved correctly: 69/400 (17.2%)
+Pixel accuracy: 16996/97320 (17.5%)
+Total attempts used: 2876
+Average attempts per task: 7.2
+Total tokens used: 11,673,080
+Total cost: $2.200475
+
+Results saved to: llm-python/logs/20250725_153239_summary_arc-agi-1_all_evaluation_simple.json
+
+Try it out with our v2 prompt:
+```bash
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 50 --max_turns 8 --model julien31/Soar-qwen-7b --independent-attempts --base-url http://216.81.245.26:16968/v1 --max-tokens 4000
+```
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: julien31/Soar-qwen-7b
+Reasoning effort: low
+API: Chat Completions (independent attempts, max 8 attempts)
+Total tasks attempted: 400
+Successful API calls: 400/400 (100.0%)
+Tasks solved correctly: 7/400 (1.8%)
+Pixel accuracy: 1687/97320 (1.7%)
+Total attempts used: 3151
+Average attempts per task: 7.9
+Total tokens used: 12,664,706
+Total cost: $2.343881
+
+Results saved to: llm-python/logs/20250725_154533_summary_arc-agi-1_all_evaluation.json
+
+**Performance is far worse if not using a matching prompt!**
+
+For fun, let's run with the soar script on this model - Trelis/Soar-qwen-7b-ds20250724_131808-20250725-130403:
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 50 --max_attempts 8 --model Trelis/Soar-qwen-7b-ds20250724_131808-20250725-130403 --base-url http://216.81.245.26:48513/v1 --max-tokens 4000
+```
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Soar-qwen-7b-ds20250724_131808-20250725-130403
+API: Simple Chat Completions (max 8 attempts)
+Total tasks attempted: 400
+Successful API calls: 400/400 (100.0%)
+Tasks solved correctly: 5/400 (1.2%)
+Pixel accuracy: 226/97320 (0.2%)
+Total attempts used: 3175
+Average attempts per task: 7.9
+Total tokens used: 13,831,492
+Total cost: $2.949181
+
+**Conclusion: We seem to have damaged performance here.**
+
+### Try a 5 epoch trained model, on Gemini
+
+We'll start a pod for this: 'Trelis/Qwen3-4B-ds20250724_131808-20250725-142549':
+
+```bash
+uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path Trelis/Qwen3-4B-ds20250724_131808-20250725-142549 --reasoning-parser qwen3
+```
+then run the soar prompt on it:
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 50 --max_attempts 8 --model Trelis/Qwen3-4B-ds20250724_131808-20250725-142549 --base-url http://216.81.245.97:14238/v1 --max-tokens 1000
+```
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B-ds20250724_131808-20250725-142549
+API: Simple Chat Completions (max 8 attempts)
+Total tasks attempted: 400
+Successful API calls: 400/400 (100.0%)
+Tasks solved correctly: 0/400 (0.0%)
+Pixel accuracy: 0/97320 (0.0%)
+Total attempts used: 3200
+Average attempts per task: 8.0
+Total tokens used: 13,457,209
+Total cost: $2.712392
+
+Seems fishy that it also scores zero...
 
 
 ### SOAR Model Testing on ARC-AGI-2

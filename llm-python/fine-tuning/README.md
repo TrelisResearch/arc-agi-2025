@@ -3,7 +3,11 @@
 Contains fine-tuning notebooks for ARC-AGI task training:
 
 ## Notebooks
-- **unsloth_arc_finetuning.ipynb**: Latest notebook, ready to integrate custom metrics as a next step.
+
+- **unsloth_arc_finetuning_soar.ipynb**: A fine-tuning notebook that uses the SOAR prompt. Recommended for now, unless results show another prompt to perform better.
+
+Archived:
+- **unsloth_arc_finetuning.ipynb**: A notebook with an incorrect v1 prompt that over-constrains the grid outputs.
 
 ## TensorBoard Logs
 To view training logs:
