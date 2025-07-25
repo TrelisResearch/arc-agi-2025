@@ -10,6 +10,20 @@ This repository contains resources for working with the ARC-AGI (Abstraction and
     b. **Linux**: Configure the fuse mount with: `mkdir -p gcs && gcsfuse trelis-arc ./gcs`
     c. **macOS**: Use `gsutil` or `gcloud storage` commands directly (see examples below)
 
+### UV Project Discovery
+
+**Important**: When you run `uv` commands (like `uv venv`, `uv sync`, `uv run`) from subdirectories such as `llm-python/`, `uv` will automatically search upward through the directory hierarchy to find the root `pyproject.toml` file.
+
+This means:
+- Running `uv venv` from `llm-python/` will discover and use the root `pyproject.toml` configuration
+- The virtual environment will respect the `requires-python = ">=3.12"` setting from the root
+- All dependencies and project settings from the root will be applied
+
+To create an isolated environment that ignores the root configuration, use:
+```bash
+uv venv --no-config
+```
+
 ## Branches
 -`o3-tools-images` a frozen version of the openai o3-tools branch that still maintains functionality for adding images to the prompts and feedback. This branch only supports openai models.
 -`input-output-prog` contains a frozen version of the o3-tools branch with a prompt to generate input and output grids AS WELL as the transformation function. It uses openai responses api so is only compatible with openai models. This branch only supports openai models.

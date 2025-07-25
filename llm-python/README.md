@@ -19,55 +19,6 @@ Objective: Define a test that is a representative measure of performance while a
 **Runpod One-click-template**
 Runpod One-click-template [here](https://console.runpod.io/deploy?template=agyu4xrpgl&ref=jmfkcdio) - swap out the model name if using a fine-tuned model.
 
-**Levers for Improvement:**
-[ ] Run some baseline performance tests on Qwen3 4B.
-[ ] Use the hindsight relabelling trick.
-[ ] Use the reversal trick.
-[ ] Use the intermediation approach.
-[ ] Ablate the costs of solving if we do o4-mini (low) versus o4-mini (high). Is it possibly better to use o4-mini (low) with 8 max turns versus o4-mini (high) with 4 max turns? Consider costs across three runs. (best to develop a script for doing this that calculates means etc.).
-[ ] PROBLEM: WE ARE CHEATING BY ALLOWING THE MODEL TO CONTINUE IF THE TRAINING EXAMPLES ARE ALL CORRECT, BUT THE TEST IS WRONG. THERE'S AN ABLATION TO TEST FOR THE CASE WHERE WE - BEFORE STOPPING - ASK THE MODEL TO SEE IF IT SHOULD MAKE THE PROGRAM MORE GENERAL. Fix the cheating issue whereby there is more sampling/turns if the training examples are all correct, but the test is wrong. Only applies to feedback.
-[ ] MCTS-type ablation: Sample for half of the max_turns, and then feedback for the other remaining turns (stop of course if the test is solved). Not worth it as sampling seems better than feedback.
-[ ] Swap to chat completions endpoint so as to allow for openai-style endpoint usage (enable other models, incl. reasoning). THIS IS NOT GOING TO SUPPORT OPENAI REASONING MODELS, WHICH DONT' DISCLOSE THE REASONING TRACE, AND SO YOU MUST USE THE RESPONSES API TO USE REASONING WITH OPENAI MODELS. OTHERS (CLAUDE, QWEN, GEMINI?, DEEPSEEK?) RESPOND WITH <think> TAGS.
-[ ] Apply a limit to oscillation within feedback roll-outs.
-[ ] Put in simpler images (particularly relevant when we fine-tune because the model will know the format to expect).
-[ ] Start with strict prompt, only then fall back to partial attempt. DELAY.
-[ ] Use a code interpreter tool rather than running code from an extract code block.
-[ ] Overfitting checks are probably needed because sometimes all training problems are solved but then the test fails. Could just rotate or do simple checks like that.
-[ ] Allow the code environment to persist for a given task. [not relevant until we do the code sandbox locally.]
-
-Cleanups:
-  [x] Drop the MDL / compression calculation altogether from scripts here.
-  [x] Strip out "tools calls made" etc. as there are no tool calls. There are only turns used.
-  [x] Automatically support non-reasoning or reasoning models (no flags required).
-  [x] Improve logging:
-    [x] Manually inspect the prompt.
-    [x] Inspect how wrong grids are passed back to the model (or failed runs of the code produced).
-    [x] in our logging / logs, it would be best to save not just the final responses, but the ones before thta too - so I can inspect what the code output is and what is being passed back in.
-  [x] Run tests on low levels of reasoning effort.
-
-Completed:
-[x] Describing grids ablation: Get the model to also describe the input grid and the output grid with code (so, return three code blocks), and provide feedback on those too. DONE AND IN A DEDICATED BRANCH.
-[x] Port the scripts to an openai style endpoint. Run Qwen and try to calibrate.
-[x] Review of some samples.
-[x] Add guidance around output grid sizes, if wrong. (Enhanced: now tells model target dimensions upfront + general reminders)
-[x] Create a script that automatically will do a run three times and calculate the mean and std dev (for the number correct on one turn, and the number correct on more than one turn).
-[x] Ablate feedback of max 8 turns versus sampling for max 8 turns.
-[x] Refine prompting:
-  [x] Examine the correct tasks for what happened. Examine also some wrong tasks.
-  [x] Adjust the soft prompt so that it encourages finding an improvement! check that. Sometimes there is no attempt to improve when some training grids pass. Perhaps try a prompt that encourages generalisation to the other training grids.
-  [x] Review prompts for when a training example is solved (at least one, but not all).
-  [x] Add a note that if all training examples are solved, then the program is overfitting.
-[x] Try inputting images of the problem as well as just the problem itself.
-[x] Test out having the model attempt a partial transformation, if it cannot determine a complete rule that solves the problem.
-[x] Run on ARC AGI 1 Eval set. MIT splits. Starting with Easy, then Medium, then Hard, then Expert (if needed). Answers the question of whether refinement helps.
-[x] Bringing the sandbox to be local:
-  [x] Just run the code locally each time, rather than use the remote code interpreter.
-    - Print, after each tool call, the result in terms of pixel match average on all training examples AND number of training examples solved out of those present.
-[x] Include the test grid, it adds information.
-[x] When providing code, also provide a summary of the rationale behind what is being done. (not in the reasoning). [Test this out in a clean test script to go in a tests folder.]
-[x] Check whether the code sandbox on openai is ephemeral or not. Yes, with `auto` the same container is used and variables persist.
-[x] prompt so that the model keeps reasoning until it finds a python program that solves (for the tool use case). don't include the test examples in the prompt.
-[x] **Simplified scoring**: Removed complex compression-based calculations and focused on core metrics.
 
 ## Features
 
@@ -93,6 +44,20 @@ uv sync
 2. Ensure you have the `.env` file with your OpenAI API key:
 ```
 OPENAI_API_KEY=your_key_here
+```
+
+### UV Project Discovery Note
+
+**Important**: When running `uv` commands from this `llm-python/` subdirectory, `uv` automatically searches upward and discovers the root `pyproject.toml` file in the repository root.
+
+This means:
+- Commands like `uv venv`, `uv sync`, and `uv run` will use the root project configuration
+- The Python version requirement (`requires-python = ">=3.12"`) from the root will be respected
+- All dependencies from the root `pyproject.toml` will be available
+
+To create an isolated environment that ignores the root configuration:
+```bash
+uv venv --no-config
 ```
 
 ## Usage
@@ -1489,3 +1454,55 @@ uv run o3-tools/create_grid_size_distributed_subset.py
 ```
 
 The script will output a manifest of selected tasks and their grid sizes.
+
+## Progress / Build Notes
+
+**Levers for Improvement:**
+[ ] Run some baseline performance tests on Qwen3 4B.
+[ ] Use the hindsight relabelling trick.
+[ ] Use the reversal trick.
+[ ] Use the intermediation approach.
+[ ] Ablate the costs of solving if we do o4-mini (low) versus o4-mini (high). Is it possibly better to use o4-mini (low) with 8 max turns versus o4-mini (high) with 4 max turns? Consider costs across three runs. (best to develop a script for doing this that calculates means etc.).
+[ ] PROBLEM: WE ARE CHEATING BY ALLOWING THE MODEL TO CONTINUE IF THE TRAINING EXAMPLES ARE ALL CORRECT, BUT THE TEST IS WRONG. THERE'S AN ABLATION TO TEST FOR THE CASE WHERE WE - BEFORE STOPPING - ASK THE MODEL TO SEE IF IT SHOULD MAKE THE PROGRAM MORE GENERAL. Fix the cheating issue whereby there is more sampling/turns if the training examples are all correct, but the test is wrong. Only applies to feedback.
+[ ] MCTS-type ablation: Sample for half of the max_turns, and then feedback for the other remaining turns (stop of course if the test is solved). Not worth it as sampling seems better than feedback.
+[ ] Swap to chat completions endpoint so as to allow for openai-style endpoint usage (enable other models, incl. reasoning). THIS IS NOT GOING TO SUPPORT OPENAI REASONING MODELS, WHICH DONT' DISCLOSE THE REASONING TRACE, AND SO YOU MUST USE THE RESPONSES API TO USE REASONING WITH OPENAI MODELS. OTHERS (CLAUDE, QWEN, GEMINI?, DEEPSEEK?) RESPOND WITH <think> TAGS.
+[ ] Apply a limit to oscillation within feedback roll-outs.
+[ ] Put in simpler images (particularly relevant when we fine-tune because the model will know the format to expect).
+[ ] Start with strict prompt, only then fall back to partial attempt. DELAY.
+[ ] Use a code interpreter tool rather than running code from an extract code block.
+[ ] Overfitting checks are probably needed because sometimes all training problems are solved but then the test fails. Could just rotate or do simple checks like that.
+[ ] Allow the code environment to persist for a given task. [not relevant until we do the code sandbox locally.]
+
+Cleanups:
+  [x] Drop the MDL / compression calculation altogether from scripts here.
+  [x] Strip out "tools calls made" etc. as there are no tool calls. There are only turns used.
+  [x] Automatically support non-reasoning or reasoning models (no flags required).
+  [x] Improve logging:
+    [x] Manually inspect the prompt.
+    [x] Inspect how wrong grids are passed back to the model (or failed runs of the code produced).
+    [x] in our logging / logs, it would be best to save not just the final responses, but the ones before thta too - so I can inspect what the code output is and what is being passed back in.
+  [x] Run tests on low levels of reasoning effort.
+
+Completed:
+[x] Describing grids ablation: Get the model to also describe the input grid and the output grid with code (so, return three code blocks), and provide feedback on those too. DONE AND IN A DEDICATED BRANCH.
+[x] Port the scripts to an openai style endpoint. Run Qwen and try to calibrate.
+[x] Review of some samples.
+[x] Add guidance around output grid sizes, if wrong. (Enhanced: now tells model target dimensions upfront + general reminders)
+[x] Create a script that automatically will do a run three times and calculate the mean and std dev (for the number correct on one turn, and the number correct on more than one turn).
+[x] Ablate feedback of max 8 turns versus sampling for max 8 turns.
+[x] Refine prompting:
+  [x] Examine the correct tasks for what happened. Examine also some wrong tasks.
+  [x] Adjust the soft prompt so that it encourages finding an improvement! check that. Sometimes there is no attempt to improve when some training grids pass. Perhaps try a prompt that encourages generalisation to the other training grids.
+  [x] Review prompts for when a training example is solved (at least one, but not all).
+  [x] Add a note that if all training examples are solved, then the program is overfitting.
+[x] Try inputting images of the problem as well as just the problem itself.
+[x] Test out having the model attempt a partial transformation, if it cannot determine a complete rule that solves the problem.
+[x] Run on ARC AGI 1 Eval set. MIT splits. Starting with Easy, then Medium, then Hard, then Expert (if needed). Answers the question of whether refinement helps.
+[x] Bringing the sandbox to be local:
+  [x] Just run the code locally each time, rather than use the remote code interpreter.
+    - Print, after each tool call, the result in terms of pixel match average on all training examples AND number of training examples solved out of those present.
+[x] Include the test grid, it adds information.
+[x] When providing code, also provide a summary of the rationale behind what is being done. (not in the reasoning). [Test this out in a clean test script to go in a tests folder.]
+[x] Check whether the code sandbox on openai is ephemeral or not. Yes, with `auto` the same container is used and variables persist.
+[x] prompt so that the model keeps reasoning until it finds a python program that solves (for the tool use case). don't include the test examples in the prompt.
+[x] **Simplified scoring**: Removed complex compression-based calculations and focused on core metrics.
