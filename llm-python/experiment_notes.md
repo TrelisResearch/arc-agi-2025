@@ -1,9 +1,11 @@
 # Experiment Notes
 
 ## 26-28 July 2025
-[ ] Script consolidation:
+[ ] Script consolidation run_arc_tasks.py:
   [ ] Decide on using run_arc_tasks.py or run_arc_tasks_soar.py as the baseline. Will consolidate around Soar, since there is no obvious improvement with our prompting. Clean up the repo to just use that.
   [ ] Double check the prompt.
+  [ ] Run with the two types of endpoint - Lewis and Ronan
+[ ] Script consolidation - ipynb:
   [ ] Split out utils, where needed.
   [ ] Employ the same data prep and prompt strings in the ipynb as in the run_arc_tasks.py script.
 [ ] Grading fix - whereby testing stops if test is correct, should be if all train examples are correct AND there is no transduction detected.
