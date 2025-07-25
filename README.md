@@ -5,9 +5,10 @@ This repository contains resources for working with the ARC-AGI (Abstraction and
 ## Setup / requirements
 
 1. Install `uv`: https://docs.astral.sh/uv/getting-started/installation/
-2. [Optional] set up `gcs` fuse mount
-    a. Install `gcsfuse`: https://cloud.google.com/storage/docs/cloud-storage-fuse/quickstart-mount-bucket
-    b. Configure the fuse mount with: `mkdir -p gcs && gcsfuse trelis-arc ./gcs`
+2. [Optional] set up `gcs` access (Linux only)
+    a. **Linux**: Install `gcsfuse`: https://cloud.google.com/storage/docs/cloud-storage-fuse/quickstart-mount-bucket
+    b. **Linux**: Configure the fuse mount with: `mkdir -p gcs && gcsfuse trelis-arc ./gcs`
+    c. **macOS**: Use `gsutil` or `gcloud storage` commands directly (see examples below)
 
 ## Branches
 -`o3-tools-images` a frozen version of the openai o3-tools branch that still maintains functionality for adding images to the prompts and feedback. This branch only supports openai models.
@@ -32,8 +33,29 @@ The `llm-python/` folder contains a comprehensive testing framework for evaluati
 
 For complete documentation, usage examples, and detailed configuration options, see the [llm-python README](llm-python/README.md).
 
-## Sync logs to GCS
+## Google Cloud Storage Operations
+
+### Sync logs to GCS
 
 ```bash
+# Using gsutil (works on all platforms, requires Python 3.8-3.12)
 gsutil -m rsync -r llm-python/logs gs://trelis-arc/logs
+
+# Using gcloud storage (modern alternative, recommended)
+gcloud storage rsync llm-python/logs gs://trelis-arc/logs --recursive
+```
+
+**Note:** Both sync commands perform **incremental synchronization** - they only upload new, modified, or missing files. Files that already exist and haven't changed are automatically skipped, so you can safely run these commands repeatedly without duplicating uploads.
+
+### Other useful GCS commands (macOS/no fuse mount)
+
+```bash
+# List bucket contents
+gcloud storage ls gs://trelis-arc/
+
+# Download files
+gcloud storage cp gs://trelis-arc/logs/* ./local-logs/ --recursive
+
+# Upload files
+gcloud storage cp ./local-files/* gs://trelis-arc/uploads/ --recursive
 ```
