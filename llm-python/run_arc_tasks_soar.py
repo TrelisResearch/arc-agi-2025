@@ -15,6 +15,7 @@ from openai import OpenAI
 
 from utils.task_loader import TaskLoader
 from utils.scoring import GridScorer, ProgramExecutor
+from .prompt_loader import PromptLoader
 
 load_dotenv()
 
@@ -33,7 +34,7 @@ def execute_with_timeout(func, *args, timeout=1000, **kwargs):
 class ARCTaskRunnerSimple:
     """Simple ARC task runner using direct prompts without feedback"""
     
-    def __init__(self, model: str = "gpt-4.1-nano", max_workers: int = 1, rate_limit_delay: float = 0.0, max_attempts: int = 8, run_number: int = 0, base_url: str = None, debug: bool = False, max_tokens: int = None, temperature: float = None, reasoning_effort: str = "low", qwen_no_think: bool = False):
+    def __init__(self, model: str = "gpt-4.1-nano", max_workers: int = 1, rate_limit_delay: float = 0.0, max_attempts: int = 8, run_number: int = 0, base_url: str = None, debug: bool = False, max_tokens: int = None, temperature: float = None, reasoning_effort: str = "low", qwen_no_think: bool = False, prompt_version: str = "soar"):
         self.model = model
         self.max_workers = max_workers
         self.rate_limit_delay = rate_limit_delay
@@ -41,6 +42,7 @@ class ARCTaskRunnerSimple:
         self.run_number = run_number
         self.reasoning_effort = reasoning_effort
         self.qwen_no_think = qwen_no_think  # Track whether to disable thinking for Qwen models
+        self.prompt_version = prompt_version  # Version of prompts to use
         self.api_key = os.getenv('OPENAI_API_KEY')
         self.base_url = base_url
         self.debug = debug
@@ -60,6 +62,7 @@ class ARCTaskRunnerSimple:
         self.task_loader = TaskLoader()
         self.scorer = GridScorer()
         self.executor = ProgramExecutor(timeout=0.5)
+        self.prompt_loader = PromptLoader()
         
         # Create logs directory
         self.logs_dir = Path("llm-python/logs")
@@ -144,8 +147,8 @@ class ARCTaskRunnerSimple:
         else:
             return (0.15, 0.60)
     
-    def create_prompt(self, task_data: Dict) -> str:
-        """Create the simple, direct prompt for solving ARC tasks"""
+    def create_prompt(self, task_data: Dict) -> tuple[str, str]:
+        """Create a prompt for the model to solve an ARC task using template-based prompts"""
         
         # Format the task data into the required format
         task_content = ""
@@ -159,40 +162,53 @@ class ARCTaskRunnerSimple:
             input_shape = f"{len(input_grid[0])} by {len(input_grid)}"
             output_shape = f"{len(output_grid[0])} by {len(output_grid)}"
             
-            # Format grids as numpy-style arrays
-            input_str = str(input_grid).replace('[', '[[').replace(']', ']]')
-            output_str = str(output_grid).replace('[', '[[').replace(']', ']]')
+            # Format grids without commas to match the target format
+            input_str = str(input_grid).replace('[', '[[').replace(']', ']]').replace(',', '')
+            output_str = str(output_grid).replace('[', '[[').replace(']', ']]').replace(',', '')
             
             task_content += f"## Input {i} (grid shape: {input_shape}):\n{input_str}\n"
-            task_content += f"## Output {i} (grid shape: {output_shape}):\n{output_str}\n"
+            task_content += f"## Output {i} (grid shape: {output_shape}):\n{output_str}\n\n"
         
-        # Add test input
-        if task_data['test']:
-            test_input = task_data['test'][0]['input']
-            test_shape = f"{len(test_input[0])} by {len(test_input)}"
-            test_str = str(test_input).replace('[', '[[').replace(']', ']]')
-            task_content += f"## Test Input 1 (grid shape: {test_shape}):\n{test_str}\n"
+        # Add test examples
+        for i, example in enumerate(task_data['test'], 1):
+            input_grid = example['input']
+            
+            # Get grid shape
+            input_shape = f"{len(input_grid[0])} by {len(input_grid)}"
+            
+            # Format grid without commas
+            input_str = str(input_grid).replace('[', '[[').replace(']', ']]').replace(',', '')
+            
+            task_content += f"## Test Input {i} (grid shape: {input_shape}):\n{input_str}\n"
         
-        # Create the full prompt
-        system_content = """You are an AI assistant specialized in solving Abstract Reasoning Corpus (ARC-AGI) tasks by
-reasoning and generating Python code."""
-
-        user_content = f"""You are an AI assistant specialized in solving Abstract Reasoning Corpus (ARC-AGI) tasks by
-generating Python code.
-Your goal is to analyze input-output grid pairs. The outputs were produced by applying a
-transformation rule to the inputs. Implement the transformation rules as a Python function.
-You should only write the implemented the transformation in code.
-You must write code in triple backticks (```python and then ```). You must write a function
-called 'transform' which takes a single argument, the input grid as 'list[list[int]]', and
-returns the transformed grid (also as 'list[list[int]]').
-You should make sure that you implement a version of the transformation which works in general
-(at least for all given input-output pairs and test input pairs).
-The number in the input grid can be mapped to the following colors: 0:Black; 1:Blue; 2:Red; 3:
-Green; 4:Yellow; 5:Grey; 6:Pink; 7:Orange; 8:Purple; 9:Brown
-Now, solve the following ARC-AGI task:
-# Task to solve:
-{task_content}```"""
-
+        # Get the system message
+        system_content = self.prompt_loader.get_system_message(self.prompt_version)
+        
+        # Get the initial turn prompt template
+        prompt_template = self.prompt_loader.get_initial_turn_prompt(self.prompt_version)
+        
+        # Check which placeholders the template uses and format accordingly
+        if "{grid_size_info}" in prompt_template:
+            # Handle v1 template format
+            # Calculate grid size info for consistent output dimensions
+            output_heights = [len(example['output']) for example in task_data['train']]
+            output_widths = [len(example['output'][0]) for example in task_data['train']]
+            
+            if len(set(output_heights)) == 1 and len(set(output_widths)) == 1:
+                output_height = output_heights[0]
+                output_width = output_widths[0]
+                grid_size_info = f"\n**IMPORTANT: Your transformation must always produce a {output_height}×{output_width} output grid.**\n"
+            else:
+                grid_size_info = ""
+            
+            # Format task_str (same as task_content for SOAR)
+            task_str = task_content
+            
+            user_content = prompt_template.format(grid_size_info=grid_size_info, task_str=task_str)
+        else:
+            # Handle SOAR template format (uses task_content)
+            user_content = prompt_template.format(task_content=task_content)
+        
         return system_content, user_content
     
     def call_chat_completions_api(self, messages: List[Dict]) -> Dict:
@@ -1036,7 +1052,8 @@ Now, solve the following ARC-AGI task:
                 max_tokens=self.max_tokens,
                 temperature=self.temperature,
                 reasoning_effort=self.reasoning_effort,
-                qwen_no_think=self.qwen_no_think
+                qwen_no_think=self.qwen_no_think,
+                prompt_version=self.prompt_version
             )
             
             # Run the subset
@@ -1200,8 +1217,10 @@ def main():
                        help="Temperature for model responses (0.0 to 2.0)")
     parser.add_argument("--reasoning_effort", type=str, default="low",
                        help="Reasoning effort for OpenAI models (e.g., 'low', 'medium', 'high')")
-    parser.add_argument("--qwen_no_think", action="store_true",
+    parser.add_argument("--qwen-no-think", action="store_true",
                        help="Disable thinking for Qwen models")
+    parser.add_argument("--prompt_version", type=str, default="soar",
+                       help="Version of prompts to use (default: soar)")
     
     args = parser.parse_args()
     
@@ -1233,12 +1252,13 @@ def main():
         rate_limit_delay=args.rate_limit_delay, 
         max_attempts=args.max_attempts, 
         run_number=0,
-        base_url=getattr(args, 'base_url', None),
+        base_url=args.base_url,
         debug=args.debug,
         max_tokens=args.max_tokens,
         temperature=args.temperature,
         reasoning_effort=args.reasoning_effort,
-        qwen_no_think=args.qwen_no_think
+        qwen_no_think=args.qwen_no_think,
+        prompt_version=args.prompt_version
     )
     
     if args.repeat_runs > 1:

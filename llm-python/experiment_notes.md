@@ -10,6 +10,24 @@
 [ ] SOAR testing on ARC-AGI-2.
   [x] Run on ARC-AGI-2 with a SOAR model. Scores zero with 8 attempts on qwen2.5-7b-coder. With 64 attempts, scores ...
 
+## Ablation of Prompts
+I'll run with run_arc_tasks_soar.py and then with run_arc_tasks.py.
+
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_attempts 8 --model qwen/qwen3-4b --base-url http://216.81.245.97:30890/v1 --max-tokens 1000 --qwen-no-think --limit 1
+```
+and then with run_arc_tasks.py using the v1 prompt (which has a mistake because it over-constrains the grid outputs!):
+
+```bash
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model qwen/qwen3-4b --independent-attempts --base-url http://216.81.245.97:30890/v1 --max-tokens 4000 --qwen-no-think
+```
+and then run with v2, which is fixed from v1:
+```bash
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model qwen/qwen3-4b --independent-attempts --base-url http://216.81.245.97:30890/v1 --max-tokens 4000 --qwen-no-think --prompt-version v2
+```
+
+
+
 
 ### SOAR Model Testing on ARC-AGI-2
 First I created an all_evaluation subset for the ARC-AGI-2 dataset.

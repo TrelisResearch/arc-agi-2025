@@ -98,6 +98,8 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --r
 - For baseline comparisons with SOAR-style approaches
 - When you want multiple independent attempts without feedback
 - For faster execution with simpler prompting
+
+**Note:** The SOAR prompt templates contain a minor grammatical error: "You should only write the implemented the transformation in code" (duplicate "the"). This appears in both the system and user prompts but doesn't affect functionality.
 - When testing models that don't benefit from multi-turn conversations
 
 ### Advanced Usage
