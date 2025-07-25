@@ -64,7 +64,7 @@ class ARCTaskRunner:
         self.prompt_loader = PromptLoader()
         
         # Create logs directory
-        self.logs_dir = Path("logs")
+        self.logs_dir = Path("llm-python/logs")
         self.logs_dir.mkdir(exist_ok=True)
         
         # Thread-safe cost and token tracking

@@ -1,5 +1,36 @@
 # Experiment Notes
 
+## 2025 25th July
+
+[ ] Metrics:
+  [ ] Inspect metrics in verbose mode when using a SOAR model (which should give some correct test data).
+  [ ] Add ability to use a grids-only set of data for validation data.
+  [ ] How to turn off the teacher forced decoding?
+[ ] SOAR testing on ARC-AGI-2.
+  [ ] Run on ARC-AGI-2 with a SOAR model.
+
+
+### SOAR Model Testing
+
+Run the Qwen Coder model:
+```bash
+uv run runpod/create_pod.py sglang -- --model-path julien31/Soar-qwen-7b --reasoning-parser qwen3
+```
+or via direct TCP:
+```bash
+uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path julien31/Soar-qwen-7b --reasoning-parser qwen3
+```
+
+then we'll hit that with arc-agi-2 data:
+```bash
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-2 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model julien31/Soar-qwen-7b --independent-attempts --base-url http://216.81.245.97:23132/v1
+```
+
+
+
+
+
+
 ## 2025 24th July
 
 Todo:
@@ -14,13 +45,12 @@ Todo:
   [x] Assemble the data in the ipynb notebook.
     [x] Fix up reasoning.
     [x] Run validation on that dataset.
-[ ] Support metrics calculation - for train and validation sets.
+[x] Support metrics calculation - for train and validation sets.
   [x] Don't remove the columns.
   [x] Use the data to compute metrics.
   [x] Remove any ground truth reference.
   [x] Can I run as a batch?
-  [ ] Can I get these into compute metrics to be reported, or no?
-[ ] Add ability to push a grids-only set of data.
+  [x] Can I get these into compute metrics to be reported, or no?
 
 >[!WARNING]
 > Dataset validation is hitting a small issue that needs fixing.

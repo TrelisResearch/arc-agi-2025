@@ -7,6 +7,7 @@ import sys
 import time
 import json
 import yaml
+import socket
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -28,7 +29,7 @@ def signal_handler(signum, frame):
     
     if cleanup_in_progress:
         print("\n⚠️  WARNING: Pod deletion already in progress. Please wait...")
-        print("⚠️  Do NOT press Ctrl+C again while the pod is being terminated!")
+        print("⚠️  Do NOT press Ctrl+C again while the pod is being deleted!")
         return
     
     print(f"\n🛑 Received signal {signum}. Initiating graceful shutdown...")
@@ -86,13 +87,54 @@ def get_pod_status(pod_id):
         print(f"❌ Error getting pod status: {e}")
         return None
 
-def check_http_endpoint_health(pod_id, port, health_path="/health"):
-    """Check if the endpoint is responding"""
+def get_machine_info(machine_id):
+    """Get machine information which might contain the public IP"""
     try:
-        health_url = f"https://{pod_id}-{port}.proxy.runpod.net{health_path}"
-        response = requests.get(health_url, timeout=5)
-        return response.status_code < 400
+        headers = {
+            "Authorization": f"Bearer {os.environ['RUNPOD_API_KEY']}",
+            "Content-Type": "application/json"
+        }
+        
+        machine_url = f"https://rest.runpod.io/v1/machines/{machine_id}"
+        response = requests.get(machine_url, headers=headers)
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            print(f"❌ Failed to get machine info. Status: {response.status_code}")
+            return None
+    except Exception as e:
+        print(f"❌ Error getting machine info: {e}")
+        return None
+
+def check_tcp_endpoint_health(host, port, timeout=5):
+    """Check if the TCP endpoint is responding"""
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        result = sock.connect_ex((host, int(port)))
+        sock.close()
+        return result == 0
     except:
+        return False
+
+def test_openai_endpoint(base_url, model_name, timeout=10):
+    """Test if the OpenAI-compatible endpoint is responding"""
+    try:
+        import openai
+        client = openai.OpenAI(
+            api_key="dummy",  # RunPod doesn't need real key
+            base_url=base_url
+        )
+        
+        response = client.chat.completions.create(
+            model=model_name,
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=10,
+            timeout=timeout
+        )
+        return True
+    except Exception as e:
         return False
 
 def load_template(template_name):
@@ -154,10 +196,12 @@ def create_pod(config, extra_args):
     
     # Extract model name from arguments for better pod naming
     model_name = "unknown"
+    full_model_path = "unknown"
     if extra_args:
         for i, arg in enumerate(extra_args):
             if arg == "--model-path" and i + 1 < len(extra_args):
-                model_name = extra_args[i + 1].split('/')[-1]  # Get last part of model path
+                full_model_path = extra_args[i + 1]
+                model_name = full_model_path.split('/')[-1]  # Get last part of model path
                 break
     
     headers = {
@@ -200,12 +244,12 @@ def create_pod(config, extra_args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Create and manage a RunPod pod using configuration templates',
+        description='Create and manage a RunPod pod using configuration templates (TCP version)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s sglang -- --model-path Qwen/Qwen3-4B
-  %(prog)s sglang -- --model-path Qwen/Qwen3-4B --reasoning-parser qwen3
+  %(prog)s sglang-tcp -- --model-path Qwen/Qwen3-4B
+  %(prog)s sglang-tcp -- --model-path Qwen/Qwen3-4B --reasoning-parser qwen3
 
 Template names are loaded from the templates/ folder. File extensions are optional.
 All arguments after '--' are passed directly to the docker command.
@@ -215,6 +259,8 @@ All arguments after '--' are passed directly to the docker command.
     parser.add_argument('template', help='Template name (from templates/ folder, extension optional)')
     parser.add_argument('--no-health-check', action='store_true',
                        help='Skip health check after pod creation')
+    parser.add_argument('--debug', action='store_true',
+                       help='Show debug information about pod status')
     
     # Parse arguments, splitting at '--'
     if '--' in sys.argv:
@@ -241,38 +287,160 @@ All arguments after '--' are passed directly to the docker command.
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     
+    # Extract model path for testing
+    full_model_path = "unknown"
+    if extra_args:
+        for i, arg in enumerate(extra_args):
+            if arg == "--model-path" and i + 1 < len(extra_args):
+                full_model_path = extra_args[i + 1]
+                break
+    
     # Create the pod
     pod_id = create_pod(config, extra_args)
     if not pod_id:
         sys.exit(1)
     
-    # Wait for pod to be ready
-    print(f"\n⏳ Pod has started. Waiting for it to be ready...")
-    pod_info = get_pod_status(pod_id)
-    if not pod_info:
-        cleanup_pod()
-        sys.exit(1)
+    # Stage 1: Wait for container to be running with IP and port mappings
+    print(f"\n🚀 STAGE 1: Waiting for container to be ready...")
+    
+    # Initial wait of 30 seconds
+    print("⏳ Initial wait: 30 seconds...")
+    time.sleep(30)
+    
+    # Then check every 10 seconds
+    max_wait_time = 600  # 10 minutes total
+    start_time = time.time()
+    pod_info = None
+    
+    while time.time() - start_time < max_wait_time:
+        pod_info = get_pod_status(pod_id)
+        if not pod_info:
+            cleanup_pod()
+            sys.exit(1)
         
+        # Check if pod is running and has public IP and port mappings
+        if (pod_info.get('desiredStatus') == 'RUNNING' and 
+            pod_info.get('publicIp') and 
+            pod_info.get('portMappings')):
+            print(f"✅ Container is ready with IP: {pod_info.get('publicIp')}")
+            break
+        
+        elapsed = int(time.time() - start_time)
+        print(f"⏳ Waiting for container IP... ({elapsed}s elapsed)")
+        time.sleep(10)
+    else:
+        print(f"\n⚠️  Container didn't get IP within {max_wait_time}s, continuing anyway...")
+        pod_info = get_pod_status(pod_id)
+        if not pod_info:
+            cleanup_pod()
+            sys.exit(1)
+    
+    # Debug: Show full pod info if requested
+    if args.debug:
+        print(f"\n🔍 DEBUG: Full pod info:")
+        print(json.dumps(pod_info, indent=2))
+    
+    # Always show the raw pod info structure for debugging
+    print(f"\n🔍 Pod info keys: {list(pod_info.keys())}")
+    if 'runtime' in pod_info:
+        print(f"🔍 Runtime keys: {list(pod_info['runtime'].keys())}")
+        if 'network' in pod_info['runtime']:
+            print(f"🔍 Network keys: {list(pod_info['runtime']['network'].keys())}")
+    
     ports = pod_info.get('ports', [])
     
+    # Show connection information
+    print(f"\n🔌 CONNECTION INFORMATION:")
     for port in ports:
-        port_num = port.split('/')[0]
-        print(f"🌐 Exposed port: https://{pod_id}-{port_num}.proxy.runpod.net/")
-    
-    # Health check
-    if not args.no_health_check and ports:
-        port_num = ports[0].split('/')[0]
-        print(f"\n⏳ Waiting for health checks", end="", flush=True)
-        
-        start_time = time.time()
-        while not check_http_endpoint_health(pod_id, port_num):
-            if time.time() - start_time > 300:  # 5 minute timeout
-                print(f"\n⚠️  Health check timed out after 300s")
-                break
-            print(".", end="", flush=True)
-            time.sleep(10)
+        port_num, protocol = port.split('/')
+        if protocol == 'http':
+            print(f"🌐 HTTP endpoint: https://{pod_id}-{port_num}.proxy.runpod.net/")
+        elif protocol == 'tcp':
+            print(f"🔌 TCP proxy: {pod_id}-{port_num}.proxy.runpod.net:{port_num}")
         else:
-            print(" ✅ Health check passed!")
+            print(f"🔌 {protocol.upper()} proxy: {pod_id}-{port_num}.proxy.runpod.net:{port_num}")
+    
+    # Stage 2: Display connection information
+    direct_ip = pod_info.get('publicIp')
+    port_mappings = pod_info.get('portMappings', {})
+    
+    print(f"\n🔌 STAGE 2: Connection Information")
+    for port in ports:
+        port_num, protocol = port.split('/')
+        if protocol == 'http':
+            print(f"🌐 HTTP endpoint: https://{pod_id}-{port_num}.proxy.runpod.net/")
+        elif protocol == 'tcp':
+            print(f"🔌 TCP proxy: {pod_id}-{port_num}.proxy.runpod.net:{port_num}")
+        else:
+            print(f"🔌 {protocol.upper()} proxy: {pod_id}-{port_num}.proxy.runpod.net:{port_num}")
+    
+    if direct_ip and port_mappings:
+        print(f"\n🌍 DIRECT CONNECTION:")
+        print(f"   IP Address: {direct_ip}")
+        for port in ports:
+            port_num = port.split('/')[0]
+            if port_num in port_mappings:
+                external_port = port_mappings[port_num]
+                print(f"   Direct TCP: {direct_ip}:{external_port}")
+            else:
+                print(f"   Direct TCP: {direct_ip}:{port_num} (port mapping not found)")
+    else:
+        print(f"\n⚠️  No direct IP available - using proxy only")
+    
+    # Stage 3: Test inference library (SGLang) functionality
+    if not args.no_health_check:
+        print(f"\n🧠 STAGE 3: Testing inference library...")
+        
+        # Wait for SGLang to be ready with retry logic
+        max_wait_time = 600  # 10 minutes total
+        start_time = time.time()
+        connection_working = False
+        
+        while time.time() - start_time < max_wait_time and not connection_working:
+            # Test direct connection first
+            if direct_ip and port_mappings:
+                for port in ports:
+                    port_num = port.split('/')[0]
+                    if port_num in port_mappings:
+                        external_port = port_mappings[port_num]
+                        direct_url = f"http://{direct_ip}:{external_port}/v1"
+                        print(f"⏳ Testing direct connection: {direct_url}")
+                        
+                        if test_openai_endpoint(direct_url, full_model_path):
+                            print(f"✅ Direct connection working!")
+                            connection_working = True
+                            break
+                        else:
+                            print(f"❌ Direct connection failed, trying proxy...")
+            
+            # Test proxy connection if direct failed
+            if not connection_working:
+                for port in ports:
+                    port_num, protocol = port.split('/')
+                    proxy_url = f"http://{pod_id}-{port_num}.proxy.runpod.net/v1"
+                    print(f"⏳ Testing proxy connection: {proxy_url}")
+                    
+                    if test_openai_endpoint(proxy_url, full_model_path):
+                        print(f"✅ Proxy connection working!")
+                        connection_working = True
+                        break
+                    else:
+                        print(f"❌ Proxy connection failed")
+            
+            if not connection_working:
+                elapsed = int(time.time() - start_time)
+                print(f"⏳ Waiting for SGLang to load... ({elapsed}s elapsed)")
+                time.sleep(10)
+        
+        if connection_working:
+            print(f"\n🎉 INFERENCE LIBRARY READY!")
+            print(f"   The pod is now ready to handle your requests!")
+            print(f"   You can start making API calls to the endpoint above.")
+        else:
+            print(f"\n⚠️  INFERENCE LIBRARY NOT READY")
+            print(f"   The pod is running but SGLang may still be loading the model.")
+            print(f"   You can try making requests, but they may fail until loading completes.")
+            print(f"   Check the RunPod console for loading progress: https://console.runpod.io/pods/{pod_id}")
     
     print(f"\n💡 The pod is now running. Press Ctrl+C to stop and delete the pod.")
     print(f"⚠️  After pressing Ctrl+C, DO NOT press it again while the pod is being deleted!")
