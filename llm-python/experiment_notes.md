@@ -5,12 +5,14 @@
 [ ] Metrics:
   [ ] Inspect metrics in verbose mode when using a SOAR model (which should give some correct test data).
   [ ] Add ability to use a grids-only set of data for validation data.
-  [ ] How to turn off the teacher forced decoding?
+    [ ] Just run the script.
+    [ ] How to turn off the teacher forced decoding?
 [ ] SOAR testing on ARC-AGI-2.
-  [ ] Run on ARC-AGI-2 with a SOAR model.
+  [x] Run on ARC-AGI-2 with a SOAR model. Scores zero with 8 attempts on qwen2.5-7b-coder. With 64 attempts, scores ...
 
 
-### SOAR Model Testing
+### SOAR Model Testing on ARC-AGI-2
+First I created an all_evaluation subset for the ARC-AGI-2 dataset.
 
 Run the Qwen Coder model:
 ```bash
@@ -23,13 +25,58 @@ uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path julien31/Soar-qwen-7b
 
 then we'll hit that with arc-agi-2 data:
 ```bash
-uv run python -m llm-python.run_arc_tasks --dataset arc-agi-2 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model julien31/Soar-qwen-7b --independent-attempts --base-url http://216.81.245.97:23132/v1
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-2 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 8 --model julien31/Soar-qwen-7b --independent-attempts --base-url http://216.81.245.97:23132/v1 --max-tokens 1200
+```
+Dataset: arc-agi-2
+Subset: all_evaluation
+Model: julien31/Soar-qwen-7b
+Reasoning effort: low
+API: Chat Completions (independent attempts, max 8 attempts)
+Total tasks attempted: 120
+Successful API calls: 120/120 (100.0%)
+Tasks solved correctly: 0/120 (0.0%)
+Pixel accuracy: 0/51170 (0.0%)
+Total attempts used: 960
+Average attempts per task: 8.0
+Total tokens used: 5,390,560
+Total cost: $0.941975
+
+Results saved to: llm-python/logs/20250725_101612_summary_arc-agi-2_all_evaluation_run1.json
+
+This scores nothing...
+
+So boost up to even more attempts:
+```bash
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-2 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_turns 64 --model julien31/Soar-qwen-7b --independent-attempts --base-url http://216.81.245.97:23132/v1 --max-tokens 1000
 ```
 
+**Problem** SOAR will do badly if using this prompt! Need to use the SOAR setup instead.
 
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-2 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_attempts 8 --model julien31/Soar-qwen-14b --base-url http://216.81.245.97:19599/v1 --max-tokens 1000 --limit 1
+```
+----------------------------------------------------------------------
+Run  Attempted  Attempt 1 Only All Attempts   Attempt 1 Rate All Attempts Rate
+----------------------------------------------------------------------
+1    1          0              0              0.0%           0.0%          
+2    1          0              0              0.0%           0.0%          
+3    1          0              0              0.0%           0.0%          
 
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Attempt 1 Only Success Rate:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
 
+All Attempts Success Rate:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
 
+Aggregate results saved to: llm-python/logs/20250725_114641_aggregate_summary_arc-agi-2_all_evaluation_simple_3runs.json
+
+**So, it doesn't solve any problems anyway...**
 
 ## 2025 24th July
 
@@ -65,7 +112,7 @@ I ran fine-tuning on a full-ish dataset generated from one run (8 attempts) on G
 - The tests are all scoring 0 right now, which is not entirely unreasonable for a small split (and there is no sampling for validation). This may or may not be a concern BUT I should be manually inspecting by switching to printing grids and putting n to non zero for showing examples.
 - The ideal is to integrate and test passing in just a validation set for ARC AGI 1 with all evaluation problems. (like this one: Trelis/simple_arc-agi-1_shortest_evaluation_100_20250724_140207).
 - OPTION: To blend in some reasoning data, in cases where the test is correct. Requires the completions to be managed dynamically.
-- RUN on ARC-AGI-2.
+[x] RUN on ARC-AGI-2.
 
 I did run a kind of training and evaluated it with this on the full evaluation set:
 

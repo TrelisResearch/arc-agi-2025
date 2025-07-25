@@ -33,12 +33,14 @@ def execute_with_timeout(func, *args, timeout=1000, **kwargs):
 class ARCTaskRunnerSimple:
     """Simple ARC task runner using direct prompts without feedback"""
     
-    def __init__(self, model: str = "gpt-4.1-nano", max_workers: int = 1, rate_limit_delay: float = 0.0, max_attempts: int = 8, run_number: int = 0, base_url: str = None, debug: bool = False, max_tokens: int = None, temperature: float = None):
+    def __init__(self, model: str = "gpt-4.1-nano", max_workers: int = 1, rate_limit_delay: float = 0.0, max_attempts: int = 8, run_number: int = 0, base_url: str = None, debug: bool = False, max_tokens: int = None, temperature: float = None, reasoning_effort: str = "low", qwen_no_think: bool = False):
         self.model = model
         self.max_workers = max_workers
         self.rate_limit_delay = rate_limit_delay
         self.max_attempts = max_attempts
         self.run_number = run_number
+        self.reasoning_effort = reasoning_effort
+        self.qwen_no_think = qwen_no_think  # Track whether to disable thinking for Qwen models
         self.api_key = os.getenv('OPENAI_API_KEY')
         self.base_url = base_url
         self.debug = debug
@@ -209,6 +211,47 @@ Now, solve the following ARC-AGI task:
             # Add temperature if specified by user
             if self.temperature is not None:
                 kwargs["temperature"] = self.temperature
+            
+            # Add reasoning parameters for OpenRouter and reasoning models
+            if self.base_url and "openrouter" in self.base_url.lower():
+                # OpenRouter reasoning token allocation
+                reasoning_tokens = {
+                    "low": 2000,
+                    "medium": 8000, 
+                    "high": 32000
+                }
+                if self.reasoning_effort in reasoning_tokens:
+                    # Gemini models need special reasoning parameter structure
+                    if "gemini" in self.model.lower():
+                        kwargs["extra_body"] = {"reasoning": {"max_tokens": reasoning_tokens[self.reasoning_effort]}}
+                    else:
+                        # Other reasoning models use max_tokens directly
+                        # Only override user-specified max_tokens if not already set
+                        if self.max_tokens is None:
+                            kwargs["max_tokens"] = reasoning_tokens[self.reasoning_effort]
+            
+            # Add Qwen-specific parameters for thinking models (only for custom endpoints)
+            if "qwen" in self.model.lower() and self.base_url:
+                if self.qwen_no_think:
+                    # Parameters for non-thinking Qwen models
+                    qwen_params = {
+                        "top_p": 0.8,
+                        "extra_body": {"top_k": 20, "chat_template_kwargs": {"enable_thinking": False}}
+                    }
+                    # Only set default temperature if user hasn't specified one
+                    if self.temperature is None:
+                        qwen_params["temperature"] = 0.7
+                    kwargs.update(qwen_params)
+                else:
+                    # Parameters for thinking Qwen models (original behavior)
+                    qwen_params = {
+                        "top_p": 0.95,
+                        "extra_body": {"top_k": 20}
+                    }
+                    # Only set default temperature if user hasn't specified one
+                    if self.temperature is None:
+                        qwen_params["temperature"] = 0.6
+                    kwargs.update(qwen_params)
             
             # Make the API call
             response = self.client.chat.completions.create(**kwargs)
@@ -991,7 +1034,9 @@ Now, solve the following ARC-AGI task:
                 base_url=self.base_url,
                 debug=self.debug,
                 max_tokens=self.max_tokens,
-                temperature=self.temperature
+                temperature=self.temperature,
+                reasoning_effort=self.reasoning_effort,
+                qwen_no_think=self.qwen_no_think
             )
             
             # Run the subset
@@ -1153,6 +1198,10 @@ def main():
                        help="Maximum tokens for model responses")
     parser.add_argument("--temperature", type=float,
                        help="Temperature for model responses (0.0 to 2.0)")
+    parser.add_argument("--reasoning_effort", type=str, default="low",
+                       help="Reasoning effort for OpenAI models (e.g., 'low', 'medium', 'high')")
+    parser.add_argument("--qwen_no_think", action="store_true",
+                       help="Disable thinking for Qwen models")
     
     args = parser.parse_args()
     
@@ -1187,7 +1236,9 @@ def main():
         base_url=getattr(args, 'base_url', None),
         debug=args.debug,
         max_tokens=args.max_tokens,
-        temperature=args.temperature
+        temperature=args.temperature,
+        reasoning_effort=args.reasoning_effort,
+        qwen_no_think=args.qwen_no_think
     )
     
     if args.repeat_runs > 1:
