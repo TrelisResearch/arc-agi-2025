@@ -15,6 +15,73 @@
   [ ] Train without reasoning.
   [ ] Train with reasoning ONLY ON FULLY CORRECT TASKS.
 
+## 26 July 2025
+
+[ ] Compare auto and manual pods.
+[ ] Refactor run_arc_tasks.py to use majority voting for correctness. Report % test correct, % all-train correct, % min-1-train correct.
+
+### Compare both pods using the old run_arc_tasks_soar.py script.
+
+Auto pod:
+```bash
+uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path qwen/qwen3-4b --reasoning-parser qwen3
+```
+Now running the auto pod.
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 50 --max_attempts 8 --model qwen/qwen3-4b --base-url http://216.81.245.26:23526/v1 --max-tokens 1000 --qwen-no-think
+```
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: qwen/qwen3-4b
+API: Simple Chat Completions (max 8 attempts)
+Total tasks attempted: 400
+Successful API calls: 400/400 (100.0%)
+Tasks solved correctly: 1/400 (0.2%)
+Pixel accuracy: 1/97320 (0.0%)
+Total attempts used: 3195
+Average attempts per task: 8.0
+Total tokens used: 13,214,716
+Total cost: $2.565022
+
+Results saved to: llm-python/logs/20250726_112038_summary_arc-agi-1_all_evaluation_simple.json
+
+And then with the manual pod:
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 50 --max_attempts 8 --model qwen/qwen3-4b --base-url http://157.66.254.13:12785/v1 --max-tokens 1000 --qwen-no-think
+```
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: qwen/qwen3-4b
+API: Simple Chat Completions (max 8 attempts)
+Total tasks attempted: 400
+Successful API calls: 400/400 (100.0%)
+Tasks solved correctly: 3/400 (0.8%)
+Pixel accuracy: 137/97320 (0.1%)
+Total attempts used: 3176
+Average attempts per task: 7.9
+Total tokens used: 13,143,202
+Total cost: $2.537612
+
+Results saved to: llm-python/logs/20250726_111653_summary_arc-agi-1_all_evaluation_simple.json
+
+
+### Compare both pods using the refactored run_arc_tasks.py script - now with majority voting.
+
+Now, we'll hit the auto pod first with the all_evaluation set:
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_attempts 8 --model qwen/qwen3-4b --base-url http://216.81.245.26:23526/v1 --max-tokens 1000 --qwen-no-think --limit 25
+```
+
+And then with the manual pod:
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_attempts 8 --model qwen/qwen3-4b --base-url http://157.66.254.13:12785/v1 --max-tokens 1000 --qwen-no-think --limit 25
+```
+
+
+**Note: I need to repeat this with the full evaluation dataset.**
+- Possibly need to play with sampling parameters.
+- Also, worth running the soar model to see if that has length issues.
+
 ## 2025 25th July
 
 **Learnings:**

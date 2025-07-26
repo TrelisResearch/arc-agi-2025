@@ -1508,3 +1508,25 @@ Completed:
 [x] Check whether the code sandbox on openai is ephemeral or not. Yes, with `auto` the same container is used and variables persist.
 [x] prompt so that the model keeps reasoning until it finds a python program that solves (for the tool use case). don't include the test examples in the prompt.
 [x] **Simplified scoring**: Removed complex compression-based calculations and focused on core metrics.
+
+## ARC Task Runner: All-Attempts Evaluation (run_arc_tasks_soar.py)
+
+**Refactored system** with all-attempts execution, rolling parallelization, and voting-based evaluation:
+
+- **All Attempts:** Always runs all N attempts for each task, enabling robust parallelization and comprehensive evaluation
+- **Rolling Execution:** Non-blocking parallel execution - new attempts start immediately without waiting for previous layers  
+- **Layerwise Metrics:** After each attempt layer, reports cumulative metrics:
+  - % test correct (pass@2, weighted majority voting)
+  - % test correct (pass@2, train-majority voting)
+  - % test correct (oracle) - maximum potential if best attempt could be selected
+  - % all-train correct, % min-1-train correct
+  - % max-length responses, % timeout failures
+- **Voting Algorithms (Both Pass@2):**
+  - **Weighted majority voting:** Uses pattern frequency + 1000×train_accuracy, returns top 2 patterns
+  - **Train-majority voting:** Among best-training-accuracy attempts, majority vote for top 2 patterns
+- **Oracle Metric:** Shows upper bound performance - if ANY attempt got test correct across all layers
+- **Consistent Cumulative Metrics:** All metrics use attempts 1→N for proper progressive evaluation
+- **Transduction filtering:** Filters out hardcoded/cheating responses before voting
+- **Comprehensive logging:** All attempts, full prompts, and voting decisions stored in detailed JSON logs
+
+Key features: parallel task execution, real-time progress reporting, robust error handling, oracle upper bounds, and consistent pass@2 evaluation metrics for thorough assessment.
