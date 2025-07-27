@@ -24,10 +24,15 @@
       - [ ] Soar model.
       - [ ] Qwen Base.
     - [ ] Evaluation on shortest 10 evaluation problems:
-      - [ ] Soar model. TBD...
-      - [ ] Qwen Base. TBD...
+      - [ ] Soar model. 90%
+      - [ ] Qwen Base. 10%
       - [ ] Qwen Base with reasoning. 80%.
       - [ ] Gemini. 87%.
+    - [ ] Evaluation on shortest 30 evaluation problems:
+      - [ ] Soar model. 54%
+      - [ ] Qwen Base. 7%
+      - [ ] Qwen Base with reasoning. 
+      - [ ] Gemini. ~80%
 - [ ] Fine-tuning:
     - [ ] Hoist utils. 
     - [ ] Test a small dataset.
@@ -84,24 +89,94 @@ uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_
 
 Decision: just do min_p 0.05 for all custom models.
 
-### Now measure julien31/Soar-qwen-7b model vs qwen/qwen3-4b model
+### Measure performance on shortest 30 tasks from arc-agi-1 evaluation: julien31/Soar-qwen-7b model vs qwen/qwen3-4b model
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_30 --repeat-runs 1 --max_workers 50 --max_attempts 8 --model qwen/qwen3-4b --base-url http://38.80.152.249:30805/v1
+```
+TBD...
 
 ```bash
 uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_30 --repeat-runs 3 --max_workers 50 --max_attempts 8 --model julien31/Soar-qwen-7b --base-url http://38.80.152.249:30806/v1 --max-tokens 1000 --qwen-no-think
 ```
 Weighted Voting Pass2:
-  Mean: 58.9%
-  Std Dev: 5.1%
-  95% CI: [48.9%, 68.9%]
+  Mean: 54.4%
+  Std Dev: 1.9%
+  95% CI: [50.7%, 58.2%]
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Max-Len 
+----------------------------------------------------------------------
+1    30     53.3%      53.3%      53.3%    56.7%      0.0%    
+2    30     53.3%      50.0%      56.7%    56.7%      1.2%    
+3    30     56.7%      56.7%      60.0%    60.0%      1.2%    
 
 and then with the qwen/qwen3-4b model:
 ```bash
 uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_30 --repeat-runs 3 --max_workers 50 --max_attempts 8 --model qwen/qwen3-4b --base-url http://38.80.152.249:30805/v1 --max-tokens 1000 --qwen-no-think
 ```
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Max-Len 
+----------------------------------------------------------------------
+1    30     6.7%       6.7%       6.7%     6.7%       2.9%    
+2    30     10.0%      10.0%      10.0%    6.7%       3.8%    
+3    30     3.3%       3.3%       6.7%     3.3%       3.8%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
 Weighted Voting Pass2:
-  Mean: 7.8%
-  Std Dev: 1.9%
-  95% CI: [4.0%, 11.5%]
+  Mean: 6.7%
+  Std Dev: 3.3%
+  95% CI: [0.1%, 13.2%]
+
+and with gemini:
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_30 --repeat-runs 3 --max_workers 50 --max_attempts 8 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1/ --reasoning_effort medium
+```
+==================================================
+SUMMARY (Run 1)
+==================================================
+Dataset: arc-agi-1
+Subset: shortest_evaluation_30
+Model: google/gemini-2.5-flash
+Total tasks: 30
+Successful API calls: 30/30 (100.0%)
+Total tokens used: 2,785,019
+Total cost: $6.522072
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 80.0%
+  Pass@2 (Train Majority):  80.0%
+  Oracle (Best Attempt):    83.3%
+  All Train Correct:        90.0%
+  Min 1 Train Correct:      96.7%
+  Max Length Responses:     0.0%
+  Timeout Responses:        1.7%
+  API Failure Responses:    0.0%
+
+SUMMARY (Run 2)
+==================================================
+Dataset: arc-agi-1
+Subset: shortest_evaluation_30
+Model: google/gemini-2.5-flash
+Total tasks: 30
+Successful API calls: 30/30 (100.0%)
+Total tokens used: 2,811,396
+Total cost: $6.579444
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 83.3%
+  Pass@2 (Train Majority):  80.0%
+  Oracle (Best Attempt):    86.7%
+  All Train Correct:        96.7%
+  Min 1 Train Correct:      100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+
+
 
 and then with the qwen/qwen3-4b model with reasoning:
 ```bash
@@ -158,6 +233,124 @@ Api Failure Responses:
   95% CI: [0.0%, 0.0%]
 
 Aggregate results saved to: /Users/ronanmcgovern/TR/arc-agi-2025/llm-python/logs/20250727_131116_aggregate_summary_arc-agi-1_shortest_evaluation_10_all_attempts_3runs.json
+
+And then test with the qwen/qwen3-4b model without reasoning:
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_10 --repeat-runs 3 --max_workers 50 --max_attempts 8 --model qwen/qwen3-4b --base-url http://38.80.152.249:30805/v1 --qwen-no-think --max-tokens 1000
+```
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Max-Len 
+----------------------------------------------------------------------
+1    10     10.0%      10.0%      10.0%    10.0%      1.2%    
+2    10     10.0%      10.0%      10.0%    10.0%      2.5%    
+3    10     10.0%      10.0%      20.0%    10.0%      2.5%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 10.0%
+  Std Dev: 0.0%
+  95% CI: [10.0%, 10.0%]
+
+Train Majority Pass2:
+  Mean: 10.0%
+  Std Dev: 0.0%
+  95% CI: [10.0%, 10.0%]
+
+Oracle Correct:
+  Mean: 13.3%
+  Std Dev: 5.8%
+  95% CI: [2.0%, 24.6%]
+
+All Train Correct:
+  Mean: 10.0%
+  Std Dev: 0.0%
+  95% CI: [10.0%, 10.0%]
+
+Min1 Train Correct:
+  Mean: 10.0%
+  Std Dev: 0.0%
+  95% CI: [10.0%, 10.0%]
+
+Max Length Responses:
+  Mean: 2.1%
+  Std Dev: 0.7%
+  95% CI: [0.7%, 3.5%]
+
+Timeout Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Api Failure Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Aggregate results saved to: /Users/ronanmcgovern/TR/arc-agi-2025/llm-python/logs/20250727_141652/20250727_141730_aggregate_summary_arc-agi-1_shortest_evaluation_10_all_attempts_3runs.json
+
+and lastly with the soar model 
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_10 --repeat-runs 3 --max_workers 50 --max_attempts 8 --model julien31/Soar-qwen-7b --base-url http://38.80.152.249:30806/v1 --qwen-no-think --max-tokens 1000
+```
+Dataset: arc-agi-1
+Subset: shortest_evaluation_10
+Model: julien31/Soar-qwen-7b
+Number of runs: 3
+Valid runs: 3
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Max-Len 
+----------------------------------------------------------------------
+1    10     90.0%      80.0%      90.0%    80.0%      0.0%    
+2    10     90.0%      90.0%      90.0%    90.0%      0.0%    
+3    10     90.0%      90.0%      90.0%    90.0%      0.0%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 90.0%
+  Std Dev: 0.0%
+  95% CI: [90.0%, 90.0%]
+
+Train Majority Pass2:
+  Mean: 86.7%
+  Std Dev: 5.8%
+  95% CI: [75.4%, 98.0%]
+
+Oracle Correct:
+  Mean: 90.0%
+  Std Dev: 0.0%
+  95% CI: [90.0%, 90.0%]
+
+All Train Correct:
+  Mean: 86.7%
+  Std Dev: 5.8%
+  95% CI: [75.4%, 98.0%]
+
+Min1 Train Correct:
+  Mean: 93.3%
+  Std Dev: 5.8%
+  95% CI: [82.0%, 100.0%]
+
+Max Length Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Timeout Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Api Failure Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Aggregate results saved to: /Users/ronanmcgovern/TR/arc-agi-2025/llm-python/logs/20250727_141703/20250727_141733_aggregate_summary_arc-agi-1_shortest_evaluation_10_all_attempts_3runs.json
 
 Full evaluations set with the Soar model [looks TERRIBLE]:
 ```bash

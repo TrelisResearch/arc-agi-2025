@@ -105,13 +105,14 @@ class ARCTaskRunnerSimple:
         self.max_tokens = max_tokens
         self.temperature = temperature
         
-        # Initialize OpenAI client
+        # Initialize OpenAI client with timeout
+        client_timeout = 300.0  # 5 minutes max per HTTP request
         if base_url:
-            self.client = OpenAI(api_key=self.api_key, base_url=base_url)
-            print(f"📝 Using custom endpoint: {base_url}")
+            self.client = OpenAI(api_key=self.api_key, base_url=base_url, timeout=client_timeout)
+            print(f"📝 Using custom endpoint: {base_url} (timeout: {client_timeout}s)")
         else:
-            self.client = OpenAI(api_key=self.api_key)
-            print(f"📝 Using OpenAI endpoint")
+            self.client = OpenAI(api_key=self.api_key, timeout=client_timeout)
+            print(f"📝 Using OpenAI endpoint (timeout: {client_timeout}s)")
         
         # Initialize fresh instances to prevent state leakage
         self.task_loader = TaskLoader()
@@ -518,8 +519,12 @@ class ARCTaskRunnerSimple:
         
         def attempt_wrapper(task_idx, task_id, task_data, attempt_num):
             nonlocal completed_attempts, completed_tasks
+            attempt_start = time.time()
             try:
                 result = self.run_single_attempt(task_id, task_data, attempt_num, dataset, subset_name)
+                attempt_duration = time.time() - attempt_start
+                if attempt_duration > 60:  # Log slow attempts
+                    print(f"🐌 Slow attempt: {task_id} attempt {attempt_num + 1} took {attempt_duration:.1f}s (timeout: 300s)")
                 
                 with count_lock:
                     # Store attempt result - use thread-safe access
@@ -578,6 +583,10 @@ class ARCTaskRunnerSimple:
                     remaining_time = max_wait_time - (time.time() - start_time)
                     if remaining_time <= 0:
                         print("⏰ Timeout reached, some attempts may not have completed")
+                        print("🛑 Cancelling all remaining futures and stopping execution")
+                        # Cancel all remaining futures
+                        for remaining_future in futures[future_idx:]:
+                            remaining_future.cancel()
                         break
                     try:
                         future.result(timeout=remaining_time)
@@ -588,9 +597,40 @@ class ARCTaskRunnerSimple:
                         print(f"   Remaining time: {remaining_time:.1f}s")
                         print(f"   Future done: {future.done()}")
                         print(f"   Future exception: {future.exception()}")
+                        
+                        # Get the task details for this future
+                        task_idx, task_id, task_data, attempt_num = attempt_jobs[future_idx]
+                        print(f"   Task: {task_id}, Attempt: {attempt_num + 1}")
+                        print(f"   Task data keys: {list(task_data.keys()) if task_data else 'None'}")
+                        
+                        # Check if this future has any partial results
+                        if future.done() and not future.exception():
+                            try:
+                                result = future.result(timeout=1)  # Quick check
+                                print(f"   Future actually completed successfully")
+                                if result and 'attempt_detail' in result:
+                                    attempt = result['attempt_detail']
+                                    print(f"   API success: {attempt.get('api_success', 'Unknown')}")
+                                    print(f"   Timed out: {attempt.get('timed_out', 'Unknown')}")
+                                    print(f"   Error: {attempt.get('error', 'None')}")
+                                    print(f"   Program extracted: {attempt.get('program_extracted', 'Unknown')}")
+                                    print(f"   Test correct: {attempt.get('test_correct', 'Unknown')}")
+                            except Exception as check_e:
+                                print(f"   Could not check future result: {check_e}")
+                        
                         print(f"   Stopping execution due to future timeout")
+                        # Cancel all remaining futures
+                        for remaining_future in futures[future_idx:]:
+                            remaining_future.cancel()
                         raise future_e
-                print(f"✅ All {total_attempts} attempts completed")
+                
+                # Check if we completed all futures or hit timeout
+                completed_futures = sum(1 for future in futures if future.done())
+                if completed_futures == total_attempts:
+                    print(f"✅ All {total_attempts} attempts completed")
+                else:
+                    print(f"⚠️ Only {completed_futures}/{total_attempts} attempts completed (timeout hit)")
+                    
             except Exception as e:
                 print(f"⚠️ Some attempts may have failed or timed out: {e}")
             
