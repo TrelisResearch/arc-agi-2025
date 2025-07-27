@@ -211,7 +211,7 @@ class ARCTaskRunnerSimple:
         
         return extract_python_code(full_text, self.debug)
     
-    def run_task_all_attempts(self, task_id: str, task_data: Dict, total_tasks: int = 1, 
+    def run_task_all_attempts(self, task_id: str, task_data: Dict, 
                             dataset: str = None, subset: str = None) -> Dict:
         """Run all attempts for a single ARC task"""
         total_cost = 0.0
@@ -267,7 +267,7 @@ class ARCTaskRunnerSimple:
                 if not program or program.strip() == '':
                     pred, err, tout = None, 'no program', False
                 else:
-                    pred, err, tout = self.executor.execute_program(program, ex['input'])
+                    pred, err, tout = self.executor.execute_program_with_timeout(program, ex['input'])
                 is_corr = (pred == ex['output']) if (pred is not None and not err and not tout) else False
                 train_results.append({'predicted': pred, 'expected': ex['output'], 'correct': is_corr, 'error': err, 'timed_out': tout})
                 if is_corr:
@@ -281,7 +281,7 @@ class ARCTaskRunnerSimple:
             if not program or program.strip() == '':
                 test_pred, test_err, test_tout = None, 'no program', False
             else:
-                test_pred, test_err, test_tout = self.executor.execute_program(program, test_input)
+                test_pred, test_err, test_tout = self.executor.execute_program_with_timeout(program, test_input)
             test_correct = (test_pred == test_expected) if (test_pred is not None and not test_err and not test_tout) else False
             
             if self.debug:
@@ -361,7 +361,7 @@ class ARCTaskRunnerSimple:
         def task_wrapper(idx, task_id, task_data):
             nonlocal completed_count
             try:
-                result = self.run_task_all_attempts(task_id, task_data, total_tasks, dataset, subset_name)
+                result = self.run_task_all_attempts(task_id, task_data, dataset, subset_name)
                 self.save_result(result)
                 results[idx] = result
                 

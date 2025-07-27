@@ -1,4 +1,8 @@
-from ..scoring import GridScorer, ProgramExecutor
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+
+from utils.scoring import GridScorer, ProgramExecutor
 
 class TestGridScorer:
     """Basic tests for GridScorer"""
@@ -49,7 +53,7 @@ def transform(grid):
 """
         test_input = [[1, 2], [3, 4]]
         
-        result, error, timed_out = executor.execute_program(program, test_input)
+        result, error, timed_out = executor.execute_program_with_timeout(program, test_input)
         
         assert result == [[2, 3], [4, 5]]
         assert error == ""
@@ -65,7 +69,7 @@ def solve(grid):
 """
         test_input = [[1, 2], [3, 4]]
         
-        result, error, timed_out = executor.execute_program(program, test_input)
+        result, error, timed_out = executor.execute_program_with_timeout(program, test_input)
         
         assert result == [[0, 0], [0, 0]]
         assert error == ""
@@ -81,7 +85,7 @@ def transform(grid):
 """
         test_input = [[1, 2]]
         
-        result, error, timed_out = executor.execute_program(program, test_input)
+        result, error, timed_out = executor.execute_program_with_timeout(program, test_input)
         
         assert result is None
         assert error != ""
@@ -94,7 +98,7 @@ def transform(grid):
         program = "x = 5"  # No function
         test_input = [[1, 2]]
         
-        result, error, timed_out = executor.execute_program(program, test_input)
+        result, error, timed_out = executor.execute_program_with_timeout(program, test_input)
         
         assert result is None
         assert "No valid transformation function found" in error

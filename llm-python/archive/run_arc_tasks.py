@@ -259,7 +259,7 @@ class ARCTaskRunner:
         has_grid_size_mismatch = False
         
         for i, example in enumerate(training_examples):
-            predicted_output, error, timed_out = self.executor.execute_program(program, example['input'])
+            predicted_output, error, timed_out = self.executor.execute_program_with_timeout(program, example['input'])
             expected_output = example['output']
             predicted_outputs.append(predicted_output)
             

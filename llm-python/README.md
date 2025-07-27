@@ -1225,11 +1225,12 @@ uv run python scoring.py      # Test scoring functionality
 Test utils modules:
 ```bash
 # Run all utils tests
-uv run python -m pytest utils/tests/ -v
+uv run python -m pytest utils/tests/ llm-python/utils/test_scoring.py -v
 
 # Run specific utils tests
 uv run python -m pytest utils/tests/test_prompt_utils.py -v
 uv run python -m pytest utils/tests/test_timeout_utils.py -v
+uv run python -m pytest llm-python/utils/test_scoring.py -v
 ```
 
 Quick API test:
@@ -1298,11 +1299,12 @@ llm-python/
 ├── utils/                       # Utility modules
 │   ├── __init__.py
 │   ├── task_loader.py          # Load ARC tasks and subsets
-│   ├── scoring.py              # Grid scoring and program execution
+│   ├── scoring.py              # Grid scoring and program execution (0.5s timeout)
 │   ├── prompt_utils.py         # Prompt creation and code extraction
 │   ├── timeout_utils.py        # Timeout handling utilities
 │   ├── voting_utils.py         # Voting algorithms and prediction processing
 │   ├── metrics_utils.py        # Metrics calculation and formatting
+│   ├── test_scoring.py         # Tests for scoring utilities
 │   └── tests/                  # Tests for utility modules
 │       ├── __init__.py
 │       ├── test_task_loader.py
@@ -1375,12 +1377,13 @@ uv run python -m llm-python.run_arc_tasks --model llama-3.1-8b --base-url http:/
 
 ## Implementation Notes
 
-- **Execution timeout**: Program execution has a 0.1 second timeout as specified in requirements
+- **Execution timeout**: Program execution has a 0.5 second timeout for robust evaluation
 - **Function interface**: All programs must define a `transform` function that takes a grid (2D list) and returns the transformed grid
 - **Grid format**: All grids are represented as 2D lists of integers (0-9)
 - **API architecture**: Uses the Chat Completions API for broad compatibility with OpenAI-compatible endpoints
 - **Cost accuracy**: Uses standard prompt_tokens/completion_tokens for cost calculation
 - **Pixel counting**: Fixed pixel accuracy calculation to include failed executions in totals
+- **Utils organization**: Modular utility functions with comprehensive test coverage
 
 ## Additional Notes
 

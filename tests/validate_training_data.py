@@ -63,7 +63,7 @@ def extract_program_from_assistant_message(content: str) -> Optional[str]:
     
     return None
 
-def execute_program_on_input(program: str, input_grid: List[List[int]], timeout: float = 2.0) -> Tuple[Optional[List[List[int]]], Optional[str], bool]:
+def execute_program_on_input(program: str, input_grid: List[List[int]], timeout: float = 0.5) -> Tuple[Optional[List[List[int]]], Optional[str], bool]:
     """Execute a program on an input grid and return the result"""
     try:
         # Create a temporary file with the program

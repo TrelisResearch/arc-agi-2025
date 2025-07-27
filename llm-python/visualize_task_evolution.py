@@ -68,7 +68,7 @@ class TaskEvolutionVisualizer:
     def execute_program_on_test(self, program: str, test_input: List[List[int]]) -> Optional[List[List[int]]]:
         """Execute a program on test input and return the result"""
         try:
-            result, error, timed_out = self.executor.execute_program(program, test_input)
+            result, error, timed_out = self.executor.execute_program_with_timeout(program, test_input)
             if error or timed_out or result is None:
                 return None
             return result

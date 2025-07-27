@@ -56,7 +56,7 @@ class ProgramExecutor:
     _executor_context = None
     _executor_type = None
     
-    def __init__(self, timeout: float = 0.1, executor_type: str = "docker"):
+    def __init__(self, timeout: float = 0.5, executor_type: str = "docker"):
         self.timeout = timeout
         self.executor_type = executor_type
         
@@ -110,7 +110,7 @@ class ProgramExecutor:
         else:
             return obj
     
-    def execute_program(self, program: str, test_input: List[List[int]]) -> Tuple[Optional[List[List[int]]], str, bool]:
+    def execute_program_with_timeout(self, program: str, test_input: List[List[int]]) -> Tuple[Optional[List[List[int]]], str, bool]:
         """
         Execute a Python program with the test input
         

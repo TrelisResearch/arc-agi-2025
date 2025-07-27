@@ -9,7 +9,6 @@ from .voting_utils import (
     compute_train_majority_voting
 )
 
-
 def calculate_task_metrics(
     results: List[Dict], 
     upto_attempt: Optional[int] = None,
