@@ -25,6 +25,10 @@ from .metrics_utils import (
     metrics_to_percentages
 )
 
+from .timeout_utils import (
+    execute_with_timeout
+)
+
 __all__ = [
     'create_arc_prompt',
     'extract_python_code_from_response', 
@@ -39,5 +43,6 @@ __all__ = [
     'deserialize_prediction_from_voting',
     'calculate_task_metrics',
     'format_metrics_display',
-    'metrics_to_percentages'
+    'metrics_to_percentages',
+    'execute_with_timeout'
 ]

@@ -19,6 +19,7 @@ try:
     from .utils.scoring import GridScorer, ProgramExecutor
     from .utils.prompt_utils import create_arc_prompt, extract_python_code_from_response
     from .utils.metrics_utils import calculate_task_metrics, format_metrics_display, metrics_to_percentages
+    from .utils.timeout_utils import execute_with_timeout
     from .prompt_loader import PromptLoader
 except ImportError:
     # Fall back to absolute imports (when run directly)
@@ -26,20 +27,12 @@ except ImportError:
     from utils.scoring import GridScorer, ProgramExecutor
     from utils.prompt_utils import create_arc_prompt, extract_python_code_from_response
     from utils.metrics_utils import calculate_task_metrics, format_metrics_display, metrics_to_percentages
+    from utils.timeout_utils import execute_with_timeout
     from prompt_loader import PromptLoader
 
 load_dotenv()
 
-def execute_with_timeout(func, *args, timeout=30, **kwargs):
-    """Execute a function with timeout using ThreadPoolExecutor"""
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(func, *args, **kwargs)
-        try:
-            result = future.result(timeout=timeout)
-            return result
-        except Exception as e:
-            future.cancel()
-            raise e
+
 
 def serialize_response(response):
     """Convert OpenAI response to JSON-serializable format"""
@@ -325,8 +318,6 @@ class ARCTaskRunnerSimple:
             'task_data': task_data
         }
     
-
-    
     def report_metrics(self, results, upto_attempt):
         """Calculate and report metrics for completed attempts"""
         metrics = calculate_task_metrics(results, upto_attempt, self.max_tokens)
@@ -395,36 +386,35 @@ class ARCTaskRunnerSimple:
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             futures = [executor.submit(task_wrapper, idx, task_id, task_data) for idx, (task_id, task_data) in enumerate(tasks)]
             
-            # Rolling reporting after each layer
-            for attempt_idx in range(self.max_attempts):
-                start_time = time.time()
-                max_wait_time = 300  # 5 minutes timeout per layer
-                
-                while True:
-                    # Check for worker failures
-                    failed_workers = []
-                    for i, future in enumerate(futures):
-                        if future.done() and future.exception():
-                            failed_workers.append((i, future.exception()))
-                    
-                    if failed_workers:
-                        print(f"❌ {len(failed_workers)} workers failed:")
-                        for worker_idx, exception in failed_workers:
-                            print(f"   Worker {worker_idx}: {exception}")
+            print(f"🚀 Started {total_tasks} tasks with {self.max_workers} workers")
+            
+            # Simple approach: just wait for all futures with timeout
+            max_wait_time = 600  # 10 minutes total timeout
+            start_time = time.time()
+            
+            try:
+                # Wait for all futures to complete
+                for future in futures:
+                    remaining_time = max_wait_time - (time.time() - start_time)
+                    if remaining_time <= 0:
+                        print("⏰ Timeout reached, some tasks may not have completed")
                         break
-                    
-                    # Check timeout
-                    if time.time() - start_time > max_wait_time:
-                        print(f"⏰ Timeout waiting for tasks to complete layer {attempt_idx + 1}")
-                        print(f"   Completed: {sum(1 for r in results if r is not None)}/{total_tasks}")
-                        break
-                    
-                    done = sum(1 for r in results if r is not None)
-                    if done == total_tasks:
-                        break
-                    time.sleep(0.5)
-                
-                self.report_metrics(results, attempt_idx + 1)
+                    future.result(timeout=remaining_time)
+                print(f"✅ All {total_tasks} tasks completed")
+            except Exception as e:
+                print(f"⚠️ Some tasks may have failed or timed out: {e}")
+            
+            # Check final status
+            completed_count = sum(1 for future in futures if future.done() and not future.exception())
+            failed_count = sum(1 for future in futures if future.done() and future.exception())
+            
+            if failed_count > 0:
+                print(f"❌ {failed_count} tasks failed:")
+                for i, future in enumerate(futures):
+                    if future.done() and future.exception():
+                        print(f"   Task {i}: {future.exception()}")
+            
+            print(f"📊 Final status: {completed_count} successful, {failed_count} failed out of {total_tasks} total")
         
         self.save_summary(results, subset_name, dataset)
         return results

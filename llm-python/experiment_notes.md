@@ -46,6 +46,19 @@ Later:
 [x] Compare auto and manual pods. Don't think this could be an issue. But probably there is high variance in results for base qwen as mostly the answers are too long / blab.
 [x] Refactor run_arc_tasks.py to use majority voting for correctness. Report % test correct, % all-train correct, % min-1-train correct.
 
+### Testing of run_arc_tasks_soar.py
+
+Start a pod with julien31/Soar-qwen-7b:
+```bash
+uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path julien31/Soar-qwen-7b --reasoning-parser qwen3
+```
+and then start a base qwen pod:
+```bash
+uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path qwen/qwen3-4b --reasoning-parser qwen3
+```
+
+Then run the script:
+
 
 
 ### Test whether SOAR blabs.
