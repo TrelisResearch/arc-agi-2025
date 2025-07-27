@@ -97,6 +97,8 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --r
 - **Efficient Workers**: ThreadPoolExecutor automatically reuses workers for maximum throughput
 - **Voting Algorithms**: Weighted majority (frequency + accuracy) and train-majority voting
 - **Transduction Filtering**: Automatically removes hardcoded/cheating responses
+- **Sampling Parameter Logging**: Comprehensive logging of all sampling parameters (temperature, top_p, top_k, min_p) used in API calls
+- **Default Sampling Parameters**: Automatic application of top_k=50 and top_p=0.9 defaults for most endpoints
 
 **When to use:**
 - For comprehensive evaluation with statistical rigor
@@ -1013,6 +1015,8 @@ Each individual task log includes:
 - Token usage breakdown and estimated costs
 - Turn usage statistics (when multi-turn is enabled)
 - Full API response for detailed analysis
+- Sampling parameters used (temperature, top_p, top_k, min_p)
+- Complete prompt (system and user messages)
 
 Summary reports aggregate across all tasks and include:
 - Overall task solve rate and pixel accuracy across the subset
@@ -1045,6 +1049,14 @@ Summary reports aggregate across all tasks and include:
       "reasoning_tokens": null
     }
   },
+  "sampling_params": {
+    "top_p": 0.9,
+    "top_k": 50
+  },
+  "full_prompt": {
+    "system": "You are an AI assistant specialized in solving Abstract Reasoning Corpus (ARC-AGI) tasks...",
+    "user": "You are an AI assistant specialized in solving Abstract Reasoning Corpus (ARC-AGI) tasks..."
+  },
   "score": {
     "correct": true,
     "pixel_accuracy": 1.0,
@@ -1071,6 +1083,14 @@ Summary reports aggregate across all tasks and include:
   "turns_used": 1,
   "request_cost": 0.000405,
   "raw_response": { /* Full API response */ },
+  "sampling_params": {
+    "top_p": 0.9,
+    "top_k": 50
+  },
+  "full_prompt": {
+    "system": "You are an AI assistant specialized in solving Abstract Reasoning Corpus (ARC-AGI) tasks...",
+    "user": "You are an AI assistant specialized in solving Abstract Reasoning Corpus (ARC-AGI) tasks..."
+  },
   "score": {
     "correct": true,
     "pixel_accuracy": 1.0,
@@ -1196,6 +1216,8 @@ This example shows:
 - `task_failure_reason`: Reason why task failed - includes Python execution errors, "All attempts failed", "Max turns reached", "API timeout after retries", etc. (empty if successful)
 - `request_cost`: Cost for this specific task in USD
 - `turns_used`: Number of conversation turns used for this task
+- `sampling_params`: All sampling parameters used (temperature, top_p, top_k, min_p)
+- `full_prompt`: Complete system and user messages used
 - `score.correct`: Boolean - whether output exactly matches expected
 - `score.pixel_accuracy`: Fraction of pixels that match (0.0 to 1.0)
 - `predicted_output` vs `actual_output`: Compare model's solution to ground truth
@@ -1390,6 +1412,8 @@ uv run python -m llm-python.run_arc_tasks --model llama-3.1-8b --base-url http:/
 - **Cost accuracy**: Uses standard prompt_tokens/completion_tokens for cost calculation
 - **Pixel counting**: Fixed pixel accuracy calculation to include failed executions in totals
 - **Utils organization**: Modular utility functions with comprehensive test coverage
+- **Default sampling parameters**: Automatically applies top_k=50 and top_p=0.9 defaults for most endpoints
+- **Sampling parameter logging**: Comprehensive logging of all sampling parameters used in API calls
 
 ## Additional Notes
 

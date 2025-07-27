@@ -171,7 +171,18 @@ class ARCTaskRunnerSimple:
                         if self.max_tokens is None:
                             kwargs["max_tokens"] = reasoning_tokens[self.reasoning_effort]
             
-            # Add Qwen-specific parameters
+            # Add sampling parameters based on endpoint type
+            # Only apply defaults if not already set by model-specific logic
+            if "top_p" not in kwargs and "min_p" not in kwargs:
+                # For most endpoints, use top_p and top_k defaults
+                kwargs["top_p"] = 0.9
+                # Put top_k in extra_body to avoid API errors
+                if "extra_body" not in kwargs:
+                    kwargs["extra_body"] = {}
+                if "top_k" not in kwargs["extra_body"]:
+                    kwargs["extra_body"]["top_k"] = 50
+            
+            # Add Qwen-specific parameters (override defaults if needed)
             if "qwen" in self.model.lower() and self.base_url:
                 if self.qwen_no_think:
                     qwen_params = {
@@ -191,7 +202,7 @@ class ARCTaskRunnerSimple:
                     kwargs.update(qwen_params)
             
             response = self.client.chat.completions.create(**kwargs)
-            return response
+            return response, kwargs
             
         except Exception as e:
             raise Exception(f"API call failed: {e}")
@@ -238,7 +249,8 @@ class ARCTaskRunnerSimple:
             
             for retry_attempt in range(3):
                 try:
-                    response = execute_with_timeout(self.call_chat_completions_api, conversation_history, timeout=30)
+                    result = execute_with_timeout(self.call_chat_completions_api, conversation_history, timeout=30)
+                    response, api_kwargs = result
                     api_call_successful = True
                     break
                 except Exception as e:
@@ -247,6 +259,26 @@ class ARCTaskRunnerSimple:
                         time.sleep(2)
                     else:
                         timed_out = True
+            
+            # Extract sampling parameters for logging
+            sampling_params = {}
+            if api_call_successful and 'api_kwargs' in locals():
+                # Extract sampling parameters from actual API call
+                for param in ['temperature', 'max_tokens', 'top_p', 'top_k', 'min_p']:
+                    if param in api_kwargs:
+                        sampling_params[param] = api_kwargs[param]
+                # Also check extra_body for nested parameters
+                if 'extra_body' in api_kwargs:
+                    extra_body = api_kwargs['extra_body']
+                    for param in ['top_k', 'min_p']:
+                        if param in extra_body:
+                            sampling_params[param] = extra_body[param]
+            else:
+                # Fallback to instance parameters
+                if self.temperature is not None:
+                    sampling_params["temperature"] = self.temperature
+                if self.max_tokens is not None:
+                    sampling_params["max_tokens"] = self.max_tokens
             
             # Track costs
             usage = getattr(response, 'usage', None)
@@ -305,6 +337,7 @@ class ARCTaskRunnerSimple:
                 'test_timed_out': test_tout,
                 'raw_response': serialize_response(response),
                 'full_prompt': {'system': system_content, 'user': user_content},
+                'sampling_params': sampling_params,
                 'api_success': api_call_successful,
                 'timed_out': timed_out,
                 'error': error
