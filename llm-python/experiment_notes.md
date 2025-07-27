@@ -30,11 +30,12 @@ Other task list:
       - [x] Test soar for answer lengths, does that model blab? Very little.
       - [x] Test base qwen for answer lengths, does it blab? 20% of the time.
       - [x] Test base qwen for answer lengths, does it blab at T=1.0, min_p=0.05? 15% of the time
-    - [ ] Ensure Qwen reasoning is well logged.
-    - [ ] Ensure Gemini is well logged.
+    - [x] Ensure Qwen reasoning is well logged.
+    - [x] Ensure Gemini is well logged.
 - [ ] Baseline:
-    - [x] ARC-AGI-1 shortest 30. Pass@8. 3 runs. Qwen Base.
-    - [x] Soar model. Same.
+    - [x] ARC-AGI-1 shortest 30. Pass@8. 3 runs. Qwen Base. Scores 8%.
+    - [x] Soar model. Same. Scores 58%.
+    - [ ] Full evaluation set with the Soar model. Seems to score 30%?
 - [ ] Data generation:
     - [ ] Hoist utils.
     - [ ] Integrate validation.
@@ -67,6 +68,8 @@ Quick test on gemini with the shortest 10 evaluation problems:
 ```bash
 uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_10 --repeat-runs 1 --max_workers 50 --max_attempts 8 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1/ --reasoning_effort medium
 ```
+
+
 ### Test blabbing
 with the julien31/Soar-qwen-7b model:
 ```bash
@@ -115,9 +118,16 @@ Weighted Voting Pass2:
 
 and then with the qwen/qwen3-4b model with reasoning:
 ```bash
-uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_30 --repeat-runs 3 --max_workers 50 --max_attempts 8 --model qwen/qwen3-4b --base-url http://38.80.152.249:30805/v1
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_30 --repeat-runs 3 --max_workers 50 --max_attempts 8 --model qwen/qwen3-4b --base-url http://38.80.152.249:30805/v1 --max-tokens 8000
+```
+...
+
+Full evaluations set with the Soar model:
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_attempts 8 --model julien31/Soar-qwen-7b --base-url http://38.80.152.249:30806/v1 --max-tokens 1000 --qwen-no-think
 ```
 
+And then test out Gemini
 
 ### Compare both pods using the old run_arc_tasks_soar.py script.
 

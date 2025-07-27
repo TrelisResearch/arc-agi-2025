@@ -38,6 +38,39 @@ def serialize_response(response):
         return None
     
     try:
+        choices = []
+        for choice in getattr(response, 'choices', []):
+            message_data = {
+                'role': getattr(choice.message, 'role', None) if hasattr(choice, 'message') else None,
+                'content': getattr(choice.message, 'content', None) if hasattr(choice, 'message') else None,
+            }
+            
+            # Capture reasoning content from different model types and standardize to "reasoning" field
+            reasoning_content = None
+            
+            # Check for Qwen reasoning_content field first
+            if hasattr(choice, 'message') and hasattr(choice.message, 'reasoning_content'):
+                reasoning_content = getattr(choice.message, 'reasoning_content', None)
+            
+            # Check for Gemini reasoning field
+            if hasattr(choice, 'message') and hasattr(choice.message, 'reasoning'):
+                reasoning_content = getattr(choice.message, 'reasoning', None)
+            
+            # Standardize to "reasoning" field
+            if reasoning_content:
+                message_data['reasoning'] = reasoning_content
+            
+            # Keep reasoning_details for Gemini (additional structured data)
+            if hasattr(choice, 'message') and hasattr(choice.message, 'reasoning_details'):
+                message_data['reasoning_details'] = getattr(choice.message, 'reasoning_details', None)
+            
+            choice_data = {
+                'index': getattr(choice, 'index', None),
+                'message': message_data,
+                'finish_reason': getattr(choice, 'finish_reason', None),
+            }
+            choices.append(choice_data)
+        
         return {
             'id': getattr(response, 'id', None),
             'model': getattr(response, 'model', None),
@@ -46,16 +79,7 @@ def serialize_response(response):
                 'completion_tokens': getattr(response.usage, 'completion_tokens', 0) if hasattr(response, 'usage') and response.usage else 0,
                 'total_tokens': getattr(response.usage, 'total_tokens', 0) if hasattr(response, 'usage') and response.usage else 0,
             },
-            'choices': [
-                {
-                    'index': getattr(choice, 'index', None),
-                    'message': {
-                        'role': getattr(choice.message, 'role', None) if hasattr(choice, 'message') else None,
-                        'content': getattr(choice.message, 'content', None) if hasattr(choice, 'message') else None,
-                    },
-                    'finish_reason': getattr(choice, 'finish_reason', None),
-                } for choice in (getattr(response, 'choices', []))
-            ],
+            'choices': choices,
         }
     except Exception as e:
         return {'error': f'Failed to serialize response: {str(e)}'}
@@ -95,7 +119,7 @@ class ARCTaskRunnerSimple:
         self.prompt_loader = PromptLoader()
         
         # Create logs directory
-        self.logs_dir = Path("logs")
+        self.logs_dir = Path(__file__).parent / "logs"
         self.logs_dir.mkdir(exist_ok=True)
         
         # Thread-safe cost and token tracking
@@ -174,7 +198,7 @@ class ARCTaskRunnerSimple:
         # Only apply defaults if not already set by model-specific logic
         if "top_p" not in kwargs and "min_p" not in kwargs:
             # For TCP endpoints, use min_p instead of top_p/top_k
-            if self.base_url and ":" in self.base_url:
+            if self.base_url and ":" in self.base_url and not self.base_url.startswith("https://"):
                 if "extra_body" not in kwargs:
                     kwargs["extra_body"] = {}
                 kwargs["extra_body"]["min_p"] = 0.05
@@ -239,7 +263,7 @@ class ARCTaskRunnerSimple:
             # Only apply defaults if not already set by model-specific logic
             if "top_p" not in kwargs and "min_p" not in kwargs:
                 # For TCP endpoints, use min_p instead of top_p/top_k
-                if self.base_url and ":" in self.base_url:
+                if self.base_url and ":" in self.base_url and not self.base_url.startswith("https://"):
                     if "extra_body" not in kwargs:
                         kwargs["extra_body"] = {}
                     kwargs["extra_body"]["min_p"] = 0.05
