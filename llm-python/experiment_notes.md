@@ -1,5 +1,26 @@
 # Experiment Notes
 
+## 29 July 2025
+- [ ] Review of run_arc_tasks_soar.py
+  - [ ] Ensure categories for each each result attempt are complete (i.e. test result, train result, api failures, api timeout, max length reached, code extraction failed, code execution failed.)
+  - [ ] Manual review of threading and timeouts.
+  - [ ] What does sglang do if a request is stopped? Does it continue - resulting in a build-up in the serverload?
+- [ ] Evaluation on shortest 30 evaluation problems:
+  - [x] Soar model. 54%
+  - [x] Qwen Base. 7%
+  - [ ] Qwen Base with reasoning. 
+  - [x] Gemini. ~80%
+- [ ] Full evaluation sets for arc-agi-1:
+  - [ ] Soar model.
+  - [ ] Qwen Base.
+- [ ] Fine-tuning:
+    - [ ] Hoist utils. 
+    - [ ] Test a small dataset.
+- [ ] Data generation (lewis):
+    - [ ] Hoist utils. Already available! Need to make use of them in the data generation script generate_training_data.py
+    - [ ] Integrate validation.
+    - [ ] Test a small dataset.
+
 ## 26-28 July 2025
 - [x] Review code and consolidate into one run_arc_tasks_soar.py script
     - [x] Go through script for run_arc_tasks_soar.py.
@@ -20,26 +41,11 @@
 - [ ] Baseline:
     - [x] ARC-AGI-1 shortest 30. Pass@8. 3 runs. Qwen Base. Scores 8%.
     - [x] Soar model. Same. Scores 58%.
-    - [ ] Full evaluation sets for arc-agi-1:
-      - [ ] Soar model.
-      - [ ] Qwen Base.
-    - [ ] Evaluation on shortest 10 evaluation problems:
-      - [ ] Soar model. 90%
-      - [ ] Qwen Base. 10%
-      - [ ] Qwen Base with reasoning. 80%.
-      - [ ] Gemini. 87%.
-    - [ ] Evaluation on shortest 30 evaluation problems:
-      - [ ] Soar model. 54%
-      - [ ] Qwen Base. 7%
-      - [ ] Qwen Base with reasoning. 
-      - [ ] Gemini. ~80%
-- [ ] Fine-tuning:
-    - [ ] Hoist utils. 
-    - [ ] Test a small dataset.
-- [ ] Data generation (lewis):
-    - [ ] Hoist utils. Already available! Need to make use of them in the data generation script generate_training_data.py
-    - [ ] Integrate validation.
-    - [ ] Test a small dataset.
+    - [x] Evaluation on shortest 10 evaluation problems:
+      - [x] Soar model. 90%
+      - [x] Qwen Base. 10%
+      - [x] Qwen Base with reasoning. 80%.
+      - [x] Gemini. 87%.
 
 Later:
 - [ ] Beam search tests
