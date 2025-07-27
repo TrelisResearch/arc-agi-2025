@@ -4,10 +4,9 @@ Utilities for ARC-AGI task processing.
 
 from .prompt_utils import (
     create_arc_prompt,
-    extract_python_code_from_response,
-    extract_python_code_from_text,
-    format_grid_for_prompt,
-    get_grid_shape_string
+    extract_python_code,
+    _format_grid_for_prompt as format_grid_for_prompt,
+    _get_grid_shape_string as get_grid_shape_string
 )
 
 from .voting_utils import (
@@ -31,8 +30,7 @@ from .timeout_utils import (
 
 __all__ = [
     'create_arc_prompt',
-    'extract_python_code_from_response', 
-    'extract_python_code_from_text',
+    'extract_python_code',
     'format_grid_for_prompt',
     'get_grid_shape_string',
     'filter_non_transductive_attempts',

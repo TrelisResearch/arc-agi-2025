@@ -17,7 +17,7 @@ try:
     # Try relative imports first (when run as module)
     from .utils.task_loader import TaskLoader
     from .utils.scoring import GridScorer, ProgramExecutor
-    from .utils.prompt_utils import create_arc_prompt, extract_python_code_from_response
+    from .utils.prompt_utils import create_arc_prompt, extract_python_code
     from .utils.metrics_utils import calculate_task_metrics, format_metrics_display, metrics_to_percentages
     from .utils.timeout_utils import execute_with_timeout
     from .prompt_loader import PromptLoader
@@ -25,14 +25,12 @@ except ImportError:
     # Fall back to absolute imports (when run directly)
     from utils.task_loader import TaskLoader
     from utils.scoring import GridScorer, ProgramExecutor
-    from utils.prompt_utils import create_arc_prompt, extract_python_code_from_response
+    from utils.prompt_utils import create_arc_prompt, extract_python_code
     from utils.metrics_utils import calculate_task_metrics, format_metrics_display, metrics_to_percentages
     from utils.timeout_utils import execute_with_timeout
     from prompt_loader import PromptLoader
 
 load_dotenv()
-
-
 
 def serialize_response(response):
     """Convert OpenAI response to JSON-serializable format"""
@@ -200,7 +198,18 @@ class ARCTaskRunnerSimple:
     
     def extract_code_from_response(self, response) -> str:
         """Extract Python code from the Chat Completions API result"""
-        return extract_python_code_from_response(response, self.debug)
+        # Get the full text from response
+        full_text = ""
+        
+        if hasattr(response, 'choices') and len(response.choices) > 0:
+            message = response.choices[0].message
+            if hasattr(message, 'content') and message.content:
+                full_text = message.content
+
+        if self.debug and len(full_text) > 0:
+            print(f"🔍 Response content: {len(full_text)} chars")
+        
+        return extract_python_code(full_text, self.debug)
     
     def run_task_all_attempts(self, task_id: str, task_data: Dict, total_tasks: int = 1, 
                             dataset: str = None, subset: str = None) -> Dict:

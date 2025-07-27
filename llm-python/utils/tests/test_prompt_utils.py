@@ -3,11 +3,15 @@ Tests for prompt utility functions.
 """
 
 import unittest
+import sys
+import os
 from unittest.mock import Mock, MagicMock
-from ..prompt_utils import (
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+
+from utils import (
     create_arc_prompt,
-    extract_python_code_from_response,
-    extract_python_code_from_text,
+    extract_python_code,
     format_grid_for_prompt,
     get_grid_shape_string
 )
@@ -34,7 +38,7 @@ class TestPromptUtils(unittest.TestCase):
         result = get_grid_shape_string(empty_grid)
         self.assertEqual(result, "0 by 0")
     
-    def test_extract_python_code_from_text(self):
+    def test_extract_python_code(self):
         """Test Python code extraction from text"""
         text = """Here is some code:
         
@@ -46,22 +50,17 @@ def solve(grid):
 That's the solution."""
         
         expected = "def solve(grid):\n    return grid"
-        result = extract_python_code_from_text(text)
+        result = extract_python_code(text)
         self.assertEqual(result, expected)
         
         # Test with no code
         text_no_code = "No code here"
-        result = extract_python_code_from_text(text_no_code)
+        result = extract_python_code(text_no_code)
         self.assertEqual(result, "")
     
-    def test_extract_python_code_from_response(self):
-        """Test Python code extraction from API response"""
-        # Mock response object
-        mock_response = Mock()
-        mock_choice = Mock()
-        mock_message = Mock()
-        
-        mock_message.content = """Here is the solution:
+    def test_extract_python_code_from_response_content(self):
+        """Test Python code extraction from response content"""
+        response_content = """Here is the solution:
         
 ```python
 def solve(grid):
@@ -70,11 +69,8 @@ def solve(grid):
 
 This should work."""
         
-        mock_choice.message = mock_message
-        mock_response.choices = [mock_choice]
-        
         expected = "def solve(grid):\n    return [[0, 1], [1, 0]]"
-        result = extract_python_code_from_response(mock_response)
+        result = extract_python_code(response_content)
         self.assertEqual(result, expected)
     
     def test_create_arc_prompt(self):

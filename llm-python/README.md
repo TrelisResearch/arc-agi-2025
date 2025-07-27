@@ -1222,6 +1222,16 @@ uv run python utils/task_loader.py  # Test task loading functionality
 uv run python scoring.py      # Test scoring functionality
 ```
 
+Test utils modules:
+```bash
+# Run all utils tests
+uv run python -m pytest utils/tests/ -v
+
+# Run specific utils tests
+uv run python -m pytest utils/tests/test_prompt_utils.py -v
+uv run python -m pytest utils/tests/test_timeout_utils.py -v
+```
+
 Quick API test:
 ```bash
 # Test with a single task
@@ -1290,12 +1300,14 @@ llm-python/
 │   ├── task_loader.py          # Load ARC tasks and subsets
 │   ├── scoring.py              # Grid scoring and program execution
 │   ├── prompt_utils.py         # Prompt creation and code extraction
+│   ├── timeout_utils.py        # Timeout handling utilities
 │   ├── voting_utils.py         # Voting algorithms and prediction processing
 │   ├── metrics_utils.py        # Metrics calculation and formatting
 │   └── tests/                  # Tests for utility modules
 │       ├── __init__.py
 │       ├── test_task_loader.py
-│       └── test_prompt_utils.py
+│       ├── test_prompt_utils.py
+│       └── test_timeout_utils.py
 ├── prompt_loader.py            # Load and manage prompt templates
 ├── generate_training_data.py   # Extract training data from logs
 ├── visualize_task_evolution.py # Create task evolution visualizations
