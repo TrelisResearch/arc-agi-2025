@@ -7,22 +7,33 @@ import datetime
 import time
 import threading
 import numpy as np
-import random
 from pathlib import Path
 from typing import Dict, List, Optional
 from dotenv import load_dotenv
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from openai import OpenAI
 from collections import defaultdict, Counter
 
-from utils.task_loader import TaskLoader
-from utils.scoring import GridScorer, ProgramExecutor
-from .prompt_loader import PromptLoader
-from utils.transduction import is_transduction_cheating
+try:
+    # Try relative imports first (when run as module)
+    from .utils.task_loader import TaskLoader
+    from .utils.scoring import GridScorer, ProgramExecutor
+    from .utils.prompt_utils import create_arc_prompt, extract_python_code_from_response
+    from .utils.voting_utils import compute_weighted_majority_voting, compute_train_majority_voting
+    from .utils.metrics_utils import calculate_task_metrics, format_metrics_display, metrics_to_percentages
+    from .prompt_loader import PromptLoader
+except ImportError:
+    # Fall back to absolute imports (when run directly)
+    from utils.task_loader import TaskLoader
+    from utils.scoring import GridScorer, ProgramExecutor
+    from utils.prompt_utils import create_arc_prompt, extract_python_code_from_response
+    from utils.voting_utils import compute_weighted_majority_voting, compute_train_majority_voting
+    from utils.metrics_utils import calculate_task_metrics, format_metrics_display, metrics_to_percentages
+    from prompt_loader import PromptLoader
 
 load_dotenv()
 
-def execute_with_timeout(func, *args, timeout=1000, **kwargs):
+def execute_with_timeout(func, *args, timeout=30, **kwargs):
     """Execute a function with timeout using ThreadPoolExecutor"""
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(func, *args, **kwargs)
@@ -117,22 +128,12 @@ class ARCTaskRunnerSimple:
         # Reasoning models
         if model_lower.startswith('o3-pro'):
             return (20.00, 80.00)
-        elif model_lower.startswith('o3-deep-research'):
-            return (10.00, 40.00)
         elif model_lower.startswith('o3-mini'):
             return (1.10, 4.40)
         elif model_lower.startswith('o3'):
             return (2.00, 8.00)
-        elif model_lower.startswith('o4-mini-deep-research'):
-            return (2.00, 8.00)
         elif model_lower.startswith('o4-mini'):
             return (1.10, 4.40)
-        elif model_lower.startswith('o1-pro'):
-            return (150.00, 600.00)
-        elif model_lower.startswith('o1-mini'):
-            return (1.10, 4.40)
-        elif model_lower.startswith('o1'):
-            return (15.00, 60.00)
         
         # GPT-4 models
         elif model_lower.startswith('gpt-4.1-nano'):
@@ -141,23 +142,13 @@ class ARCTaskRunnerSimple:
             return (0.40, 1.60)
         elif model_lower.startswith('gpt-4.1'):
             return (2.00, 8.00)
-        elif model_lower.startswith('gpt-4.5-preview'):
-            return (75.00, 150.00)
-        elif model_lower.startswith('gpt-4o-mini-realtime-preview'):
-            return (0.60, 2.40)
         elif model_lower.startswith('gpt-4o-mini'):
             return (0.15, 0.60)
-        elif model_lower.startswith('gpt-4o-realtime-preview'):
-            return (5.00, 20.00)
-        elif model_lower.startswith('gpt-4o-search-preview'):
-            return (2.50, 10.00)
         elif model_lower.startswith('gpt-4o'):
             return (2.50, 10.00)
         
         # Google models
         elif model_lower.startswith('google/gemini-2.5-flash'):
-            return (0.30, 2.50)
-        elif model_lower.startswith('google/gemini'):
             return (0.30, 2.50)
         
         # Default fallback
@@ -166,50 +157,7 @@ class ARCTaskRunnerSimple:
     
     def create_prompt(self, task_data: Dict) -> tuple[str, str]:
         """Create a prompt for the model to solve an ARC task"""
-        # Format the task data
-        task_content = ""
-        
-        # Add training examples
-        for i, example in enumerate(task_data['train'], 1):
-            input_grid = example['input']
-            output_grid = example['output']
-            input_shape = f"{len(input_grid[0])} by {len(input_grid)}"
-            output_shape = f"{len(output_grid[0])} by {len(output_grid)}"
-            input_str = str(input_grid).replace('[', '[[').replace(']', ']]').replace(',', '')
-            output_str = str(output_grid).replace('[', '[[').replace(']', ']]').replace(',', '')
-            task_content += f"## Input {i} (grid shape: {input_shape}):\n{input_str}\n"
-            task_content += f"## Output {i} (grid shape: {output_shape}):\n{output_str}\n\n"
-        
-        # Add test examples
-        for i, example in enumerate(task_data['test'], 1):
-            input_grid = example['input']
-            input_shape = f"{len(input_grid[0])} by {len(input_grid)}"
-            input_str = str(input_grid).replace('[', '[[').replace(']', ']]').replace(',', '')
-            task_content += f"## Test Input {i} (grid shape: {input_shape}):\n{input_str}\n"
-        
-        # Get the system message and prompt template
-        system_content = self.prompt_loader.get_system_message(self.prompt_version)
-        prompt_template = self.prompt_loader.get_initial_turn_prompt(self.prompt_version)
-        
-        # Format the prompt
-        if "{grid_size_info}" in prompt_template:
-            # Handle v1 template format
-            output_heights = [len(example['output']) for example in task_data['train']]
-            output_widths = [len(example['output'][0]) for example in task_data['train']]
-            
-            if len(set(output_heights)) == 1 and len(set(output_widths)) == 1:
-                output_height = output_heights[0]
-                output_width = output_widths[0]
-                grid_size_info = f"\n**IMPORTANT: Your transformation must always produce a {output_height}×{output_width} output grid.**\n"
-            else:
-                grid_size_info = ""
-            
-            user_content = prompt_template.format(grid_size_info=grid_size_info, task_str=task_content)
-        else:
-            # Handle SOAR template format
-            user_content = prompt_template.format(task_content=task_content)
-        
-        return system_content, user_content
+        return create_arc_prompt(task_data, self.prompt_loader, self.prompt_version)
     
     def call_chat_completions_api(self, messages: List[Dict]) -> Dict:
         """Call the OpenAI Chat Completions API"""
@@ -262,41 +210,7 @@ class ARCTaskRunnerSimple:
     
     def extract_code_from_response(self, response) -> str:
         """Extract Python code from the Chat Completions API result"""
-        import re
-        
-        # Get the full text from response
-        full_text = ""
-        
-        if hasattr(response, 'choices') and len(response.choices) > 0:
-            message = response.choices[0].message
-            # Try content first, then reasoning_content
-            if hasattr(message, 'content') and message.content:
-                full_text = message.content
-            elif hasattr(message, 'reasoning_content') and message.reasoning_content:
-                full_text = message.reasoning_content
-                if self.debug:
-                    print(f"🔍 Using reasoning_content ({len(full_text)} chars)")
-        
-        if self.debug and len(full_text) > 0:
-            print(f"🔍 Response content: {len(full_text)} chars")
-        
-        # Look for python code blocks
-        python_blocks = re.findall(r'```python\s*\n(.*?)\n```', full_text, re.DOTALL)
-        if python_blocks:
-            return python_blocks[-1].strip()
-        
-        # Look for any code blocks with def transform
-        code_blocks = re.findall(r'```\s*\n(.*?)\n```', full_text, re.DOTALL)
-        for block in reversed(code_blocks):
-            if 'def transform' in block:
-                return block.strip()
-        
-        # Last resort: extract def transform function without code blocks
-        transform_match = re.search(r'(def transform.*?)(?=\n\S|\n*$)', full_text, re.DOTALL)
-        if transform_match:
-            return transform_match.group(1).strip()
-        
-        return ""
+        return extract_python_code_from_response(response, self.debug)
     
     def run_task_all_attempts(self, task_id: str, task_data: Dict, total_tasks: int = 1, 
                             dataset: str = None, subset: str = None) -> Dict:
@@ -414,170 +328,12 @@ class ARCTaskRunnerSimple:
             'task_data': task_data
         }
     
-    def compute_weighted_majority_voting(self, non_transductive_attempts: List[Dict]) -> List:
-        """Compute weighted majority voting (pass@2) for test outputs"""
-        pattern_stats = defaultdict(lambda: {'count': 0, 'train_accs': []})
-        
-        for att in non_transductive_attempts:
-            # Convert test_predicted to JSON-serializable format
-            test_pred = att['test_predicted']
-            if test_pred is None:
-                key = "None"
-            else:
-                # Convert sets to lists and other non-serializable types
-                try:
-                    # Try to convert to list if it's a set or other iterable
-                    if isinstance(test_pred, set):
-                        test_pred = list(test_pred)
-                    elif hasattr(test_pred, 'tolist'):  # numpy arrays
-                        test_pred = test_pred.tolist()
-                    key = json.dumps(test_pred, sort_keys=True)
-                except (TypeError, ValueError):
-                    # If still not serializable, convert to string representation
-                    key = str(test_pred)
-            
-            pattern_stats[key]['count'] += 1
-            pattern_stats[key]['train_accs'].append(att['train_accuracy'])
-        
-        weighted = []
-        for k, v in pattern_stats.items():
-            mean_acc = np.mean(v['train_accs']) if v['train_accs'] else 0.0
-            weight = v['count'] + 1000 * mean_acc
-            weighted.append((weight, k))
-        
-        weighted.sort(reverse=True)
-        top2 = []
-        for _, k in weighted[:2]:
-            if k == "None":
-                top2.append(None)
-            else:
-                try:
-                    top2.append(json.loads(k))
-                except (json.JSONDecodeError, ValueError):
-                    # If we can't deserialize, skip this entry
-                    continue
-        
-        return top2
-    
-    def compute_train_majority_voting(self, non_transductive_attempts: List[Dict]) -> List:
-        """Compute train-majority voting for test outputs (pass@2)"""
-        if not non_transductive_attempts:
-            return []
-        
-        # Find attempts with most train correct
-        best_train_score = max(sum(tr['correct'] for tr in att['train_results']) for att in non_transductive_attempts)
-        best_group = [att for att in non_transductive_attempts 
-                     if sum(tr['correct'] for tr in att['train_results']) == best_train_score]
-        
-        # Majority vote among best group
-        test_votes = Counter()
-        for att in best_group:
-            # Convert test_predicted to JSON-serializable format
-            test_pred = att['test_predicted']
-            if test_pred is None:
-                key = "None"
-            else:
-                try:
-                    # Convert sets to lists and other non-serializable types
-                    if isinstance(test_pred, set):
-                        test_pred = list(test_pred)
-                    elif hasattr(test_pred, 'tolist'):  # numpy arrays
-                        test_pred = test_pred.tolist()
-                    key = json.dumps(test_pred, sort_keys=True)
-                except (TypeError, ValueError):
-                    # If still not serializable, convert to string representation
-                    key = str(test_pred)
-            test_votes[key] += 1
-        
-        # Return top 2 for pass@2 evaluation
-        most_common = test_votes.most_common(2)
-        top2 = []
-        for key, _ in most_common:
-            if key == "None":
-                top2.append(None)
-            else:
-                try:
-                    top2.append(json.loads(key))
-                except (json.JSONDecodeError, ValueError):
-                    # If we can't deserialize, skip this entry
-                    continue
-        
-        return top2
+
     
     def report_metrics(self, results, upto_attempt):
         """Calculate and report metrics for completed attempts"""
-        test_correct = 0
-        all_train_correct = 0
-        min1_train_correct = 0
-        max_length = 0
-        all_timeouts = 0
-        train_majority_correct = 0
-        oracle_test_correct = 0
-        total = 0
-        
-        for result in results:
-            if not result:
-                continue
-            
-            # Filter out transductive attempts
-            non_transductive = []
-            for att in result['attempt_details'][:upto_attempt]:
-                is_cheat, _ = is_transduction_cheating(att['program'], result['task_data'])
-                if not is_cheat:
-                    non_transductive.append(att)
-            
-            if not non_transductive:
-                continue
-            
-            # Weighted majority voting (pass@2)
-            top2_weighted = self.compute_weighted_majority_voting(non_transductive)
-            gt = result['attempt_details'][0]['test_expected']
-            if any(t == gt for t in top2_weighted):
-                test_correct += 1
-            
-            # Oracle test correct (any attempt got test correct)
-            if any(att['test_correct'] for att in non_transductive):
-                oracle_test_correct += 1
-            
-            # All-train correct (cumulative)
-            if any(all(tr['correct'] for tr in att['train_results']) for att in non_transductive):
-                all_train_correct += 1
-            
-            # Min-1-train correct (cumulative)
-            if any(any(tr['correct'] for tr in att['train_results']) for att in non_transductive):
-                min1_train_correct += 1
-            
-            # Max-length responses (cumulative - any attempt 1→N hit max tokens)
-            if self.max_tokens and any(att['output_tokens'] >= self.max_tokens for att in non_transductive):
-                max_length += 1
-            
-            # All timeouts (cumulative - at least one layer where all retries timed out)
-            # Check each layer (attempt index) to see if all retries timed out for that layer
-            has_layer_with_all_timeouts = False
-            for attempt_idx in range(upto_attempt):
-                if attempt_idx < len(result['attempt_details']):
-                    att = result['attempt_details'][attempt_idx]
-                    if att['timed_out']:  # This means all retries for this attempt timed out
-                        has_layer_with_all_timeouts = True
-                        break
-            if has_layer_with_all_timeouts:
-                all_timeouts += 1
-            
-            # Train-majority voting (pass@2)
-            top2_train_majority = self.compute_train_majority_voting(non_transductive)
-            if any(t == gt for t in top2_train_majority):
-                train_majority_correct += 1
-            
-            total += 1
-        
-        print(f"\n[Layer {upto_attempt}] Metrics:")
-        print(f"  Test correct (pass@2, weighted voting): {test_correct}/{total} ({test_correct/total:.1%})")
-        print(f"  Test correct (pass@2, train-majority): {train_majority_correct}/{total} ({train_majority_correct/total:.1%})")
-        print(f"  Test correct (oracle): {oracle_test_correct}/{total} ({oracle_test_correct/total:.1%})")
-        print(f"  All-train correct: {all_train_correct}/{total} ({all_train_correct/total:.1%})")
-        print(f"  Min-1-train correct: {min1_train_correct}/{total} ({min1_train_correct/total:.1%})")
-        print(f"  Max-length responses: {max_length}/{total} ({max_length/total:.1%})")
-        print(f"  All timeouts: {all_timeouts}/{total} ({all_timeouts/total:.1%})")
+        metrics = calculate_task_metrics(results, upto_attempt, self.max_tokens)
+        print(format_metrics_display(metrics, upto_attempt))
     
     def run_subset(self, subset_name: str, dataset: str = "arc-agi-1", limit: Optional[int] = None) -> List[Dict]:
         """Run all tasks in a subset with rolling execution and layerwise reporting"""
@@ -736,7 +492,7 @@ class ARCTaskRunnerSimple:
         
         for run_num, results in enumerate(all_run_results, 1):
             if not results:
-                run_stats.append({
+                empty_metrics = {
                     'run_number': run_num,
                     'total_tasks': 0,
                     'weighted_voting_pass2': 0.0,
@@ -746,87 +502,15 @@ class ARCTaskRunnerSimple:
                     'min1_train_correct': 0.0,
                     'max_length_responses': 0.0,
                     'all_timeouts': 0.0
-                })
+                }
+                run_stats.append(empty_metrics)
                 continue
             
-            # Calculate metrics for final layer (all attempts)
-            test_correct = 0
-            train_majority_correct = 0
-            oracle_test_correct = 0
-            all_train_correct = 0
-            min1_train_correct = 0
-            max_length = 0
-            all_timeouts = 0
-            total = 0
-            
-            for result in results:
-                if not result:
-                    continue
-                
-                # Filter out transductive attempts (using all attempts)
-                non_transductive = []
-                for att in result['attempt_details']:
-                    is_cheat, _ = is_transduction_cheating(att['program'], result['task_data'])
-                    if not is_cheat:
-                        non_transductive.append(att)
-                
-                if not non_transductive:
-                    continue
-                
-                gt = result['attempt_details'][0]['test_expected']
-                
-                # Weighted majority voting (pass@2)
-                try:
-                    top2_weighted = self.compute_weighted_majority_voting(non_transductive)
-                    if any(t == gt for t in top2_weighted):
-                        test_correct += 1
-                except Exception:
-                    pass  # Skip if voting fails
-                
-                # Train-majority voting (pass@2)
-                try:
-                    top2_train_majority = self.compute_train_majority_voting(non_transductive)
-                    if any(t == gt for t in top2_train_majority):
-                        train_majority_correct += 1
-                except Exception:
-                    pass  # Skip if voting fails
-                
-                # Oracle test correct
-                if any(att['test_correct'] for att in non_transductive):
-                    oracle_test_correct += 1
-                
-                # Other metrics
-                if any(all(tr['correct'] for tr in att['train_results']) for att in non_transductive):
-                    all_train_correct += 1
-                
-                if any(any(tr['correct'] for tr in att['train_results']) for att in non_transductive):
-                    min1_train_correct += 1
-                
-                if self.max_tokens and any(att['output_tokens'] >= self.max_tokens for att in non_transductive):
-                    max_length += 1
-                
-                # Check for timeouts in any layer
-                has_layer_with_all_timeouts = False
-                for att in result['attempt_details']:
-                    if att['timed_out']:
-                        has_layer_with_all_timeouts = True
-                        break
-                if has_layer_with_all_timeouts:
-                    all_timeouts += 1
-                
-                total += 1
-            
-            run_stats.append({
-                'run_number': run_num,
-                'total_tasks': total,
-                'weighted_voting_pass2': test_correct / total if total > 0 else 0.0,
-                'train_majority_pass2': train_majority_correct / total if total > 0 else 0.0,
-                'oracle_correct': oracle_test_correct / total if total > 0 else 0.0,
-                'all_train_correct': all_train_correct / total if total > 0 else 0.0,
-                'min1_train_correct': min1_train_correct / total if total > 0 else 0.0,
-                'max_length_responses': max_length / total if total > 0 else 0.0,
-                'all_timeouts': all_timeouts / total if total > 0 else 0.0
-            })
+            # Calculate metrics for final layer (all attempts) using utility
+            metrics = calculate_task_metrics(results, max_tokens=self.max_tokens)
+            percentage_metrics = metrics_to_percentages(metrics)
+            percentage_metrics['run_number'] = run_num
+            run_stats.append(percentage_metrics)
         
         # Calculate aggregate statistics
         if run_stats and any(s['total_tasks'] > 0 for s in run_stats):

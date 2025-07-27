@@ -30,7 +30,7 @@ class TaskLoader:
     Legacy mixed subsets are in archive/.
     """
 
-    def __init__(self, data_root: str = (Path(__file__).parent.parent / "data").as_posix()):
+    def __init__(self, data_root: str = (Path(__file__).parent.parent.parent / "data").as_posix()):
         self.data_root = Path(data_root)
         if not self.data_root.exists():
             raise ValueError(f"Data root directory not found: {data_root}")

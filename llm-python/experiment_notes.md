@@ -15,10 +15,55 @@
   [ ] Train without reasoning.
   [ ] Train with reasoning ONLY ON FULLY CORRECT TASKS.
 
+Other task list:
+- [ ] Review code
+    - [ ] Go through script for _soar.py.
+    - [ ] Parallelisation is not correct.
+    - [ ] Ensure all params are logged, incl. sampling.
+    - [ ] Test soar for answer lengths, does that mmodel blab?
+    - [ ] Check sampling in paper and test that for answer lengths on base model.
+    - [ ] Ensure Qwen reasoning is well logged.
+    - [ ] Ensure Gemini is well logged.
+    - [ ] Tidy logging for large numbers of attempts.
+    - [ ] Hoist utils! so they can be re-used during training.
+- [ ] Baseline:
+    - [ ] Shortest 30. Pass@64. 3 runs. Qwen Base.
+    - [ ] Soar model.
+- [ ] Data generation:
+    - [ ] Hoist utils.
+    - [ ] Integrate validation.
+    - [ ] Test a small dataset.
+- [ ] Fine-tuning:
+    - [ ] Hoist utils.
+    - [ ] Test a small dataset.
+
+Later:
+- [ ] Beam search tests
+- [ ] Sample a motif, then decode out. To enhance diversity.
+
 ## 26 July 2025
 
-[ ] Compare auto and manual pods.
-[ ] Refactor run_arc_tasks.py to use majority voting for correctness. Report % test correct, % all-train correct, % min-1-train correct.
+[x] Compare auto and manual pods. Don't think this could be an issue. But probably there is high variance in results for base qwen as mostly the answers are too long / blab.
+[x] Refactor run_arc_tasks.py to use majority voting for correctness. Report % test correct, % all-train correct, % min-1-train correct.
+
+
+
+### Test whether SOAR blabs.
+
+Start a pod with julien31/Soar-qwen-7b:
+```bash
+uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path julien31/Soar-qwen-7b --reasoning-parser qwen3
+```
+And then hit it with the shortest 30 evaluation problems from arc-agi-1:
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_10 --repeat-runs 1 --max_workers 50 --max_attempts 8 --model julien31/Soar-qwen-7b --base-url http://38.80.152.249:30637/v1 --max-tokens 1000 --qwen-no-think
+```
+That scored zero, so now test out the original run_arc_tasks.py script:
+```bash
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_evaluation_10 --repeat-runs 1 --max_workers 50 --max_turns 8 --model julien31/Soar-qwen-7b --independent-attempts --base-url http://38.80.152.249:30637/v1 --max-tokens 1000 --qwen-no-think
+```
+
+
 
 ### Compare both pods using the old run_arc_tasks_soar.py script.
 

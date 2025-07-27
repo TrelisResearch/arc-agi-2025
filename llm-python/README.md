@@ -64,43 +64,45 @@ uv venv --no-config
 
 ### Basic Usage
 
-Run the shortest task from ARC-AGI-1:
+Run the shortest training tasks from ARC-AGI-1:
 ```bash
-uv run python o3-tools/run_arc_tasks.py
+uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10
 ```
 
-### Simple Direct Prompt Mode
+### All-Attempts Evaluation Mode (`run_arc_tasks_soar.py`)
 
-For a streamlined approach using direct prompts without feedback or multi-turn conversations, use the simple script:
+**Refactored system** with all-attempts execution, parallel processing, and voting-based evaluation:
 
 ```bash
-# Run with simple direct prompts (no feedback)
+# Run with all-attempts mode (default 8 attempts per task)
 uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10
 
-# Multiple attempts with the same direct prompt
-uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --max_attempts 8
+# High parallelization for speed  
+uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --max_attempts 8 --max_workers 20
 
-# Run with parallelization for speed
-uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --max_attempts 8 --max_workers 10
+# Gemini Flash via OpenRouter with reasoning
+uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1 --reasoning_effort low
 
 # Run repeated tests with statistics
 uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --repeat-runs 3
 ```
 
-**Key differences from the main script:**
-- **Direct prompt approach**: Uses the simple prompt format like the SOAR paper
-- **No feedback**: Each attempt starts fresh with the same prompt
-- **No multi-turn**: Single request per attempt
-- **Faster execution**: Lower overhead per attempt
-- **Multiple attempts**: Use `--max_attempts` instead of `--max_turns`
+**Key Features:**
+- **All Attempts**: Always runs all N attempts for each task, enabling robust parallelization
+- **Layerwise Metrics**: Reports cumulative metrics after each attempt layer:
+  - Oracle test correct (upper bound potential)
+  - Pass@2 voting (train-majority and weighted-majority)
+  - Oracle training metrics (any attempt achieving criterion)
+  - Response-level statistics (timeouts, API failures, max-length)
+- **Efficient Workers**: ThreadPoolExecutor automatically reuses workers for maximum throughput
+- **Voting Algorithms**: Weighted majority (frequency + accuracy) and train-majority voting
+- **Transduction Filtering**: Automatically removes hardcoded/cheating responses
 
 **When to use:**
-- For baseline comparisons with SOAR-style approaches
-- When you want multiple independent attempts without feedback
-- For faster execution with simpler prompting
-
-**Note:** The SOAR prompt templates contain a minor grammatical error: "You should only write the implemented the transformation in code" (duplicate "the"). This appears in both the system and user prompts but doesn't affect functionality.
-- When testing models that don't benefit from multi-turn conversations
+- For comprehensive evaluation with statistical rigor
+- When you want oracle upper bounds and pass@k metrics
+- For parallel processing with high worker counts
+- For systematic comparison of multiple attempts per task
 
 ### Advanced Usage
 

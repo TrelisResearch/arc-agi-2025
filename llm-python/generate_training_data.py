@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 from datasets import Dataset
 from huggingface_hub import HfApi
-from utils.transduction import is_transduction_cheating
+from .utils.transduction import is_transduction_cheating
 
 def load_task_data(task_id: str, dataset: str = "arc-agi-1") -> Optional[Dict]:
     """Load task data from the data folder"""

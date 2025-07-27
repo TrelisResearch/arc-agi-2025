@@ -1,4 +1,9 @@
 from typing import List, Dict, Tuple, Optional
+import sys
+import os
+
+# Add project root to path to find sandbox module
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from sandbox import create_executor
 
 class GridScorer:

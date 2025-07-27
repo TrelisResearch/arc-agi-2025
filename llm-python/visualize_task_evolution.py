@@ -9,8 +9,8 @@ import numpy as np
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from utils.task_loader import TaskLoader
-from utils.scoring import ProgramExecutor
+from .utils.task_loader import TaskLoader
+from .utils.scoring import ProgramExecutor
 
 # ARC color palette - standard colors used in ARC tasks
 ARC_COLORS = [
