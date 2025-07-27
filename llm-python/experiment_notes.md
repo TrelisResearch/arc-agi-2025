@@ -1,14 +1,14 @@
 # Experiment Notes
 
 ## 26-28 July 2025
-[ ] Script consolidation run_arc_tasks.py:
-  [ ] Decide on using run_arc_tasks.py or run_arc_tasks_soar.py as the baseline. Will consolidate around Soar, since there is no obvious improvement with our prompting. Clean up the repo to just use that.
-  [ ] Double check the prompt.
-  [ ] Run with the two types of endpoint - Lewis and Ronan
+[x] Script consolidation run_arc_tasks.py:
+  [x] Decide on using run_arc_tasks.py or run_arc_tasks_soar.py as the baseline. Will consolidate around Soar, since there is no obvious improvement with our prompting. Clean up the repo to just use that.
+  [x] Double check the prompt.
+  [x] Run with the two types of endpoint - Lewis and Ronan. Probably this is fine and not the issue. Upgraded to H200
 [ ] Script consolidation - ipynb:
   [ ] Split out utils, where needed.
   [ ] Employ the same data prep and prompt strings in the ipynb as in the run_arc_tasks.py script.
-[ ] Grading fix - whereby testing stops if test is correct, should be if all train examples are correct AND there is no transduction detected.
+[x] Grading fix - whereby testing stops if test is correct, should be if all train examples are correct AND there is no transduction detected.
 [ ] Ablate reasoning vs non-reasoning training.
   [ ] Using synthetic Gemini data with and without the reasoning traces.
   [ ] Generate clean data with Geminin for all training problems.
@@ -17,19 +17,24 @@
 
 Other task list:
 - [ ] Review code
-    - [ ] Go through script for run_arc_tasks_soar.py.
+    - [x] Go through script for run_arc_tasks_soar.py.
       - [x] Check that the prompt looks like the SOAR paper.
-      - [ ] Parallelisation is not correct.
+      - [x] Parallelisation is not correct.
+          - [x] Ensure progress updates make sense - printing to logs.
       - [x] Ensure all params are logged, incl. sampling.
       - [x] Hoist utils! so they can be re-used during training.
       - [x] Check sampling in paper and test that for answer lengths on base model. It's T=1.0 with min_p=0.05.
-    - [ ] Test soar for answer lengths, does that model blab?
+    - [ ] Blabbing:
+      - [x] do sampling metrics over-ride when qwen models are run
+      - [x] Print out sampling params at run start.
+      - [x] Test soar for answer lengths, does that model blab? Very little.
+      - [x] Test base qwen for answer lengths, does it blab? 20% of the time.
+      - [x] Test base qwen for answer lengths, does it blab at T=1.0, min_p=0.05? 15% of the time
     - [ ] Ensure Qwen reasoning is well logged.
     - [ ] Ensure Gemini is well logged.
-    - [ ] Ensure progress updates make sense - printing to logs. Print out sampling params at run start.
 - [ ] Baseline:
-    - [ ] Shortest 30. Pass@64. 3 runs. Qwen Base.
-    - [ ] Soar model.
+    - [x] ARC-AGI-1 shortest 30. Pass@8. 3 runs. Qwen Base.
+    - [x] Soar model. Same.
 - [ ] Data generation:
     - [ ] Hoist utils.
     - [ ] Integrate validation.
@@ -58,25 +63,60 @@ and then start a base qwen pod:
 uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path qwen/qwen3-4b --reasoning-parser qwen3
 ```
 
-Then run the script:
-
-
-
-### Test whether SOAR blabs.
-
-Start a pod with julien31/Soar-qwen-7b:
+Quick test on gemini with the shortest 10 evaluation problems:
 ```bash
-uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path julien31/Soar-qwen-7b --reasoning-parser qwen3
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_10 --repeat-runs 1 --max_workers 50 --max_attempts 8 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1/ --reasoning_effort medium
 ```
-And then hit it with the shortest 30 evaluation problems from arc-agi-1:
+### Test blabbing
+with the julien31/Soar-qwen-7b model:
 ```bash
-uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_10 --repeat-runs 1 --max_workers 50 --max_attempts 8 --model julien31/Soar-qwen-7b --base-url http://38.80.152.249:30637/v1 --max-tokens 1000 --qwen-no-think
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 50 --max_attempts 1 --model julien31/Soar-qwen-7b --base-url http://38.80.152.249:30806/v1 --max-tokens 1000 --qwen-no-think
 ```
-That scored zero, so now test out the original run_arc_tasks.py script:
-```bash
-uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_evaluation_10 --repeat-runs 1 --max_workers 50 --max_turns 8 --model julien31/Soar-qwen-7b --independent-attempts --base-url http://38.80.152.249:30637/v1 --max-tokens 1000 --qwen-no-think
-```
+5% of the calls hit max length.
 
+and then with the qwen/qwen3-4b model:
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 50 --max_attempts 1 --model qwen/qwen3-4b --base-url http://38.80.152.249:30805/v1 --max-tokens 1000 --qwen-no-think
+```
+19% of the calls hit max length.
+
+and then with the qwen/qwen3-4b model but with temperature 1.0:
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 50 --max_attempts 1 --model qwen/qwen3-4b --base-url http://38.80.152.249:30805/v1 --max-tokens 1000 --qwen-no-think --temperature 1.0
+```
+16% of the calls hit max length.
+
+and then with the qwen/qwen3-4b model but with temperature 1.0 and min_p 0.05, top_p 0.9 (hard coded change):
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 50 --max_attempts 1 --model qwen/qwen3-4b --base-url http://38.80.152.249:30805/v1 --max-tokens 1000 --qwen-no-think --temperature 1.0
+```
+16% of the calls hit max length.
+
+Decision: just do min_p 0.05 for all custom models.
+
+### Now measure julien31/Soar-qwen-7b model vs qwen/qwen3-4b model
+
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_30 --repeat-runs 3 --max_workers 50 --max_attempts 8 --model julien31/Soar-qwen-7b --base-url http://38.80.152.249:30806/v1 --max-tokens 1000 --qwen-no-think
+```
+Weighted Voting Pass2:
+  Mean: 58.9%
+  Std Dev: 5.1%
+  95% CI: [48.9%, 68.9%]
+
+and then with the qwen/qwen3-4b model:
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_30 --repeat-runs 3 --max_workers 50 --max_attempts 8 --model qwen/qwen3-4b --base-url http://38.80.152.249:30805/v1 --max-tokens 1000 --qwen-no-think
+```
+Weighted Voting Pass2:
+  Mean: 7.8%
+  Std Dev: 1.9%
+  95% CI: [4.0%, 11.5%]
+
+and then with the qwen/qwen3-4b model with reasoning:
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_30 --repeat-runs 3 --max_workers 50 --max_attempts 8 --model qwen/qwen3-4b --base-url http://38.80.152.249:30805/v1
+```
 
 
 ### Compare both pods using the old run_arc_tasks_soar.py script.

@@ -88,23 +88,22 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --r
 ```
 
 **Key Features:**
-- **All Attempts**: Always runs all N attempts for each task, enabling robust parallelization
-- **Layerwise Metrics**: Reports cumulative metrics after each attempt layer:
-  - Oracle test correct (upper bound potential)
-  - Pass@2 voting (train-majority and weighted-majority)
-  - Oracle training metrics (any attempt achieving criterion)
-  - Response-level statistics (timeouts, API failures, max-length)
-- **Efficient Workers**: ThreadPoolExecutor automatically reuses workers for maximum throughput
-- **Voting Algorithms**: Weighted majority (frequency + accuracy) and train-majority voting
+- **True Parallelization**: Parallelizes at the attempt level - all attempts across all tasks run simultaneously
+- **Real-time Task Summaries**: Displays brief statistics for each task as it completes (test-correct, train-perfect, train-partial counts)
+- **Efficient Resource Usage**: Workers process individual attempts independently for maximum throughput
+- **Voting Algorithms**: Weighted majority (frequency + accuracy) and train-majority voting for robust evaluation
 - **Transduction Filtering**: Automatically removes hardcoded/cheating responses
 - **Sampling Parameter Logging**: Comprehensive logging of all sampling parameters (temperature, top_p, top_k, min_p) used in API calls
-- **Default Sampling Parameters**: Automatic application of top_k=50 and top_p=0.9 defaults for most endpoints
+- **Adaptive Sampling Parameters**: Automatic detection of endpoint type with appropriate defaults:
+  - **TCP endpoints** (containing ":"): Uses `min_p=0.05` in `extra_body`
+  - **Other endpoints**: Uses `top_k=50` and `top_p=0.9` defaults
 
 **When to use:**
 - For comprehensive evaluation with statistical rigor
 - When you want oracle upper bounds and pass@k metrics
-- For parallel processing with high worker counts
+- For maximum parallelization efficiency with high worker counts
 - For systematic comparison of multiple attempts per task
+- When you need real-time progress updates as tasks complete
 
 ### Advanced Usage
 
@@ -124,7 +123,7 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-2 --subset shortest_traini
 # Run the same test 3 times and calculate mean/std dev statistics
 uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 3
 
-# Disable thinking for Qwen models (uses temperature=0.7, top_p=0.8, top_k=20, enable_thinking=false)
+# Disable thinking for Qwen models (sets enable_thinking=false in chat_template_kwargs)
 uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10 --model Qwen/Qwen3-4B --base-url http://localhost:8000/v1 --qwen-no-think
 
 # Set specific token limit for responses (overrides reasoning effort defaults)
@@ -141,7 +140,7 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_traini
 #   --max_attempts: Maximum number of attempts per task (default: 8)
 #   --max_workers: Number of parallel workers (default: 1, efficient up to 50+)
 #   --repeat-runs: Number of times to repeat the entire test (default: 1, max: 10)
-#   --qwen-no-think: Disable thinking for Qwen models (temperature=0.7, top_p=0.8, top_k=20, enable_thinking=false)
+#   --qwen-no-think: Disable thinking for Qwen models (sets enable_thinking=false in chat_template_kwargs)
 ```
 
 ### Reasoning Effort Support
@@ -177,7 +176,9 @@ The tool automatically detects and logs thinking tokens from models that provide
 - **Qwen models**: Reasoning captured in separate fields
   - Via OpenRouter: `reasoning` field
   - Via custom endpoints (SGLang/RunPod): `reasoning_content` field
-  - Default parameters: `temperature=0.6, top_p=0.95, top_k=20, enable_thinking=true`
+  - Default parameters: Uses adaptive sampling based on endpoint type
+  - **TCP endpoints**: `min_p=0.05` in `extra_body`
+  - **Other endpoints**: `top_k=50` and `top_p=0.9` defaults
   - Automatically disabled with `--qwen-no-think` flag (sets `enable_thinking=false`)
 - **o1/o3 models** (via OpenAI): Hidden reasoning tokens captured when available
 - **Other models**: Standard content logging
@@ -1412,8 +1413,12 @@ uv run python -m llm-python.run_arc_tasks --model llama-3.1-8b --base-url http:/
 - **Cost accuracy**: Uses standard prompt_tokens/completion_tokens for cost calculation
 - **Pixel counting**: Fixed pixel accuracy calculation to include failed executions in totals
 - **Utils organization**: Modular utility functions with comprehensive test coverage
-- **Default sampling parameters**: Automatically applies top_k=50 and top_p=0.9 defaults for most endpoints
+- **Adaptive sampling parameters**: Automatically detects endpoint type and applies appropriate defaults:
+  - **TCP endpoints** (containing ":"): Uses `min_p=0.05` in `extra_body`
+  - **Other endpoints**: Uses `top_k=50` and `top_p=0.9` defaults
 - **Sampling parameter logging**: Comprehensive logging of all sampling parameters used in API calls
+- **True parallelization**: Parallelizes at the attempt level for maximum efficiency - all attempts run simultaneously
+- **Real-time feedback**: Displays task completion summaries as they finish for immediate progress tracking
 
 ## Additional Notes
 
@@ -1489,22 +1494,15 @@ Completed:
 
 ## ARC Task Runner: All-Attempts Evaluation (run_arc_tasks_soar.py)
 
-**Refactored system** with all-attempts execution, rolling parallelization, and voting-based evaluation:
+**Refactored system** with true parallelization at the attempt level and voting-based evaluation:
 
-- **All Attempts:** Always runs all N attempts for each task, enabling robust parallelization and comprehensive evaluation
-- **Rolling Execution:** Non-blocking parallel execution - new attempts start immediately without waiting for previous layers  
-- **Layerwise Metrics:** After each attempt layer, reports cumulative metrics:
-  - % test correct (pass@2, weighted majority voting)
-  - % test correct (pass@2, train-majority voting)
-  - % test correct (oracle) - maximum potential if best attempt could be selected
-  - % all-train correct, % min-1-train correct
-  - % max-length responses, % timeout failures
+- **True Parallelization:** All attempts across all tasks run simultaneously for maximum efficiency
+- **Real-time Task Summaries:** Displays brief statistics for each task as it completes (test-correct, train-perfect, train-partial counts)
 - **Voting Algorithms (Both Pass@2):**
   - **Weighted majority voting:** Uses pattern frequency + 1000×train_accuracy, returns top 2 patterns
   - **Train-majority voting:** Among best-training-accuracy attempts, majority vote for top 2 patterns
-- **Oracle Metric:** Shows upper bound performance - if ANY attempt got test correct across all layers
-- **Consistent Cumulative Metrics:** All metrics use attempts 1→N for proper progressive evaluation
+- **Oracle Metric:** Shows upper bound performance - if ANY attempt got test correct across all attempts
 - **Transduction filtering:** Filters out hardcoded/cheating responses before voting
 - **Comprehensive logging:** All attempts, full prompts, and voting decisions stored in detailed JSON logs
 
-Key features: parallel task execution, real-time progress reporting, robust error handling, oracle upper bounds, and consistent pass@2 evaluation metrics for thorough assessment.
+Key features: true parallelization at attempt level, real-time progress reporting, robust error handling, oracle upper bounds, and consistent pass@2 evaluation metrics for thorough assessment.
