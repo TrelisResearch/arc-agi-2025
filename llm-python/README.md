@@ -107,58 +107,38 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --r
 ### Advanced Usage
 
 ```bash
-# Run 10 shortest training tasks from ARC-AGI-2 with multi-turn execution enabled
-uv run python -m llm-python.run_arc_tasks --dataset arc-agi-2 --subset shortest_training_1
+# Run with different models and reasoning efforts
+uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1 --reasoning_effort low
 
-# Run with custom max turns for multi-turn execution  
-uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_1 --max_turns 5
-
-# Run 30 shortest evaluation tasks from ARC-AGI-1 with model selection and a limit of 5
-uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_evaluation_30 --model gpt-4o-mini --limit 5
-
-# Run tasks with a custom API endpoint (e.g., local LLM or Claude)
-uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_10 --model claude-3-haiku --base-url https://api.anthropic.com/v1
-
-# Run with OpenRouter and Gemini Flash with reasoning
-uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_10 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1 --reasoning_effort low
-
-# Run Gemini Flash with higher reasoning effort (8k tokens)
-uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset middle_training_10 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+# Run with higher reasoning effort (8k tokens)
+uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset middle_training_10 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
 
 # RunPod: Use direct TCP to avoid Cloudflare 524 timeouts
-uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_10 --model Qwen/Qwen3-4B --base-url http://157.66.254.42:15712/v1
+uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10 --model Qwen/Qwen3-4B --base-url http://157.66.254.42:15712/v1
 
-# Run tasks in parallel with 10 workers for faster execution
-uv run python -m llm-python.run_arc_tasks --dataset arc-agi-2 --subset shortest_training_30 --max_workers 10
-
-# Run tasks in parallel with rate limiting to respect API limits
-uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_evaluation_10 --max_workers 5 --rate_limit_delay 0.5
+# Run tasks in parallel with high worker count for faster execution
+uv run python run_arc_tasks_soar.py --dataset arc-agi-2 --subset shortest_training_30 --max_workers 20
 
 # Run the same test 3 times and calculate mean/std dev statistics
-uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 3
-
-# Use independent attempts mode instead of multi-turn feedback
-uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_10 --max_turns 3 --independent-attempts
+uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 3
 
 # Disable thinking for Qwen models (uses temperature=0.7, top_p=0.8, top_k=20, enable_thinking=false)
-uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_10 --model Qwen/Qwen3-4B --base-url http://localhost:8000/v1 --qwen-no-think
+uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10 --model Qwen/Qwen3-4B --base-url http://localhost:8000/v1 --qwen-no-think
 
 # Set specific token limit for responses (overrides reasoning effort defaults)
-uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_10 --model gpt-4.1-mini --max-tokens 2000
+uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10 --model gpt-4.1-mini --max-tokens 2000
 
 # Available options:
 #   --dataset: arc-agi-1 or arc-agi-2
 #   --subset: shortest_training_1, shortest_training_10, shortest_training_30, shortest_evaluation_1, shortest_evaluation_10, shortest_evaluation_30, etc.
-#   --model: Model name (default: gpt-4.1-nano) - works with any OpenAI-compatible API
+#   --model: Model name (default: gpt-4.1-mini) - works with any OpenAI-compatible API
 #   --base-url: Custom API endpoint URL (default: OpenAI) - enables Claude, Qwen, local models, etc.
 #   --reasoning_effort: Reasoning effort level: low (2k tokens), medium (8k tokens), high (32k tokens) - for Gemini; other models may vary
 #   --max-tokens: Maximum tokens for model responses (overrides reasoning effort defaults)
 #   --limit: Limit number of tasks to run
-#   --max_turns: Maximum number of turns/attempts (default: 3) - turns for multi-turn mode, attempts for independent mode
-#   --max_workers: Number of parallel workers (default: 1, max: 30)
-#   --rate_limit_delay: Delay between API calls in seconds (default: 0.0)
+#   --max_attempts: Maximum number of attempts per task (default: 8)
+#   --max_workers: Number of parallel workers (default: 1, efficient up to 50+)
 #   --repeat-runs: Number of times to repeat the entire test (default: 1, max: 10)
-#   --independent-attempts: Use independent attempts mode instead of multi-turn feedback
 #   --qwen-no-think: Disable thinking for Qwen models (temperature=0.7, top_p=0.8, top_k=20, enable_thinking=false)
 ```
 
@@ -810,90 +790,7 @@ All Turns Success Rate:
 - **A/B testing**: Compare different models, reasoning efforts, or configurations
 - **Confidence intervals**: Understand the uncertainty in your performance measurements
 
-## Independent Attempts Mode
 
-The tool supports two distinct execution strategies for solving tasks, allowing you to compare multi-turn feedback versus independent sampling approaches.
-
-### Execution Modes
-
-**Multi-turn Feedback (Default):**
-- Single conversation with up to `--max_turns` turns
-- Model receives training feedback between turns
-- Can iteratively improve solutions based on training examples
-- Maintains conversation context across turns
-
-**Independent Attempts (`--independent-attempts`):**
-- Multiple independent single-turn attempts
-- Each attempt starts fresh with the same initial prompt
-- No feedback or conversation history between attempts
-- Stops as soon as one attempt succeeds
-- Number of attempts controlled by `--max_turns` parameter (same flag, different meaning)
-
-### Usage Examples
-
-```bash
-# Default: Multi-turn feedback mode (3 conversation turns)
-uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_10 --max_turns 3
-
-# Independent attempts mode - 3 fresh attempts per task (same --max_turns flag)
-uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_10 --max_turns 3 --independent-attempts
-
-# Compare both modes with repeated runs
-uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_10 --max_turns 3 --repeat-runs 5
-uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_training_10 --max_turns 3 --repeat-runs 5 --independent-attempts
-```
-
-### Mode Comparison
-
-| Aspect | Multi-turn Feedback | Independent Attempts |
-|--------|-------------------|-------------------|
-| **Conversation** | Continuous conversation | Fresh start each attempt |
-| **Training feedback** | Yes, between turns | No feedback |
-| **Context retention** | Maintains context | No context between attempts |
-| **Cost efficiency** | Potentially higher per task | Lower per attempt |
-| **Success strategy** | Iterative improvement | Multiple diverse tries |
-| **Best for** | Complex reasoning, debugging | Sampling different approaches |
-
-### Console Output Examples
-
-**Multi-turn Feedback:**
-```
-Processing task: abc123
-  🔄 Turn 1/3...
-    💰 Turn cost: $0.004146 (input: 1089, output: 4321)
-    📊 Training: 2/3 solved, 85.0% accuracy
-  🔄 Turn 2/3...
-    💰 Turn cost: $0.003891 (input: 1156, output: 3247)
-    ✅ Perfect solution found!
-```
-
-**Independent Attempts:**
-```
-Processing task: abc123
-  🔄 Attempt 1/3...
-    💰 Attempt cost: $0.004146 (input: 1089, output: 4321)
-    📊 Attempt 1 failed test
-  🔄 Attempt 2/3...
-    💰 Attempt cost: $0.004089 (input: 1087, output: 4298)
-    ✅ Perfect solution found on attempt 2!
-```
-
-### File Outputs
-
-**Multi-turn Mode:**
-- API type: `responses_api_multiturn`
-- Data field: `multiturn_data` with conversation history and turn details
-
-**Independent Attempts Mode:**
-- API type: `responses_api_independent_attempts`
-- Data field: `independent_attempts_data` with attempt details
-
-### Use Cases
-
-- **Multi-turn feedback**: Best for tasks requiring iterative refinement and learning from training examples
-- **Independent attempts**: Best for comparing diverse solution approaches without bias from previous attempts
-- **A/B testing**: Compare which strategy works better for different types of problems
-- **Sampling research**: Study solution diversity and consistency across multiple attempts
 
 ## Parallelization
 
@@ -1370,31 +1267,65 @@ Current pricing (as of 2025, $/1M tokens):
 - **computer-use-preview**: Input $3.00, Output $12.00
 - **codex-mini**: Input $1.50, Output $6.00
 
-## Important: Multi-Turn Behavior
+## All-Attempts Execution
 
-We use the **Chat Completions API** with multi-turn mode:
+The refactored system uses **all-attempts execution** with voting-based evaluation:
 
-- **Multi-turn local execution** with training feedback (up to `--max_turns`, default 3)
-- Model writes code, we test it locally on test input immediately  
-- If incorrect, we run it on training examples and provide detailed text feedback
-- Model can see training results and iterate to improve the solution
-- Maintains conversation context between turns using standard chat messages
-- Works with any OpenAI-compatible API endpoint
+- **Direct prompting**: Each attempt uses the same initial prompt (no feedback)
+- **All attempts executed**: Always runs all N attempts per task for statistical rigor
+- **Parallel execution**: Workers process tasks independently for maximum throughput
+- **Oracle metrics**: Shows upper bound potential if best attempt could be selected
+- **Pass@2 voting**: Uses weighted-majority and train-majority voting for robustness
+- **Local execution**: All code is executed locally for immediate scoring
 
-**Key Point**: We execute the final code locally to score it. The difference is whether the model gets multiple conversation turns with training feedback to improve its solution.
+**Key Point**: We execute code locally and use voting algorithms to select the best solutions from multiple independent attempts.
 
 ## File Structure
 
 ```
-o3-tools/
-├── run_arc_tasks.py             # Main script (Responses API only)
-├── utils/
-│   └── task_loader.py           # Load ARC tasks and subsets
-├── scoring.py                   # Grid scoring
-├── generate_training_data.py    # Extract training data from logs
-├── cleanup_logs.py             # Clean up log files
+llm-python/
+├── run_arc_tasks_soar.py       # Main script (all-attempts, voting-based evaluation)
+├── utils/                       # Utility modules
+│   ├── __init__.py
+│   ├── task_loader.py          # Load ARC tasks and subsets
+│   ├── scoring.py              # Grid scoring and program execution
+│   ├── prompt_utils.py         # Prompt creation and code extraction
+│   ├── voting_utils.py         # Voting algorithms and prediction processing
+│   ├── metrics_utils.py        # Metrics calculation and formatting
+│   └── tests/                  # Tests for utility modules
+│       ├── __init__.py
+│       ├── test_task_loader.py
+│       └── test_prompt_utils.py
+├── prompt_loader.py            # Load and manage prompt templates
+├── generate_training_data.py   # Extract training data from logs
+├── visualize_task_evolution.py # Create task evolution visualizations
+├── create_simple_dataset.py    # Create simple datasets without code/reasoning
+├── create_grid_size_distributed_subset.py # Create grid-size distributed subsets
+├── validate_hf_dataset.py      # Validate Hugging Face datasets
+├── tests/                      # Main test scripts
+│   ├── test_arc_visual_with_api.py
+│   ├── test_execution_diff.py
+│   ├── test_generation_flow.py
+│   ├── test_multiple_examples.py
+│   ├── test_multiturn_reasoning.py
+│   ├── test_openrouter_qwen_direct.py
+│   ├── test_reasoning_persistence.py
+│   ├── test_task_loader.py
+│   ├── test_validation.py
+│   └── results/                # Test results
 ├── logs/                       # Results and summaries
-├── training_data/              # Generated JSONL training files
+├── training_data/              # Generated training files
+├── plots/                      # Task evolution visualizations
+├── fine-tuning/                # Fine-tuning notebooks and logs
+│   ├── unsloth_arc_finetuning_soar.ipynb
+│   ├── generate_soar_data.ipynb
+│   ├── logs/
+│   └── README.md
+├── prompt-strings/             # Prompt template files
+│   ├── code-request/
+│   ├── initial-turn/
+│   ├── subsequent-turn/
+│   └── system/
 └── README.md                   # This file
 ```
 

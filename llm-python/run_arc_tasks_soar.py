@@ -12,14 +12,12 @@ from typing import Dict, List, Optional
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor
 from openai import OpenAI
-from collections import defaultdict, Counter
 
 try:
     # Try relative imports first (when run as module)
     from .utils.task_loader import TaskLoader
     from .utils.scoring import GridScorer, ProgramExecutor
     from .utils.prompt_utils import create_arc_prompt, extract_python_code_from_response
-    from .utils.voting_utils import compute_weighted_majority_voting, compute_train_majority_voting
     from .utils.metrics_utils import calculate_task_metrics, format_metrics_display, metrics_to_percentages
     from .prompt_loader import PromptLoader
 except ImportError:
@@ -27,7 +25,6 @@ except ImportError:
     from utils.task_loader import TaskLoader
     from utils.scoring import GridScorer, ProgramExecutor
     from utils.prompt_utils import create_arc_prompt, extract_python_code_from_response
-    from utils.voting_utils import compute_weighted_majority_voting, compute_train_majority_voting
     from utils.metrics_utils import calculate_task_metrics, format_metrics_display, metrics_to_percentages
     from prompt_loader import PromptLoader
 
@@ -358,22 +355,75 @@ class ARCTaskRunnerSimple:
         print("-" * 50)
         
         results = [None] * total_tasks
+        completed_count = 0
+        count_lock = threading.Lock()
         
         def task_wrapper(idx, task_id, task_data):
-            result = self.run_task_all_attempts(task_id, task_data, total_tasks, dataset, subset_name)
-            self.save_result(result)
-            results[idx] = result
+            nonlocal completed_count
+            try:
+                result = self.run_task_all_attempts(task_id, task_data, total_tasks, dataset, subset_name)
+                self.save_result(result)
+                results[idx] = result
+                
+                # Simple progress indicator
+                with count_lock:
+                    completed_count += 1
+                    print(f"✅ {completed_count}/{total_tasks} tasks completed ({task_id})")
+            except Exception as e:
+                # Handle any unexpected errors in the worker
+                error_result = {
+                    'task_id': task_id,
+                    'model': self.model,
+                    'api_type': 'chat_completions_all_attempts',
+                    'dataset': dataset,
+                    'subset': subset_name,
+                    'error': str(e),
+                    'api_success': False,
+                    'attempt_details': [],
+                    'all_responses': [],
+                    'tokens_used': 0,
+                    'request_cost': 0.0,
+                    'max_attempts': self.max_attempts,
+                    'task_data': task_data
+                }
+                results[idx] = error_result
+                
+                with count_lock:
+                    completed_count += 1
+                    print(f"❌ {completed_count}/{total_tasks} tasks failed ({task_id}): {e}")
         
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             futures = [executor.submit(task_wrapper, idx, task_id, task_data) for idx, (task_id, task_data) in enumerate(tasks)]
             
             # Rolling reporting after each layer
             for attempt_idx in range(self.max_attempts):
+                start_time = time.time()
+                max_wait_time = 300  # 5 minutes timeout per layer
+                
                 while True:
+                    # Check for worker failures
+                    failed_workers = []
+                    for i, future in enumerate(futures):
+                        if future.done() and future.exception():
+                            failed_workers.append((i, future.exception()))
+                    
+                    if failed_workers:
+                        print(f"❌ {len(failed_workers)} workers failed:")
+                        for worker_idx, exception in failed_workers:
+                            print(f"   Worker {worker_idx}: {exception}")
+                        break
+                    
+                    # Check timeout
+                    if time.time() - start_time > max_wait_time:
+                        print(f"⏰ Timeout waiting for tasks to complete layer {attempt_idx + 1}")
+                        print(f"   Completed: {sum(1 for r in results if r is not None)}/{total_tasks}")
+                        break
+                    
                     done = sum(1 for r in results if r is not None)
                     if done == total_tasks:
                         break
                     time.sleep(0.5)
+                
                 self.report_metrics(results, attempt_idx + 1)
         
         self.save_summary(results, subset_name, dataset)
@@ -392,8 +442,12 @@ class ARCTaskRunnerSimple:
         filepath = self.logs_dir / filename
         
         try:
-            with open(filepath, 'w') as f:
-                json.dump(result, f, indent=2)
+            # Use timeout for file I/O to prevent hanging
+            def write_file():
+                with open(filepath, 'w') as f:
+                    json.dump(result, f, indent=2)
+            
+            execute_with_timeout(write_file, timeout=10)  # 10 second timeout for file write
         except Exception as e:
             if self.debug:
                 print(f"Error saving result: {e}")
