@@ -18,14 +18,15 @@
 Other task list:
 - [ ] Review code
     - [ ] Go through script for _soar.py.
-    - [ ] Parallelisation is not correct.
-    - [ ] Ensure all params are logged, incl. sampling.
-    - [ ] Test soar for answer lengths, does that mmodel blab?
-    - [ ] Check sampling in paper and test that for answer lengths on base model.
+      - [ ] Check that the prompt looks like the SOAR paper.
+      - [ ] Parallelisation is not correct.
+      - [ ] Ensure all params are logged, incl. sampling.
+      - [x] Hoist utils! so they can be re-used during training.
+    - [ ] Test soar for answer lengths, does that model blab?
+    - [ ] Check sampling in paper and test that for answer lengths on base model. It's T=1.0 with min_p=0.1
     - [ ] Ensure Qwen reasoning is well logged.
     - [ ] Ensure Gemini is well logged.
-    - [ ] Tidy logging for large numbers of attempts.
-    - [ ] Hoist utils! so they can be re-used during training.
+    - [ ] Ensure progress updates make sense.
 - [ ] Baseline:
     - [ ] Shortest 30. Pass@64. 3 runs. Qwen Base.
     - [ ] Soar model.

@@ -1230,6 +1230,8 @@ uv run python -m pytest utils/tests/ llm-python/utils/test_scoring.py -v
 # Run specific utils tests
 uv run python -m pytest utils/tests/test_prompt_utils.py -v
 uv run python -m pytest utils/tests/test_timeout_utils.py -v
+uv run python -m pytest utils/tests/test_voting_utils.py -v
+uv run python -m pytest utils/tests/test_transduction.py -v
 uv run python -m pytest llm-python/utils/test_scoring.py -v
 ```
 
@@ -1287,6 +1289,7 @@ The refactored system uses **all-attempts execution** with voting-based evaluati
 - **Parallel execution**: Workers process tasks independently for maximum throughput
 - **Oracle metrics**: Shows upper bound potential if best attempt could be selected
 - **Pass@2 voting**: Uses weighted-majority and train-majority voting for robustness
+- **Transduction filtering**: Automatically detects and filters out hardcoded/cheating responses
 - **Local execution**: All code is executed locally for immediate scoring
 
 **Key Point**: We execute code locally and use voting algorithms to select the best solutions from multiple independent attempts.
@@ -1304,12 +1307,15 @@ llm-python/
 │   ├── timeout_utils.py        # Timeout handling utilities
 │   ├── voting_utils.py         # Voting algorithms and prediction processing
 │   ├── metrics_utils.py        # Metrics calculation and formatting
+│   ├── transduction.py         # Transductive cheating detection
 │   ├── test_scoring.py         # Tests for scoring utilities
 │   └── tests/                  # Tests for utility modules
 │       ├── __init__.py
 │       ├── test_task_loader.py
 │       ├── test_prompt_utils.py
-│       └── test_timeout_utils.py
+│       ├── test_timeout_utils.py
+│       ├── test_voting_utils.py
+│       └── test_transduction.py
 ├── prompt_loader.py            # Load and manage prompt templates
 ├── generate_training_data.py   # Extract training data from logs
 ├── visualize_task_evolution.py # Create task evolution visualizations

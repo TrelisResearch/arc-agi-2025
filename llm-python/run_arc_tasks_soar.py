@@ -446,7 +446,7 @@ class ARCTaskRunnerSimple:
                 with open(filepath, 'w') as f:
                     json.dump(result, f, indent=2)
             
-            execute_with_timeout(write_file, timeout=10)  # 10 second timeout for file write
+            execute_with_timeout(write_file, timeout=3)  # 10 second timeout for file write
         except Exception as e:
             if self.debug:
                 print(f"Error saving result: {e}")
