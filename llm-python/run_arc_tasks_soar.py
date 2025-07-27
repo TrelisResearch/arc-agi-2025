@@ -113,14 +113,17 @@ class ARCTaskRunnerSimple:
             self.client = OpenAI(api_key=self.api_key)
             print(f"📝 Using OpenAI endpoint")
         
+        # Initialize fresh instances to prevent state leakage
         self.task_loader = TaskLoader()
         self.scorer = GridScorer()
         self.executor = ProgramExecutor(timeout=0.5)
         self.prompt_loader = PromptLoader()
         
-        # Create logs directory
-        self.logs_dir = Path(__file__).parent / "logs"
-        self.logs_dir.mkdir(exist_ok=True)
+        # Create logs directory with timestamped subfolder
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.logs_dir = Path(__file__).parent / "logs" / timestamp
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        print(f"📁 Logs will be saved to: {self.logs_dir}")
         
         # Thread-safe cost and token tracking
         self._cost_lock = threading.Lock()
@@ -439,6 +442,35 @@ class ARCTaskRunnerSimple:
             if limit:
                 tasks = tasks[:limit]
             total_tasks = len(tasks)
+            
+            # Validate task data integrity to prevent corruption issues
+            print(f"🔍 Validating {total_tasks} tasks...")
+            validated_tasks = []
+            for task_id, task_data in tasks:
+                if not isinstance(task_data, dict):
+                    print(f"❌ Invalid task data type for {task_id}: {type(task_data)}")
+                    continue
+                if 'train' not in task_data or 'test' not in task_data:
+                    print(f"❌ Missing train/test data for {task_id}")
+                    continue
+                if not isinstance(task_data['train'], list) or not isinstance(task_data['test'], list):
+                    print(f"❌ Invalid train/test data structure for {task_id}")
+                    continue
+                if len(task_data['train']) == 0:
+                    print(f"❌ No training examples for {task_id}")
+                    continue
+                if len(task_data['test']) == 0:
+                    print(f"❌ No test examples for {task_id}")
+                    continue
+                validated_tasks.append((task_id, task_data))
+            
+            if len(validated_tasks) != total_tasks:
+                print(f"⚠️ {total_tasks - len(validated_tasks)} tasks failed validation, using {len(validated_tasks)} valid tasks")
+                tasks = validated_tasks
+                total_tasks = len(tasks)
+            
+            print(f"✅ Task validation complete: {total_tasks} valid tasks")
+            
         except Exception as e:
             print(f"Error loading tasks: {e}")
             return []
@@ -472,8 +504,14 @@ class ARCTaskRunnerSimple:
             for attempt_num in range(self.max_attempts):
                 attempt_jobs.append((task_idx, task_id, task_data, attempt_num))
         
-        # Track results by task
-        task_results = {task_id: {'attempts': [], 'task_data': task_data} for task_id, task_data in tasks}
+        # Track results by task - use thread-safe defaultdict to prevent race conditions
+        from collections import defaultdict
+        task_results = defaultdict(lambda: {'attempts': [], 'task_data': None})
+        
+        # Initialize task results with task data
+        for task_id, task_data in tasks:
+            task_results[task_id]['task_data'] = task_data
+        
         completed_attempts = 0
         completed_tasks = 0
         count_lock = threading.Lock()
@@ -484,15 +522,39 @@ class ARCTaskRunnerSimple:
                 result = self.run_single_attempt(task_id, task_data, attempt_num, dataset, subset_name)
                 
                 with count_lock:
-                    # Store attempt result
-                    task_results[task_id]['attempts'].append(result['attempt_detail'])
-                    completed_attempts += 1
-                    
-                    # Check if task is complete
-                    if len(task_results[task_id]['attempts']) == self.max_attempts:
-                        completed_tasks += 1
-                        # Calculate and display task summary
-                        self._display_task_summary(task_id, task_results[task_id])
+                    # Store attempt result - use thread-safe access
+                    if task_id in task_results:
+                        task_results[task_id]['attempts'].append(result['attempt_detail'])
+                        completed_attempts += 1
+                        
+                        # Check if task is complete
+                        if len(task_results[task_id]['attempts']) == self.max_attempts:
+                            completed_tasks += 1
+                            # Calculate and display task summary
+                            self._display_task_summary(task_id, task_results[task_id])
+                            
+                            # Save task result immediately when it's complete
+                            attempts = sorted(task_results[task_id]['attempts'], key=lambda x: x['attempt_number'])
+                            valid_attempts = [attempt for attempt in attempts if isinstance(attempt, dict) and 'attempt_number' in attempt]
+                            
+                            task_result = {
+                                'task_id': task_id,
+                                'model': self.model,
+                                'api_type': 'chat_completions_all_attempts',
+                                'dataset': dataset,
+                                'subset': subset_name,
+                                'attempt_details': valid_attempts,
+                                'all_responses': [attempt.get('raw_response') for attempt in valid_attempts],
+                                'tokens_used': sum(attempt.get('input_tokens', 0) + attempt.get('output_tokens', 0) for attempt in valid_attempts),
+                                'request_cost': sum(attempt.get('attempt_cost', 0.0) for attempt in valid_attempts),
+                                'max_attempts': self.max_attempts,
+                                'api_success': True,
+                                'task_data': task_data
+                            }
+                            self.save_result(task_result)
+                            # print(f"💾 Saved log for task {task_id}")
+                    else:
+                        print(f"⚠️ Task {task_id} not found in results dict - possible corruption")
                 
                 return result
             except Exception as e:
@@ -512,12 +574,22 @@ class ARCTaskRunnerSimple:
             start_time = time.time()
             
             try:
-                for future in futures:
+                for future_idx, future in enumerate(futures):
                     remaining_time = max_wait_time - (time.time() - start_time)
                     if remaining_time <= 0:
                         print("⏰ Timeout reached, some attempts may not have completed")
                         break
-                    future.result(timeout=remaining_time)
+                    try:
+                        future.result(timeout=remaining_time)
+                    except Exception as future_e:
+                        print(f"🚨 FUTURE TIMEOUT: Future #{future_idx + 1}")
+                        print(f"   Error: {future_e}")
+                        print(f"   Elapsed time: {time.time() - start_time:.1f}s")
+                        print(f"   Remaining time: {remaining_time:.1f}s")
+                        print(f"   Future done: {future.done()}")
+                        print(f"   Future exception: {future.exception()}")
+                        print(f"   Stopping execution due to future timeout")
+                        raise future_e
                 print(f"✅ All {total_attempts} attempts completed")
             except Exception as e:
                 print(f"⚠️ Some attempts may have failed or timed out: {e}")
@@ -531,12 +603,23 @@ class ARCTaskRunnerSimple:
             
             print(f"📊 Final status: {successful_attempts} successful attempts, {failed_attempts} failed")
         
-        # Convert task_results to the expected format
+        # Convert task_results to the expected format for summary
         results = []
         for task_id, task_data in tasks:
             if task_id in task_results and len(task_results[task_id]['attempts']) > 0:
                 # Sort attempts by attempt number
                 attempts = sorted(task_results[task_id]['attempts'], key=lambda x: x['attempt_number'])
+                
+                # Validate attempt data integrity
+                valid_attempts = []
+                for attempt in attempts:
+                    if isinstance(attempt, dict) and 'attempt_number' in attempt:
+                        valid_attempts.append(attempt)
+                    else:
+                        print(f"⚠️ Invalid attempt data for task {task_id}: {type(attempt)}")
+                
+                if len(valid_attempts) != len(attempts):
+                    print(f"⚠️ Task {task_id}: {len(attempts) - len(valid_attempts)} invalid attempts filtered out")
                 
                 result = {
                     'task_id': task_id,
@@ -544,16 +627,18 @@ class ARCTaskRunnerSimple:
                     'api_type': 'chat_completions_all_attempts',
                     'dataset': dataset,
                     'subset': subset_name,
-                    'attempt_details': attempts,
-                    'all_responses': [attempt['raw_response'] for attempt in attempts],
-                    'tokens_used': sum(attempt['input_tokens'] + attempt['output_tokens'] for attempt in attempts),
-                    'request_cost': sum(attempt['attempt_cost'] for attempt in attempts),
+                    'attempt_details': valid_attempts,
+                    'all_responses': [attempt.get('raw_response') for attempt in valid_attempts],
+                    'tokens_used': sum(attempt.get('input_tokens', 0) + attempt.get('output_tokens', 0) for attempt in valid_attempts),
+                    'request_cost': sum(attempt.get('attempt_cost', 0.0) for attempt in valid_attempts),
                     'max_attempts': self.max_attempts,
                     'api_success': True,
                     'task_data': task_data
                 }
                 results.append(result)
-                self.save_result(result)
+                # Note: save_result() is now called when each task completes, not here
+            else:
+                print(f"⚠️ Task {task_id} has no valid attempts - skipping")
         
         self.save_summary(results, subset_name, dataset)
         return results
@@ -624,10 +709,14 @@ class ARCTaskRunnerSimple:
                 with open(filepath, 'w') as f:
                     json.dump(result, f, indent=2)
             
-            execute_with_timeout(write_file, timeout=3)  # 10 second timeout for file write
+            execute_with_timeout(write_file, timeout=30)  # 30 second timeout for file write
         except Exception as e:
-            if self.debug:
-                print(f"Error saving result: {e}")
+            print(f"🚨 FILE I/O TIMEOUT: Task {result['task_id']}, Attempt {result['attempt_details'][0]['attempt_number']}")
+            print(f"   File: {filepath}")
+            print(f"   Error: {e}")
+            print(f"   File size: {len(json.dumps(result, indent=2))} bytes")
+            print(f"   Stopping execution due to file I/O timeout")
+            raise Exception(f"File I/O timeout for task {result['task_id']}: {e}")
     
     def save_summary(self, results: List[Dict], subset_name: str, dataset: str):
         """Save summary of all results"""
@@ -653,6 +742,7 @@ class ARCTaskRunnerSimple:
                 'all_timeouts': 0.0
             }
         
+        # Create summary with full results for later aggregation
         summary = {
             'timestamp': timestamp,
             'dataset': dataset,
@@ -665,7 +755,8 @@ class ARCTaskRunnerSimple:
             'total_tokens': self.total_tokens,
             'total_cost': self.total_cost,
             'metrics': percentage_metrics,
-            'results': results
+            'results': results,  # Include full results for aggregation
+            'task_ids': [result['task_id'] for result in results]  # Also include task IDs for convenience
         }
         
         if self.run_number > 0:
@@ -706,24 +797,30 @@ class ARCTaskRunnerSimple:
         print(f"\nResults saved to: {filepath}")
     
     def run_repeated_subset(self, subset_name: str, dataset: str = "arc-agi-1", limit: Optional[int] = None, repeat_runs: int = 3) -> List[List[Dict]]:
-        """Run the same subset multiple times and calculate aggregate statistics"""
+        """Run the same subset multiple times with completely independent runs"""
         print(f"\nRunning {repeat_runs} repeated tests of {dataset}/{subset_name}")
         print(f"Model: {self.model}")
-        print(f"API: All Attempts Mode (max {self.max_attempts} attempts)")
+        print(f"{self.max_attempts} attempts")
         print("="*70)
         
-        all_run_results = []
+        # Store run results independently - no shared state
+        run_files = []
         
         for run_num in range(1, repeat_runs + 1):
             print(f"\n🚀 STARTING RUN {run_num}/{repeat_runs}")
             print("-" * 50)
             
+            # Force garbage collection between runs to clear any shared state
+            import gc
+            gc.collect()
+            
+            # Create completely independent runner with no shared state
             runner = ARCTaskRunnerSimple(
                 model=self.model,
                 max_workers=self.max_workers,
                 rate_limit_delay=self.rate_limit_delay,
                 max_attempts=self.max_attempts,
-                run_number=run_num,
+                run_number=run_num,  # This ensures unique file names
                 base_url=self.base_url,
                 debug=self.debug,
                 max_tokens=self.max_tokens,
@@ -733,10 +830,66 @@ class ARCTaskRunnerSimple:
                 prompt_version=self.prompt_version
             )
             
-            results = runner.run_subset(subset_name, dataset, limit)
-            all_run_results.append(results)
-            
-            print(f"\n✅ COMPLETED RUN {run_num}/{repeat_runs}")
+            try:
+                # Run the subset and let it save its own results
+                results = runner.run_subset(subset_name, dataset, limit)
+                print(f"\n✅ COMPLETED RUN {run_num}/{repeat_runs}")
+                
+                # Store the summary file path for later aggregation
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                summary_filename = f"{timestamp}_summary_{dataset}_{subset_name}_simple_run{run_num}.json"
+                summary_filepath = runner.logs_dir / summary_filename
+                run_files.append(summary_filepath)
+                
+            except Exception as e:
+                print(f"\n❌ RUN {run_num} FAILED: {e}")
+                run_files.append(None)  # Mark as failed
+            finally:
+                # Explicit cleanup to prevent state leakage
+                del runner
+                gc.collect()
+        
+        # Load results from files and calculate aggregate statistics
+        all_run_results = self._load_and_aggregate_results(run_files, subset_name, dataset, repeat_runs)
+        
+        return all_run_results
+    
+    def _load_and_aggregate_results(self, run_files: List[Optional[Path]], subset_name: str, dataset: str, repeat_runs: int) -> List[List[Dict]]:
+        """Load results from individual run files and aggregate statistics"""
+        print(f"\n📊 Loading results from {len(run_files)} run files...")
+        
+        all_run_results = []
+        successful_runs = 0
+        
+        for run_num, filepath in enumerate(run_files, 1):
+            if filepath is None:
+                print(f"❌ Run {run_num}: Failed run, no results")
+                all_run_results.append([])
+                continue
+                
+            try:
+                if filepath.exists():
+                    with open(filepath, 'r') as f:
+                        summary_data = json.load(f)
+                    
+                    # Extract the results from the summary
+                    if 'results' in summary_data:
+                        results = summary_data['results']
+                        all_run_results.append(results)
+                        successful_runs += 1
+                        print(f"✅ Run {run_num}: Loaded {len(results)} results from {filepath.name}")
+                    else:
+                        print(f"⚠️ Run {run_num}: No results found in {filepath.name}")
+                        all_run_results.append([])
+                else:
+                    print(f"❌ Run {run_num}: File not found: {filepath}")
+                    all_run_results.append([])
+                    
+            except Exception as e:
+                print(f"❌ Run {run_num}: Error loading {filepath}: {e}")
+                all_run_results.append([])
+        
+        print(f"📊 Successfully loaded {successful_runs}/{repeat_runs} runs")
         
         # Calculate and display aggregate statistics
         self._calculate_and_display_aggregate_stats(all_run_results, subset_name, dataset, repeat_runs)

@@ -90,6 +90,7 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --r
 **Key Features:**
 - **True Parallelization**: Parallelizes at the attempt level - all attempts across all tasks run simultaneously
 - **Real-time Task Summaries**: Displays brief statistics for each task as it completes (test-correct, train-perfect, train-partial counts)
+- **Real-time Logging**: Individual task logs are saved immediately when each task completes, not at the end of the run
 - **Efficient Resource Usage**: Workers process individual attempts independently for maximum throughput
 - **Voting Algorithms**: Weighted majority (frequency + accuracy) and train-majority voting for robust evaluation
 - **Transduction Filtering**: Automatically removes hardcoded/cheating responses
@@ -97,6 +98,9 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --r
 - **Adaptive Sampling Parameters**: Automatic detection of endpoint type with appropriate defaults:
   - **TCP endpoints** (containing ":"): Uses `min_p=0.05` in `extra_body`
   - **Other endpoints**: Uses `top_k=50` and `top_p=0.9` defaults
+- **Optimized File I/O**: 30-second timeout for file operations with detailed error logging for debugging
+- **Independent Multiple Runs**: Each repeated run is completely isolated with no shared state - results loaded from files for aggregation
+- **Robust State Management**: Explicit garbage collection and cleanup between runs prevents state spillover
 
 **When to use:**
 - For comprehensive evaluation with statistical rigor
@@ -120,7 +124,7 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_traini
 # Run tasks in parallel with high worker count for faster execution
 uv run python run_arc_tasks_soar.py --dataset arc-agi-2 --subset shortest_training_30 --max_workers 20
 
-# Run the same test 3 times and calculate mean/std dev statistics
+# Run the same test 3 times with completely independent runs and aggregate statistics
 uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 3
 
 # Disable thinking for Qwen models (sets enable_thinking=false in chat_template_kwargs)
@@ -165,25 +169,23 @@ For compatible models that support reasoning, control reasoning token allocation
 
 **Example Results:** Gemini Flash gets 7/10 correct on shortest training tasks with 2k reasoning tokens, 5/10 correct on medium difficulty tasks with 8k reasoning tokens.
 
-### Thinking Tokens Capture
+### Reasoning Content Capture
 
-The tool automatically detects and logs thinking tokens from models that provide them:
+The tool automatically captures and standardizes reasoning content from models that provide it:
 
+- **All Models**: Reasoning content is standardized to the `reasoning` field in logs for consistency
 - **Gemini models** (via OpenRouter): 
-  - Reasoning captured in `reasoning` field with detailed internal thought processes
-  - Usage tokens: `reasoning_tokens` and `thinking_tokens` fields (when available)
+  - Original `reasoning` field preserved and standardized
+  - Additional `reasoning_details` field with structured reasoning data
   - Example: *"**Examining Grid Transformations** I've been scrutinizing the input and output grid examples..."*
-- **Qwen models**: Reasoning captured in separate fields
-  - Via OpenRouter: `reasoning` field
-  - Via custom endpoints (SGLang/RunPod): `reasoning_content` field
-  - Default parameters: Uses adaptive sampling based on endpoint type
-  - **TCP endpoints**: `min_p=0.05` in `extra_body`
-  - **Other endpoints**: `top_k=50` and `top_p=0.9` defaults
+- **Qwen models**: 
+  - Via TCP endpoints: `reasoning_content` → standardized to `reasoning` field
+  - Via OpenRouter: `reasoning` field preserved
   - Automatically disabled with `--qwen-no-think` flag (sets `enable_thinking=false`)
 - **o1/o3 models** (via OpenAI): Hidden reasoning tokens captured when available
 - **Other models**: Standard content logging
 
-All reasoning data is preserved in logs for analysis. The code extraction also searches both content and reasoning fields, ensuring no code is missed regardless of where models place their solutions.
+All reasoning data is preserved in logs for analysis. The code extraction searches both content and reasoning fields, ensuring no code is missed regardless of where models place their solutions.
 
 ### Training Data Generation
 
@@ -724,15 +726,15 @@ Automatically detects and removes programs that hardcode answers instead of impl
 
 ## Repeated Runs with Statistical Analysis
 
-The tool supports running the same test multiple times to calculate robust performance statistics with mean and standard deviation calculations.
+The tool supports running the same test multiple times with **completely independent runs** to calculate robust performance statistics.
 
 ### Key Features
 
-- **Automatic repeated execution**: Run the same subset 1-10 times
-- **Individual run logging**: Each run saves separately with run identifiers
-- **Two success metrics**: Statistics for both "Turn 1 Only" and "All Turns" success rates
-- **API failure handling**: Excludes timeout failures from statistical calculations
-- **Comprehensive output**: Individual run results plus aggregate statistics with confidence intervals
+- **Independent execution**: Each run creates a fresh runner instance with no shared state
+- **File-based aggregation**: Results are saved to individual files and loaded for final statistics
+- **Robust state management**: Explicit garbage collection and cleanup between runs prevents state spillover
+- **Comprehensive validation**: Task data integrity validation and thread-safe execution
+- **Graceful failure handling**: Failed runs don't affect other runs - statistics calculated from successful runs only
 
 ### Usage Examples
 
@@ -848,15 +850,18 @@ OpenAI has rate limits that vary by model and tier. Recommended settings:
 
 ## Timeout Handling
 
-The tool includes robust timeout handling to prevent hanging on API calls that take too long:
+The tool includes robust timeout handling to prevent hanging on API calls and file operations:
 
 ### Key Features
 
 - **1000-second timeout** per API call (16.7 minutes)
 - **3 retry attempts** per turn with 2-second backoff between retries
+- **30-second timeout** for file I/O operations with detailed error logging
+- **600-second future timeout** per individual attempt (10 minutes total per attempt)
 - **Separate timeout failure tracking** - doesn't count as regular task failures
 - **Complete conversation preservation** during retries
 - **Detailed error logging** with specific failure reasons and complete API response data
+- **Explicit timeout debugging** - shows exactly which operations are timing out
 
 ### How It Works
 
@@ -1001,8 +1006,14 @@ When the task process itself fails (code may have executed fine):
 Results are saved in multiple directories:
 
 **Log files in `logs/` directory:**
-- Individual task results: `{timestamp}_{task_id}.json`
-- Summary reports: `{timestamp}_summary_{dataset}_{subset}.json`
+- Individual task results: `{timestamp}_{task_id}.json` (full attempt details)
+- Summary reports: `{timestamp}_summary_{dataset}_{subset}.json` (minimal metrics only)
+
+**Summary File Optimization:**
+- **Minimal size**: Summary files contain only essential metrics (~5KB) instead of full attempt details (~160MB)
+- **Essential data**: Task IDs, final metrics, cost summary, and aggregate statistics
+- **Individual details**: Full attempt details are preserved in separate task-specific log files
+- **Performance**: Dramatically reduces file I/O time and disk contention during high-concurrency runs
 
 **Visualization plots in `plots/` directory:**
 - Turn-by-turn evolution charts: `turn_{N}_{task_id}_{log_stem}.png`

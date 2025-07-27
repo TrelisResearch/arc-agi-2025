@@ -1,22 +1,7 @@
 # Experiment Notes
 
 ## 26-28 July 2025
-[x] Script consolidation run_arc_tasks.py:
-  [x] Decide on using run_arc_tasks.py or run_arc_tasks_soar.py as the baseline. Will consolidate around Soar, since there is no obvious improvement with our prompting. Clean up the repo to just use that.
-  [x] Double check the prompt.
-  [x] Run with the two types of endpoint - Lewis and Ronan. Probably this is fine and not the issue. Upgraded to H200
-[ ] Script consolidation - ipynb:
-  [ ] Split out utils, where needed.
-  [ ] Employ the same data prep and prompt strings in the ipynb as in the run_arc_tasks.py script.
-[x] Grading fix - whereby testing stops if test is correct, should be if all train examples are correct AND there is no transduction detected.
-[ ] Ablate reasoning vs non-reasoning training.
-  [ ] Using synthetic Gemini data with and without the reasoning traces.
-  [ ] Generate clean data with Geminin for all training problems.
-  [ ] Train without reasoning.
-  [ ] Train with reasoning ONLY ON FULLY CORRECT TASKS.
-
-Other task list:
-- [ ] Review code
+- [x] Review code and consolidate into one run_arc_tasks_soar.py script
     - [x] Go through script for run_arc_tasks_soar.py.
       - [x] Check that the prompt looks like the SOAR paper.
       - [x] Parallelisation is not correct.
@@ -24,7 +9,7 @@ Other task list:
       - [x] Ensure all params are logged, incl. sampling.
       - [x] Hoist utils! so they can be re-used during training.
       - [x] Check sampling in paper and test that for answer lengths on base model. It's T=1.0 with min_p=0.05.
-    - [ ] Blabbing:
+    - [x] Blabbing:
       - [x] do sampling metrics over-ride when qwen models are run
       - [x] Print out sampling params at run start.
       - [x] Test soar for answer lengths, does that model blab? Very little.
@@ -35,13 +20,20 @@ Other task list:
 - [ ] Baseline:
     - [x] ARC-AGI-1 shortest 30. Pass@8. 3 runs. Qwen Base. Scores 8%.
     - [x] Soar model. Same. Scores 58%.
-    - [ ] Full evaluation set with the Soar model. Seems to score 30%?
-- [ ] Data generation:
-    - [ ] Hoist utils.
-    - [ ] Integrate validation.
-    - [ ] Test a small dataset.
+    - [ ] Full evaluation sets for arc-agi-1:
+      - [ ] Soar model.
+      - [ ] Qwen Base.
+    - [ ] Evaluation on shortest 10 evaluation problems:
+      - [ ] Soar model. TBD...
+      - [ ] Qwen Base. TBD...
+      - [ ] Qwen Base with reasoning. 80%.
+      - [ ] Gemini. 87%.
 - [ ] Fine-tuning:
-    - [ ] Hoist utils.
+    - [ ] Hoist utils. 
+    - [ ] Test a small dataset.
+- [ ] Data generation (lewis):
+    - [ ] Hoist utils. Already available! Need to make use of them in the data generation script generate_training_data.py
+    - [ ] Integrate validation.
     - [ ] Test a small dataset.
 
 Later:
@@ -62,11 +54,6 @@ uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path julien31/Soar-qwen-7b
 and then start a base qwen pod:
 ```bash
 uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path qwen/qwen3-4b --reasoning-parser qwen3
-```
-
-Quick test on gemini with the shortest 10 evaluation problems:
-```bash
-uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_10 --repeat-runs 1 --max_workers 50 --max_attempts 8 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1/ --reasoning_effort medium
 ```
 
 
@@ -118,16 +105,239 @@ Weighted Voting Pass2:
 
 and then with the qwen/qwen3-4b model with reasoning:
 ```bash
-uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_30 --repeat-runs 3 --max_workers 50 --max_attempts 8 --model qwen/qwen3-4b --base-url http://38.80.152.249:30805/v1 --max-tokens 8000
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_10 --repeat-runs 3 --max_workers 50 --max_attempts 8 --model qwen/qwen3-4b --base-url http://38.80.152.249:30805/v1
 ```
-...
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Max-Len 
+----------------------------------------------------------------------
+1    10     90.0%      90.0%      90.0%    80.0%      0.0%    
+2    10     80.0%      80.0%      90.0%    70.0%      0.0%    
+3    10     70.0%      70.0%      80.0%    70.0%      0.0%    
 
-Full evaluations set with the Soar model:
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 80.0%
+  Std Dev: 10.0%
+  95% CI: [60.4%, 99.6%]
+
+Train Majority Pass2:
+  Mean: 80.0%
+  Std Dev: 10.0%
+  95% CI: [60.4%, 99.6%]
+
+Oracle Correct:
+  Mean: 86.7%
+  Std Dev: 5.8%
+  95% CI: [75.4%, 98.0%]
+
+All Train Correct:
+  Mean: 73.3%
+  Std Dev: 5.8%
+  95% CI: [62.0%, 84.6%]
+
+Min1 Train Correct:
+  Mean: 96.7%
+  Std Dev: 5.8%
+  95% CI: [85.4%, 100.0%]
+
+Max Length Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Timeout Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Api Failure Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Aggregate results saved to: /Users/ronanmcgovern/TR/arc-agi-2025/llm-python/logs/20250727_131116_aggregate_summary_arc-agi-1_shortest_evaluation_10_all_attempts_3runs.json
+
+Full evaluations set with the Soar model [looks TERRIBLE]:
 ```bash
 uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_attempts 8 --model julien31/Soar-qwen-7b --base-url http://38.80.152.249:30806/v1 --max-tokens 1000 --qwen-no-think
 ```
+VERY VERY ODD:
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Max-Len 
+----------------------------------------------------------------------
+1    400    30.5%      28.7%      30.5%    26.8%      2.7%    
+2    400    7.0%       6.8%       7.8%     6.5%       3.4%    
+3    400    0.0%       0.0%       0.0%     0.0%       2.8%    
 
-And then test out Gemini
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 12.5%
+  Std Dev: 16.0%
+  95% CI: [0.0%, 43.8%]
+
+Train Majority Pass2:
+  Mean: 11.8%
+  Std Dev: 15.0%
+  95% CI: [0.0%, 41.3%]
+
+Oracle Correct:
+  Mean: 12.8%
+  Std Dev: 15.9%
+  95% CI: [0.0%, 43.8%]
+
+All Train Correct:
+  Mean: 11.1%
+  Std Dev: 14.0%
+  95% CI: [0.0%, 38.4%]
+
+Min1 Train Correct:
+  Mean: 24.0%
+  Std Dev: 28.7%
+  95% CI: [0.0%, 80.2%]
+
+Max Length Responses:
+  Mean: 3.0%
+  Std Dev: 0.4%
+  95% CI: [2.2%, 3.7%]
+
+Timeout Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Api Failure Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Shortest 100 evaluation tasks with the Soar model [looks good]:
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_100 --repeat-runs 3 --max_workers 50 --max_attempts 8 --model julien31/Soar-qwen-7b --base-url http://38.80.152.249:30806/v1 --max-tokens 1000 --qwen-no-think
+```
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Max-Len 
+----------------------------------------------------------------------
+1    100    40.0%      40.0%      41.0%    39.0%      2.5%    
+2    100    44.0%      43.0%      48.0%    40.0%      2.8%    
+3    100    43.0%      42.0%      46.0%    40.0%      2.9%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 42.3%
+  Std Dev: 2.1%
+  95% CI: [38.3%, 46.4%]
+
+Train Majority Pass2:
+  Mean: 41.7%
+  Std Dev: 1.5%
+  95% CI: [38.7%, 44.7%]
+
+Oracle Correct:
+  Mean: 45.0%
+  Std Dev: 3.6%
+  95% CI: [37.9%, 52.1%]
+
+All Train Correct:
+  Mean: 39.7%
+  Std Dev: 0.6%
+  95% CI: [38.5%, 40.8%]
+
+Min1 Train Correct:
+  Mean: 64.3%
+  Std Dev: 0.6%
+  95% CI: [63.2%, 65.5%]
+
+Max Length Responses:
+  Mean: 2.7%
+  Std Dev: 0.2%
+  95% CI: [2.3%, 3.1%]
+
+Timeout Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Api Failure Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Aggregate results saved to: /Users/ronanmcgovern/TR/arc-agi-2025/llm-python/logs/20250727_131313_aggregate_summary_arc-agi-1_shortest_evaluation_100_all_attempts_3runs.json
+
+Full evaluations set with the Soar model - RETRY with 8 max workers:
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 16 --max_attempts 8 --model julien31/Soar-qwen-7b --base-url http://38.80.152.249:30806/v1 --max-tokens 1000 --qwen-no-think
+```
+TBD...
+
+and try out the qwen/qwen3-4b base model:
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 16 --max_attempts 8 --model qwen/qwen3-4b --base-url http://38.80.152.249:30805/v1 --max-tokens 1000 --qwen-no-think
+```
+TBD...
+
+
+And then test out Gemini just on the shortest 10 evaluation tasks [looks very good]:
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_10 --repeat-runs 3 --max_workers 50 --max_attempts 8 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1/ --reasoning_effort medium
+```
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Max-Len 
+----------------------------------------------------------------------
+1    10     90.0%      80.0%      90.0%    100.0%     0.0%    
+2    10     90.0%      90.0%      90.0%    100.0%     0.0%    
+3    10     80.0%      80.0%      80.0%    90.0%      0.0%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 86.7%
+  Std Dev: 5.8%
+  95% CI: [75.4%, 98.0%]
+
+Train Majority Pass2:
+  Mean: 83.3%
+  Std Dev: 5.8%
+  95% CI: [72.0%, 94.6%]
+
+Oracle Correct:
+  Mean: 86.7%
+  Std Dev: 5.8%
+  95% CI: [75.4%, 98.0%]
+
+All Train Correct:
+  Mean: 96.7%
+  Std Dev: 5.8%
+  95% CI: [85.4%, 100.0%]
+
+Min1 Train Correct:
+  Mean: 100.0%
+  Std Dev: 0.0%
+  95% CI: [100.0%, 100.0%]
+
+Max Length Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Timeout Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Api Failure Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Aggregate results saved to: /Users/ronanmcgovern/TR/arc-agi-2025/llm-python/logs/20250727_125405_aggregate_summary_arc-agi-1_shortest_evaluation_10_all_attempts_3runs.json
 
 ### Compare both pods using the old run_arc_tasks_soar.py script.
 
