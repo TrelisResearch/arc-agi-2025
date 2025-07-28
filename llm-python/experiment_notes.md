@@ -30,9 +30,29 @@ uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path julien31/Soar-qwen-7b
 
 and then test on full 400 tasks:
 ```bash
-uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_attempts 8 --model julien31/Soar-qwen-7b --base-url http://38.80.152.249:30712/v1 --qwen-no-think --max-tokens 1000
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model julien31/Soar-qwen-7b --base-url http://38.80.152.249:30712/v1 --qwen-no-think --max-tokens 1000
 ```
+SUMMARY (Run 1)
+==================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: julien31/Soar-qwen-7b
+Total tasks: 400
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 12,907,107
+Total cost: $2.404975
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 9.8%
+  Pass@2 (Train Majority):  9.8%
+  Oracle (Best Attempt):    10.5%
+  All Train Correct:        9.0%
+  Min 1 Train Correct:      21.2%
+  Max Length Responses:     2.5%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+Results saved to: /Users/ronanmcgovern/TR/arc-agi-2025/llm-python/logs/20250728_100744/20250728_101652_summary_arc-agi-1_all_evaluation_simple_run1.json
 
 
 ### Test Qwen Base on full 400 evaluation tasks
@@ -43,8 +63,27 @@ uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path qwen/qwen3-4b --reaso
 ```
 and test on full 400 tasks (STRONGLY RECOMMEND USING MAX TOKENS AS THE MODEL BLABS A LOT):
 ```bash
-uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_attempts 8 --model qwen/qwen3-4b --base-url http://38.80.152.249:30707/v1 --qwen-no-think --max-tokens 1000
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model qwen/qwen3-4b --base-url http://38.80.152.249:30707/v1 --qwen-no-think --max-tokens 1000
 ```
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: qwen/qwen3-4b
+Total tasks: 400
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 12,947,286
+Total cost: $2.423322
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.5%
+  Pass@2 (Train Majority):  0.5%
+  Oracle (Best Attempt):    0.5%
+  All Train Correct:        0.2%
+  Min 1 Train Correct:      2.2%
+  Max Length Responses:     9.4%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+Results saved to: /Users/ronanmcgovern/TR/arc-agi-2025/llm-python/logs/20250728_100807/20250728_101737_summary_arc-agi-1_all_evaluation_simple_run1.json
 
 ### Test Qwen Base with reasoning on shortest 30 evaluation tasks
 
