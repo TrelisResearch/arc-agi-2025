@@ -64,7 +64,7 @@ def calculate_task_metrics(
             if not att.get('api_success', True) and not att.get('api_timeout', False):
                 api_failure_responses += 1
         
-        # Filter out transductive attempts for voting metrics
+        # Filter out transductive attempts using optimized function
         non_transductive = filter_non_transductive_attempts({
             'attempt_details': attempt_details,
             'task_data': result['task_data']

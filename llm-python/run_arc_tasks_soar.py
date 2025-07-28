@@ -20,6 +20,7 @@ try:
     from .utils.prompt_utils import create_arc_prompt, extract_python_code
     from .utils.metrics_utils import calculate_task_metrics, format_metrics_display, metrics_to_percentages
     from .utils.timeout_utils import execute_with_timeout
+    from .utils.transduction import is_transduction_cheating
     from .prompt_loader import PromptLoader
 except ImportError:
     # Fall back to absolute imports (when run directly)
@@ -28,6 +29,7 @@ except ImportError:
     from utils.prompt_utils import create_arc_prompt, extract_python_code
     from utils.metrics_utils import calculate_task_metrics, format_metrics_display, metrics_to_percentages
     from utils.timeout_utils import execute_with_timeout
+    from utils.transduction import is_transduction_cheating
     from prompt_loader import PromptLoader
 
 load_dotenv()
@@ -391,7 +393,13 @@ class ARCTaskRunnerSimple:
         program = self.extract_code_from_response(response) if response else ''
         program_extracted = bool(program and program.strip())
         
-        # Evaluate on training examples
+        # Check for transductive/cheating behavior
+        is_transductive = False
+        transduction_reason = ""
+        if program_extracted:
+            is_transductive, transduction_reason = is_transduction_cheating(program, task_data)
+        
+        # Evaluate on training examples (skip if transductive)
         train_results = []
         train_correct = 0
         train_exec_errors = 0
@@ -400,15 +408,18 @@ class ARCTaskRunnerSimple:
         for ex in task_data['train']:
             if not program_extracted:
                 pred, err, tout = None, 'no program', False
+            elif is_transductive:
+                pred, err, tout = None, 'transductive', False
             else:
                 pred, err, tout = self.executor.execute_program_with_timeout(program, ex['input'])
             
-            is_corr = (pred == ex['output']) if (pred is not None and not err and not tout) else False
+            # Mark as incorrect if transductive
+            is_corr = (pred == ex['output']) if (pred is not None and not err and not tout and not is_transductive) else False
             train_results.append({'predicted': pred, 'expected': ex['output'], 'correct': is_corr, 'error': err, 'timed_out': tout})
             
             if is_corr:
                 train_correct += 1
-            elif err and err != 'no program':
+            elif err and err != 'no program' and err != 'transductive':
                 train_exec_errors += 1
             elif tout:
                 train_exec_timeouts += 1
@@ -423,14 +434,17 @@ class ARCTaskRunnerSimple:
         
         if not program_extracted:
             test_pred, test_err, test_tout = None, 'no program', False
+        elif is_transductive:
+            test_pred, test_err, test_tout = None, 'transductive', False
         else:
             test_pred, test_err, test_tout = self.executor.execute_program_with_timeout(program, test_input)
-            if test_err and test_err != 'no program':
+            if test_err and test_err != 'no program' and test_err != 'transductive':
                 test_exec_error = True
             if test_tout:
                 test_exec_timeout = True
         
-        test_correct = (test_pred == test_expected) if (test_pred is not None and not test_err and not test_tout) else False
+        # Mark as incorrect if transductive
+        test_correct = (test_pred == test_expected) if (test_pred is not None and not test_err and not test_tout and not is_transductive) else False
         
         # Store attempt details
         attempt_detail = {
@@ -441,6 +455,8 @@ class ARCTaskRunnerSimple:
             'attempt_cost': attempt_cost,
             'program_extracted': program_extracted,
             'program': program,
+            'is_transductive': is_transductive,
+            'transduction_reason': transduction_reason,
             'train_results': train_results,
             'train_accuracy': train_accuracy,
             'train_exec_errors': train_exec_errors,
@@ -737,6 +753,7 @@ class ARCTaskRunnerSimple:
         empty_responses = sum(1 for attempt in attempts if attempt.get('empty_response', False))
         max_length_hits = sum(1 for attempt in attempts if attempt.get('hit_max_tokens', False))
         no_code_extracted = sum(1 for attempt in attempts if not attempt.get('program_extracted', False))
+        transductive_attempts = sum(1 for attempt in attempts if attempt.get('is_transductive', False))
         train_exec_errors = sum(1 for attempt in attempts if attempt.get('train_exec_errors', 0) > 0)
         train_exec_timeouts = sum(1 for attempt in attempts if attempt.get('train_exec_timeouts', 0) > 0)
         test_exec_errors = sum(1 for attempt in attempts if attempt.get('test_exec_error', False))
@@ -760,6 +777,8 @@ class ARCTaskRunnerSimple:
             issues.append(f"{max_length_hits} max-len")
         if no_code_extracted > 0:
             issues.append(f"{no_code_extracted} no-code")
+        if transductive_attempts > 0:
+            issues.append(f"{transductive_attempts} transductive")
         if train_exec_errors > 0:
             issues.append(f"{train_exec_errors} train-exec-error")
         if train_exec_timeouts > 0:

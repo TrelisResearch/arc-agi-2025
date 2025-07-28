@@ -16,21 +16,25 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 from datasets import Dataset
 from huggingface_hub import HfApi
-from .utils.transduction import is_transduction_cheating
 
-def load_task_data(task_id: str, dataset: str = "arc-agi-1") -> Optional[Dict]:
-    """Load task data from the data folder"""
-    # Try both training and evaluation folders
-    for folder in ["training", "evaluation"]:
-        task_path = Path(f"../data/{dataset}/{folder}/{task_id}.json")
-        if task_path.exists():
-            with open(task_path, 'r') as f:
-                return json.load(f)
-    
-    # Also try arc-agi-2
-    if dataset == "arc-agi-1":
-        return load_task_data(task_id, "arc-agi-2")
-    return None
+# Import utilities
+try:
+    # Try relative imports first (when run as module)
+    from .utils.task_loader import TaskLoader
+    from .utils.scoring import ProgramExecutor
+    from .utils.transduction import is_transduction_cheating
+except ImportError:
+    # Fall back to absolute imports (when run directly)
+    from utils.task_loader import TaskLoader
+    from utils.scoring import ProgramExecutor
+    from utils.transduction import is_transduction_cheating
+
+# Initialize utilities
+task_loader = TaskLoader()
+
+def get_program_executor():
+    """Get a ProgramExecutor instance (lazy initialization)"""
+    return ProgramExecutor(timeout=0.5)
 
 def format_grid(grid: List[List[int]]) -> str:
     """Format a grid as a string, preserving empty rows with special marker"""
@@ -112,57 +116,6 @@ def strip_comments_aggressive(source_code: str) -> str:
         print(f"Warning: Error in aggressive comment stripping: {e}")
         return source_code
 
-def execute_program(program: str, input_grid: List[List[int]], timeout: float = 0.5) -> Tuple[Optional[List[List[int]]], Optional[str], bool]:
-    """Execute a program on an input grid and return the result"""
-    try:
-        # Create a temporary file with the program
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
-            f.write(program)
-            f.write(f"\n\ntest_input = {input_grid}\n")
-            f.write("try:\n")
-            f.write("    output = transform(test_input)\n")
-            f.write("    print('SUCCESS:', output)\n")
-            f.write("except Exception as e:\n")
-            f.write("    print('ERROR:', str(e))\n")
-            temp_path = f.name
-        
-        # Execute the program
-        try:
-            result = subprocess.run(
-                ['python3', temp_path],
-                capture_output=True,
-                text=True,
-                timeout=timeout
-            )
-            
-            # Parse the output
-            if result.returncode == 0:
-                output_lines = result.stdout.strip().split('\n')
-                for line in output_lines:
-                    if line.startswith('SUCCESS:'):
-                        output_str = line[8:].strip()
-                        output = eval(output_str)  # Be careful with eval in production
-                        return output, None, False
-                    elif line.startswith('ERROR:'):
-                        error_msg = line[6:].strip()
-                        return None, error_msg, False
-                
-                return None, "No output produced", False
-            else:
-                return None, result.stderr.strip() or "Unknown error", False
-                
-        except subprocess.TimeoutExpired:
-            return None, "Execution timed out", True
-            
-    except Exception as e:
-        return None, str(e), False
-    finally:
-        # Clean up temp file
-        try:
-            os.unlink(temp_path)
-        except:
-            pass
-
 def evaluate_program_on_task(program: str, task_data: Dict) -> Dict:
     """Evaluate a program on all training examples of a task"""
     training_results = []
@@ -171,7 +124,7 @@ def evaluate_program_on_task(program: str, task_data: Dict) -> Dict:
         input_grid = example['input']
         expected_output = example['output']
         
-        predicted_output, error, timed_out = execute_program(program, input_grid)
+        predicted_output, error, timed_out = get_program_executor().execute_program_with_timeout(program, input_grid)
         
         if predicted_output is not None and not error and not timed_out:
             # Check if output matches expected
@@ -197,61 +150,6 @@ def evaluate_program_on_task(program: str, task_data: Dict) -> Dict:
         'total_examples': total_examples,
         'training_results': training_results
     }
-
-def create_prompt_for_task(task_data: Dict) -> str:
-    """Create the full prompt for a task as used in run_arc_tasks.py"""
-    # Get the consistent output grid dimensions from the first training example
-    if task_data['train'] and task_data['train'][0]['output']:
-        output_grid = task_data['train'][0]['output']
-        output_height = len(output_grid)
-        output_width = len(output_grid[0]) if output_grid else 0
-        grid_size_info = f"\n**IMPORTANT: Your transformation must always produce a {output_height}×{output_width} output grid.**\n"
-    else:
-        grid_size_info = ""
-    
-    # Create the text content with text grid representation
-    task_str = format_task_for_prompt(task_data, include_test=True)
-    
-    text_content = f"""You are solving an ARC (Abstraction and Reasoning Corpus) task. 
-I will show you training examples with input and output grids, plus a test input grid. Your task is to:
-
-1. **Analyze the training examples** to discover patterns that map input grids to output grids
-2. **Write a Python program** that implements your best understanding of the transformation  
-3. **DO NOT predict or generate the test output** - your job is only to write the transformation program
-4. **Attempt a solution** - even if the pattern isn't completely clear, provide your best hypothesis
-5. **Do not repeat the same transformation** - if you have already tried a transformation, do not repeat it.
-{grid_size_info}
-The test input is shown for context so you understand what type of grid your program will eventually process. Focus on learning patterns from training examples and writing code that captures your understanding.
-
-{task_str}
-
-Analyze the patterns in the training examples and write a Python function that performs this transformation.
-
-**Approach Guidelines:**
-- Look for patterns in shapes, colors, positions, sizes, rotations, reflections, etc.
-- Even if you can't solve all training examples perfectly, implement what patterns you do observe
-- A partial solution that captures some aspects is better than returning the input unchanged
-- If the pattern is unclear, make your best educated guess based on what you can see
-
-Requirements:
-- The function takes a 2D list (grid) where grid[row][col] gives the value at that position
-- Values are integers from 0-9
-- Return a new grid (2D list) with the transformation applied
-- You can use numpy if needed - just add 'import numpy as np' at the start of your function
-- Aim to handle the training examples as well as possible, even if not perfectly
-- Your function should attempt some meaningful transformation based on the patterns you observe
-
-You MUST end your response with the following exact format:
-
-Final answer:
-```python
-def transform(grid):
-    # Your transformation logic here (implement your best understanding)
-    return transformed_grid
-```
-"""
-    
-    return text_content
 
 def extract_programs_from_log(log_path: str) -> List[Dict]:
     """Extract valid programs from a log file"""
@@ -374,10 +272,12 @@ def validate_single_program(prog_data: Dict, args) -> Optional[Dict]:
     """Validate a single program and return qualified program data or None"""
     task_id = prog_data['task_id']
     program = prog_data['program']
+    dataset = prog_data.get('dataset', 'arc-agi-1')
     
     # Load task data
-    task_data = load_task_data(task_id)
-    if not task_data:
+    try:
+        task_data = task_loader.load_task(task_id, dataset)
+    except FileNotFoundError:
         return None
     
     # Check for transduction/cheating (unless disabled)
@@ -432,7 +332,7 @@ def create_training_example(program_data: Dict, task_data: Dict, args) -> Dict:
     correct_train_inputs = []
     
     for i, train_input in enumerate(train_inputs):
-        predicted_output, error, timed_out = execute_program(program, train_input)
+        predicted_output, error, timed_out = get_program_executor().execute_program_with_timeout(program, train_input)
         
         if predicted_output is not None and not error and not timed_out:
             # Validate output format
@@ -458,7 +358,7 @@ def create_training_example(program_data: Dict, task_data: Dict, args) -> Dict:
     correct_test_inputs = []
     
     for i, test_input in enumerate(test_inputs):
-        predicted_output, error, timed_out = execute_program(program, test_input)
+        predicted_output, error, timed_out = get_program_executor().execute_program_with_timeout(program, test_input)
         
         if predicted_output is not None and not error and not timed_out:
             # Validate output format
@@ -600,7 +500,7 @@ def deduplicate_programs_by_task(qualified_programs: List[Dict], args) -> Tuple[
             if task_data.get('test') and len(task_data['test']) > 0:
                 test_input = task_data['test'][0]['input']
                 expected_test_output = task_data['test'][0]['output']
-                predicted_test_output, error, timed_out = execute_program(program, test_input)
+                predicted_test_output, error, timed_out = get_program_executor().execute_program_with_timeout(program, test_input)
                 
                 if (predicted_test_output is not None and not error and not timed_out and 
                     predicted_test_output == expected_test_output):
@@ -639,7 +539,7 @@ def deduplicate_programs_by_task(qualified_programs: List[Dict], args) -> Tuple[
                 # Generate output signature by running program on all training inputs
                 outputs = []
                 for example in task_data['train']:
-                    predicted_output, error, timed_out = execute_program(program, example['input'])
+                    predicted_output, error, timed_out = get_program_executor().execute_program_with_timeout(program, example['input'])
                     if predicted_output is not None and not error and not timed_out:
                         try:
                             # Validate that predicted_output is a valid 2D list structure with hashable elements
@@ -756,7 +656,7 @@ def main():
     
     # Get all log files (exclude summary files)
     # Support both flat logs/*.json and datetime subdirectories logs/*/
-    log_files = glob.glob("logs/*.json") + glob.glob("logs/*/*.json")
+    log_files = glob.glob("llm-python/logs/*.json") + glob.glob("llm-python/logs/*/*.json")
     log_files = [f for f in log_files if 'summary' not in f]
     
     # Filter by pattern if provided
