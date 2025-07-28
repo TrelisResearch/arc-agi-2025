@@ -2,6 +2,26 @@
 
 ## 28 July 2025 - CRITICAL BUG FIXES: Executor State Corruption
 
+---
+
+## 29 July 2025
+- [ ] Review of run_arc_tasks_soar.py
+  - [x] Ensure categories for each each result attempt are complete (i.e. test result, train result, api failures, api timeout, max length reached, code extraction failed, code execution failed.)
+  - [ ] Manual review of threading and timeouts.
+  - [ ] What does sglang do if a request is stopped? Does it continue - resulting in a build-up in the serverload? https://github.com/sgl-project/sglang/issues/3520 . SOLUTION FOR NOW IS JUST TO INCREASE THE TIMEOUTS.
+- [x] Evaluation on shortest 30 evaluation problems:
+  - [x] Soar model. 54%
+  - [x] Qwen Base. 7%
+  - [x] Qwen Base with reasoning. ~32%
+  - [x] Gemini. ~80%
+- [x] Full evaluation sets for arc-agi-1:
+  - [ ] Soar model.
+  - [x] Qwen Base. ~0.9%
+- [ ] Fine-tuning:
+    - [ ] Hoist utils. 
+    - [ ] Test a small dataset.
+- [ ] Data generation - Lewis doing this.
+
 ### 🚨 Issue: Systematic Execution Failures in Multi-Run Experiments
 
 **Symptoms Observed:**
@@ -73,27 +93,7 @@ self.executor = ProgramExecutor(timeout=0.5, executor_type="docker")
 **Technical Fix: Thread-Safe Cleanup**
 The original race condition occurred because 32 parallel threads could simultaneously trigger cleanup at milestones (100, 200 attempts), causing multiple Docker containers to be created with identical timestamp-based names. The proper solution: added `_cleanup_lock` to ensure only one thread can perform executor refresh at a time, maintaining the singleton pattern correctly.
 
----
-
-## 29 July 2025
-- [ ] Review of run_arc_tasks_soar.py
-  - [x] Ensure categories for each each result attempt are complete (i.e. test result, train result, api failures, api timeout, max length reached, code extraction failed, code execution failed.)
-  - [ ] Manual review of threading and timeouts.
-  - [ ] What does sglang do if a request is stopped? Does it continue - resulting in a build-up in the serverload? https://github.com/sgl-project/sglang/issues/3520 . SOLUTION FOR NOW IS JUST TO INCREASE THE TIMEOUTS.
-- [x] Evaluation on shortest 30 evaluation problems:
-  - [x] Soar model. 54%
-  - [x] Qwen Base. 7%
-  - [x] Qwen Base with reasoning. ~32%
-  - [x] Gemini. ~80%
-- [ ] Full evaluation sets for arc-agi-1:
-  - [ ] Soar model.
-  - [ ] Qwen Base.
-- [ ] Fine-tuning:
-    - [ ] Hoist utils. 
-    - [ ] Test a small dataset.
-- [ ] Data generation - Lewis doing this.
-
-### Test julien31/Soar-qwen-7b on full 400 evaluation tasks
+### Test julien31/Soar-qwen-7b on full 400 evaluation tasks - in UNSAFE MODE
 
 Startup a pod:
 ```bash
@@ -104,28 +104,7 @@ and then test on full 400 tasks:
 ```bash
 uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model julien31/Soar-qwen-7b --base-url http://38.80.152.249:30712/v1 --qwen-no-think --max-tokens 1000
 ```
-SUMMARY (Run 1)
-==================================================
-Dataset: arc-agi-1
-Subset: all_evaluation
-Model: julien31/Soar-qwen-7b
-Total tasks: 400
-Successful API calls: 400/400 (100.0%)
-Total tokens used: 12,907,107
-Total cost: $2.404975
-
-📊 CORE METRICS:
-  Pass@2 (Weighted Voting): 9.8%
-  Pass@2 (Train Majority):  9.8%
-  Oracle (Best Attempt):    10.5%
-  All Train Correct:        9.0%
-  Min 1 Train Correct:      21.2%
-  Max Length Responses:     2.5%
-  Timeout Responses:        0.0%
-  API Failure Responses:    0.0%
-
-Results saved to: /Users/ronanmcgovern/TR/arc-agi-2025/llm-python/logs/20250728_100744/20250728_101652_summary_arc-agi-1_all_evaluation_simple_run1.json
-
+TBD
 
 ### Test Qwen Base on full 400 evaluation tasks
 
@@ -137,25 +116,28 @@ and test on full 400 tasks (STRONGLY RECOMMEND USING MAX TOKENS AS THE MODEL BLA
 ```bash
 uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model qwen/qwen3-4b --base-url http://38.80.152.249:30707/v1 --qwen-no-think --max-tokens 1000
 ```
+============================================================
+MULTI-RUN AGGREGATE STATISTICS (3 runs)
+============================================================
 Dataset: arc-agi-1
 Subset: all_evaluation
 Model: qwen/qwen3-4b
-Total tasks: 400
-Successful API calls: 400/400 (100.0%)
-Total tokens used: 12,947,286
-Total cost: $2.423322
+Number of runs: 3
 
-📊 CORE METRICS:
-  Pass@2 (Weighted Voting): 0.5%
-  Pass@2 (Train Majority):  0.5%
-  Oracle (Best Attempt):    0.5%
-  All Train Correct:        0.2%
-  Min 1 Train Correct:      2.2%
-  Max Length Responses:     9.4%
-  Timeout Responses:        0.0%
-  API Failure Responses:    0.0%
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Max-Len
+--------------------------------------------------------------------------------
+1    400    1.0%       1.0%       1.0%     0.5%       3.8%        10.4%  
+2    400    1.0%       1.0%       1.2%     0.5%       3.8%        11.0%  
+3    400    0.8%       0.8%       1.0%     0.8%       3.5%        11.0%  
 
-Results saved to: /Users/ronanmcgovern/TR/arc-agi-2025/llm-python/logs/20250728_100807/20250728_101737_summary_arc-agi-1_all_evaluation_simple_run1.json
+AGGREGATE STATISTICS:
+--------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 0.9%
+  Std Dev: 0.1%
+  95% CI: [0.6%, 1.2%]
 
 ### Test Qwen Base with reasoning on shortest 30 evaluation tasks
 

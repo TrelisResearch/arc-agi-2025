@@ -844,8 +844,8 @@ class ARCTaskRunnerSimple:
             else:
                 print(f"⚠️ Task {task_id} has no valid attempts - skipping")
         
-        self.save_summary(results, subset_name, dataset)
-        return results
+        summary_filepath = self.save_summary(results, subset_name, dataset)
+        return results, summary_filepath
     
     def _display_task_summary(self, task_id: str, task_result: Dict):
         """Display a brief summary of a completed task"""
@@ -1006,6 +1006,7 @@ class ARCTaskRunnerSimple:
             print(f"  API Failure Responses:    {percentage_metrics['api_failure_responses']:.1%}")
         
         print(f"\nResults saved to: {filepath}")
+        return filepath
     
     def run_repeated_subset(self, subset_name: str, dataset: str = "arc-agi-1", limit: Optional[int] = None, repeat_runs: int = 3) -> List[List[Dict]]:
         """Run the same subset multiple times with completely independent runs"""
@@ -1044,13 +1045,10 @@ class ARCTaskRunnerSimple:
             
             try:
                 # Run the subset and let it save its own results
-                results = runner.run_subset(subset_name, dataset, limit)
+                results, summary_filepath = runner.run_subset(subset_name, dataset, limit)
                 print(f"\n✅ COMPLETED RUN {run_num}/{repeat_runs}")
                 
-                # Store the summary file path for later aggregation
-                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                summary_filename = f"{timestamp}_summary_{dataset}_{subset_name}_simple_run{run_num}.json"
-                summary_filepath = runner.logs_dir / summary_filename
+                # Store the actual summary file path that was created
                 run_files.append(summary_filepath)
                 
             except Exception as e:
@@ -1286,7 +1284,7 @@ def main():
         if args.repeat_runs > 1:
             runner.run_repeated_subset(args.subset, args.dataset, args.limit, args.repeat_runs)
         else:
-            runner.run_subset(args.subset, args.dataset, args.limit)
+            results, _ = runner.run_subset(args.subset, args.dataset, args.limit)
     finally:
         # Final cleanup to ensure clean shutdown
         with runner._cleanup_lock:  # Thread-safe cleanup

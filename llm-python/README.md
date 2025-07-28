@@ -851,6 +851,43 @@ All Turns Success Rate:
 - **A/B testing**: Compare different models, reasoning efforts, or configurations
 - **Confidence intervals**: Understand the uncertainty in your performance measurements
 
+## Retrospective Log Analysis
+
+The `read_log_stats.py` script provides retrospective analysis of experiment logs with aggregate statistics across multiple runs.
+
+### Usage Examples
+
+```bash
+# Analyze specific log directories
+uv run python read_log_stats.py logs/20250728_113731 logs/20250728_114716 logs/20250728_115648
+
+# Auto-discover logs by date pattern
+uv run python read_log_stats.py --pattern 20250728
+
+# Verbose mode for file details
+uv run python read_log_stats.py logs/20250728_113731 --verbose
+```
+
+### Key Features
+
+- **Multi-directory aggregation**: Combine statistics from multiple experiment runs
+- **Auto-discovery**: Find log directories by date patterns
+- **Comprehensive metrics**: Mean, standard deviation, 95% confidence intervals
+- **Individual and aggregate views**: See both per-run results and overall statistics
+- **Filtering**: Automatically excludes aggregate summary files to prevent double-counting
+
+### Output Example
+
+```
+📊 Found 3 summary file(s) total
+Weighted Voting Pass2:
+  Mean: 0.9%
+  Std Dev: 0.1%
+  95% CI: [0.6%, 1.2%]
+```
+
+**Use cases**: Performance analysis, model comparison, experiment validation, statistical reporting
+
 
 
 ## Parallelization
