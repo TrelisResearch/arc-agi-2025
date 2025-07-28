@@ -26,6 +26,7 @@ Runpod One-click-template [here](https://console.runpod.io/deploy?template=agyu4
 - Support for custom API endpoints (Claude, Qwen, DeepSeek, local models, etc.)
 - Multi-turn execution with training examples feedback
 - **Simplified timeout system** with automatic calculation (120s/1200s API timeout, 3 attempts per turn)
+- **Transductive detection** - automatically detects and excludes cheating/hardcoded programs
 - Comprehensive scoring including pixel accuracy and binary correctness
 - Budget tracking with token usage and cost estimation
 - Detailed logging of all runs for analysis
