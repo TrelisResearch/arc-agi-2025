@@ -1221,7 +1221,7 @@ class ARCTaskRunnerSimple:
 
 def main():
     parser = argparse.ArgumentParser(description="Run ARC tasks with all-attempts, rolling execution, and voting-based evaluation")
-    parser.add_argument("--dataset", default="arc-agi-1", choices=["arc-agi-1", "arc-agi-2"], help="Dataset to use")
+    parser.add_argument("--dataset", default="arc-agi-1", choices=["arc-agi-1", "arc-agi-1r", "arc-agi-2"], help="Dataset to use")
     parser.add_argument("--subset", default="shortest_1", help="Subset name")
     parser.add_argument("--model", default="gpt-4.1-mini", help="Model to use")
     parser.add_argument("--limit", type=int, help="Limit number of tasks to run")
