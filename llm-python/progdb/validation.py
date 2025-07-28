@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import re
 from .schema import TrainingExample
 from ..utils.scoring import ProgramExecutor
 from ..utils.task_loader import TaskLoader
@@ -9,49 +8,6 @@ from ..utils.transduction import is_transduction_cheating
 # Initialize utilities
 task_loader = TaskLoader()
 program_executor = ProgramExecutor(timeout=0.5)
-
-
-def strip_comments_aggressive(source_code: str) -> str:
-    """Strip comments and clean up whitespace."""
-    if not source_code.strip():
-        return source_code
-
-    try:
-        lines = source_code.split("\n")
-        cleaned_lines = []
-
-        for line in lines:
-            stripped = line.strip()
-            # Skip empty lines and comment-only lines
-            if not stripped or stripped.startswith("#"):
-                continue
-
-            # Remove inline comments but preserve the code part
-            if "#" in line:
-                # Find the # that's not inside a string literal
-                in_string = False
-                quote_char = None
-                for i, char in enumerate(line):
-                    if char in ['"', "'"] and (i == 0 or line[i - 1] != "\\"):
-                        if not in_string:
-                            in_string = True
-                            quote_char = char
-                        elif char == quote_char:
-                            in_string = False
-                            quote_char = None
-                    elif char == "#" and not in_string:
-                        line = line[:i].rstrip()
-                        break
-
-            cleaned_lines.append(line)
-
-        # Join lines and normalize whitespace
-        result = "\n".join(cleaned_lines)
-        result = re.sub(r"\n\s*\n\s*\n+", "\n\n", result)
-        return result.strip()
-
-    except Exception as e:
-        raise RuntimeError(f"Error in comment stripping: {e}")
 
 
 def validate_program(program_data: TrainingExample) -> None:

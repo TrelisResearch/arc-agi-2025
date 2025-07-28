@@ -10,7 +10,8 @@ import multiprocessing
 import pandas as pd
 
 from .schema import TrainingExample
-from .validation import strip_comments_aggressive, validate_program
+from .validation import validate_program
+from .code import strip_comments
 from ..utils.scoring import ProgramExecutor
 from ..utils.task_loader import TaskLoader
 
@@ -206,13 +207,18 @@ def process_log_file(log_file: str) -> List[TrainingExample]:
         try:
             # Clean code
             original_code = program["code"]
-            cleaned_code = strip_comments_aggressive(original_code)
+            cleaned_code = strip_comments(original_code)
             
             # Test that cleaned code still compiles
             try:
                 compile(cleaned_code, "<cleaned>", "exec")
                 program["code"] = cleaned_code
             except SyntaxError:
+                try:
+                    compile(original_code, "<original>", "exec")
+                    print(f"Warning: Cleaned code from {log_file} failed to compile, keeping original.")
+                except SyntaxError:
+                    pass
                 # Keep original if cleaning breaks it
                 pass
             
@@ -221,39 +227,12 @@ def process_log_file(log_file: str) -> List[TrainingExample]:
             validate_program(program)
             validated_programs.append(program)
             
-        except Exception:
+        except Exception as e:
             # Program failed validation, skip it
+            print(f"Warning: Program from {log_file} failed validation: {e}")
             continue
     
     return validated_programs
-
-
-def deduplicate_programs(programs: List[TrainingExample]) -> List[TrainingExample]:
-    """Simple deduplication by exact code match within each task."""
-    task_groups: Dict[str, List[TrainingExample]] = {}
-    
-    # Group by task_id
-    for program in programs:
-        task_id = program["task_id"]
-        if task_id not in task_groups:
-            task_groups[task_id] = []
-        task_groups[task_id].append(program)
-    
-    deduplicated = []
-    total_removed = 0
-    
-    for task_id, task_programs in task_groups.items():
-        seen_codes = set()
-        for program in task_programs:
-            code = program["code"]
-            if code not in seen_codes:
-                seen_codes.add(code)
-                deduplicated.append(program)
-            else:
-                total_removed += 1
-    
-    print(f"Deduplication: removed {total_removed} duplicate programs")
-    return deduplicated
 
 
 def main():
@@ -261,8 +240,8 @@ def main():
     parser.add_argument(
         "--logs-pattern", 
         type=str, 
-        default="gcs/logs/*.json",
-        help="Glob pattern for log files (default: gcs/logs/*.json)"
+        default="logs/**/*.json",
+        help="Glob pattern for log files (default: logs/**/*.json)"
     )
     parser.add_argument(
         "--output", 
@@ -274,11 +253,11 @@ def main():
     args = parser.parse_args()
 
     # Calculate number of workers (total cores - 2, minimum 1)
-    max_workers = max(1, multiprocessing.cpu_count() - 2)
+    max_workers = 1 #max(1, multiprocessing.cpu_count() - 2)
     print(f"Using {max_workers} worker processes (total cores: {multiprocessing.cpu_count()})")
 
     # Find log files
-    log_files = glob.glob(args.logs_pattern)
+    log_files = glob.glob(args.logs_pattern, recursive=True)
     if not log_files:
         print(f"No log files found matching pattern: {args.logs_pattern}")
         return
@@ -312,11 +291,6 @@ def main():
                 print(f"  Warning: Error processing {log_file}: {e}")
 
     print(f"Extracted and validated {len(all_programs)} programs from {len(log_files)} files")
-
-    # Deduplicate programs
-    if all_programs:
-        print("Deduplicating programs...")
-        all_programs = deduplicate_programs(all_programs)
 
     # Convert to DataFrame and save as parquet
     if all_programs:
