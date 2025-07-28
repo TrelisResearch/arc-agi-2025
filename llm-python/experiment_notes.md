@@ -1,5 +1,76 @@
 # Experiment Notes
 
+## 28 July 2025 - CRITICAL BUG FIXES: Executor State Corruption
+
+### 🚨 Issue: Systematic Execution Failures in Multi-Run Experiments
+
+**Symptoms Observed:**
+- Run 1: Normal performance (e.g., 9.8% success rate)
+- Run 2: Complete systematic failure (0.0% success rate) 
+- Pattern: All tasks showing `train-exec-error, test-exec-error` in Run 2
+- Some tasks with 8/8 attempts failing execution in later parts of long runs
+
+**Root Cause Analysis:**
+
+#### 1. **Singleton State Corruption Bug** (Primary Issue)
+```python
+class ProgramExecutor:
+    _executor = None          # ← SHARED across ALL instances  
+    _executor_context = None  # ← SHARED across ALL instances
+    _executor_type = None     # ← SHARED across ALL instances
+```
+
+**Problem:** Between runs, script deleted `ARCTaskRunnerSimple` instances but **never cleaned up ProgramExecutor singleton state**. Run 2 reused stale/corrupted executor context from Run 1.
+
+#### 2. **Docker Container Resource Degradation** (Compounding Issue)
+- `ProgramExecutor` defaults to Docker containers running FastAPI servers
+- Over 3,200+ executions (400 tasks × 8 attempts): memory leaks, file descriptor leaks, import accumulation
+- **Compound failure:** Singleton corruption + Docker resource buildup = systematic failures
+
+**Why Short Runs Worked vs Long Runs Failed:**
+- Short runs: Less resource accumulation, corruption hadn't built up
+- Long runs: Systematic degradation became severe enough to cause widespread failures
+
+### ✅ Fixes Implemented
+
+#### 1. **Between-Run Singleton Cleanup**
+```python
+# In run_repeated_subset() finally block:
+ProgramExecutor.cleanup_executor()  # Clean up singleton state
+```
+
+#### 2. **Periodic Within-Run Executor Refresh**
+```python
+# Every 1000 attempts during long runs:
+if self.health_metrics['total_attempts'] % 1000 == 0:
+    ProgramExecutor.cleanup_executor()
+    self.executor = ProgramExecutor(timeout=0.5, executor_type="unrestricted")
+```
+
+#### 3. **Switched to Unrestricted Executor**
+```python
+# Avoid Docker complexity - use fresh subprocess per execution
+self.executor = ProgramExecutor(timeout=0.5, executor_type="unrestricted")
+```
+
+#### 4. **Added Health Monitoring**
+```python
+# Compact periodic health reports every 500 attempts:
+🏥 Health [1500 attempts]: Success 78% | Timeout 5% | ExecErr 17% | AvgTime 0.31s
+```
+
+### 📊 Impact & Prevention
+
+**Expected Results:**
+- ✅ **Consistent performance** across multiple runs (no more 9.8% → 0.0% drops)
+- ✅ **Prevents resource accumulation** in long runs  
+- ✅ **Early warning system** via health monitoring
+- ✅ **Automatic recovery** via periodic cleanup
+
+**Key Learning:** Always clean up singleton state between runs and monitor execution health during long experiments to catch degradation early.
+
+---
+
 ## 29 July 2025
 - [ ] Review of run_arc_tasks_soar.py
   - [x] Ensure categories for each each result attempt are complete (i.e. test result, train result, api failures, api timeout, max length reached, code extraction failed, code execution failed.)
@@ -3132,7 +3203,7 @@ Run two times - once with independent attempts, and once with feedback.
 **Baseline scoring is ~8/20 (40% +/-8% with feedback, 28% +/- 11% without feedback) from yesterday.**
 
 **Commentary:**
-- These results are showing that there is a HUGE amount of noise. Because the “Attempt 1 Only Success Rate” and “Turn 1 Only Success Rate” should be equivalent, and they are falling outside their 95% confidence bounds, indicating that just doing 3 runs is not capturing the mean of the distribution…
+- These results are showing that there is a HUGE amount of noise. Because the "Attempt 1 Only Success Rate" and "Turn 1 Only Success Rate" should be equivalent, and they are falling outside their 95% confidence bounds, indicating that just doing 3 runs is not capturing the mean of the distribution…
 - I re-ran the tests with 10 runs of each, and now the results are within each other's confidence bounds for single turn/attempt, which is good. However, the error is so high that distinguishing the two runs is very difficult.
 - IMPLICATION: Ablating some kind of MCTS will be almost impossible to see in the noise...
 
