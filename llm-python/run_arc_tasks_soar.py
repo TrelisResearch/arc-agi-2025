@@ -92,7 +92,7 @@ class ARCTaskRunnerSimple:
     def __init__(self, model: str = "gpt-4.1-nano", max_workers: int = 1, rate_limit_delay: float = 0.0, 
                  max_attempts: int = 8, run_number: int = 0, base_url: str = None, debug: bool = False, 
                  max_tokens: int = None, temperature: float = None, reasoning_effort: str = "low", 
-                 qwen_no_think: bool = False, prompt_version: str = "soar"):
+                 qwen_no_think: bool = False, prompt_version: str = "soar", unsafe_executor: bool = False):
         self.model = model
         self.max_workers = max_workers
         self.rate_limit_delay = rate_limit_delay
@@ -106,6 +106,11 @@ class ARCTaskRunnerSimple:
         self.debug = debug
         self.max_tokens = max_tokens
         self.temperature = temperature
+        
+        # Set executor type based on safety flag
+        self.executor_type = "unrestricted" if unsafe_executor else "docker"
+        if unsafe_executor:
+            print("⚠️  WARNING: Using unrestricted executor - generated code will run directly on your system!")
         
         # Calculate timeouts based on model configuration
         self.api_timeout = 600 if self.qwen_no_think else 1200
@@ -123,8 +128,16 @@ class ARCTaskRunnerSimple:
         # Initialize fresh instances to prevent state leakage
         self.task_loader = TaskLoader()
         self.scorer = GridScorer()
-        self.executor = ProgramExecutor(timeout=0.5, executor_type="docker")
+        self.executor = ProgramExecutor(timeout=0.5, executor_type=self.executor_type)
         self.prompt_loader = PromptLoader()
+        
+        # Thread-safe cost tracking
+        self._cost_lock = threading.Lock()
+        self.total_cost = 0.0
+        self.total_tokens = 0
+        
+        # Thread-safe cleanup to prevent race conditions during executor refresh
+        self._cleanup_lock = threading.Lock()
         
         # Health monitoring for long runs
         self.health_metrics = {
@@ -134,7 +147,7 @@ class ARCTaskRunnerSimple:
             'exec_errors': 0,
             'exec_times': [],
             'recent_window': 100,  # Rolling window size
-            'report_interval': 500  # Report every N attempts
+            'report_interval': 100  # Report every N attempts (right before cleanup)
         }
         
         # Create logs directory with timestamped subfolder
@@ -142,11 +155,6 @@ class ARCTaskRunnerSimple:
         self.logs_dir = Path(__file__).parent / "logs" / timestamp
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         print(f"📁 Logs will be saved to: {self.logs_dir}")
-        
-        # Thread-safe cost and token tracking
-        self._cost_lock = threading.Lock()
-        self.total_cost = 0.0
-        self.total_tokens = 0
     
     def _update_costs(self, cost: float, tokens: int):
         """Thread-safe method to update total costs and tokens"""
@@ -562,15 +570,19 @@ class ARCTaskRunnerSimple:
         if self.health_metrics['total_attempts'] % self.health_metrics['report_interval'] == 0:
             self._print_health_report()
         
-        # Periodic executor cleanup to prevent degradation (every 1000 attempts)
-        if self.health_metrics['total_attempts'] % 1000 == 0:
-            try:
-                print(f"🔄 Periodic executor cleanup at {self.health_metrics['total_attempts']} attempts")
-                ProgramExecutor.cleanup_executor()
-                self.executor = ProgramExecutor(timeout=0.5, executor_type="docker")
-                print("✅ Executor refreshed")
-            except Exception as cleanup_e:
-                print(f"⚠️ Executor cleanup failed: {cleanup_e}")
+        # Periodic executor cleanup to prevent degradation (every 100 attempts)
+        if self.health_metrics['total_attempts'] % 100 == 0:
+            # Thread-safe cleanup - only one thread can perform cleanup at a time
+            with self._cleanup_lock:
+                # Double-check the count after acquiring lock (another thread might have just cleaned up)
+                if self.health_metrics['total_attempts'] % 100 == 0:
+                    try:
+                        print(f"🔄 Periodic executor cleanup at {self.health_metrics['total_attempts']} attempts")
+                        ProgramExecutor.cleanup_executor()
+                        self.executor = ProgramExecutor(timeout=0.5, executor_type=self.executor_type)
+                        print("✅ Executor refreshed")
+                    except Exception as cleanup_e:
+                        print(f"⚠️ Executor cleanup failed: {cleanup_e}")
         
         return {
             'task_id': task_id,
@@ -645,7 +657,10 @@ class ARCTaskRunnerSimple:
             print("Sampling Parameters: (using model defaults)")
         
         # Display executor type
-        print(f"Executor: {self.executor.executor_type} (timeout: {self.executor.timeout}s)")
+        executor_info = f"Executor: {self.executor.executor_type} (timeout: {self.executor.timeout}s)"
+        if self.executor.executor_type == "unrestricted":
+            executor_info += " ⚠️  UNSAFE MODE"
+        print(executor_info)
         
         print("-" * 50)
         
@@ -1023,7 +1038,8 @@ class ARCTaskRunnerSimple:
                 temperature=self.temperature,
                 reasoning_effort=self.reasoning_effort,
                 qwen_no_think=self.qwen_no_think,
-                prompt_version=self.prompt_version
+                prompt_version=self.prompt_version,
+                unsafe_executor=(self.executor_type == "unrestricted")
             )
             
             try:
@@ -1044,12 +1060,13 @@ class ARCTaskRunnerSimple:
                 # Explicit cleanup to prevent state leakage
                 # ProgramExecutor uses singleton class variables that persist across instances
                 # Without cleanup, second run reuses stale executor context causing systematic failures
-                try:
-                    ProgramExecutor.cleanup_executor()  # Fix: Clean up singleton state
-                    if run_num < repeat_runs:  # Only print for non-final runs
-                        print(f"🧹 Cleaned up executor state after run {run_num}")
-                except Exception as cleanup_e:
-                    print(f"⚠️ Failed to cleanup executor state: {cleanup_e}")
+                with self._cleanup_lock:  # Thread-safe cleanup
+                    try:
+                        ProgramExecutor.cleanup_executor()  # Fix: Clean up singleton state
+                        if run_num < repeat_runs:  # Only print for non-final runs
+                            print(f"🧹 Cleaned up executor state after run {run_num}")
+                    except Exception as cleanup_e:
+                        print(f"⚠️ Failed to cleanup executor state: {cleanup_e}")
                 del runner
                 gc.collect()
         
@@ -1234,6 +1251,8 @@ def main():
     parser.add_argument("--temperature", type=float, help="Temperature for model responses")
     parser.add_argument("--reasoning_effort", type=str, default="low", help="Reasoning effort for OpenAI models")
     parser.add_argument("--qwen-no-think", action="store_true", help="Disable thinking for Qwen models")
+    parser.add_argument("--unsafe-executor", action="store_true", 
+                        help="⚠️  UNSAFE: Use unrestricted executor (no Docker sandboxing). Generated code runs directly on your system. SECURITY RISK!")
     parser.add_argument("--prompt_version", type=str, default="soar", help="Version of prompts to use")
     
     args = parser.parse_args()
@@ -1259,7 +1278,8 @@ def main():
         temperature=args.temperature,
         reasoning_effort=args.reasoning_effort,
         qwen_no_think=args.qwen_no_think,
-        prompt_version=args.prompt_version
+        prompt_version=args.prompt_version,
+        unsafe_executor=args.unsafe_executor
     )
     
     try:
@@ -1269,10 +1289,11 @@ def main():
             runner.run_subset(args.subset, args.dataset, args.limit)
     finally:
         # Final cleanup to ensure clean shutdown
-        try:
-            ProgramExecutor.cleanup_executor()
-        except Exception as e:
-            print(f"⚠️ Final cleanup warning: {e}")
+        with runner._cleanup_lock:  # Thread-safe cleanup
+            try:
+                ProgramExecutor.cleanup_executor()
+            except Exception as e:
+                print(f"⚠️ Final cleanup warning: {e}")
 
 if __name__ == "__main__":
     main() 

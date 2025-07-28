@@ -90,9 +90,9 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --r
 - **True Parallelization**: All attempts across all tasks run simultaneously for maximum efficiency
 - **Real-time Task Summaries**: Displays brief statistics for each task as it completes (test-correct, train-perfect, train-partial counts)
 - **Real-time Logging**: Individual task logs are saved immediately when each task completes, not at the end of the run
-- **Health Monitoring**: Periodic health reports showing execution success rates, timeout rates, and average execution times
-- **Automatic Executor Cleanup**: Periodic cleanup every 1000 attempts prevents resource degradation in long runs
-- **Secure Docker Execution**: All generated code runs in isolated Docker containers for security
+- **Health Monitoring**: Health reports every 100 attempts (right before each cleanup) showing execution success rates, timeout rates, and average execution times
+- **Automatic Executor Cleanup**: Thread-safe periodic cleanup every 100 attempts prevents resource degradation in long runs
+- **Secure Docker Execution**: All generated code runs in isolated Docker containers for security (can be disabled with `--unsafe-executor` flag for testing)
 - **Voting Algorithms (Pass@2)**: 
   - **Weighted majority voting**: Uses pattern frequency + 1000×train_accuracy, returns top 2 patterns
   - **Train-majority voting**: Among best-training-accuracy attempts, majority vote for top 2 patterns
@@ -105,7 +105,7 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --r
   - **Other endpoints**: Uses `top_k=50` and `top_p=0.9` defaults
 - **Optimized File I/O**: 30-second timeout for file operations with detailed error logging for debugging
 - **Independent Multiple Runs**: Each repeated run is completely isolated with no shared state - results loaded from files for aggregation
-- **Robust State Management**: Explicit garbage collection and cleanup between runs prevents state spillover
+- **Robust State Management**: Explicit garbage collection and thread-safe cleanup between runs prevents state spillover and race conditions
 
 **When to use:**
 - For comprehensive evaluation with statistical rigor
@@ -113,6 +113,53 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --r
 - For maximum parallelization efficiency with high worker counts
 - For systematic comparison of multiple attempts per task
 - When you need real-time progress updates as tasks complete
+
+### Health Monitoring
+
+The tool automatically monitors execution health during long runs and displays periodic reports:
+
+```bash
+🏥 Health [100 attempts]: Success 78% | Timeout 5% | ExecErr 17% | AvgTime 0.31s
+🔄 Periodic executor cleanup at 100 attempts
+✅ Executor refreshed
+```
+
+**Health Metrics Explained:**
+- **Success %**: Programs that execute without timeout/error
+- **Timeout %**: Programs that exceed the 0.5s execution limit  
+- **ExecErr %**: Programs with runtime errors
+- **AvgTime**: Average total time per attempt (API + execution + processing)
+
+**Automatic Cleanup**: Every 100 attempts, the Docker executor is thread-safely cleaned and refreshed to prevent resource degradation. Uses dedicated locking to prevent race conditions when multiple threads simultaneously reach cleanup milestones in high-parallelization scenarios.
+
+### Security and Execution Safety
+
+By default, the tool runs all generated code in **isolated Docker containers** for maximum security. This prevents generated code from:
+- Accessing or modifying your files
+- Making unauthorized network requests  
+- Executing system commands
+- Stealing environment variables or API keys
+
+#### Unsafe Executor Mode (`--unsafe-executor`)
+
+For testing purposes in isolated environments, you can disable Docker sandboxing with the `--unsafe-executor` flag. **This is dangerous and should only be used when:**
+
+✅ **Safe to use:**
+- Testing in disposable VMs or containers
+- Running in isolated development environments
+- Debugging executor issues when Docker is problematic
+
+❌ **Never use in production or on your main system:**
+- Generated code runs directly on your system
+- Full access to your filesystem and network
+- Potential for data theft or system compromise
+- No protection against malicious code execution
+
+**Warning signs when using `--unsafe-executor`:**
+```bash
+⚠️  WARNING: Using unrestricted executor - generated code will run directly on your system!
+Executor: unrestricted (timeout: 0.5s) ⚠️  UNSAFE MODE
+```
 
 ### Advanced Usage
 
@@ -138,6 +185,9 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_traini
 # Set specific token limit for responses (overrides reasoning effort defaults)
 uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10 --model gpt-4.1-mini --max-tokens 2000
 
+# Use unrestricted executor (UNSAFE - for testing only in isolated environments)
+uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10 --unsafe-executor
+
 # Available options:
 #   --dataset: arc-agi-1 or arc-agi-2
 #   --subset: shortest_training_1, shortest_training_10, shortest_training_30, shortest_evaluation_1, shortest_evaluation_10, shortest_evaluation_30, etc.
@@ -150,6 +200,7 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_traini
 #   --max_workers: Number of parallel workers (default: 1, efficient up to 50+)
 #   --repeat-runs: Number of times to repeat the entire test (default: 1, max: 10)
 #   --qwen-no-think: Disable thinking for Qwen models (sets enable_thinking=false in chat_template_kwargs)
+#   --unsafe-executor: ⚠️ UNSAFE: Use unrestricted executor (no Docker sandboxing) - SECURITY RISK!
 ```
 
 ### Reasoning Effort Support
@@ -846,6 +897,7 @@ uv run python -m llm-python.run_arc_tasks --max_workers 5 --rate_limit_delay 0.5
 
 - **ThreadPoolExecutor**: Runs individual attempts in parallel across worker threads
 - **Thread-safe locks**: Protect shared state (costs, progress counters, result collection)
+- **Thread-safe executor cleanup**: Dedicated locking prevents race conditions during periodic Docker container refresh
 - **Atomic operations**: Each attempt executes independently with no shared state
 - **Safe result aggregation**: Uses thread-safe data structures and synchronization
 
@@ -1177,11 +1229,24 @@ Model: o4-mini
 API: Responses API (multi-turn, max 3 turns)
 Input mode: Text-only
 Parallelization: DISABLED (sequential execution)
+Executor: docker (timeout: 0.5s)
 --------------------------------------------------
 
 Processing task: 6150a2bd
   💰 Cost: $0.019646 (input: 1089 @ $1.1, output: 4321 @ $4.4)
   ✅ Perfect solution found!
+```
+
+### Unsafe Executor Warning
+```
+⚠️  WARNING: Using unrestricted executor - generated code will run directly on your system!
+Running 10 tasks from arc-agi-1/shortest_10
+Model: o4-mini
+API: Responses API (multi-turn, max 3 turns)
+Input mode: Text-only
+Parallelization: DISABLED (sequential execution)
+Executor: unrestricted (timeout: 0.5s) ⚠️  UNSAFE MODE
+--------------------------------------------------
 ```
 
 ### Parallel Execution
@@ -1191,6 +1256,7 @@ Model: o4-mini
 API: Responses API (multi-turn, max 3 turns)
 Input mode: Text-only
 Parallelization: ENABLED (5 workers)
+Executor: docker (timeout: 0.5s)
 --------------------------------------------------
 Starting parallel execution with 5 workers...
 Progress: 3/10 tasks completed (30.0%)

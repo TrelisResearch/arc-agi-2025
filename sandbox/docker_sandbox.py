@@ -5,6 +5,7 @@ Docker-based Python code executor with isolated environment.
 import time
 import pickle
 import base64
+import random
 from docker import DockerClient
 import requests
 import atexit
@@ -104,13 +105,14 @@ class DockerSandboxExecutor(BaseExecutor):
             # Find an available port
             self.host_port = self._find_available_port()
             
-            # Start the container
+            # Start the container with unique name (timestamp + random to prevent conflicts)
+            unique_id = f"{int(time.time())}_{random.randint(10000, 99999)}"
             self.container = self.client.containers.run(
                 self.image_name,
                 ports={f'{self.container_port}/tcp': self.host_port},
                 detach=True,
                 remove=True,  # Auto-remove when stopped
-                name=f"python-sandbox-{int(time.time())}"
+                name=f"python-sandbox-{unique_id}"
             )
             
             # Container started successfully - no need to print
@@ -215,7 +217,12 @@ class DockerSandboxExecutor(BaseExecutor):
             if self.container:
                 try:
                     self.container.stop(timeout=5)
-                    # Container stopped successfully - no need to print
+                    # Explicitly remove container to ensure cleanup (even though remove=True should handle this)
+                    try:
+                        self.container.remove(force=True)
+                    except Exception as remove_e:
+                        # Container might already be auto-removed, which is fine
+                        pass
                 except Exception as e:
                     print(f"Error stopping container: {e}")
                 finally:

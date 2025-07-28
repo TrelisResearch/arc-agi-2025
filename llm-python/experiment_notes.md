@@ -41,8 +41,8 @@ ProgramExecutor.cleanup_executor()  # Clean up singleton state
 
 #### 2. **Periodic Within-Run Executor Refresh**
 ```python
-# Every 1000 attempts during long runs:
-if self.health_metrics['total_attempts'] % 1000 == 0:
+# Every 100 attempts during long runs:
+if self.health_metrics['total_attempts'] % 100 == 0:
     ProgramExecutor.cleanup_executor()
     self.executor = ProgramExecutor(timeout=0.5, executor_type="docker")
 ```
@@ -55,8 +55,9 @@ self.executor = ProgramExecutor(timeout=0.5, executor_type="docker")
 
 #### 4. **Added Health Monitoring**
 ```python
-# Compact periodic health reports every 500 attempts:
-🏥 Health [1500 attempts]: Success 78% | Timeout 5% | ExecErr 17% | AvgTime 0.31s
+# Health reports every 100 attempts (right before cleanup):
+🏥 Health [100 attempts]: Success 78% | Timeout 5% | ExecErr 17% | AvgTime 0.31s
+🔄 Periodic executor cleanup at 100 attempts
 ```
 
 ### 📊 Impact & Prevention
@@ -69,6 +70,9 @@ self.executor = ProgramExecutor(timeout=0.5, executor_type="docker")
 
 **Key Learning:** Always clean up singleton state between runs and monitor execution health during long experiments to catch degradation early.
 
+**Technical Fix: Thread-Safe Cleanup**
+The original race condition occurred because 32 parallel threads could simultaneously trigger cleanup at milestones (100, 200 attempts), causing multiple Docker containers to be created with identical timestamp-based names. The proper solution: added `_cleanup_lock` to ensure only one thread can perform executor refresh at a time, maintaining the singleton pattern correctly.
+
 ---
 
 ## 29 July 2025
@@ -79,7 +83,7 @@ self.executor = ProgramExecutor(timeout=0.5, executor_type="docker")
 - [x] Evaluation on shortest 30 evaluation problems:
   - [x] Soar model. 54%
   - [x] Qwen Base. 7%
-  - [x] Qwen Base with reasoning. ~33%
+  - [x] Qwen Base with reasoning. ~32%
   - [x] Gemini. ~80%
 - [ ] Full evaluation sets for arc-agi-1:
   - [ ] Soar model.
@@ -87,10 +91,7 @@ self.executor = ProgramExecutor(timeout=0.5, executor_type="docker")
 - [ ] Fine-tuning:
     - [ ] Hoist utils. 
     - [ ] Test a small dataset.
-- [ ] Data generation (lewis):
-    - [ ] Hoist utils. Already available! Need to make use of them in the data generation script generate_training_data.py
-    - [ ] Integrate validation.
-    - [ ] Test a small dataset.
+- [ ] Data generation - Lewis doing this.
 
 ### Test julien31/Soar-qwen-7b on full 400 evaluation tasks
 
@@ -166,6 +167,25 @@ uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path qwen/qwen3-4b --reaso
 ```bash
 uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_30 --repeat-runs 3 --max_workers 16 --max_attempts 8 --model qwen/qwen3-4b --base-url http://38.80.152.249:30742/v1
 ```
+Dataset: arc-agi-1
+Subset: shortest_evaluation_30
+Model: qwen/qwen3-4b
+Number of runs: 3
+Valid runs: 2
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Max-Len 
+----------------------------------------------------------------------------------
+1    30     33.3%      33.3%      33.3%    33.3%      53.3%       0.0%    
+3    30     30.0%      30.0%      30.0%    33.3%      66.7%       0.0%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 31.7%
+  Std Dev: 2.4%
+  95% CI: [27.0%, 36.3%]
 
 ## 26-28 July 2025
 - [x] Review code and consolidate into one run_arc_tasks_soar.py script
