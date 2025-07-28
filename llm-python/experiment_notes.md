@@ -31,6 +31,7 @@
 **Commentary:**
 - Soar model performance is ~28% on all_evaluation for arc-agi-1. Makes me wonder if this was trained on all_train or also on test-time data.
 - Notice also that the test performance is higher than all-train… suggesting that there are tasks where the program is correct on part of training AND test, but not all training… which is… interestign
+- Models are weaker solving in reverse than in a forward direction. The problems solved seem to be a subset of what is solved in the forward direction. Still, this may allow for further data that can be used in augmentations.
 
 ### Creating a reversed data split
 I've reversed the data split for arc-agi-1, so input grids are output grids. "r" is appended to each task name for "reversed".
