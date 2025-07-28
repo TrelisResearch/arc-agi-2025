@@ -21,7 +21,20 @@
     - [ ] Integrate validation.
     - [ ] Test a small dataset.
 
+### Test Qwen Base on full 400 evaluation tasks
+
+Startup up a qwen pod:
+```bash
+uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path qwen/qwen3-4b --reasoning-parser qwen3
+```
+
 ### Test Qwen Base with reasoning on shortest 30 evaluation tasks
+
+Startup up a qwen pod:
+```bash
+uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path qwen/qwen3-4b --reasoning-parser qwen3
+```
+
 ```bash
 uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_30 --repeat-runs 3 --max_workers 16 --max_attempts 8 --model qwen/qwen3-4b --base-url http://38.80.152.249:30742/v1
 ```

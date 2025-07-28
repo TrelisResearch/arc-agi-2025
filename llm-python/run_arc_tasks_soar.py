@@ -105,14 +105,18 @@ class ARCTaskRunnerSimple:
         self.max_tokens = max_tokens
         self.temperature = temperature
         
-        # Initialize OpenAI client with timeout
-        client_timeout = 2400.0  # 40 minutes max per HTTP request
+        # Calculate timeouts based on model configuration
+        self.api_timeout = 120 if self.qwen_no_think else 1200
+        client_timeout = self.api_timeout + 300  # Buffer for retries/overhead
+        self.worker_timeout = 2 * self.api_timeout  # Ample time for parallel execution
+        
+        # Initialize OpenAI client with calculated timeout
         if base_url:
             self.client = OpenAI(api_key=self.api_key, base_url=base_url, timeout=client_timeout)
-            print(f"📝 Using custom endpoint: {base_url} (timeout: {client_timeout}s)")
+            print(f"📝 Using custom endpoint: {base_url} (timeouts: API={self.api_timeout}s, Client={client_timeout}s, Worker={self.worker_timeout}s)")
         else:
             self.client = OpenAI(api_key=self.api_key, timeout=client_timeout)
-            print(f"📝 Using OpenAI endpoint (timeout: {client_timeout}s)")
+            print(f"📝 Using OpenAI endpoint (timeouts: API={self.api_timeout}s, Client={client_timeout}s, Worker={self.worker_timeout}s)")
         
         # Initialize fresh instances to prevent state leakage
         self.task_loader = TaskLoader()
@@ -324,15 +328,9 @@ class ARCTaskRunnerSimple:
         error = None
         timed_out = False
         
-        # Set timeout based on model configuration
-        if self.qwen_no_think:
-            api_timeout =120  # Faster for no-think mode
-        else:
-            api_timeout = 1200  # Longer timeout for reasoning models
-        
         for retry_attempt in range(3):
             try:
-                result = execute_with_timeout(self.call_chat_completions_api, conversation_history, timeout=api_timeout)
+                result = execute_with_timeout(self.call_chat_completions_api, conversation_history, timeout=self.api_timeout)
                 response, api_kwargs = result
                 api_call_successful = True
                 break
@@ -434,10 +432,6 @@ class ARCTaskRunnerSimple:
         
         test_correct = (test_pred == test_expected) if (test_pred is not None and not test_err and not test_tout) else False
         
-        # Check for attempt-level timeout (total attempt time > 350s)
-        attempt_duration = (datetime.datetime.now() - attempt_start_time).total_seconds()
-        attempt_timeout = attempt_duration > 350.0  # Allow some buffer beyond API timeout
-        
         # Store attempt details
         attempt_detail = {
             'attempt_number': attempt_num + 1,
@@ -465,7 +459,6 @@ class ARCTaskRunnerSimple:
             'api_timeout': timed_out,
             'empty_response': empty_response,
             'hit_max_tokens': hit_max_tokens,
-            'attempt_timeout': attempt_timeout,
             'error': error
         }
         
@@ -571,7 +564,7 @@ class ARCTaskRunnerSimple:
                 result = self.run_single_attempt(task_id, task_data, attempt_num, dataset, subset_name)
                 attempt_duration = time.time() - attempt_start
                 if attempt_duration > 60:  # Log slow attempts
-                    print(f"🐌 Slow attempt: {task_id} attempt {attempt_num + 1} took {attempt_duration:.1f}s (timeout: 300s)")
+                    print(f"🐌 Slow attempt: {task_id} attempt {attempt_num + 1} took {attempt_duration:.1f}s (timeout: {self.api_timeout}s)")
                 
                 with count_lock:
                     # Store attempt result - use thread-safe access
@@ -622,12 +615,11 @@ class ARCTaskRunnerSimple:
             print(f"🚀 Started {total_attempts} attempts with {self.max_workers} workers")
             
             # Wait for all attempts to complete
-            max_wait_time = 600  # 10 minutes total timeout
             start_time = time.time()
             
             try:
                 for future_idx, future in enumerate(futures):
-                    remaining_time = max_wait_time - (time.time() - start_time)
+                    remaining_time = self.worker_timeout - (time.time() - start_time)
                     if remaining_time <= 0:
                         print("⏰ Timeout reached, some attempts may not have completed")
                         print("🛑 Cancelling all remaining futures and stopping execution")
@@ -749,7 +741,6 @@ class ARCTaskRunnerSimple:
         train_exec_timeouts = sum(1 for attempt in attempts if attempt.get('train_exec_timeouts', 0) > 0)
         test_exec_errors = sum(1 for attempt in attempts if attempt.get('test_exec_error', False))
         test_exec_timeouts = sum(1 for attempt in attempts if attempt.get('test_exec_timeout', False))
-        attempt_timeouts = sum(1 for attempt in attempts if attempt.get('attempt_timeout', False))
         
         # Find best attempt
         best_attempt = max(attempts, key=lambda x: (x['test_correct'], x['train_accuracy']))
@@ -777,8 +768,6 @@ class ARCTaskRunnerSimple:
             issues.append(f"{test_exec_errors} test-exec-error")
         if test_exec_timeouts > 0:
             issues.append(f"{test_exec_timeouts} test-exec-timeout")
-        if attempt_timeouts > 0:
-            issues.append(f"{attempt_timeouts} attempt-timeout")
         
         if issues:
             summary += f" | Issues: {', '.join(issues)}"
@@ -804,19 +793,13 @@ class ARCTaskRunnerSimple:
         filepath = self.logs_dir / filename
         
         try:
-            # Use timeout for file I/O to prevent hanging
-            def write_file():
-                with open(filepath, 'w') as f:
-                    json.dump(result, f, indent=2)
-            
-            execute_with_timeout(write_file, timeout=30)  # 30 second timeout for file write
+            with open(filepath, 'w') as f:
+                json.dump(result, f, indent=2)
         except Exception as e:
-            print(f"🚨 FILE I/O TIMEOUT: Task {result['task_id']}, Attempt {result['attempt_details'][0]['attempt_number']}")
+            print(f"🚨 FILE I/O ERROR: Task {result['task_id']}, Attempt {result['attempt_details'][0]['attempt_number']}")
             print(f"   File: {filepath}")
             print(f"   Error: {e}")
-            print(f"   File size: {len(json.dumps(result, indent=2))} bytes")
-            print(f"   Stopping execution due to file I/O timeout")
-            raise Exception(f"File I/O timeout for task {result['task_id']}: {e}")
+            raise Exception(f"File I/O error for task {result['task_id']}: {e}")
     
     def save_summary(self, results: List[Dict], subset_name: str, dataset: str):
         """Save summary of all results"""
@@ -1083,20 +1066,20 @@ class ARCTaskRunnerSimple:
             
             # Individual run results
             print("INDIVIDUAL RUN RESULTS:")
-            print("-" * 70)
-            print(f"{'Run':<4} {'Tasks':<6} {'Weighted':<10} {'Train-Maj':<10} {'Oracle':<8} {'All-Train':<10} {'Max-Len':<8}")
-            print("-" * 70)
+            print("-" * 82)
+            print(f"{'Run':<4} {'Tasks':<6} {'Weighted':<10} {'Train-Maj':<10} {'Oracle':<8} {'All-Train':<10} {'Min1-Train':<11} {'Max-Len':<8}")
+            print("-" * 82)
             
             for stats_run in run_stats:
                 if stats_run['total_tasks'] > 0:
                     print(f"{stats_run['run_number']:<4} {stats_run['total_tasks']:<6} "
                           f"{stats_run['weighted_voting_pass2']:<10.1%} {stats_run['train_majority_pass2']:<10.1%} "
                           f"{stats_run['oracle_correct']:<8.1%} {stats_run['all_train_correct']:<10.1%} "
-                          f"{stats_run['max_length_responses']:<8.1%}")
+                          f"{stats_run['min1_train_correct']:<11.1%} {stats_run['max_length_responses']:<8.1%}")
             
             print("")
             print("AGGREGATE STATISTICS:")
-            print("-" * 70)
+            print("-" * 82)
             for metric_name, stat_data in stats.items():
                 mean_val = stat_data['mean']
                 std_val = stat_data['std']

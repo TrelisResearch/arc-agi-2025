@@ -276,23 +276,16 @@ def extract_programs_from_log(log_path: str) -> List[Dict]:
                 solved_count = training_feedback.get('solved_count', 0)
                 total_examples = training_feedback.get('total_training_examples', 0)
                 
-                # Extract reasoning content from various possible fields
+                # Extract reasoning content from standardized 'reasoning' field
                 reasoning_content = None
                 raw_response = first_turn.get('raw_response', {})
                 if isinstance(raw_response, dict):
-                    # Try top-level fields first (for Gemini and some other models)
-                    reasoning_content = (raw_response.get('reasoning') or 
-                                       raw_response.get('reasoning_content') or
-                                       raw_response.get('thinking'))
-                    
-                    # If not found, try OpenAI-style nested structure
-                    if not reasoning_content and 'choices' in raw_response:
+                    # Check for standardized reasoning field in message
+                    if 'choices' in raw_response:
                         choices = raw_response.get('choices', [])
                         if choices and isinstance(choices[0], dict):
                             message = choices[0].get('message', {})
-                            reasoning_content = (message.get('reasoning') or 
-                                               message.get('reasoning_content') or
-                                               message.get('thinking'))
+                            reasoning_content = message.get('reasoning')
                 
                 # Include if we have training examples and the program was extracted
                 if total_examples > 0:
@@ -318,42 +311,50 @@ def extract_programs_from_log(log_path: str) -> List[Dict]:
         for attempt in attempt_details:
             program = attempt.get('program', '')
             if program and attempt.get('program_extracted', False):
-                # Extract reasoning content from various possible fields
+                # Extract reasoning content from standardized 'reasoning' field
                 reasoning_content = None
                 
                 # First try the attempt's raw_response
                 raw_response = attempt.get('raw_response', {})
                 if isinstance(raw_response, dict):
-                    # Try top-level fields first (for Gemini and some other models)
-                    reasoning_content = (raw_response.get('reasoning') or 
-                                       raw_response.get('reasoning_content') or
-                                       raw_response.get('thinking'))
-                    
-                    # If not found, try OpenAI-style nested structure
-                    if not reasoning_content and 'choices' in raw_response:
+                    # Check for standardized reasoning field in message
+                    if 'choices' in raw_response:
                         choices = raw_response.get('choices', [])
                         if choices and isinstance(choices[0], dict):
                             message = choices[0].get('message', {})
-                            reasoning_content = (message.get('reasoning') or 
-                                               message.get('reasoning_content') or
-                                               message.get('thinking'))
+                            reasoning_content = message.get('reasoning')
                 
-                # If not found in attempt details, try main log data (for some API responses)
-                if not reasoning_content:
-                    main_raw_response = log_data.get('raw_response', {})
-                    if isinstance(main_raw_response, dict):
-                        reasoning_content = (main_raw_response.get('reasoning') or 
-                                           main_raw_response.get('reasoning_content') or
-                                           main_raw_response.get('thinking'))
-                        
-                        # If not found, try OpenAI-style nested structure in main response
-                        if not reasoning_content and 'choices' in main_raw_response:
-                            choices = main_raw_response.get('choices', [])
-                            if choices and isinstance(choices[0], dict):
-                                message = choices[0].get('message', {})
-                                reasoning_content = (message.get('reasoning') or 
-                                                   message.get('reasoning_content') or
-                                                   message.get('thinking'))
+                programs.append({
+                    'task_id': task_id,
+                    'program': program,
+                    'attempt_number': attempt.get('attempt_number', 1),
+                    'log_path': log_path,
+                    'model': log_data.get('model', ''),
+                    'dataset': log_data.get('dataset', ''),
+                    'subset': log_data.get('subset', ''),
+                    'api_type': api_type,
+                    'reasoning_content': reasoning_content
+                })
+    
+    elif 'all_attempts' in api_type:
+        # All attempts: use all attempts (new format from run_arc_tasks_soar.py)
+        attempt_details = log_data.get('attempt_details', [])
+        
+        for attempt in attempt_details:
+            program = attempt.get('program', '')
+            if program and attempt.get('program_extracted', False):
+                # Extract reasoning content from standardized 'reasoning' field
+                reasoning_content = None
+                
+                # First try the attempt's raw_response
+                raw_response = attempt.get('raw_response', {})
+                if isinstance(raw_response, dict):
+                    # Check for standardized reasoning field in message
+                    if 'choices' in raw_response:
+                        choices = raw_response.get('choices', [])
+                        if choices and isinstance(choices[0], dict):
+                            message = choices[0].get('message', {})
+                            reasoning_content = message.get('reasoning')
                 
                 programs.append({
                     'task_id': task_id,
@@ -754,7 +755,8 @@ def main():
     print(f"Using {max_workers} worker processes (total cores: {multiprocessing.cpu_count()})")
     
     # Get all log files (exclude summary files)
-    log_files = glob.glob("logs/*.json")
+    # Support both flat logs/*.json and datetime subdirectories logs/*/
+    log_files = glob.glob("logs/*.json") + glob.glob("logs/*/*.json")
     log_files = [f for f in log_files if 'summary' not in f]
     
     # Filter by pattern if provided
@@ -765,7 +767,18 @@ def main():
     # Filter by date range if provided
     if args.date_from or args.date_to:
         def extract_date_from_filename(filename):
-            # Extract date from filename like logs/20250721_112639_task_id.json
+            # Extract date from filename or subdirectory
+            # New structure: logs/20250721_112639/20250721_112639_123456_task_id.json
+            # Old structure: logs/20250721_112639_task_id.json
+            
+            # First try to extract from subdirectory name (more reliable for new structure)
+            path_parts = Path(filename).parts
+            if len(path_parts) >= 2:  # logs/timestamp/file.json
+                subdir = path_parts[-2]  # Get the subdirectory name
+                if len(subdir) >= 8 and subdir[:8].isdigit():
+                    return subdir[:8]
+            
+            # Fall back to extracting from filename (for old structure)
             basename = os.path.basename(filename)
             if len(basename) >= 8 and basename[:8].isdigit():
                 return basename[:8]

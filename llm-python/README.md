@@ -25,7 +25,7 @@ Runpod One-click-template [here](https://console.runpod.io/deploy?template=agyu4
 - Run ARC-AGI tasks with any OpenAI-compatible language model API
 - Support for custom API endpoints (Claude, Qwen, DeepSeek, local models, etc.)
 - Multi-turn execution with training examples feedback
-- **Robust timeout handling** with automatic retries (1200s timeout for reasoning models, 3 attempts per turn)
+- **Simplified timeout system** with automatic calculation (120s/1200s API timeout, 3 attempts per turn)
 - Comprehensive scoring including pixel accuracy and binary correctness
 - Budget tracking with token usage and cost estimation
 - Detailed logging of all runs for analysis
@@ -837,6 +837,13 @@ uv run python -m llm-python.run_arc_tasks --max_workers 5 --rate_limit_delay 0.5
 - OpenAI rate limits
 - Task complexity
 
+### Threading Implementation
+
+- **ThreadPoolExecutor**: Runs individual attempts in parallel across worker threads
+- **Thread-safe locks**: Protect shared state (costs, progress counters, result collection)
+- **Atomic operations**: Each attempt executes independently with no shared state
+- **Safe result aggregation**: Uses thread-safe data structures and synchronization
+
 ### Rate Limiting Guidelines
 
 OpenAI has rate limits that vary by model and tier. Recommended settings:
@@ -852,14 +859,20 @@ OpenAI has rate limits that vary by model and tier. Recommended settings:
 
 The tool includes robust timeout handling to prevent hanging on API calls and file operations:
 
-### Default Timeouts
+### Simplified Timeout Configuration
 
-- **API timeout**: 1200 seconds (20 minutes) for reasoning models, 120 seconds (2 minutes) for Qwen no-think mode
-- **Client timeout**: 2400 seconds (40 minutes) - maximum per HTTP request
+The tool uses a simplified timeout system based on just **two base values**:
+
+- **API timeout**: 120 seconds (Qwen no-think mode) / 1200 seconds (reasoning models)
 - **Program execution timeout**: 0.5 seconds per program execution
-- **Attempt timeout**: 350 seconds total per attempt (includes buffer beyond API timeout)
-- **File I/O timeout**: 30 seconds for file write operations
-- **Worker timeout**: 600 seconds (10 minutes) total for parallel execution
+
+**All other timeouts are calculated automatically:**
+- **Client timeout**: API timeout + 300 seconds (buffer for retries/overhead)
+- **Worker timeout**: 2 × API timeout (ample time for parallel execution)
+
+**Example timeouts:**
+- **Qwen no-think**: API=120s, Client=420s, Worker=240s
+- **Reasoning models**: API=1200s, Client=1500s, Worker=2400s
 
 ### Worker Performance & Timeouts
 
@@ -867,17 +880,17 @@ Increasing workers generally speeds up a run through parallelization, but risks 
 
 ### Key Features
 
+- **Simplified timeout system** - only 2 base timeouts, everything else calculated automatically
 - **3 retry attempts** per turn with 2-second backoff between retries
 - **Separate timeout failure tracking** - doesn't count as regular task failures
 - **Complete conversation preservation** during retries
 - **Detailed error logging** with specific failure reasons and complete API response data
-- **Explicit timeout debugging** - shows exactly which operations are timing out
 
 ### How It Works
 
 For each turn in a multi-turn conversation:
 
-1. **Initial attempt**: API call with model-specific timeout (1200s for reasoning models, 120s for Qwen no-think)
+1. **Initial attempt**: API call with model-specific timeout (120s for Qwen no-think, 1200s for reasoning models)
 2. **Retry 1**: If timeout, wait 2 seconds and retry
 3. **Retry 2**: If timeout again, wait 2 seconds and final retry
 4. **Timeout failure**: If all 3 attempts fail, mark as timeout failure
@@ -923,12 +936,13 @@ Tasks solved correctly: 8/30 (26.7%)
 
 ### Why These Timeout Values?
 
-The API timeout is set to 1200 seconds (20 minutes) for reasoning models because:
-- **Medium reasoning effort** can take 2-4 minutes for complex tasks
-- **High reasoning effort** can take 4-8 minutes for difficult tasks
-- **Very high reasoning effort** can take 8-15 minutes for extremely difficult tasks
-- **Buffer time** accounts for network latency, API processing, and RunPod response handling
-- **Balance** between patience and preventing indefinite hangs
+**API timeout values are chosen based on model capabilities:**
+- **Qwen no-think (120s)**: Fast, non-reasoning responses typically complete in under 2 minutes
+- **Reasoning models (1200s)**: Complex reasoning can take 8-15 minutes for difficult tasks
+
+**Automatic relationships ensure consistency:**
+- **Client timeout** = API timeout + 300s (accounts for retries, network latency, processing overhead)
+- **Worker timeout** = 2 × API timeout (provides ample time for parallel execution without hanging indefinitely)
 
 ### Log File Structure
 
