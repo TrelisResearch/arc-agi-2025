@@ -2,9 +2,9 @@
 
 ## 29 July 2025
 - [ ] Review of run_arc_tasks_soar.py
-  - [ ] Ensure categories for each each result attempt are complete (i.e. test result, train result, api failures, api timeout, max length reached, code extraction failed, code execution failed.)
+  - [x] Ensure categories for each each result attempt are complete (i.e. test result, train result, api failures, api timeout, max length reached, code extraction failed, code execution failed.)
   - [ ] Manual review of threading and timeouts.
-  - [ ] What does sglang do if a request is stopped? Does it continue - resulting in a build-up in the serverload?
+  - [ ] What does sglang do if a request is stopped? Does it continue - resulting in a build-up in the serverload? https://github.com/sgl-project/sglang/issues/3520 . No obvious fix here available.
 - [ ] Evaluation on shortest 30 evaluation problems:
   - [x] Soar model. 54%
   - [x] Qwen Base. 7%
@@ -20,6 +20,11 @@
     - [ ] Hoist utils. Already available! Need to make use of them in the data generation script generate_training_data.py
     - [ ] Integrate validation.
     - [ ] Test a small dataset.
+
+### Test Qwen Base with reasoning on shortest 30 evaluation tasks
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_30 --repeat-runs 3 --max_workers 50 --max_attempts 8 --model qwen/qwen3-4b --base-url http://38.80.152.249:30742/v1 --limit 1
+```
 
 ## 26-28 July 2025
 - [x] Review code and consolidate into one run_arc_tasks_soar.py script

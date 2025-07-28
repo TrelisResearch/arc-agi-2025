@@ -371,32 +371,72 @@ class ARCTaskRunnerSimple:
         attempt_cost = (input_tokens / 1_000_000) * input_rate + (output_tokens / 1_000_000) * output_rate
         total_tokens = usage.total_tokens if usage else 0
         
+        # Check for empty response
+        empty_response = False
+        if api_call_successful and response:
+            if hasattr(response, 'choices') and len(response.choices) > 0:
+                message = response.choices[0].message
+                content = getattr(message, 'content', '') if hasattr(message, 'content') else ''
+                empty_response = not content or content.strip() == ''
+            else:
+                empty_response = True
+        elif api_call_successful:
+            empty_response = True
+        
+        # Check for max tokens hit
+        hit_max_tokens = False
+        if api_call_successful and response and hasattr(response, 'choices') and len(response.choices) > 0:
+            finish_reason = getattr(response.choices[0], 'finish_reason', None)
+            hit_max_tokens = (finish_reason == 'length')
+        
         # Extract and evaluate program
         program = self.extract_code_from_response(response) if response else ''
+        program_extracted = bool(program and program.strip())
         
         # Evaluate on training examples
         train_results = []
         train_correct = 0
+        train_exec_errors = 0
+        train_exec_timeouts = 0
+        
         for ex in task_data['train']:
-            if not program or program.strip() == '':
+            if not program_extracted:
                 pred, err, tout = None, 'no program', False
             else:
                 pred, err, tout = self.executor.execute_program_with_timeout(program, ex['input'])
+            
             is_corr = (pred == ex['output']) if (pred is not None and not err and not tout) else False
             train_results.append({'predicted': pred, 'expected': ex['output'], 'correct': is_corr, 'error': err, 'timed_out': tout})
+            
             if is_corr:
                 train_correct += 1
+            elif err and err != 'no program':
+                train_exec_errors += 1
+            elif tout:
+                train_exec_timeouts += 1
         
         train_accuracy = train_correct / len(task_data['train']) if task_data['train'] else 0.0
         
         # Evaluate on test
         test_input = task_data['test'][0]['input']
         test_expected = task_data['test'][0]['output']
-        if not program or program.strip() == '':
+        test_exec_error = False
+        test_exec_timeout = False
+        
+        if not program_extracted:
             test_pred, test_err, test_tout = None, 'no program', False
         else:
             test_pred, test_err, test_tout = self.executor.execute_program_with_timeout(program, test_input)
+            if test_err and test_err != 'no program':
+                test_exec_error = True
+            if test_tout:
+                test_exec_timeout = True
+        
         test_correct = (test_pred == test_expected) if (test_pred is not None and not test_err and not test_tout) else False
+        
+        # Check for attempt-level timeout (total attempt time > 350s)
+        attempt_duration = (datetime.datetime.now() - attempt_start_time).total_seconds()
+        attempt_timeout = attempt_duration > 350.0  # Allow some buffer beyond API timeout
         
         # Store attempt details
         attempt_detail = {
@@ -405,20 +445,27 @@ class ARCTaskRunnerSimple:
             'input_tokens': input_tokens,
             'output_tokens': output_tokens,
             'attempt_cost': attempt_cost,
-            'program_extracted': bool(program),
+            'program_extracted': program_extracted,
             'program': program,
             'train_results': train_results,
             'train_accuracy': train_accuracy,
+            'train_exec_errors': train_exec_errors,
+            'train_exec_timeouts': train_exec_timeouts,
             'test_predicted': test_pred,
             'test_expected': test_expected,
             'test_correct': test_correct,
             'test_error': test_err,
             'test_timed_out': test_tout,
+            'test_exec_error': test_exec_error,
+            'test_exec_timeout': test_exec_timeout,
             'raw_response': serialize_response(response),
             'full_prompt': {'system': system_content, 'user': user_content},
             'sampling_params': sampling_params,
             'api_success': api_call_successful,
-            'timed_out': timed_out,
+            'api_timeout': timed_out,
+            'empty_response': empty_response,
+            'hit_max_tokens': hit_max_tokens,
+            'attempt_timeout': attempt_timeout,
             'error': error
         }
         
@@ -611,7 +658,7 @@ class ARCTaskRunnerSimple:
                                 if result and 'attempt_detail' in result:
                                     attempt = result['attempt_detail']
                                     print(f"   API success: {attempt.get('api_success', 'Unknown')}")
-                                    print(f"   Timed out: {attempt.get('timed_out', 'Unknown')}")
+                                    print(f"   Timed out: {attempt.get('api_timeout', 'Unknown')}")
                                     print(f"   Error: {attempt.get('error', 'None')}")
                                     print(f"   Program extracted: {attempt.get('program_extracted', 'Unknown')}")
                                     print(f"   Test correct: {attempt.get('test_correct', 'Unknown')}")
@@ -692,42 +739,55 @@ class ARCTaskRunnerSimple:
         train_perfect_attempts = sum(1 for attempt in attempts if attempt['train_accuracy'] == 1.0)
         train_partial_attempts = sum(1 for attempt in attempts if 0 < attempt['train_accuracy'] < 1.0)
         
-        # Calculate timeout and error stats
-        api_timeouts = sum(1 for attempt in attempts if attempt.get('timed_out', False))
+        # Calculate issues in timeline order
+        api_timeouts = sum(1 for attempt in attempts if attempt.get('api_timeout', False))
         api_failures = sum(1 for attempt in attempts if not attempt.get('api_success', True))
-        execution_timeouts = sum(1 for attempt in attempts if attempt.get('test_timed_out', False))
-        max_length_hits = sum(1 for attempt in attempts if attempt.get('raw_response') and 
-                             attempt['raw_response'].get('choices') and 
-                             attempt['raw_response']['choices'][0].get('finish_reason') == 'length')
-        no_program_extracted = sum(1 for attempt in attempts if not attempt.get('program_extracted', False))
+        empty_responses = sum(1 for attempt in attempts if attempt.get('empty_response', False))
+        max_length_hits = sum(1 for attempt in attempts if attempt.get('hit_max_tokens', False))
+        no_code_extracted = sum(1 for attempt in attempts if not attempt.get('program_extracted', False))
+        train_exec_errors = sum(1 for attempt in attempts if attempt.get('train_exec_errors', 0) > 0)
+        train_exec_timeouts = sum(1 for attempt in attempts if attempt.get('train_exec_timeouts', 0) > 0)
+        test_exec_errors = sum(1 for attempt in attempts if attempt.get('test_exec_error', False))
+        test_exec_timeouts = sum(1 for attempt in attempts if attempt.get('test_exec_timeout', False))
+        attempt_timeouts = sum(1 for attempt in attempts if attempt.get('attempt_timeout', False))
         
         # Find best attempt
         best_attempt = max(attempts, key=lambda x: (x['test_correct'], x['train_accuracy']))
         
-        # Build summary with detailed stats
+        # Build summary
         summary = f"✅ {task_id}: {test_correct_attempts}/{len(attempts)} test-correct, {train_perfect_attempts} train-perfect, {train_partial_attempts} train-partial"
         
-        # Add timeout/error details if any issues occurred
+        # Add issues in timeline order if any occurred
         issues = []
         if api_timeouts > 0:
             issues.append(f"{api_timeouts} api-timeout")
         if api_failures > 0:
             issues.append(f"{api_failures} api-fail")
-        if execution_timeouts > 0:
-            issues.append(f"{execution_timeouts} exec-timeout")
+        if empty_responses > 0:
+            issues.append(f"{empty_responses} empty-response")
         if max_length_hits > 0:
             issues.append(f"{max_length_hits} max-len")
-        if no_program_extracted > 0:
-            issues.append(f"{no_program_extracted} no-code")
+        if no_code_extracted > 0:
+            issues.append(f"{no_code_extracted} no-code")
+        if train_exec_errors > 0:
+            issues.append(f"{train_exec_errors} train-exec-error")
+        if train_exec_timeouts > 0:
+            issues.append(f"{train_exec_timeouts} train-exec-timeout")
+        if test_exec_errors > 0:
+            issues.append(f"{test_exec_errors} test-exec-error")
+        if test_exec_timeouts > 0:
+            issues.append(f"{test_exec_timeouts} test-exec-timeout")
+        if attempt_timeouts > 0:
+            issues.append(f"{attempt_timeouts} attempt-timeout")
         
         if issues:
             summary += f" | Issues: {', '.join(issues)}"
         
-        # Add best attempt info
+        # Add best attempt performance (separate from issues)
         if best_attempt['test_correct']:
             summary += f" (best: {best_attempt['train_accuracy']:.1%} train)"
         else:
-            summary += f" (best: {best_attempt['train_accuracy']:.1%} train, {best_attempt['test_correct']})"
+            summary += f" (best: {best_attempt['train_accuracy']:.1%} train, test-failed)"
         
         print(summary)
     

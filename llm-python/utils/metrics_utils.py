@@ -57,11 +57,11 @@ def calculate_task_metrics(
                 max_length_responses += 1
             
             # Timeout responses
-            if att.get('timed_out', False):
+            if att.get('api_timeout', False):
                 timeout_responses += 1
             
             # API failure responses (failures after retries, but not timeouts)
-            if not att.get('api_success', True) and not att.get('timed_out', False):
+            if not att.get('api_success', True) and not att.get('api_timeout', False):
                 api_failure_responses += 1
         
         # Filter out transductive attempts for voting metrics

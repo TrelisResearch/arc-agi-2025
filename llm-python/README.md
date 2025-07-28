@@ -1424,6 +1424,7 @@ uv run python -m llm-python.run_arc_tasks --model llama-3.1-8b --base-url http:/
 - **Cost accuracy**: Uses standard prompt_tokens/completion_tokens for cost calculation
 - **Pixel counting**: Fixed pixel accuracy calculation to include failed executions in totals
 - **Utils organization**: Modular utility functions with comprehensive test coverage
+- **Issue tracking**: Covers API failures, code extraction, execution errors, and timeouts. Does not track serialization, file I/O, or infrastructure failures
 - **Adaptive sampling parameters**: Automatically detects endpoint type and applies appropriate defaults:
   - **TCP endpoints** (containing ":"): Uses `min_p=0.05` in `extra_body`
   - **Other endpoints**: Uses `top_k=50` and `top_p=0.9` defaults
