@@ -136,7 +136,7 @@ class ARCTaskRunnerSimple:
         self.total_cost = 0.0
         self.total_tokens = 0
         
-        # Thread-safe cleanup to prevent race conditions during executor refresh
+        # Thread-safe state management to prevent race conditions
         self._cleanup_lock = threading.Lock()
         
         # Health monitoring for long runs
@@ -147,7 +147,7 @@ class ARCTaskRunnerSimple:
             'exec_errors': 0,
             'exec_times': [],
             'recent_window': 100,  # Rolling window size
-            'report_interval': 100  # Report every N attempts (right before cleanup)
+            'report_interval': 100  # Report every N attempts
         }
         
         # Create logs directory with timestamped subfolder
@@ -569,20 +569,6 @@ class ARCTaskRunnerSimple:
         # Periodic health reports (every N attempts)
         if self.health_metrics['total_attempts'] % self.health_metrics['report_interval'] == 0:
             self._print_health_report()
-        
-        # Periodic executor cleanup to prevent degradation (every 100 attempts)
-        if self.health_metrics['total_attempts'] % 100 == 0:
-            # Thread-safe cleanup - only one thread can perform cleanup at a time
-            with self._cleanup_lock:
-                # Double-check the count after acquiring lock (another thread might have just cleaned up)
-                if self.health_metrics['total_attempts'] % 100 == 0:
-                    try:
-                        print(f"🔄 Periodic executor cleanup at {self.health_metrics['total_attempts']} attempts")
-                        ProgramExecutor.cleanup_executor()
-                        self.executor = ProgramExecutor(timeout=0.5, executor_type=self.executor_type)
-                        print("✅ Executor refreshed")
-                    except Exception as cleanup_e:
-                        print(f"⚠️ Executor cleanup failed: {cleanup_e}")
         
         return {
             'task_id': task_id,
