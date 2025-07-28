@@ -21,7 +21,7 @@ try:
     from .utils.metrics_utils import calculate_task_metrics, format_metrics_display, metrics_to_percentages
     from .utils.timeout_utils import execute_with_timeout
     from .utils.transduction import is_transduction_cheating
-    from .prompt_loader import PromptLoader
+    from .utils.prompt_loader import PromptLoader
 except ImportError:
     # Fall back to absolute imports (when run directly)
     from utils.task_loader import TaskLoader
@@ -30,7 +30,7 @@ except ImportError:
     from utils.metrics_utils import calculate_task_metrics, format_metrics_display, metrics_to_percentages
     from utils.timeout_utils import execute_with_timeout
     from utils.transduction import is_transduction_cheating
-    from prompt_loader import PromptLoader
+    from utils.prompt_loader import PromptLoader
 
 load_dotenv()
 
@@ -92,7 +92,7 @@ class ARCTaskRunnerSimple:
     def __init__(self, model: str = "gpt-4.1-nano", max_workers: int = 1, rate_limit_delay: float = 0.0, 
                  max_attempts: int = 8, run_number: int = 0, base_url: str = None, debug: bool = False, 
                  max_tokens: int = None, temperature: float = None, reasoning_effort: str = "low", 
-                 qwen_no_think: bool = False, prompt_version: str = "soar"):
+                 qwen_no_think: bool = False, prompt_version: str = "soar", unsafe_executor: bool = False):
         self.model = model
         self.max_workers = max_workers
         self.rate_limit_delay = rate_limit_delay
@@ -107,8 +107,13 @@ class ARCTaskRunnerSimple:
         self.max_tokens = max_tokens
         self.temperature = temperature
         
+        # Set executor type based on safety flag
+        self.executor_type = "unrestricted" if unsafe_executor else "docker"
+        if unsafe_executor:
+            print("⚠️  WARNING: Using unrestricted executor - generated code will run directly on your system!")
+        
         # Calculate timeouts based on model configuration
-        self.api_timeout = 120 if self.qwen_no_think else 1200
+        self.api_timeout = 600 if self.qwen_no_think else 1200
         client_timeout = self.api_timeout + 300  # Buffer for retries/overhead
         self.worker_timeout = 2 * self.api_timeout  # Ample time for parallel execution
         
@@ -123,25 +128,100 @@ class ARCTaskRunnerSimple:
         # Initialize fresh instances to prevent state leakage
         self.task_loader = TaskLoader()
         self.scorer = GridScorer()
-        self.executor = ProgramExecutor(timeout=0.5)
+        self.executor = ProgramExecutor(timeout=0.5, executor_type=self.executor_type)
         self.prompt_loader = PromptLoader()
+        
+        # Thread-safe cost tracking
+        self._cost_lock = threading.Lock()
+        self.total_cost = 0.0
+        self.total_tokens = 0
+        
+        # Thread-safe cleanup to prevent race conditions during executor refresh
+        self._cleanup_lock = threading.Lock()
+        
+        # Health monitoring for long runs
+        self.health_metrics = {
+            'total_attempts': 0,
+            'exec_successes': 0,
+            'exec_timeouts': 0,
+            'exec_errors': 0,
+            'exec_times': [],
+            'recent_window': 100,  # Rolling window size
+            'report_interval': 100  # Report every N attempts (right before cleanup)
+        }
         
         # Create logs directory with timestamped subfolder
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         self.logs_dir = Path(__file__).parent / "logs" / timestamp
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         print(f"📁 Logs will be saved to: {self.logs_dir}")
-        
-        # Thread-safe cost and token tracking
-        self._cost_lock = threading.Lock()
-        self.total_cost = 0.0
-        self.total_tokens = 0
     
     def _update_costs(self, cost: float, tokens: int):
         """Thread-safe method to update total costs and tokens"""
         with self._cost_lock:
             self.total_cost += cost
             self.total_tokens += tokens
+    
+    def _update_health_metrics(self, attempt_detail: Dict, exec_time: float):
+        """Update health monitoring metrics (thread-safe)"""
+        with self._cost_lock:  # Reuse existing lock for simplicity
+            self.health_metrics['total_attempts'] += 1
+            
+            # Track execution success/failure
+            if attempt_detail.get('test_exec_error') or attempt_detail.get('train_exec_errors', 0) > 0:
+                self.health_metrics['exec_errors'] += 1
+            elif attempt_detail.get('test_exec_timeout') or attempt_detail.get('train_exec_timeouts', 0) > 0:
+                self.health_metrics['exec_timeouts'] += 1
+            else:
+                self.health_metrics['exec_successes'] += 1
+            
+            # Track execution times (keep recent window)
+            self.health_metrics['exec_times'].append(exec_time)
+            window_size = self.health_metrics['recent_window']
+            if len(self.health_metrics['exec_times']) > window_size:
+                self.health_metrics['exec_times'] = self.health_metrics['exec_times'][-window_size:]
+    
+    def _print_health_report(self):
+        """Print compact health report"""
+        metrics = self.health_metrics
+        total = metrics['total_attempts']
+        
+        if total == 0:
+            return
+            
+        # Overall stats
+        success_rate = (metrics['exec_successes'] / total) * 100
+        timeout_rate = (metrics['exec_timeouts'] / total) * 100
+        error_rate = (metrics['exec_errors'] / total) * 100
+        
+        # Recent window stats (last N attempts)
+        window_size = min(metrics['recent_window'], total)
+        recent_successes = 0
+        recent_timeouts = 0 
+        recent_errors = 0
+        
+        # Count recent attempts (simplified approach)
+        recent_total = min(window_size, total)
+        if recent_total > 0:
+            # Approximate recent rates (would need more complex tracking for exact)
+            recent_success_rate = success_rate  # Simplified for now
+            recent_timeout_rate = timeout_rate
+            recent_error_rate = error_rate
+        
+        # Execution time stats
+        if metrics['exec_times']:
+            avg_time = sum(metrics['exec_times']) / len(metrics['exec_times'])
+            recent_times = metrics['exec_times'][-min(50, len(metrics['exec_times'])):]
+            recent_avg_time = sum(recent_times) / len(recent_times) if recent_times else avg_time
+        else:
+            avg_time = recent_avg_time = 0.0
+        
+        # Compact health report
+        print(f"🏥 Health [{total} attempts]: "
+              f"Success {success_rate:.0f}% | "
+              f"Timeout {timeout_rate:.0f}% | "
+              f"ExecErr {error_rate:.0f}% | "
+              f"AvgTime {recent_avg_time:.2f}s")
     
     def get_model_pricing(self, model: str) -> tuple[float, float]:
         """Get input and output pricing rates for a model in $/1M tokens"""
@@ -319,6 +399,7 @@ class ARCTaskRunnerSimple:
         system_content, user_content = self.create_prompt(task_data)
         
         attempt_start_time = datetime.datetime.now()
+        exec_start_time = time.time()  # Track execution timing
         conversation_history = [
             {"role": "system", "content": system_content},
             {"role": "user", "content": user_content}
@@ -481,6 +562,28 @@ class ARCTaskRunnerSimple:
         # Update costs
         self._update_costs(attempt_cost, total_tokens)
         
+        # Update health metrics and periodic reporting
+        exec_time = time.time() - exec_start_time
+        self._update_health_metrics(attempt_detail, exec_time)
+        
+        # Periodic health reports (every N attempts)
+        if self.health_metrics['total_attempts'] % self.health_metrics['report_interval'] == 0:
+            self._print_health_report()
+        
+        # Periodic executor cleanup to prevent degradation (every 100 attempts)
+        if self.health_metrics['total_attempts'] % 100 == 0:
+            # Thread-safe cleanup - only one thread can perform cleanup at a time
+            with self._cleanup_lock:
+                # Double-check the count after acquiring lock (another thread might have just cleaned up)
+                if self.health_metrics['total_attempts'] % 100 == 0:
+                    try:
+                        print(f"🔄 Periodic executor cleanup at {self.health_metrics['total_attempts']} attempts")
+                        ProgramExecutor.cleanup_executor()
+                        self.executor = ProgramExecutor(timeout=0.5, executor_type=self.executor_type)
+                        print("✅ Executor refreshed")
+                    except Exception as cleanup_e:
+                        print(f"⚠️ Executor cleanup failed: {cleanup_e}")
+        
         return {
             'task_id': task_id,
             'attempt_num': attempt_num,
@@ -552,6 +655,12 @@ class ARCTaskRunnerSimple:
             print(f"Sampling Parameters: {sampling_params}")
         else:
             print("Sampling Parameters: (using model defaults)")
+        
+        # Display executor type
+        executor_info = f"Executor: {self.executor.executor_type} (timeout: {self.executor.timeout}s)"
+        if self.executor.executor_type == "unrestricted":
+            executor_info += " ⚠️  UNSAFE MODE"
+        print(executor_info)
         
         print("-" * 50)
         
@@ -929,7 +1038,8 @@ class ARCTaskRunnerSimple:
                 temperature=self.temperature,
                 reasoning_effort=self.reasoning_effort,
                 qwen_no_think=self.qwen_no_think,
-                prompt_version=self.prompt_version
+                prompt_version=self.prompt_version,
+                unsafe_executor=(self.executor_type == "unrestricted")
             )
             
             try:
@@ -948,6 +1058,15 @@ class ARCTaskRunnerSimple:
                 run_files.append(None)  # Mark as failed
             finally:
                 # Explicit cleanup to prevent state leakage
+                # ProgramExecutor uses singleton class variables that persist across instances
+                # Without cleanup, second run reuses stale executor context causing systematic failures
+                with self._cleanup_lock:  # Thread-safe cleanup
+                    try:
+                        ProgramExecutor.cleanup_executor()  # Fix: Clean up singleton state
+                        if run_num < repeat_runs:  # Only print for non-final runs
+                            print(f"🧹 Cleaned up executor state after run {run_num}")
+                    except Exception as cleanup_e:
+                        print(f"⚠️ Failed to cleanup executor state: {cleanup_e}")
                 del runner
                 gc.collect()
         
@@ -1132,6 +1251,8 @@ def main():
     parser.add_argument("--temperature", type=float, help="Temperature for model responses")
     parser.add_argument("--reasoning_effort", type=str, default="low", help="Reasoning effort for OpenAI models")
     parser.add_argument("--qwen-no-think", action="store_true", help="Disable thinking for Qwen models")
+    parser.add_argument("--unsafe-executor", action="store_true", 
+                        help="⚠️  UNSAFE: Use unrestricted executor (no Docker sandboxing). Generated code runs directly on your system. SECURITY RISK!")
     parser.add_argument("--prompt_version", type=str, default="soar", help="Version of prompts to use")
     
     args = parser.parse_args()
@@ -1157,13 +1278,22 @@ def main():
         temperature=args.temperature,
         reasoning_effort=args.reasoning_effort,
         qwen_no_think=args.qwen_no_think,
-        prompt_version=args.prompt_version
+        prompt_version=args.prompt_version,
+        unsafe_executor=args.unsafe_executor
     )
     
-    if args.repeat_runs > 1:
-        runner.run_repeated_subset(args.subset, args.dataset, args.limit, args.repeat_runs)
-    else:
-        runner.run_subset(args.subset, args.dataset, args.limit)
+    try:
+        if args.repeat_runs > 1:
+            runner.run_repeated_subset(args.subset, args.dataset, args.limit, args.repeat_runs)
+        else:
+            runner.run_subset(args.subset, args.dataset, args.limit)
+    finally:
+        # Final cleanup to ensure clean shutdown
+        with runner._cleanup_lock:  # Thread-safe cleanup
+            try:
+                ProgramExecutor.cleanup_executor()
+            except Exception as e:
+                print(f"⚠️ Final cleanup warning: {e}")
 
 if __name__ == "__main__":
     main() 

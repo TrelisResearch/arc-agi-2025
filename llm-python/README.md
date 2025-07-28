@@ -3,8 +3,10 @@
 A comprehensive tool for testing OpenAI-compatible language models on ARC-AGI tasks using the Chat Completions API. Supports reasoning models (o3, Gemini Flash, Qwen) with multi-turn feedback, independent attempts, and detailed analysis.
 
 Folders:
-- `fine-tuning` - ipynb notebooks for fine-tunign as well as a logs folder for tensorboard logs.
-- `tests` misc test scripts
+- `archive/` - Legacy scripts and tools moved for reference
+- `fine-tuning/` - Jupyter notebooks for fine-tuning as well as a logs folder for tensorboard logs
+- `tests/` - Miscellaneous test scripts  
+- `utils/` - Core utility modules for task loading, scoring, prompts, and metrics
 
 **Videos**
 [Part 5: Comments on discrete vs continuous + Ablating Sampling vs Feedback](https://share.descript.com/view/W3OEzy9PW9A)
@@ -22,16 +24,11 @@ Runpod One-click-template [here](https://console.runpod.io/deploy?template=agyu4
 
 ## Features
 
-- Run ARC-AGI tasks with any OpenAI-compatible language model API
-- Support for custom API endpoints (Claude, Qwen, DeepSeek, local models, etc.)
-- Multi-turn execution with training examples feedback
-- **Simplified timeout system** with automatic calculation (120s/1200s API timeout, 3 attempts per turn)
-- **Transductive detection** - automatically detects and excludes cheating/hardcoded programs
-- Comprehensive scoring including pixel accuracy and binary correctness
-- Budget tracking with token usage and cost estimation
-- Detailed logging of all runs for analysis
-- Support for different datasets and task subsets
-- Text-only mode for fast, efficient execution
+- **OpenAI-compatible API support**: Works with OpenAI, Claude, Qwen, DeepSeek, local models, etc.
+- **All-attempts evaluation**: Parallel execution with voting-based selection for robust results
+- **Reasoning model support**: Optimized for o3, Gemini Flash, Qwen with configurable reasoning effort
+- **Comprehensive analysis**: Pixel accuracy, binary correctness, detailed logging, and cost tracking
+- **Multiple datasets**: Support for ARC-AGI-1/2 with various task subsets and difficulty levels
 
 > **Note:** In testing, o3 looped does not solve any of the longest ARC-AGI problems (tested on 5). Shortest and medium tasks are solved much more reliably.
 
@@ -89,19 +86,26 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --r
 ```
 
 **Key Features:**
-- **True Parallelization**: Parallelizes at the attempt level - all attempts across all tasks run simultaneously
+- **Direct Prompting**: Each attempt uses the same initial prompt (no feedback between attempts)
+- **True Parallelization**: All attempts across all tasks run simultaneously for maximum efficiency
 - **Real-time Task Summaries**: Displays brief statistics for each task as it completes (test-correct, train-perfect, train-partial counts)
 - **Real-time Logging**: Individual task logs are saved immediately when each task completes, not at the end of the run
-- **Efficient Resource Usage**: Workers process individual attempts independently for maximum throughput
-- **Voting Algorithms**: Weighted majority (frequency + accuracy) and train-majority voting for robust evaluation
-- **Transduction Filtering**: Automatically removes hardcoded/cheating responses
+- **Health Monitoring**: Health reports every 100 attempts (right before each cleanup) showing execution success rates, timeout rates, and average execution times
+- **Automatic Executor Cleanup**: Thread-safe periodic cleanup every 100 attempts prevents resource degradation in long runs
+- **Secure Docker Execution**: All generated code runs in isolated Docker containers for security (can be disabled with `--unsafe-executor` flag for testing)
+- **Voting Algorithms (Pass@2)**: 
+  - **Weighted majority voting**: Uses pattern frequency + 1000×train_accuracy, returns top 2 patterns
+  - **Train-majority voting**: Among best-training-accuracy attempts, majority vote for top 2 patterns
+- **Oracle Metrics**: Shows upper bound potential if best attempt could be selected
+- **Transduction Filtering**: Automatically detects and filters out hardcoded/cheating responses
+- **Local Execution**: All code is executed locally for immediate scoring
 - **Sampling Parameter Logging**: Comprehensive logging of all sampling parameters (temperature, top_p, top_k, min_p) used in API calls
 - **Adaptive Sampling Parameters**: Automatic detection of endpoint type with appropriate defaults:
   - **TCP endpoints** (containing ":"): Uses `min_p=0.05` in `extra_body`
   - **Other endpoints**: Uses `top_k=50` and `top_p=0.9` defaults
 - **Optimized File I/O**: 30-second timeout for file operations with detailed error logging for debugging
 - **Independent Multiple Runs**: Each repeated run is completely isolated with no shared state - results loaded from files for aggregation
-- **Robust State Management**: Explicit garbage collection and cleanup between runs prevents state spillover
+- **Robust State Management**: Explicit garbage collection and thread-safe cleanup between runs prevents state spillover and race conditions
 
 **When to use:**
 - For comprehensive evaluation with statistical rigor
@@ -109,6 +113,53 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --r
 - For maximum parallelization efficiency with high worker counts
 - For systematic comparison of multiple attempts per task
 - When you need real-time progress updates as tasks complete
+
+### Health Monitoring
+
+The tool automatically monitors execution health during long runs and displays periodic reports:
+
+```bash
+🏥 Health [100 attempts]: Success 78% | Timeout 5% | ExecErr 17% | AvgTime 0.31s
+🔄 Periodic executor cleanup at 100 attempts
+✅ Executor refreshed
+```
+
+**Health Metrics Explained:**
+- **Success %**: Programs that execute without timeout/error
+- **Timeout %**: Programs that exceed the 0.5s execution limit  
+- **ExecErr %**: Programs with runtime errors
+- **AvgTime**: Average total time per attempt (API + execution + processing)
+
+**Automatic Cleanup**: Every 100 attempts, the Docker executor is thread-safely cleaned and refreshed to prevent resource degradation. Uses dedicated locking to prevent race conditions when multiple threads simultaneously reach cleanup milestones in high-parallelization scenarios.
+
+### Security and Execution Safety
+
+By default, the tool runs all generated code in **isolated Docker containers** for maximum security. This prevents generated code from:
+- Accessing or modifying your files
+- Making unauthorized network requests  
+- Executing system commands
+- Stealing environment variables or API keys
+
+#### Unsafe Executor Mode (`--unsafe-executor`)
+
+For testing purposes in isolated environments, you can disable Docker sandboxing with the `--unsafe-executor` flag. **This is dangerous and should only be used when:**
+
+✅ **Safe to use:**
+- Testing in disposable VMs or containers
+- Running in isolated development environments
+- Debugging executor issues when Docker is problematic
+
+❌ **Never use in production or on your main system:**
+- Generated code runs directly on your system
+- Full access to your filesystem and network
+- Potential for data theft or system compromise
+- No protection against malicious code execution
+
+**Warning signs when using `--unsafe-executor`:**
+```bash
+⚠️  WARNING: Using unrestricted executor - generated code will run directly on your system!
+Executor: unrestricted (timeout: 0.5s) ⚠️  UNSAFE MODE
+```
 
 ### Advanced Usage
 
@@ -134,10 +185,13 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_traini
 # Set specific token limit for responses (overrides reasoning effort defaults)
 uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10 --model gpt-4.1-mini --max-tokens 2000
 
+# Use unrestricted executor (UNSAFE - for testing only in isolated environments)
+uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10 --unsafe-executor
+
 # Available options:
 #   --dataset: arc-agi-1 or arc-agi-2
 #   --subset: shortest_training_1, shortest_training_10, shortest_training_30, shortest_evaluation_1, shortest_evaluation_10, shortest_evaluation_30, etc.
-#   --model: Model name (default: gpt-4.1-mini) - works with any OpenAI-compatible API
+#   --model: Model name (default: gpt-4.1-mini)
 #   --base-url: Custom API endpoint URL (default: OpenAI) - enables Claude, Qwen, local models, etc.
 #   --reasoning_effort: Reasoning effort level: low (2k tokens), medium (8k tokens), high (32k tokens) - for Gemini; other models may vary
 #   --max-tokens: Maximum tokens for model responses (overrides reasoning effort defaults)
@@ -146,6 +200,7 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_traini
 #   --max_workers: Number of parallel workers (default: 1, efficient up to 50+)
 #   --repeat-runs: Number of times to repeat the entire test (default: 1, max: 10)
 #   --qwen-no-think: Disable thinking for Qwen models (sets enable_thinking=false in chat_template_kwargs)
+#   --unsafe-executor: ⚠️ UNSAFE: Use unrestricted executor (no Docker sandboxing) - SECURITY RISK!
 ```
 
 ### Reasoning Effort Support
@@ -261,7 +316,7 @@ uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-2 --subset shortest_tr
 
 ## Task Evolution Visualization
 
-The `visualize_task_evolution.py` tool creates detailed visual analysis of how models learn and evolve their solutions across multiple turns.
+The `archive/visualize_task_evolution.py` tool (archived) creates detailed visual analysis of how models learn and evolve their solutions across multiple turns.
 
 ### Features
 
@@ -274,12 +329,12 @@ The `visualize_task_evolution.py` tool creates detailed visual analysis of how m
 ### Usage
 
 ```bash
-# Visualize evolution from a log file
-uv run python visualize_task_evolution.py [LOG_FILE] [--dataset arc-agi-1|arc-agi-2]
+# Visualize evolution from a log file (archived tool)
+uv run python archive/visualize_task_evolution.py [LOG_FILE] [--dataset arc-agi-1|arc-agi-2]
 
 # Examples:
-uv run python visualize_task_evolution.py 20250709_095758_577922_8698928896_aa300dc3.json
-uv run python visualize_task_evolution.py my_log_file.json --dataset arc-agi-2
+uv run python archive/visualize_task_evolution.py 20250709_095758_577922_8698928896_aa300dc3.json
+uv run python archive/visualize_task_evolution.py my_log_file.json --dataset arc-agi-2
 ```
 
 ### Output Structure
@@ -500,17 +555,17 @@ Programs get reasoning content included only if:
 
 ### Simple Dataset Generation (No Code/Reasoning)
 
-For creating datasets without code or reasoning content, use the simplified `create_simple_dataset.py` script:
+For creating datasets without code or reasoning content, use the simplified `archive/create_simple_dataset.py` script (archived):
 
 ```bash
 # Create simple dataset from arc-agi-1 training tasks
-uv run python create_simple_dataset.py arc-agi-1 all_training --save-local --validation
+uv run python archive/create_simple_dataset.py arc-agi-1 all_training --save-local --validation
 
 # Create dataset and push to Hugging Face  
-uv run python create_simple_dataset.py arc-agi-2 shortest_training_30 --hf-private
+uv run python archive/create_simple_dataset.py arc-agi-2 shortest_training_30 --hf-private
 
 # Custom dataset name and organization
-uv run python create_simple_dataset.py arc-agi-1 random_split_1_training --hf-dataset-name "simple_baseline_v1" --hf-org "YourOrg"
+uv run python archive/create_simple_dataset.py arc-agi-1 random_split_1_training --hf-dataset-name "simple_baseline_v1" --hf-org "YourOrg"
 ```
 
 **Key differences from full training data generation:**
@@ -805,7 +860,7 @@ The tool supports parallel execution to dramatically reduce wall-clock time for 
 ### Key Features
 
 - **Thread-based parallelization**: Up to 128 concurrent workers
-- **Thread-safe execution**: Safe cost tracking, progress reporting, and file I/O
+- **Thread-safe execution**: Safe progress reporting and file I/O
 - **Rate limiting**: Optional delays to respect API rate limits
 - **Progress tracking**: Real-time progress updates for parallel execution
 - **Robust error handling**: Individual task failures don't crash the entire batch
@@ -842,6 +897,7 @@ uv run python -m llm-python.run_arc_tasks --max_workers 5 --rate_limit_delay 0.5
 
 - **ThreadPoolExecutor**: Runs individual attempts in parallel across worker threads
 - **Thread-safe locks**: Protect shared state (costs, progress counters, result collection)
+- **Thread-safe executor cleanup**: Dedicated locking prevents race conditions during periodic Docker container refresh
 - **Atomic operations**: Each attempt executes independently with no shared state
 - **Safe result aggregation**: Uses thread-safe data structures and synchronization
 
@@ -864,7 +920,7 @@ The tool includes robust timeout handling to prevent hanging on API calls and fi
 
 The tool uses a simplified timeout system based on just **two base values**:
 
-- **API timeout**: 120 seconds (Qwen no-think mode) / 1200 seconds (reasoning models)
+- **API timeout**: 600 seconds (Qwen no-think mode) / 1200 seconds (reasoning models)
 - **Program execution timeout**: 0.5 seconds per program execution
 
 **All other timeouts are calculated automatically:**
@@ -872,7 +928,7 @@ The tool uses a simplified timeout system based on just **two base values**:
 - **Worker timeout**: 2 × API timeout (ample time for parallel execution)
 
 **Example timeouts:**
-- **Qwen no-think**: API=120s, Client=420s, Worker=240s
+- **Qwen no-think**: API=600s, Client=420s, Worker=240s
 - **Reasoning models**: API=1200s, Client=1500s, Worker=2400s
 
 ### Worker Performance & Timeouts
@@ -891,7 +947,7 @@ Increasing workers generally speeds up a run through parallelization, but risks 
 
 For each turn in a multi-turn conversation:
 
-1. **Initial attempt**: API call with model-specific timeout (120s for Qwen no-think, 1200s for reasoning models)
+1. **Initial attempt**: API call with model-specific timeout (600s for Qwen no-think, 1200s for reasoning models)
 2. **Retry 1**: If timeout, wait 2 seconds and retry
 3. **Retry 2**: If timeout again, wait 2 seconds and final retry
 4. **Timeout failure**: If all 3 attempts fail, mark as timeout failure
@@ -938,7 +994,7 @@ Tasks solved correctly: 8/30 (26.7%)
 ### Why These Timeout Values?
 
 **API timeout values are chosen based on model capabilities:**
-- **Qwen no-think (120s)**: Fast, non-reasoning responses typically complete in under 2 minutes
+- **Qwen no-think (600s)**: Fast, non-reasoning responses typically complete in under 2 minutes
 - **Reasoning models (1200s)**: Complex reasoning can take 8-15 minutes for difficult tasks
 
 **Automatic relationships ensure consistency:**
@@ -1042,7 +1098,7 @@ Results are saved in multiple directories:
 
 **Visualization plots in `plots/` directory:**
 - Turn-by-turn evolution charts: `turn_{N}_{task_id}_{log_stem}.png`
-- Generated by running `visualize_task_evolution.py` on log files
+- Generated by running `archive/visualize_task_evolution.py` on log files
 
 Each individual task log includes:
 - Complete program code generated by the model
@@ -1173,11 +1229,24 @@ Model: o4-mini
 API: Responses API (multi-turn, max 3 turns)
 Input mode: Text-only
 Parallelization: DISABLED (sequential execution)
+Executor: docker (timeout: 0.5s)
 --------------------------------------------------
 
 Processing task: 6150a2bd
   💰 Cost: $0.019646 (input: 1089 @ $1.1, output: 4321 @ $4.4)
   ✅ Perfect solution found!
+```
+
+### Unsafe Executor Warning
+```
+⚠️  WARNING: Using unrestricted executor - generated code will run directly on your system!
+Running 10 tasks from arc-agi-1/shortest_10
+Model: o4-mini
+API: Responses API (multi-turn, max 3 turns)
+Input mode: Text-only
+Parallelization: DISABLED (sequential execution)
+Executor: unrestricted (timeout: 0.5s) ⚠️  UNSAFE MODE
+--------------------------------------------------
 ```
 
 ### Parallel Execution
@@ -1187,6 +1256,7 @@ Model: o4-mini
 API: Responses API (multi-turn, max 3 turns)
 Input mode: Text-only
 Parallelization: ENABLED (5 workers)
+Executor: docker (timeout: 0.5s)
 --------------------------------------------------
 Starting parallel execution with 5 workers...
 Progress: 3/10 tasks completed (30.0%)
@@ -1239,7 +1309,7 @@ This example shows:
 - **40% solve rate**: 4 out of 10 tasks solved perfectly
 - **94.4% pixel accuracy**: Very close to correct solutions on average
 - **Turn usage**: Model used an average of 1.5 conversation turns per task
-- **Cost tracking**: Detailed token usage and cost calculation for budget management
+- **Detailed analysis**: Comprehensive metrics and logging for evaluation
 
 ## Analyzing Results
 
@@ -1302,11 +1372,13 @@ uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_
 
 ## Cost Management
 
-The tool automatically tracks costs with high precision:
-- **Token usage**: Input/output tokens per request with detailed breakdowns
+The tool automatically tracks costs with high precision and thread-safe accumulation:
+- **Token usage**: Input/output tokens per request with detailed breakdowns  
 - **Model-specific pricing**: Accurate rates for all 29 supported OpenAI models
 - **Running totals**: Cumulative costs across all tasks in a session
 - **6-decimal precision**: Shows costs down to $0.000001 for accurate budget tracking
+- **Thread-safe tracking**: Safe cost accumulation across parallel workers
+- **Detailed logging**: Cost breakdowns included in all task logs for budget management
 
 **Cost accumulation**: Costs accumulate across all tasks in a session but reset between script runs.
 
@@ -1339,19 +1411,7 @@ Current pricing (as of 2025, $/1M tokens):
 - **computer-use-preview**: Input $3.00, Output $12.00
 - **codex-mini**: Input $1.50, Output $6.00
 
-## All-Attempts Execution
 
-The refactored system uses **all-attempts execution** with voting-based evaluation:
-
-- **Direct prompting**: Each attempt uses the same initial prompt (no feedback)
-- **All attempts executed**: Always runs all N attempts per task for statistical rigor
-- **Parallel execution**: Workers process tasks independently for maximum throughput
-- **Oracle metrics**: Shows upper bound potential if best attempt could be selected
-- **Pass@2 voting**: Uses weighted-majority and train-majority voting for robustness
-- **Transduction filtering**: Automatically detects and filters out hardcoded/cheating responses
-- **Local execution**: All code is executed locally for immediate scoring
-
-**Key Point**: We execute code locally and use voting algorithms to select the best solutions from multiple independent attempts.
 
 ## File Structure
 
@@ -1363,6 +1423,7 @@ llm-python/
 │   ├── task_loader.py          # Load ARC tasks and subsets
 │   ├── scoring.py              # Grid scoring and program execution (0.5s timeout)
 │   ├── prompt_utils.py         # Prompt creation and code extraction
+│   ├── prompt_loader.py        # Load and manage prompt templates
 │   ├── timeout_utils.py        # Timeout handling utilities
 │   ├── voting_utils.py         # Voting algorithms and prediction processing
 │   ├── metrics_utils.py        # Metrics calculation and formatting
@@ -1375,12 +1436,17 @@ llm-python/
 │       ├── test_timeout_utils.py
 │       ├── test_voting_utils.py
 │       └── test_transduction.py
-├── prompt_loader.py            # Load and manage prompt templates
 ├── generate_training_data.py   # Extract training data from logs
-├── visualize_task_evolution.py # Create task evolution visualizations
-├── create_simple_dataset.py    # Create simple datasets without code/reasoning
-├── create_grid_size_distributed_subset.py # Create grid-size distributed subsets
 ├── validate_hf_dataset.py      # Validate Hugging Face datasets
+├── experiment_notes.md         # Development notes and experiments
+├── archive/                    # Legacy scripts (moved for reference)
+│   ├── run_arc_tasks.py        # Original task runner (deprecated)
+│   ├── visualize_task_evolution.py # Task evolution visualizations
+│   ├── create_simple_dataset.py # Simple dataset creation
+│   ├── create_grid_size_distributed_subset.py # Grid-size distributed subsets
+│   ├── analyze_pattern_learning.py # Pattern analysis tools
+│   ├── test_openrouter_direct.py # OpenRouter testing
+│   └── [other archived tools]  # Various development and analysis scripts
 ├── tests/                      # Main test scripts
 │   ├── test_arc_visual_with_api.py
 │   ├── test_execution_diff.py
@@ -1395,6 +1461,7 @@ llm-python/
 ├── logs/                       # Results and summaries
 ├── training_data/              # Generated training files
 ├── plots/                      # Task evolution visualizations
+├── debug_images/               # Debug visualization outputs
 ├── fine-tuning/                # Fine-tuning notebooks and logs
 │   ├── unsloth_arc_finetuning_soar.ipynb
 │   ├── generate_soar_data.ipynb
@@ -1412,21 +1479,16 @@ llm-python/
 
 **Important**: All costs are calculated using the correct Responses API token field names (`input_tokens`/`output_tokens`) with accurate model-specific pricing rates.
 
-## Cleanup
 
-```bash
-# Clean up old log files
-uv run python cleanup_logs.py
-```
 
 ## Model Support
 
-Works with any OpenAI-compatible Chat Completions API:
+Supports any OpenAI-compatible Chat Completions API:
 
-- **✅ OpenAI models**: gpt-4o, gpt-4o-mini, gpt-4-turbo, etc.
-- **✅ Claude (via API)**: claude-3-5-sonnet, claude-3-haiku, etc. (with --base-url)
-- **✅ Local models**: Any model running with OpenAI-compatible server (vLLM, Ollama, etc.)
-- **✅ Other APIs**: Qwen, DeepSeek, Gemini (with compatible endpoints)
+- **OpenAI models**: gpt-4o, gpt-4o-mini, o3, o4-mini, etc.
+- **Claude**: claude-3-5-sonnet, claude-3-haiku (via --base-url)
+- **Local models**: vLLM, Ollama, or any OpenAI-compatible server
+- **Other providers**: Qwen, DeepSeek, Gemini via OpenRouter or direct APIs
 
 ### Setup Examples
 ```bash
@@ -1445,7 +1507,7 @@ uv run python -m llm-python.run_arc_tasks --model llama-3.1-8b --base-url http:/
 - **Execution timeout**: Program execution has a 0.5 second timeout for robust evaluation
 - **Function interface**: All programs must define a `transform` function that takes a grid (2D list) and returns the transformed grid
 - **Grid format**: All grids are represented as 2D lists of integers (0-9)
-- **API architecture**: Uses the Chat Completions API for broad compatibility with OpenAI-compatible endpoints
+- **API architecture**: Uses the Chat Completions API for broad compatibility
 - **Cost accuracy**: Uses standard prompt_tokens/completion_tokens for cost calculation
 - **Pixel counting**: Fixed pixel accuracy calculation to include failed executions in totals
 - **Utils organization**: Modular utility functions with comprehensive test coverage
@@ -1459,20 +1521,18 @@ uv run python -m llm-python.run_arc_tasks --model llama-3.1-8b --base-url http:/
 
 ## Additional Notes
 
-- You can control the maximum number of turns using --max_turns (default: 3). This is especially useful for limiting cost and runaway conversations.
-- **API Compatibility**: Works with any endpoint that implements OpenAI's Chat Completions API format
-- **Custom Endpoints**: Use --base-url to connect to Claude, local models, or other compatible APIs
-- **Parallelization**: Use `--max_workers` (1-128) to run tasks in parallel. Start with 5 workers and increase gradually while monitoring for rate limit errors. Use `--rate_limit_delay` to add delays between requests if needed.
-- **Cost Control**: Parallel execution accumulates costs faster but maintains the same per-task costs. Monitor total spending especially when using expensive models like o3 with many workers.
-- **Thread Safety**: All file I/O, progress tracking, and cost accumulation is thread-safe. Individual task logs use unique filenames with thread IDs to prevent conflicts.
+- **Execution timeout**: Program execution has a 0.5 second timeout for robust evaluation
+- **Function interface**: All programs must define a `transform` function that takes a grid (2D list) and returns the transformed grid
+- **Grid format**: All grids are represented as 2D lists of integers (0-9)
+- **Thread safety**: All operations are thread-safe with unique filenames and synchronized cost tracking
 
-## create_grid_size_distributed_subset.py
+## archive/create_grid_size_distributed_subset.py
 
-This script creates a new subset of ARC-AGI problems by selecting tasks from the evaluation sets of arc-agi-1 and arc-agi-2, distributed evenly by grid size. For each task, the grid size is defined as the sum of the number of cells in the first input and first output grid (from the first training example). The script selects 30 tasks from each evaluation set, spaced evenly across the range of grid sizes, and copies them into a new subset directory for balanced benchmarking.
+This archived script creates a new subset of ARC-AGI problems by selecting tasks from the evaluation sets of arc-agi-1 and arc-agi-2, distributed evenly by grid size. For each task, the grid size is defined as the sum of the number of cells in the first input and first output grid (from the first training example). The script selects 30 tasks from each evaluation set, spaced evenly across the range of grid sizes, and copies them into a new subset directory for balanced benchmarking.
 
 Usage:
 ```
-uv run o3-tools/create_grid_size_distributed_subset.py
+uv run python archive/create_grid_size_distributed_subset.py
 ```
 
 The script will output a manifest of selected tasks and their grid sizes.
@@ -1529,17 +1589,3 @@ Completed:
 [x] prompt so that the model keeps reasoning until it finds a python program that solves (for the tool use case). don't include the test examples in the prompt.
 [x] **Simplified scoring**: Removed complex compression-based calculations and focused on core metrics.
 
-## ARC Task Runner: All-Attempts Evaluation (run_arc_tasks_soar.py)
-
-**Refactored system** with true parallelization at the attempt level and voting-based evaluation:
-
-- **True Parallelization:** All attempts across all tasks run simultaneously for maximum efficiency
-- **Real-time Task Summaries:** Displays brief statistics for each task as it completes (test-correct, train-perfect, train-partial counts)
-- **Voting Algorithms (Both Pass@2):**
-  - **Weighted majority voting:** Uses pattern frequency + 1000×train_accuracy, returns top 2 patterns
-  - **Train-majority voting:** Among best-training-accuracy attempts, majority vote for top 2 patterns
-- **Oracle Metric:** Shows upper bound performance - if ANY attempt got test correct across all attempts
-- **Transduction filtering:** Filters out hardcoded/cheating responses before voting
-- **Comprehensive logging:** All attempts, full prompts, and voting decisions stored in detailed JSON logs
-
-Key features: true parallelization at attempt level, real-time progress reporting, robust error handling, oracle upper bounds, and consistent pass@2 evaluation metrics for thorough assessment.

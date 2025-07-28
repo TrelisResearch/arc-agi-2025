@@ -1,14 +1,89 @@
 # Experiment Notes
 
+## 28 July 2025 - CRITICAL BUG FIXES: Executor State Corruption
+
+### 🚨 Issue: Systematic Execution Failures in Multi-Run Experiments
+
+**Symptoms Observed:**
+- Run 1: Normal performance (e.g., 9.8% success rate)
+- Run 2: Complete systematic failure (0.0% success rate) 
+- Pattern: All tasks showing `train-exec-error, test-exec-error` in Run 2
+- Some tasks with 8/8 attempts failing execution in later parts of long runs
+
+**Root Cause Analysis:**
+
+#### 1. **Singleton State Corruption Bug** (Primary Issue)
+```python
+class ProgramExecutor:
+    _executor = None          # ← SHARED across ALL instances  
+    _executor_context = None  # ← SHARED across ALL instances
+    _executor_type = None     # ← SHARED across ALL instances
+```
+
+**Problem:** Between runs, script deleted `ARCTaskRunnerSimple` instances but **never cleaned up ProgramExecutor singleton state**. Run 2 reused stale/corrupted executor context from Run 1.
+
+#### 2. **Docker Container Resource Degradation** (Compounding Issue)
+- `ProgramExecutor` defaults to Docker containers running FastAPI servers
+- Over 3,200+ executions (400 tasks × 8 attempts): memory leaks, file descriptor leaks, import accumulation
+- **Compound failure:** Singleton corruption + Docker resource buildup = systematic failures
+
+**Why Short Runs Worked vs Long Runs Failed:**
+- Short runs: Less resource accumulation, corruption hadn't built up
+- Long runs: Systematic degradation became severe enough to cause widespread failures
+
+### ✅ Fixes Implemented
+
+#### 1. **Between-Run Singleton Cleanup**
+```python
+# In run_repeated_subset() finally block:
+ProgramExecutor.cleanup_executor()  # Clean up singleton state
+```
+
+#### 2. **Periodic Within-Run Executor Refresh**
+```python
+# Every 100 attempts during long runs:
+if self.health_metrics['total_attempts'] % 100 == 0:
+    ProgramExecutor.cleanup_executor()
+    self.executor = ProgramExecutor(timeout=0.5, executor_type="docker")
+```
+
+#### 3. **Maintained Docker Executor with Cleanup**
+```python
+# Keep Docker sandboxing for security - but with periodic cleanup
+self.executor = ProgramExecutor(timeout=0.5, executor_type="docker")
+```
+
+#### 4. **Added Health Monitoring**
+```python
+# Health reports every 100 attempts (right before cleanup):
+🏥 Health [100 attempts]: Success 78% | Timeout 5% | ExecErr 17% | AvgTime 0.31s
+🔄 Periodic executor cleanup at 100 attempts
+```
+
+### 📊 Impact & Prevention
+
+**Expected Results:**
+- ✅ **Consistent performance** across multiple runs (no more 9.8% → 0.0% drops)
+- ✅ **Prevents resource accumulation** in long runs  
+- ✅ **Early warning system** via health monitoring
+- ✅ **Automatic recovery** via periodic cleanup
+
+**Key Learning:** Always clean up singleton state between runs and monitor execution health during long experiments to catch degradation early.
+
+**Technical Fix: Thread-Safe Cleanup**
+The original race condition occurred because 32 parallel threads could simultaneously trigger cleanup at milestones (100, 200 attempts), causing multiple Docker containers to be created with identical timestamp-based names. The proper solution: added `_cleanup_lock` to ensure only one thread can perform executor refresh at a time, maintaining the singleton pattern correctly.
+
+---
+
 ## 29 July 2025
 - [ ] Review of run_arc_tasks_soar.py
   - [x] Ensure categories for each each result attempt are complete (i.e. test result, train result, api failures, api timeout, max length reached, code extraction failed, code execution failed.)
   - [ ] Manual review of threading and timeouts.
   - [ ] What does sglang do if a request is stopped? Does it continue - resulting in a build-up in the serverload? https://github.com/sgl-project/sglang/issues/3520 . SOLUTION FOR NOW IS JUST TO INCREASE THE TIMEOUTS.
-- [ ] Evaluation on shortest 30 evaluation problems:
+- [x] Evaluation on shortest 30 evaluation problems:
   - [x] Soar model. 54%
   - [x] Qwen Base. 7%
-  - [ ] Qwen Base with reasoning.
+  - [x] Qwen Base with reasoning. ~32%
   - [x] Gemini. ~80%
 - [ ] Full evaluation sets for arc-agi-1:
   - [ ] Soar model.
@@ -16,10 +91,41 @@
 - [ ] Fine-tuning:
     - [ ] Hoist utils. 
     - [ ] Test a small dataset.
-- [ ] Data generation (lewis):
-    - [ ] Hoist utils. Already available! Need to make use of them in the data generation script generate_training_data.py
-    - [ ] Integrate validation.
-    - [ ] Test a small dataset.
+- [ ] Data generation - Lewis doing this.
+
+### Test julien31/Soar-qwen-7b on full 400 evaluation tasks
+
+Startup a pod:
+```bash
+uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path julien31/Soar-qwen-7b --reasoning-parser qwen3
+```
+
+and then test on full 400 tasks:
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model julien31/Soar-qwen-7b --base-url http://38.80.152.249:30712/v1 --qwen-no-think --max-tokens 1000
+```
+SUMMARY (Run 1)
+==================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: julien31/Soar-qwen-7b
+Total tasks: 400
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 12,907,107
+Total cost: $2.404975
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 9.8%
+  Pass@2 (Train Majority):  9.8%
+  Oracle (Best Attempt):    10.5%
+  All Train Correct:        9.0%
+  Min 1 Train Correct:      21.2%
+  Max Length Responses:     2.5%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+Results saved to: /Users/ronanmcgovern/TR/arc-agi-2025/llm-python/logs/20250728_100744/20250728_101652_summary_arc-agi-1_all_evaluation_simple_run1.json
+
 
 ### Test Qwen Base on full 400 evaluation tasks
 
@@ -29,8 +135,27 @@ uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path qwen/qwen3-4b --reaso
 ```
 and test on full 400 tasks (STRONGLY RECOMMEND USING MAX TOKENS AS THE MODEL BLABS A LOT):
 ```bash
-uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_attempts 8 --model qwen/qwen3-4b --base-url http://38.80.152.249:30707/v1 --qwen-no-think --max-tokens 1000
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model qwen/qwen3-4b --base-url http://38.80.152.249:30707/v1 --qwen-no-think --max-tokens 1000
 ```
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: qwen/qwen3-4b
+Total tasks: 400
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 12,947,286
+Total cost: $2.423322
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.5%
+  Pass@2 (Train Majority):  0.5%
+  Oracle (Best Attempt):    0.5%
+  All Train Correct:        0.2%
+  Min 1 Train Correct:      2.2%
+  Max Length Responses:     9.4%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+Results saved to: /Users/ronanmcgovern/TR/arc-agi-2025/llm-python/logs/20250728_100807/20250728_101737_summary_arc-agi-1_all_evaluation_simple_run1.json
 
 ### Test Qwen Base with reasoning on shortest 30 evaluation tasks
 
@@ -42,6 +167,25 @@ uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path qwen/qwen3-4b --reaso
 ```bash
 uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_30 --repeat-runs 3 --max_workers 16 --max_attempts 8 --model qwen/qwen3-4b --base-url http://38.80.152.249:30742/v1
 ```
+Dataset: arc-agi-1
+Subset: shortest_evaluation_30
+Model: qwen/qwen3-4b
+Number of runs: 3
+Valid runs: 2
+
+INDIVIDUAL RUN RESULTS:
+----------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Max-Len 
+----------------------------------------------------------------------------------
+1    30     33.3%      33.3%      33.3%    33.3%      53.3%       0.0%    
+3    30     30.0%      30.0%      30.0%    33.3%      66.7%       0.0%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 31.7%
+  Std Dev: 2.4%
+  95% CI: [27.0%, 36.3%]
 
 ## 26-28 July 2025
 - [x] Review code and consolidate into one run_arc_tasks_soar.py script
@@ -3079,7 +3223,7 @@ Run two times - once with independent attempts, and once with feedback.
 **Baseline scoring is ~8/20 (40% +/-8% with feedback, 28% +/- 11% without feedback) from yesterday.**
 
 **Commentary:**
-- These results are showing that there is a HUGE amount of noise. Because the “Attempt 1 Only Success Rate” and “Turn 1 Only Success Rate” should be equivalent, and they are falling outside their 95% confidence bounds, indicating that just doing 3 runs is not capturing the mean of the distribution…
+- These results are showing that there is a HUGE amount of noise. Because the "Attempt 1 Only Success Rate" and "Turn 1 Only Success Rate" should be equivalent, and they are falling outside their 95% confidence bounds, indicating that just doing 3 runs is not capturing the mean of the distribution…
 - I re-ran the tests with 10 runs of each, and now the results are within each other's confidence bounds for single turn/attempt, which is good. However, the error is so high that distinguishing the two runs is very difficult.
 - IMPLICATION: Ablating some kind of MCTS will be almost impossible to see in the noise...
 
