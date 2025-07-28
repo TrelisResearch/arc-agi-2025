@@ -4,11 +4,11 @@ FastAPI server that runs inside the Docker container to execute Python code.
 
 import pickle
 import base64
-import traceback
-from typing import Any, Dict, Optional
+from typing import Optional
 from fastapi import FastAPI
 from pydantic import BaseModel
 import uvicorn
+from subprocess_executor import execute_code_in_subprocess
 
 
 class CodeRequest(BaseModel):
@@ -28,38 +28,32 @@ app = FastAPI(title="Python Code Executor", version="1.0.0")
 
 @app.post("/execute", response_model=CodeResponse)
 async def execute_code(request: CodeRequest) -> CodeResponse:
-    """Execute Python code and return the result."""
+    """Execute Python code using subprocess for better isolation and resource cleanup."""
+    
     try:
-        # Wrap the user code in a function
-        wrapper_code = f"""
-def user_function():
-{chr(10).join('    ' + line for line in request.code.split(chr(10)))}
-
-result = user_function()
-"""
+        # Use the subprocess executor directly for isolation and cleanup
+        result, error = execute_code_in_subprocess(request.code, timeout=request.timeout)
         
-        # Create a namespace for execution
-        namespace: Dict[str, Any] = {}
-        
-        # Execute the code
-        exec(wrapper_code, namespace)
-        result = namespace.get('result')
-        
-        # Serialize the result
-        serialized_result = base64.b64encode(pickle.dumps(result)).decode('utf-8')
-        
-        return CodeResponse(
-            success=True,
-            result=serialized_result
-        )
-        
+        if error is None:
+            # Success - serialize the result for the response
+            serialized_result = base64.b64encode(pickle.dumps(result)).decode('utf-8')
+            return CodeResponse(
+                success=True,
+                result=serialized_result
+            )
+        else:
+            # Error occurred during execution
+            return CodeResponse(
+                success=False,
+                error=str(error),
+                error_type=type(error).__name__
+            )
+            
     except Exception as e:
-        # Capture the full traceback
-        error_traceback = traceback.format_exc()
-        
+        # Unexpected error in the executor
         return CodeResponse(
             success=False,
-            error=str(e),
+            error=f"Executor error: {e}",
             error_type=type(e).__name__
         )
 

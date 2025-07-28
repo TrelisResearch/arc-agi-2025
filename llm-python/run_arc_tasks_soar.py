@@ -136,7 +136,7 @@ class ARCTaskRunnerSimple:
         self.total_cost = 0.0
         self.total_tokens = 0
         
-        # Thread-safe cleanup to prevent race conditions during executor refresh
+        # Thread-safe state management to prevent race conditions
         self._cleanup_lock = threading.Lock()
         
         # Health monitoring for long runs
@@ -147,7 +147,7 @@ class ARCTaskRunnerSimple:
             'exec_errors': 0,
             'exec_times': [],
             'recent_window': 100,  # Rolling window size
-            'report_interval': 100  # Report every N attempts (right before cleanup)
+            'report_interval': 100  # Report every N attempts
         }
         
         # Create logs directory with timestamped subfolder
@@ -570,20 +570,6 @@ class ARCTaskRunnerSimple:
         if self.health_metrics['total_attempts'] % self.health_metrics['report_interval'] == 0:
             self._print_health_report()
         
-        # Periodic executor cleanup to prevent degradation (every 100 attempts)
-        if self.health_metrics['total_attempts'] % 100 == 0:
-            # Thread-safe cleanup - only one thread can perform cleanup at a time
-            with self._cleanup_lock:
-                # Double-check the count after acquiring lock (another thread might have just cleaned up)
-                if self.health_metrics['total_attempts'] % 100 == 0:
-                    try:
-                        print(f"🔄 Periodic executor cleanup at {self.health_metrics['total_attempts']} attempts")
-                        ProgramExecutor.cleanup_executor()
-                        self.executor = ProgramExecutor(timeout=0.5, executor_type=self.executor_type)
-                        print("✅ Executor refreshed")
-                    except Exception as cleanup_e:
-                        print(f"⚠️ Executor cleanup failed: {cleanup_e}")
-        
         return {
             'task_id': task_id,
             'attempt_num': attempt_num,
@@ -844,8 +830,8 @@ class ARCTaskRunnerSimple:
             else:
                 print(f"⚠️ Task {task_id} has no valid attempts - skipping")
         
-        self.save_summary(results, subset_name, dataset)
-        return results
+        summary_filepath = self.save_summary(results, subset_name, dataset)
+        return results, summary_filepath
     
     def _display_task_summary(self, task_id: str, task_result: Dict):
         """Display a brief summary of a completed task"""
@@ -1006,6 +992,7 @@ class ARCTaskRunnerSimple:
             print(f"  API Failure Responses:    {percentage_metrics['api_failure_responses']:.1%}")
         
         print(f"\nResults saved to: {filepath}")
+        return filepath
     
     def run_repeated_subset(self, subset_name: str, dataset: str = "arc-agi-1", limit: Optional[int] = None, repeat_runs: int = 3) -> List[List[Dict]]:
         """Run the same subset multiple times with completely independent runs"""
@@ -1044,13 +1031,10 @@ class ARCTaskRunnerSimple:
             
             try:
                 # Run the subset and let it save its own results
-                results = runner.run_subset(subset_name, dataset, limit)
+                results, summary_filepath = runner.run_subset(subset_name, dataset, limit)
                 print(f"\n✅ COMPLETED RUN {run_num}/{repeat_runs}")
                 
-                # Store the summary file path for later aggregation
-                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                summary_filename = f"{timestamp}_summary_{dataset}_{subset_name}_simple_run{run_num}.json"
-                summary_filepath = runner.logs_dir / summary_filename
+                # Store the actual summary file path that was created
                 run_files.append(summary_filepath)
                 
             except Exception as e:
@@ -1237,7 +1221,7 @@ class ARCTaskRunnerSimple:
 
 def main():
     parser = argparse.ArgumentParser(description="Run ARC tasks with all-attempts, rolling execution, and voting-based evaluation")
-    parser.add_argument("--dataset", default="arc-agi-1", choices=["arc-agi-1", "arc-agi-2"], help="Dataset to use")
+    parser.add_argument("--dataset", default="arc-agi-1", choices=["arc-agi-1", "arc-agi-1r", "arc-agi-2"], help="Dataset to use")
     parser.add_argument("--subset", default="shortest_1", help="Subset name")
     parser.add_argument("--model", default="gpt-4.1-mini", help="Model to use")
     parser.add_argument("--limit", type=int, help="Limit number of tasks to run")
@@ -1286,7 +1270,7 @@ def main():
         if args.repeat_runs > 1:
             runner.run_repeated_subset(args.subset, args.dataset, args.limit, args.repeat_runs)
         else:
-            runner.run_subset(args.subset, args.dataset, args.limit)
+            results, _ = runner.run_subset(args.subset, args.dataset, args.limit)
     finally:
         # Final cleanup to ensure clean shutdown
         with runner._cleanup_lock:  # Thread-safe cleanup

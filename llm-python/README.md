@@ -90,8 +90,7 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --r
 - **True Parallelization**: All attempts across all tasks run simultaneously for maximum efficiency
 - **Real-time Task Summaries**: Displays brief statistics for each task as it completes (test-correct, train-perfect, train-partial counts)
 - **Real-time Logging**: Individual task logs are saved immediately when each task completes, not at the end of the run
-- **Health Monitoring**: Health reports every 100 attempts (right before each cleanup) showing execution success rates, timeout rates, and average execution times
-- **Automatic Executor Cleanup**: Thread-safe periodic cleanup every 100 attempts prevents resource degradation in long runs
+- **Health Monitoring**: Health reports every 100 attempts showing execution success rates, timeout rates, and average execution times
 - **Secure Docker Execution**: All generated code runs in isolated Docker containers for security (can be disabled with `--unsafe-executor` flag for testing)
 - **Voting Algorithms (Pass@2)**: 
   - **Weighted majority voting**: Uses pattern frequency + 1000×train_accuracy, returns top 2 patterns
@@ -120,8 +119,6 @@ The tool automatically monitors execution health during long runs and displays p
 
 ```bash
 🏥 Health [100 attempts]: Success 78% | Timeout 5% | ExecErr 17% | AvgTime 0.31s
-🔄 Periodic executor cleanup at 100 attempts
-✅ Executor refreshed
 ```
 
 **Health Metrics Explained:**
@@ -130,7 +127,7 @@ The tool automatically monitors execution health during long runs and displays p
 - **ExecErr %**: Programs with runtime errors
 - **AvgTime**: Average total time per attempt (API + execution + processing)
 
-**Automatic Cleanup**: Every 100 attempts, the Docker executor is thread-safely cleaned and refreshed to prevent resource degradation. Uses dedicated locking to prevent race conditions when multiple threads simultaneously reach cleanup milestones in high-parallelization scenarios.
+**Resource Management**: Docker containers are automatically managed on a per-execution basis for optimal performance and security isolation.
 
 ### Security and Execution Safety
 
@@ -851,6 +848,43 @@ All Turns Success Rate:
 - **A/B testing**: Compare different models, reasoning efforts, or configurations
 - **Confidence intervals**: Understand the uncertainty in your performance measurements
 
+## Retrospective Log Analysis
+
+The `read_log_stats.py` script provides retrospective analysis of experiment logs with aggregate statistics across multiple runs.
+
+### Usage Examples
+
+```bash
+# Analyze specific log directories
+uv run python read_log_stats.py logs/20250728_113731 logs/20250728_114716 logs/20250728_115648
+
+# Auto-discover logs by date pattern
+uv run python read_log_stats.py --pattern 20250728
+
+# Verbose mode for file details
+uv run python read_log_stats.py logs/20250728_113731 --verbose
+```
+
+### Key Features
+
+- **Multi-directory aggregation**: Combine statistics from multiple experiment runs
+- **Auto-discovery**: Find log directories by date patterns
+- **Comprehensive metrics**: Mean, standard deviation, 95% confidence intervals
+- **Individual and aggregate views**: See both per-run results and overall statistics
+- **Filtering**: Automatically excludes aggregate summary files to prevent double-counting
+
+### Output Example
+
+```
+📊 Found 3 summary file(s) total
+Weighted Voting Pass2:
+  Mean: 0.9%
+  Std Dev: 0.1%
+  95% CI: [0.6%, 1.2%]
+```
+
+**Use cases**: Performance analysis, model comparison, experiment validation, statistical reporting
+
 
 
 ## Parallelization
@@ -897,7 +931,7 @@ uv run python -m llm-python.run_arc_tasks --max_workers 5 --rate_limit_delay 0.5
 
 - **ThreadPoolExecutor**: Runs individual attempts in parallel across worker threads
 - **Thread-safe locks**: Protect shared state (costs, progress counters, result collection)
-- **Thread-safe executor cleanup**: Dedicated locking prevents race conditions during periodic Docker container refresh
+- **Thread-safe resource management**: Dedicated locking prevents race conditions during state updates and resource management
 - **Atomic operations**: Each attempt executes independently with no shared state
 - **Safe result aggregation**: Uses thread-safe data structures and synchronization
 
@@ -1162,20 +1196,28 @@ Summary reports aggregate across all tasks and include:
 }
 ```
 
-**Non-Reasoning Model Example (gpt-4o-mini):**
+**Reasoning Model Example (google/gemini-2.5-flash):**
 ```json
 {
   "task_id": "6150a2bd",
-  "model": "gpt-4o-mini", 
-  "reasoning_effort": "N/A",
-  "api_type": "responses_api",
+  "model": "google/gemini-2.5-flash", 
+  "reasoning_effort": "low",
+  "api_type": "chat_completions_all_attempts",
   "program": "def transform(grid):\n    return [row[::-1] for row in grid[::-1]]",
   "task_failure_reason": "",
   "timed_out": false,
   "tokens_used": 542,
   "turns_used": 1,
   "request_cost": 0.000405,
-  "raw_response": { /* Full API response */ },
+  "raw_response": {
+    "content": "Looking at the examples, I can see a pattern...",
+    "reasoning": "**Examining Grid Transformations**\n\nI need to analyze each training example to understand the transformation rule...",
+    "usage": {
+      "prompt_tokens": 1289,
+      "completion_tokens": 1653,
+      "reasoning_tokens": null
+    }
+  },
   "sampling_params": {
     "top_p": 0.9,
     "top_k": 50
@@ -1287,22 +1329,22 @@ Total tokens used: 35,847
 Total cost: $0.196734
 ```
 
-**Non-Reasoning Model Example (gpt-4o-mini):**
+**Reasoning Model Example (google/gemini-2.5-flash):**
 ```
 ==================================================
 SUMMARY
 ==================================================
 Dataset: arc-agi-1
 Subset: shortest_10
-Model: gpt-4o-mini
-API: Responses (single-shot)
-Multi-turn enabled: False
-Tasks solved correctly: 3/10 (30.0%)
-Pixel accuracy: 78/90 (86.7%)
+Model: google/gemini-2.5-flash
+Reasoning effort: low
+API: Chat Completions (all-attempts, 8 attempts per task)
+Tasks solved correctly: 6/10 (60.0%)
+Pixel accuracy: 85/90 (94.4%)
 Total turns used: 10
 Average turns per task: 1.0
-Total tokens used: 12,456
-Total cost: $0.009845
+Total tokens used: 18,456
+Total cost: $0.024835
 ```
 
 This example shows:
@@ -1317,7 +1359,7 @@ This example shows:
 
 **Individual Task Logs:**
 - `task_id`: ARC task identifier
-- `model`: OpenAI model used (e.g., "o4-mini", "gpt-4o-mini")
+- `model`: Model used (e.g., "o4-mini", "google/gemini-2.5-flash")
 - `reasoning_effort`: Reasoning effort level for reasoning models ("low", "medium", "high") or "N/A" for non-reasoning models
 - `program`: Generated Python code 
 - `task_failure_reason`: Reason why task failed - includes Python execution errors, "All attempts failed", "Max turns reached", "API timeout after retries", etc. (empty if successful)
@@ -1367,7 +1409,7 @@ uv run python -m pytest llm-python/utils/test_scoring.py -v
 Quick API test:
 ```bash
 # Test with a single task
-uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_1 --model gpt-4o-mini --max_turns 1
+uv run python -m llm-python.run_arc_tasks --dataset arc-agi-1 --subset shortest_1 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1 --reasoning_effort low
 ```
 
 ## Cost Management
@@ -1401,7 +1443,7 @@ Current pricing (as of 2025, $/1M tokens):
 - **gpt-4.1-mini**: Input $0.40, Output $1.60
 - **gpt-4.1-nano**: Input $0.10, Output $0.40
 - **gpt-4o**: Input $2.50, Output $10.00
-- **gpt-4o-mini**: Input $0.15, Output $0.60
+
 
 **Google Models:**
 - **google/gemini-2.5-flash**: Input $0.30, Output $2.50
@@ -1485,7 +1527,7 @@ llm-python/
 
 Supports any OpenAI-compatible Chat Completions API:
 
-- **OpenAI models**: gpt-4o, gpt-4o-mini, o3, o4-mini, etc.
+- **OpenAI models**: gpt-4o, o3, o4-mini, etc.
 - **Claude**: claude-3-5-sonnet, claude-3-haiku (via --base-url)
 - **Local models**: vLLM, Ollama, or any OpenAI-compatible server
 - **Other providers**: Qwen, DeepSeek, Gemini via OpenRouter or direct APIs
@@ -1493,7 +1535,7 @@ Supports any OpenAI-compatible Chat Completions API:
 ### Setup Examples
 ```bash
 # OpenAI (default)
-uv run python -m llm-python.run_arc_tasks --model gpt-4o-mini
+uv run python -m llm-python.run_arc_tasks --model o4-mini
 
 # Claude via compatible endpoint
 uv run python -m llm-python.run_arc_tasks --model claude-3-haiku --base-url https://api.anthropic.com/v1

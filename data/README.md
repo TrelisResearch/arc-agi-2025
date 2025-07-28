@@ -1,6 +1,6 @@
 # ARC-AGI Data Directory
 
-This directory contains the complete datasets for ARC-AGI-1 and ARC-AGI-2, along with predefined subsets for efficient experimentation.
+This directory contains the complete datasets for ARC-AGI-1, ARC-AGI-1r (reverse), and ARC-AGI-2, along with predefined subsets for efficient experimentation.
 
 ## Directory Structure
 
@@ -9,10 +9,13 @@ data/
 ├── arc-agi-1/              # ARC-AGI-1 dataset (original ARC)
 │   ├── training/           # 400 training tasks
 │   └── evaluation/         # 400 evaluation tasks
+├── arc-agi-1r/             # ARC-AGI-1r dataset (reverse of original ARC)
+│   ├── training/           # 400 training tasks (input/output swapped)
+│   └── evaluation/         # 400 evaluation tasks (input/output swapped)
 ├── arc-agi-2/              # ARC-AGI-2 dataset (2024 release)
 │   ├── training/           # 1,000 training tasks
 │   └── evaluation/         # 120 evaluation tasks
-└── subsets/                # Predefined subsets for both datasets
+└── subsets/                # Predefined subsets for all datasets
     ├── arc-agi-1/
     │   ├── shortest_evaluation_1.txt           # Task ID of the shortest evaluation task
     │   ├── shortest_evaluation_10.txt          # Task IDs of 10 shortest evaluation tasks
@@ -38,6 +41,20 @@ data/
     │   ├── grid_size_distributed_30_training.txt   # 30 training tasks evenly distributed by grid size
     │   ├── *_details.json files                # Corresponding detailed info files for each subset
     │   └── tasks_with_multiple_tests.json      # Tasks with >1 test example
+    ├── arc-agi-1r/
+    │   ├── shortest_evaluation_1r.txt          # Reverse task IDs for shortest evaluation tasks
+    │   ├── shortest_evaluation_10r.txt         # (All subset files with 'r' suffix)
+    │   ├── shortest_evaluation_30r.txt
+    │   ├── shortest_training_1r.txt            # (Task IDs have 'r' appended)
+    │   ├── shortest_training_10r.txt
+    │   ├── shortest_training_30r.txt
+    │   ├── middle_evaluation_*r.txt            # All middle subsets with 'r' suffix
+    │   ├── middle_training_*r.txt
+    │   ├── longest_evaluation_*r.txt           # All longest subsets with 'r' suffix
+    │   ├── longest_training_*r.txt
+    │   ├── grid_size_distributed_30_evaluationr.txt
+    │   ├── grid_size_distributed_30_trainingr.txt
+    │   └── ... (all other subsets with 'r' suffix)
     └── arc-agi-2/
         ├── shortest_evaluation_1.txt           # Task ID of the shortest evaluation task
         ├── shortest_evaluation_10.txt          # Task IDs of 10 shortest evaluation tasks
@@ -109,6 +126,13 @@ Each task file is a JSON object with the following structure:
   - 2 test examples: 31 tasks
   - 3 test examples: 2 tasks (`ff28f65a`, `27a28665`)
 
+### ARC-AGI-1r (800 tasks total - reverse of ARC-AGI-1)
+- **Training set**: 400 tasks (input/output swapped from ARC-AGI-1 training)
+- **Evaluation set**: 400 tasks (input/output swapped from ARC-AGI-1 evaluation)
+- **Task IDs**: Original IDs with 'r' appended (e.g., `007bbfb7` → `007bbfb7r`)
+- **Grid swapping**: For each example, original input becomes output and original output becomes input
+- **Use case**: Testing model performance on inverse reasoning tasks
+
 ### ARC-AGI-2 (1,120 tasks total)
 - **Training set**: 1,000 tasks
 - **Evaluation set**: 120 tasks
@@ -133,33 +157,6 @@ Each subset contains only task IDs from the relevant split. Legacy mixed subsets
 **Grid Size Distributed Subsets:**
 These subsets select 30 tasks evenly spaced across the range of grid sizes (total cells in all input/output grids). They provide a balanced representation of task complexity within each split.
 
-**Example usage:**
-
-Run the 10 shortest evaluation tasks from ARC-AGI-2:
-```bash
-uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-2 --subset shortest_evaluation_10
-```
-
-Run the 30 longest training tasks from ARC-AGI-1:
-```bash
-uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset longest_training_30
-```
-
-Run the 100 shortest evaluation tasks from ARC-AGI-1:
-```bash
-uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset shortest_evaluation_100
-```
-
-Run the 100 shortest training tasks from ARC-AGI-2:
-```bash
-uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-2 --subset shortest_training_100
-```
-
-Run 30 grid size distributed evaluation tasks from ARC-AGI-2:
-```bash
-uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-2 --subset grid_size_distributed_30_evaluation
-```
-
 ## Task Size Definition
 **Task size** is calculated as the total number of grid cells across all inputs and outputs in a task:
 - Size = sum of (width × height) for all input grids + sum of (width × height) for all output grids
@@ -183,6 +180,12 @@ The following subset files are available:
 - **grid_size_distributed_30_training.txt**: 30 training tasks evenly distributed by grid size
 - **grid_size_distributed_30_evaluation.txt**: 30 evaluation tasks evenly distributed by grid size
 - **random_split_1_training.txt** through **random_split_8_training.txt**: Eight random splits of 50 training tasks each (total 400 tasks)
+
+**For arc-agi-1r (in `data/subsets/arc-agi-1r/`):**
+- **All subset files from arc-agi-1 with 'r' suffix**: e.g., `shortest_training_10r.txt`
+- **Task IDs with 'r' appended**: e.g., `6150a2bd` → `6150a2bdr`
+- **Same organizational structure**: All 44 subset files replicated with transformed task IDs
+- **Complete coverage**: Every subset from arc-agi-1 has a corresponding reverse version
 
 **For arc-agi-2 (in `data/subsets/arc-agi-2/`):**
 - **shortest_training_1.txt**: Single shortest training task
@@ -220,29 +223,6 @@ Eight random splits of the ARC-AGI-1 training set have been created for various 
 - **Balanced**: Each split contains exactly 50 tasks
 - **Complete coverage**: All 400 training tasks are included across the 8 splits
 
-### Usage Examples:
-
-Run experiments on random split 1:
-```bash
-uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset random_split_1_training
-```
-
-Run training experiments using splits 1-6 for training and split 7 for validation:
-```bash
-# Training on 300 tasks (splits 1-6)
-for i in {1..6}; do
-  uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset random_split_${i}_training
-done
-
-# Validation on 50 tasks (split 7)
-uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset random_split_7_training
-```
-
-Use split 8 as a held-out test set:
-```bash
-uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset random_split_8_training
-```
-
 ## Model Performance Subsets (ARC-AGI-1)
 
 These subsets contain task IDs that were successfully solved by specific models, useful for performance analysis and creating calibration sets:
@@ -271,28 +251,6 @@ These subsets contain task IDs that were successfully solved by specific models,
 - **o4-mini**: 94/400 tasks solved (23.5%) 
 - **gpt-4.1-nano**: 3/98 tasks solved (3.1% on combined subset)
 - **Combined coverage**: 98/400 unique tasks solved by either gpt-4.1 or o4-mini (24.5%)
-
-### Usage Examples:
-
-Test gpt-4.1-mini on the calibration subset:
-```bash
-uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib
-```
-
-Test gpt-4.1-mini on the training calibration subset:
-```bash
-uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-mini-calib-train
-```
-
-Test a model on tasks that o4-mini solved:
-```bash
-uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset o4-mini
-```
-
-Compare model performance on the combined challenging subset:
-```bash
-uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset gpt-4.1-o4-mini
-```
 
 ## Working with Tasks
 
@@ -347,7 +305,35 @@ for task_id in task_ids:
 ## Data Sources
 
 - ARC-AGI-1: https://github.com/fchollet/ARC-AGI
+- ARC-AGI-1r: Programmatically generated reverse of ARC-AGI-1 (input/output swapped)
 - ARC-AGI-2: https://github.com/arcprize/ARC-AGI-2
+
+## ARC-AGI-1r (Reverse Dataset)
+
+The ARC-AGI-1r dataset is a programmatically generated reverse version of ARC-AGI-1, where the input and output grids are swapped for every training and test example. This creates an interesting challenge for testing model performance on inverse reasoning tasks.
+
+### Key Features:
+- **Complete reversal**: Every training and test example has input and output grids swapped
+- **Preserved structure**: Same number of examples, same grid dimensions, same color patterns
+- **New task IDs**: Original task ID + 'r' (e.g., `007bbfb7` → `007bbfb7r`)
+- **Complete subset coverage**: All 44 subset files from arc-agi-1 replicated with 'r' suffix
+
+### Example Transformation:
+**Original task `007bbfb7.json`:**
+```json
+{
+  "train": [{"input": [[0,7,7]], "output": [[0,0,0,0,7,7,0,7,7]]}],
+  "test": [{"input": [[7,0,7]], "output": [[7,0,7,0,0,0,7,0,7]]}]
+}
+```
+
+**Becomes `007bbfb7r.json`:**
+```json
+{
+  "train": [{"input": [[0,0,0,0,7,7,0,7,7]], "output": [[0,7,7]]}],
+  "test": [{"input": [[7,0,7,0,0,0,7,0,7]], "output": [[7,0,7]]}]
+}
+```
 
 ## grid_size_distributed_30 Subset
 
@@ -361,19 +347,3 @@ This subset contains 30 tasks from each of the arc-agi-1 and arc-agi-2 evaluatio
   - `data/subsets/grid_size_distributed_30/arc-agi-2/`
 - A manifest with filenames and grid sizes is in:
   - `data/subsets/grid_size_distributed_30/manifest.json`
-
-### How to use this subset
-
-To run with this subset, use the following command:
-
-```
-uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-1 --subset grid_size_distributed_30 --model o3 --tools
-```
-
-or for arc-agi-2:
-
-```
-uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-2 --subset grid_size_distributed_30 --model o3 --tools
-```
-
-This will run the 30 selected tasks for the specified dataset, evenly distributed by grid size.
