@@ -44,13 +44,13 @@ ProgramExecutor.cleanup_executor()  # Clean up singleton state
 # Every 1000 attempts during long runs:
 if self.health_metrics['total_attempts'] % 1000 == 0:
     ProgramExecutor.cleanup_executor()
-    self.executor = ProgramExecutor(timeout=0.5, executor_type="unrestricted")
+    self.executor = ProgramExecutor(timeout=0.5, executor_type="docker")
 ```
 
-#### 3. **Switched to Unrestricted Executor**
+#### 3. **Maintained Docker Executor with Cleanup**
 ```python
-# Avoid Docker complexity - use fresh subprocess per execution
-self.executor = ProgramExecutor(timeout=0.5, executor_type="unrestricted")
+# Keep Docker sandboxing for security - but with periodic cleanup
+self.executor = ProgramExecutor(timeout=0.5, executor_type="docker")
 ```
 
 #### 4. **Added Health Monitoring**

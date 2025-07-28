@@ -123,7 +123,7 @@ class ARCTaskRunnerSimple:
         # Initialize fresh instances to prevent state leakage
         self.task_loader = TaskLoader()
         self.scorer = GridScorer()
-        self.executor = ProgramExecutor(timeout=0.5, executor_type="unrestricted")
+        self.executor = ProgramExecutor(timeout=0.5, executor_type="docker")
         self.prompt_loader = PromptLoader()
         
         # Health monitoring for long runs
@@ -567,7 +567,7 @@ class ARCTaskRunnerSimple:
             try:
                 print(f"🔄 Periodic executor cleanup at {self.health_metrics['total_attempts']} attempts")
                 ProgramExecutor.cleanup_executor()
-                self.executor = ProgramExecutor(timeout=0.5, executor_type="unrestricted")
+                self.executor = ProgramExecutor(timeout=0.5, executor_type="docker")
                 print("✅ Executor refreshed")
             except Exception as cleanup_e:
                 print(f"⚠️ Executor cleanup failed: {cleanup_e}")
@@ -643,6 +643,9 @@ class ARCTaskRunnerSimple:
             print(f"Sampling Parameters: {sampling_params}")
         else:
             print("Sampling Parameters: (using model defaults)")
+        
+        # Display executor type
+        print(f"Executor: {self.executor.executor_type} (timeout: {self.executor.timeout}s)")
         
         print("-" * 50)
         

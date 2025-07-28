@@ -90,6 +90,9 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --r
 - **True Parallelization**: All attempts across all tasks run simultaneously for maximum efficiency
 - **Real-time Task Summaries**: Displays brief statistics for each task as it completes (test-correct, train-perfect, train-partial counts)
 - **Real-time Logging**: Individual task logs are saved immediately when each task completes, not at the end of the run
+- **Health Monitoring**: Periodic health reports showing execution success rates, timeout rates, and average execution times
+- **Automatic Executor Cleanup**: Periodic cleanup every 1000 attempts prevents resource degradation in long runs
+- **Secure Docker Execution**: All generated code runs in isolated Docker containers for security
 - **Voting Algorithms (Pass@2)**: 
   - **Weighted majority voting**: Uses pattern frequency + 1000×train_accuracy, returns top 2 patterns
   - **Train-majority voting**: Among best-training-accuracy attempts, majority vote for top 2 patterns
