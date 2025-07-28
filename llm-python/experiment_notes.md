@@ -5,10 +5,10 @@
   - [x] Ensure categories for each each result attempt are complete (i.e. test result, train result, api failures, api timeout, max length reached, code extraction failed, code execution failed.)
   - [ ] Manual review of threading and timeouts.
   - [ ] What does sglang do if a request is stopped? Does it continue - resulting in a build-up in the serverload? https://github.com/sgl-project/sglang/issues/3520 . SOLUTION FOR NOW IS JUST TO INCREASE THE TIMEOUTS.
-- [ ] Evaluation on shortest 30 evaluation problems:
+- [x] Evaluation on shortest 30 evaluation problems:
   - [x] Soar model. 54%
   - [x] Qwen Base. 7%
-  - [ ] Qwen Base with reasoning.
+  - [x] Qwen Base with reasoning. ~33%
   - [x] Gemini. ~80%
 - [ ] Full evaluation sets for arc-agi-1:
   - [ ] Soar model.
@@ -20,6 +20,20 @@
     - [ ] Hoist utils. Already available! Need to make use of them in the data generation script generate_training_data.py
     - [ ] Integrate validation.
     - [ ] Test a small dataset.
+
+### Test julien31/Soar-qwen-7b on full 400 evaluation tasks
+
+Startup a pod:
+```bash
+uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path julien31/Soar-qwen-7b --reasoning-parser qwen3
+```
+
+and then test on full 400 tasks:
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 50 --max_attempts 8 --model julien31/Soar-qwen-7b --base-url http://38.80.152.249:30712/v1 --qwen-no-think --max-tokens 1000
+```
+
+
 
 ### Test Qwen Base on full 400 evaluation tasks
 

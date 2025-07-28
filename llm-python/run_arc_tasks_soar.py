@@ -21,7 +21,7 @@ try:
     from .utils.metrics_utils import calculate_task_metrics, format_metrics_display, metrics_to_percentages
     from .utils.timeout_utils import execute_with_timeout
     from .utils.transduction import is_transduction_cheating
-    from .prompt_loader import PromptLoader
+    from .utils.prompt_loader import PromptLoader
 except ImportError:
     # Fall back to absolute imports (when run directly)
     from utils.task_loader import TaskLoader
@@ -30,7 +30,7 @@ except ImportError:
     from utils.metrics_utils import calculate_task_metrics, format_metrics_display, metrics_to_percentages
     from utils.timeout_utils import execute_with_timeout
     from utils.transduction import is_transduction_cheating
-    from prompt_loader import PromptLoader
+    from utils.prompt_loader import PromptLoader
 
 load_dotenv()
 
@@ -108,7 +108,7 @@ class ARCTaskRunnerSimple:
         self.temperature = temperature
         
         # Calculate timeouts based on model configuration
-        self.api_timeout = 120 if self.qwen_no_think else 1200
+        self.api_timeout = 600 if self.qwen_no_think else 1200
         client_timeout = self.api_timeout + 300  # Buffer for retries/overhead
         self.worker_timeout = 2 * self.api_timeout  # Ample time for parallel execution
         

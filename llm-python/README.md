@@ -3,8 +3,10 @@
 A comprehensive tool for testing OpenAI-compatible language models on ARC-AGI tasks using the Chat Completions API. Supports reasoning models (o3, Gemini Flash, Qwen) with multi-turn feedback, independent attempts, and detailed analysis.
 
 Folders:
-- `fine-tuning` - ipynb notebooks for fine-tunign as well as a logs folder for tensorboard logs.
-- `tests` misc test scripts
+- `archive/` - Legacy scripts and tools moved for reference
+- `fine-tuning/` - Jupyter notebooks for fine-tuning as well as a logs folder for tensorboard logs
+- `tests/` - Miscellaneous test scripts  
+- `utils/` - Core utility modules for task loading, scoring, prompts, and metrics
 
 **Videos**
 [Part 5: Comments on discrete vs continuous + Ablating Sampling vs Feedback](https://share.descript.com/view/W3OEzy9PW9A)
@@ -25,7 +27,7 @@ Runpod One-click-template [here](https://console.runpod.io/deploy?template=agyu4
 - Run ARC-AGI tasks with any OpenAI-compatible language model API
 - Support for custom API endpoints (Claude, Qwen, DeepSeek, local models, etc.)
 - Multi-turn execution with training examples feedback
-- **Simplified timeout system** with automatic calculation (120s/1200s API timeout, 3 attempts per turn)
+- **Simplified timeout system** with automatic calculation (600s/1200s API timeout, 3 attempts per turn)
 - **Transductive detection** - automatically detects and excludes cheating/hardcoded programs
 - Comprehensive scoring including pixel accuracy and binary correctness
 - Budget tracking with token usage and cost estimation
@@ -261,7 +263,7 @@ uv run python o3-tools/run_arc_tasks.py --dataset arc-agi-2 --subset shortest_tr
 
 ## Task Evolution Visualization
 
-The `visualize_task_evolution.py` tool creates detailed visual analysis of how models learn and evolve their solutions across multiple turns.
+The `archive/visualize_task_evolution.py` tool (archived) creates detailed visual analysis of how models learn and evolve their solutions across multiple turns.
 
 ### Features
 
@@ -274,12 +276,12 @@ The `visualize_task_evolution.py` tool creates detailed visual analysis of how m
 ### Usage
 
 ```bash
-# Visualize evolution from a log file
-uv run python visualize_task_evolution.py [LOG_FILE] [--dataset arc-agi-1|arc-agi-2]
+# Visualize evolution from a log file (archived tool)
+uv run python archive/visualize_task_evolution.py [LOG_FILE] [--dataset arc-agi-1|arc-agi-2]
 
 # Examples:
-uv run python visualize_task_evolution.py 20250709_095758_577922_8698928896_aa300dc3.json
-uv run python visualize_task_evolution.py my_log_file.json --dataset arc-agi-2
+uv run python archive/visualize_task_evolution.py 20250709_095758_577922_8698928896_aa300dc3.json
+uv run python archive/visualize_task_evolution.py my_log_file.json --dataset arc-agi-2
 ```
 
 ### Output Structure
@@ -500,17 +502,17 @@ Programs get reasoning content included only if:
 
 ### Simple Dataset Generation (No Code/Reasoning)
 
-For creating datasets without code or reasoning content, use the simplified `create_simple_dataset.py` script:
+For creating datasets without code or reasoning content, use the simplified `archive/create_simple_dataset.py` script (archived):
 
 ```bash
 # Create simple dataset from arc-agi-1 training tasks
-uv run python create_simple_dataset.py arc-agi-1 all_training --save-local --validation
+uv run python archive/create_simple_dataset.py arc-agi-1 all_training --save-local --validation
 
 # Create dataset and push to Hugging Face  
-uv run python create_simple_dataset.py arc-agi-2 shortest_training_30 --hf-private
+uv run python archive/create_simple_dataset.py arc-agi-2 shortest_training_30 --hf-private
 
 # Custom dataset name and organization
-uv run python create_simple_dataset.py arc-agi-1 random_split_1_training --hf-dataset-name "simple_baseline_v1" --hf-org "YourOrg"
+uv run python archive/create_simple_dataset.py arc-agi-1 random_split_1_training --hf-dataset-name "simple_baseline_v1" --hf-org "YourOrg"
 ```
 
 **Key differences from full training data generation:**
@@ -864,7 +866,7 @@ The tool includes robust timeout handling to prevent hanging on API calls and fi
 
 The tool uses a simplified timeout system based on just **two base values**:
 
-- **API timeout**: 120 seconds (Qwen no-think mode) / 1200 seconds (reasoning models)
+- **API timeout**: 600 seconds (Qwen no-think mode) / 1200 seconds (reasoning models)
 - **Program execution timeout**: 0.5 seconds per program execution
 
 **All other timeouts are calculated automatically:**
@@ -872,7 +874,7 @@ The tool uses a simplified timeout system based on just **two base values**:
 - **Worker timeout**: 2 × API timeout (ample time for parallel execution)
 
 **Example timeouts:**
-- **Qwen no-think**: API=120s, Client=420s, Worker=240s
+- **Qwen no-think**: API=600s, Client=420s, Worker=240s
 - **Reasoning models**: API=1200s, Client=1500s, Worker=2400s
 
 ### Worker Performance & Timeouts
@@ -891,7 +893,7 @@ Increasing workers generally speeds up a run through parallelization, but risks 
 
 For each turn in a multi-turn conversation:
 
-1. **Initial attempt**: API call with model-specific timeout (120s for Qwen no-think, 1200s for reasoning models)
+1. **Initial attempt**: API call with model-specific timeout (600s for Qwen no-think, 1200s for reasoning models)
 2. **Retry 1**: If timeout, wait 2 seconds and retry
 3. **Retry 2**: If timeout again, wait 2 seconds and final retry
 4. **Timeout failure**: If all 3 attempts fail, mark as timeout failure
@@ -938,7 +940,7 @@ Tasks solved correctly: 8/30 (26.7%)
 ### Why These Timeout Values?
 
 **API timeout values are chosen based on model capabilities:**
-- **Qwen no-think (120s)**: Fast, non-reasoning responses typically complete in under 2 minutes
+- **Qwen no-think (600s)**: Fast, non-reasoning responses typically complete in under 2 minutes
 - **Reasoning models (1200s)**: Complex reasoning can take 8-15 minutes for difficult tasks
 
 **Automatic relationships ensure consistency:**
@@ -1042,7 +1044,7 @@ Results are saved in multiple directories:
 
 **Visualization plots in `plots/` directory:**
 - Turn-by-turn evolution charts: `turn_{N}_{task_id}_{log_stem}.png`
-- Generated by running `visualize_task_evolution.py` on log files
+- Generated by running `archive/visualize_task_evolution.py` on log files
 
 Each individual task log includes:
 - Complete program code generated by the model
@@ -1363,6 +1365,7 @@ llm-python/
 │   ├── task_loader.py          # Load ARC tasks and subsets
 │   ├── scoring.py              # Grid scoring and program execution (0.5s timeout)
 │   ├── prompt_utils.py         # Prompt creation and code extraction
+│   ├── prompt_loader.py        # Load and manage prompt templates
 │   ├── timeout_utils.py        # Timeout handling utilities
 │   ├── voting_utils.py         # Voting algorithms and prediction processing
 │   ├── metrics_utils.py        # Metrics calculation and formatting
@@ -1375,12 +1378,17 @@ llm-python/
 │       ├── test_timeout_utils.py
 │       ├── test_voting_utils.py
 │       └── test_transduction.py
-├── prompt_loader.py            # Load and manage prompt templates
 ├── generate_training_data.py   # Extract training data from logs
-├── visualize_task_evolution.py # Create task evolution visualizations
-├── create_simple_dataset.py    # Create simple datasets without code/reasoning
-├── create_grid_size_distributed_subset.py # Create grid-size distributed subsets
 ├── validate_hf_dataset.py      # Validate Hugging Face datasets
+├── experiment_notes.md         # Development notes and experiments
+├── archive/                    # Legacy scripts (moved for reference)
+│   ├── run_arc_tasks.py        # Original task runner (deprecated)
+│   ├── visualize_task_evolution.py # Task evolution visualizations
+│   ├── create_simple_dataset.py # Simple dataset creation
+│   ├── create_grid_size_distributed_subset.py # Grid-size distributed subsets
+│   ├── analyze_pattern_learning.py # Pattern analysis tools
+│   ├── test_openrouter_direct.py # OpenRouter testing
+│   └── [other archived tools]  # Various development and analysis scripts
 ├── tests/                      # Main test scripts
 │   ├── test_arc_visual_with_api.py
 │   ├── test_execution_diff.py
@@ -1395,6 +1403,7 @@ llm-python/
 ├── logs/                       # Results and summaries
 ├── training_data/              # Generated training files
 ├── plots/                      # Task evolution visualizations
+├── debug_images/               # Debug visualization outputs
 ├── fine-tuning/                # Fine-tuning notebooks and logs
 │   ├── unsloth_arc_finetuning_soar.ipynb
 │   ├── generate_soar_data.ipynb
@@ -1412,12 +1421,7 @@ llm-python/
 
 **Important**: All costs are calculated using the correct Responses API token field names (`input_tokens`/`output_tokens`) with accurate model-specific pricing rates.
 
-## Cleanup
 
-```bash
-# Clean up old log files
-uv run python cleanup_logs.py
-```
 
 ## Model Support
 
@@ -1466,13 +1470,13 @@ uv run python -m llm-python.run_arc_tasks --model llama-3.1-8b --base-url http:/
 - **Cost Control**: Parallel execution accumulates costs faster but maintains the same per-task costs. Monitor total spending especially when using expensive models like o3 with many workers.
 - **Thread Safety**: All file I/O, progress tracking, and cost accumulation is thread-safe. Individual task logs use unique filenames with thread IDs to prevent conflicts.
 
-## create_grid_size_distributed_subset.py
+## archive/create_grid_size_distributed_subset.py
 
-This script creates a new subset of ARC-AGI problems by selecting tasks from the evaluation sets of arc-agi-1 and arc-agi-2, distributed evenly by grid size. For each task, the grid size is defined as the sum of the number of cells in the first input and first output grid (from the first training example). The script selects 30 tasks from each evaluation set, spaced evenly across the range of grid sizes, and copies them into a new subset directory for balanced benchmarking.
+This archived script creates a new subset of ARC-AGI problems by selecting tasks from the evaluation sets of arc-agi-1 and arc-agi-2, distributed evenly by grid size. For each task, the grid size is defined as the sum of the number of cells in the first input and first output grid (from the first training example). The script selects 30 tasks from each evaluation set, spaced evenly across the range of grid sizes, and copies them into a new subset directory for balanced benchmarking.
 
 Usage:
 ```
-uv run o3-tools/create_grid_size_distributed_subset.py
+uv run python archive/create_grid_size_distributed_subset.py
 ```
 
 The script will output a manifest of selected tasks and their grid sizes.
