@@ -1,5 +1,12 @@
 from typing import TypedDict, List, Any, Optional
 
+class LogData(TypedDict):
+    """Schema for data extracted from log files"""
+    task_id: str
+    program: str
+    reasoning: str
+    model: str
+
 class TrainingExample(TypedDict):
     """Schema for training examples extracted from logs"""
     code: str # Program code that should define a `generate` function
