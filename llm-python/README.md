@@ -25,7 +25,7 @@ Runpod One-click-template [here](https://console.runpod.io/deploy?template=agyu4
 - Run ARC-AGI tasks with any OpenAI-compatible language model API
 - Support for custom API endpoints (Claude, Qwen, DeepSeek, local models, etc.)
 - Multi-turn execution with training examples feedback
-- **Robust timeout handling** with automatic retries (1000s timeout, 3 attempts per turn)
+- **Robust timeout handling** with automatic retries (1200s timeout for reasoning models, 3 attempts per turn)
 - Comprehensive scoring including pixel accuracy and binary correctness
 - Budget tracking with token usage and cost estimation
 - Detailed logging of all runs for analysis
@@ -852,12 +852,22 @@ OpenAI has rate limits that vary by model and tier. Recommended settings:
 
 The tool includes robust timeout handling to prevent hanging on API calls and file operations:
 
+### Default Timeouts
+
+- **API timeout**: 1200 seconds (20 minutes) for reasoning models, 120 seconds (2 minutes) for Qwen no-think mode
+- **Client timeout**: 2400 seconds (40 minutes) - maximum per HTTP request
+- **Program execution timeout**: 0.5 seconds per program execution
+- **Attempt timeout**: 350 seconds total per attempt (includes buffer beyond API timeout)
+- **File I/O timeout**: 30 seconds for file write operations
+- **Worker timeout**: 600 seconds (10 minutes) total for parallel execution
+
+### Worker Performance & Timeouts
+
+Increasing workers generally speeds up a run through parallelization, but risks hitting the timeouts (in which case you may wish to increase them). Decreasing workers results in faster per-request processing (but with less parallelization) so this can be useful for seeing a few results earlier - although that can also be achieved via the `--limit` parameter.
+
 ### Key Features
 
-- **1000-second timeout** per API call (16.7 minutes)
 - **3 retry attempts** per turn with 2-second backoff between retries
-- **30-second timeout** for file I/O operations with detailed error logging
-- **600-second future timeout** per individual attempt (10 minutes total per attempt)
 - **Separate timeout failure tracking** - doesn't count as regular task failures
 - **Complete conversation preservation** during retries
 - **Detailed error logging** with specific failure reasons and complete API response data
@@ -867,7 +877,7 @@ The tool includes robust timeout handling to prevent hanging on API calls and fi
 
 For each turn in a multi-turn conversation:
 
-1. **Initial attempt**: API call with 1000-second timeout
+1. **Initial attempt**: API call with model-specific timeout (1200s for reasoning models, 120s for Qwen no-think)
 2. **Retry 1**: If timeout, wait 2 seconds and retry
 3. **Retry 2**: If timeout again, wait 2 seconds and final retry
 4. **Timeout failure**: If all 3 attempts fail, mark as timeout failure
@@ -882,7 +892,7 @@ Turn 1/8...
 # Timeout with retries
 Turn 2/8...
   🔄 Turn 2 attempt 1/3...
-  ⏰ Turn 2 attempt 1 failed (TimeoutError: Operation timed out after 1000 seconds), retrying in 2s...
+  ⏰ Turn 2 attempt 1 failed (TimeoutError: Operation timed out after 1200 seconds), retrying in 2s...
   🔄 Turn 2 attempt 2/3...
   ✅ Turn 2 successful on attempt 2
 
@@ -911,9 +921,9 @@ Timeout failures: 2/30 (6.7%) ⏰
 Tasks solved correctly: 8/30 (26.7%)
 ```
 
-### Why 1000 Seconds?
+### Why These Timeout Values?
 
-The timeout is set to 1000 seconds (16.7 minutes) because:
+The API timeout is set to 1200 seconds (20 minutes) for reasoning models because:
 - **Medium reasoning effort** can take 2-4 minutes for complex tasks
 - **High reasoning effort** can take 4-8 minutes for difficult tasks
 - **Very high reasoning effort** can take 8-15 minutes for extremely difficult tasks

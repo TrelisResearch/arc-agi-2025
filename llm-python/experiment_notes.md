@@ -4,11 +4,11 @@
 - [ ] Review of run_arc_tasks_soar.py
   - [x] Ensure categories for each each result attempt are complete (i.e. test result, train result, api failures, api timeout, max length reached, code extraction failed, code execution failed.)
   - [ ] Manual review of threading and timeouts.
-  - [ ] What does sglang do if a request is stopped? Does it continue - resulting in a build-up in the serverload? https://github.com/sgl-project/sglang/issues/3520 . No obvious fix here available.
+  - [ ] What does sglang do if a request is stopped? Does it continue - resulting in a build-up in the serverload? https://github.com/sgl-project/sglang/issues/3520 . SOLUTION FOR NOW IS JUST TO INCREASE THE TIMEOUTS.
 - [ ] Evaluation on shortest 30 evaluation problems:
   - [x] Soar model. 54%
   - [x] Qwen Base. 7%
-  - [ ] Qwen Base with reasoning. 
+  - [ ] Qwen Base with reasoning.
   - [x] Gemini. ~80%
 - [ ] Full evaluation sets for arc-agi-1:
   - [ ] Soar model.
@@ -23,7 +23,7 @@
 
 ### Test Qwen Base with reasoning on shortest 30 evaluation tasks
 ```bash
-uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_30 --repeat-runs 3 --max_workers 50 --max_attempts 8 --model qwen/qwen3-4b --base-url http://38.80.152.249:30742/v1 --limit 1
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_30 --repeat-runs 3 --max_workers 16 --max_attempts 8 --model qwen/qwen3-4b --base-url http://38.80.152.249:30742/v1
 ```
 
 ## 26-28 July 2025

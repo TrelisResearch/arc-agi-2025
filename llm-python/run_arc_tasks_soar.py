@@ -106,7 +106,7 @@ class ARCTaskRunnerSimple:
         self.temperature = temperature
         
         # Initialize OpenAI client with timeout
-        client_timeout = 300.0  # 5 minutes max per HTTP request
+        client_timeout = 2400.0  # 40 minutes max per HTTP request
         if base_url:
             self.client = OpenAI(api_key=self.api_key, base_url=base_url, timeout=client_timeout)
             print(f"📝 Using custom endpoint: {base_url} (timeout: {client_timeout}s)")
@@ -326,9 +326,9 @@ class ARCTaskRunnerSimple:
         
         # Set timeout based on model configuration
         if self.qwen_no_think:
-            api_timeout = 30  # Faster for no-think mode
+            api_timeout =120  # Faster for no-think mode
         else:
-            api_timeout = 300  # Longer timeout for reasoning models
+            api_timeout = 1200  # Longer timeout for reasoning models
         
         for retry_attempt in range(3):
             try:
