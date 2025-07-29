@@ -16,13 +16,21 @@ This repository contains resources for working with the ARC-AGI (Abstraction and
 
 This means:
 - Running `uv venv` from `llm-python/` will discover and use the root `pyproject.toml` configuration
-- The virtual environment will respect the `requires-python = ">=3.12"` setting from the root
+- The virtual environment will respect the `requires-python = ">3.10,<3.12"` setting from the root
 - All dependencies and project settings from the root will be applied
 
 To create an isolated environment that ignores the root configuration, use:
 ```bash
 uv venv --no-config
 ```
+
+### Runpod Setup
+
+You can start a GPU instance using [this Runpod template](https://console.runpod.io/deploy?template=bh0rvngapk&ref=jmfkcdio), which will install .toml dependencies AND unsloth, required for the fine-tuning notebook, via an on-start script.
+
+To run the template, you'll need to set - in Runpod:
+- `GITHUB_PAT`: a github personal access token with access to this arc-agi-2025 repo. YOU MUST GRANT CONTENTS: READ AND WRITE PERMISSION!
+- `HUGGING_FACE_HUB_TOKEN`: a hugging face token with access the Trelis org [token](https://huggingface.co/settings/tokens)
 
 ## Branches
 -`o3-tools-images` a frozen version of the openai o3-tools branch that still maintains functionality for adding images to the prompts and feedback. This branch only supports openai models.
