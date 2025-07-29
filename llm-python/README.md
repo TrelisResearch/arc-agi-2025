@@ -8,6 +8,7 @@ A comprehensive tool for testing OpenAI-compatible language models on ARC-AGI ta
 - `run_arc_tasks_soar.py` - **Main task runner** with all-attempts evaluation, parallel processing, and voting-based selection
 - `read_log_stats.py` - **Log analysis tool** to retrospectively read and display statistics from log directories
 - `create_grids_only_dataset.py` - **Grids-only dataset creator** for creating datasets with just grid data (no code or reasoning)
+- `create_soar_dataset.py` - **SOAR dataset creator** for combining SOAR data with grid data using filtering options
 
 **Core Folders:**
 - `utils/` - Core utility modules for task loading, scoring, prompts, and metrics
@@ -61,6 +62,12 @@ Create a grids-only dataset for evaluation tasks:
 ```bash
 uv run python create_grids_only_dataset.py arc-agi-1 all_evaluation --save-local
 ```
+
+Create a SOAR dataset with greedy filtering:
+```bash
+uv run python create_soar_dataset.py --max-rows 1600 --max-rows-per-task 4 --filter-method greedy --chunk-size 128000
+```
+add `--save-local` to save the dataset to the local directory. `chunk-size` is the number of rows to stream at a time.
 
 ### All-Attempts Evaluation Mode (`run_arc_tasks_soar.py`)
 
@@ -138,6 +145,47 @@ uv run python create_grids_only_dataset.py arc-agi-1 all_training --validation
 - Creating clean datasets for fine-tuning without generated content
 - Extracting raw ARC task data for analysis
 - Preparing datasets for models that don't need code/reasoning examples
+
+### SOAR Dataset Creation (`create_soar_dataset.py`)
+
+The `create_soar_dataset.py` script creates datasets by combining SOAR data with grid data from the [SOAR dataset](https://huggingface.co/datasets/julien31/soar_arc_train_5M):
+
+```bash
+# Create SOAR dataset with greedy filtering (prioritize perfect solutions)
+uv run python create_soar_dataset.py --max-rows 1024 --max-rows-per-task 5 --filter-method greedy --save-local
+
+# Create SOAR dataset with balanced filtering (half perfect, half random failures)
+uv run python create_soar_dataset.py --max-rows 2048 --max-rows-per-task 10 --filter-method balanced --save-local
+
+# Use different dataset for grid data
+uv run python create_soar_dataset.py --dataset arc-agi-2 --max-rows 512 --save-local
+```
+
+**Features:**
+- **Streaming Support**: Loads SOAR dataset in streaming mode to handle large datasets efficiently
+- **Grid Data Integration**: Combines SOAR predictions with original grid data from ARC tasks
+- **Smart Filtering**: Two filtering methods with configurable parameters
+- **Validation**: Ensures grid data matches SOAR predictions before combining
+- **Statistics**: Reports task distribution and dataset quality metrics
+- **Hugging Face Integration**: Automatic push to HF Hub with descriptive naming
+
+**Filtering Methods:**
+- **Greedy**: Prioritizes perfect solutions (all test + train correct), then by training accuracy
+- **Balanced**: Takes half perfect solutions, half random failures (no test + no train correct)
+
+**Dataset Structure:**
+- **Grid Data**: `train_input`, `train_output`, `test_input`, `test_output` from ARC tasks
+- **SOAR Data**: `code`, `model`, `generation`, `predicted_*`, `correct_*` from SOAR dataset
+- **Empty Fields**: `reasoning` (SOAR doesn't include reasoning)
+
+**Use Cases:**
+- Creating training datasets with both grid data and generated code
+- Analyzing SOAR model performance across different tasks
+- Fine-tuning models on SOAR-generated solutions
+
+**Important Notes:**
+- **Chunk Size**: The SOAR dataset is heavily skewed toward certain tasks. Use large chunk sizes (e.g., 30,000) to get sufficient task diversity. Small chunks may result in datasets with only 1-2 unique tasks.
+- **Task Distribution**: The script will continue streaming until it reaches the target number of rows or hits the safety limit. Larger chunks help find more diverse tasks faster.
 
 ### Log Analysis (`read_log_stats.py`)
 
@@ -319,6 +367,7 @@ llm-python/
 │       └── test_transduction.py
 ├── generate_training_data.py   # Extract training data from logs
 ├── create_grids_only_dataset.py # Create grids-only datasets (no code/reasoning)
+├── create_soar_dataset.py      # Create SOAR datasets (combine SOAR + grid data)
 ├── validate_hf_dataset.py      # Validate Hugging Face datasets
 ├── experiment_notes.md         # Development notes and experiments
 ├── archive/                    # Legacy scripts (moved for reference)
