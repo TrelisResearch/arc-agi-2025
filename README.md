@@ -32,6 +32,21 @@ To run the template, you'll need to set - in Runpod:
 - `GITHUB_PAT`: a github personal access token with access to this arc-agi-2025 repo. YOU MUST GRANT CONTENTS: READ AND WRITE PERMISSION!
 - `HUGGING_FACE_HUB_TOKEN`: a hugging face token with access the Trelis org [token](https://huggingface.co/settings/tokens)
 
+To start via command line, you can try:
+```bash
+curl --request POST https://rest.runpod.io/v1/pods \
+     --header "Authorization: Bearer $RUNPOD_API_KEY" \
+     --header "Content-Type: application/json" \
+     --data '{
+       "templateId"     : "bh0rvngapk",
+       "name"           : "arc-agi-h200",
+       "cloudType"      : "SECURE",          /* or "COMMUNITY"           */
+       "gpuTypeIds"     : ["NVIDIA H200"],
+       "gpuCount"       : 1,
+       "volumeInGb"     : 150                 /* only if you want to override*/
+     }'
+```
+
 ## Branches
 -`o3-tools-images` a frozen version of the openai o3-tools branch that still maintains functionality for adding images to the prompts and feedback. This branch only supports openai models.
 -`input-output-prog` contains a frozen version of the o3-tools branch with a prompt to generate input and output grids AS WELL as the transformation function. It uses openai responses api so is only compatible with openai models. This branch only supports openai models.
