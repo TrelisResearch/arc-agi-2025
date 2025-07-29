@@ -22,8 +22,8 @@ Open browser to http://localhost:6006/ or via runpod proxy: https://<pod-id>-600
 ## Runpod One-click Template
 
 **Runpod One-click-template FOR FINE-TUNING**
-Runpod One-click-template [here](https://console.runpod.io/deploy?template=ifyqsvjlzj) - swap out the model name if using a fine-tuned model.
+You can start a GPU instance using [this Runpod template](https://console.runpod.io/deploy?template=bh0rvngapk&ref=jmfkcdio), which will install .toml dependencies AND unsloth, required for the fine-tuning notebook, via an on-start script.
 
-OR FOR BLACKWELL (not working):
-
-[HERE](https://console.runpod.io/deploy?template=njbyqyiuty&ref=jmfkcdio)
+To run the template, you'll need to set - in Runpod:
+- `GITHUB_PAT`: a github personal access token with access to this arc-agi-2025 repo. YOU MUST GRANT CONTENTS: READ AND WRITE PERMISSION!
+- `HUGGING_FACE_HUB_TOKEN`: a hugging face token with access the Trelis org [token](https://huggingface.co/settings/tokens)
