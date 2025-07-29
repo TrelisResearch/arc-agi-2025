@@ -32,7 +32,6 @@ def _get_grid_shape_string(grid: List[List[int]]) -> str:
         return "0 by 0"
     return f"{len(grid[0])} by {len(grid)}"
 
-
 def create_arc_prompt(task_data: Dict, prompt_loader, prompt_version: str = "soar") -> Tuple[str, str]:
     """
     Create a prompt for the model to solve an ARC task.
@@ -59,12 +58,19 @@ def create_arc_prompt(task_data: Dict, prompt_loader, prompt_version: str = "soa
         task_content += f"## Input {i} (grid shape: {input_shape}):\n{input_str}\n"
         task_content += f"## Output {i} (grid shape: {output_shape}):\n{output_str}\n\n"
     
-    # Add test examples
+    # Add test examples (now handles multiple test examples!)
     for i, example in enumerate(task_data['test'], 1):
         input_grid = example['input']
         input_shape = _get_grid_shape_string(input_grid)
         input_str = _format_grid_for_prompt(input_grid)
         task_content += f"## Test Input {i} (grid shape: {input_shape}):\n{input_str}\n"
+        
+        # Optionally include expected output for training data (if available)
+        if 'output' in example:
+            output_grid = example['output']
+            output_shape = _get_grid_shape_string(output_grid)
+            output_str = _format_grid_for_prompt(output_grid)
+            task_content += f"## Expected Test Output {i} (grid shape: {output_shape}):\n{output_str}\n"
     
     # Get the system message and prompt template
     system_content = prompt_loader.get_system_message(prompt_version)
@@ -74,7 +80,6 @@ def create_arc_prompt(task_data: Dict, prompt_loader, prompt_version: str = "soa
     user_content = prompt_template.format(task_content=task_content)
     
     return system_content, user_content
-
 
 def extract_python_code(text: str, debug: bool = False) -> str:
     """
