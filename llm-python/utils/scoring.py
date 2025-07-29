@@ -1,4 +1,4 @@
-from typing import List, Dict, Tuple, Optional
+from typing import Any, List, Dict, Tuple, Optional
 import sys
 import os
 
@@ -47,6 +47,13 @@ class GridScorer:
             'correct_pixels': correct_pixels,
             'error': None
         }
+    
+    def score_grids_bulk(self, predicted_grids: List[List[List[int]]], actual_grids: List[List[List[int]]]) -> List[Dict]:
+        """Score multiple predicted grids against their corresponding actual grids"""
+        if len(predicted_grids) != len(actual_grids):
+            raise ValueError(f"Number of predicted grids ({len(predicted_grids)}) must match number of actual grids ({len(actual_grids)})")
+        
+        return [self.score_grid(pred, actual) for pred, actual in zip(predicted_grids, actual_grids)]
 
 
 class ProgramExecutor:
@@ -70,7 +77,7 @@ class ProgramExecutor:
         if ProgramExecutor._executor is not None:
             try:
                 ProgramExecutor._executor.__exit__(None, None, None)
-            except:
+            except Exception:
                 pass
         
         ProgramExecutor._executor = create_executor(self.executor_type)
@@ -83,7 +90,7 @@ class ProgramExecutor:
         if cls._executor is not None:
             try:
                 cls._executor.__exit__(None, None, None)
-            except:
+            except Exception:
                 pass
             cls._executor = None
             cls._executor_context = None
@@ -145,7 +152,7 @@ else:
                 if isinstance(result, list) and all(isinstance(row, list) for row in result):
                     output = result
                     break
-            except:
+            except Exception:
                 pass
 
 if output is not None:
@@ -177,3 +184,97 @@ else:
                 
         except Exception as e:
             return None, str(e), False
+    
+    def execute_program_bulk(self, program: str, test_inputs: List[List[List[int]]]) -> List[Tuple[Optional[Any], str, bool]]:
+        """
+        Execute a Python program with multiple test inputs in a single execution context
+        
+        Args:
+            program: The Python program code to execute
+            test_inputs: List of test input grids
+            
+        Returns:
+            List of tuples: (output_grid, error_message, timed_out) for each input
+        """
+        # Create the code to execute
+        code = f"""
+import json
+
+# Define the test inputs
+test_inputs = {repr(test_inputs)}
+
+# Execute the provided program
+{program}
+
+# The program should define a function called 'transform' or 'solve'
+# Find the transformation function
+transform_func = None
+if 'transform' in locals():
+    transform_func = transform
+elif 'solve' in locals():
+    transform_func = solve
+elif 'apply_transform' in locals():
+    transform_func = apply_transform
+else:
+    # If no function found, try to find any function that takes a grid
+    for name, obj in locals().items():
+        if callable(obj) and not name.startswith('_'):
+            try:
+                # Test with the first input to see if it works
+                if test_inputs:
+                    result = obj(test_inputs[0])
+                    if isinstance(result, list) and all(isinstance(row, list) for row in result):
+                        transform_func = obj
+                        break
+            except Exception:
+                pass
+
+if transform_func is None:
+    raise ValueError("No valid transformation function found")
+
+# Apply the function to all test inputs
+outputs = []
+for test_input in test_inputs:
+    try:
+        output = transform_func(test_input)
+        outputs.append(output)
+    except Exception as e:
+        outputs.append(("ERROR", str(e)))
+
+return outputs
+"""
+        
+        try:
+            # Ensure we have an executor context
+            if ProgramExecutor._executor_context is None:
+                raise RuntimeError("Executor not initialized")
+                
+            result, error = ProgramExecutor._executor_context.execute_code(code, timeout=self.timeout * len(test_inputs))
+            
+            if error:
+                # Check if it's a timeout error
+                if "timeout" in str(error).lower():
+                    # Return timeout for all inputs
+                    return [(None, f"Program exceeded timeout of {self.timeout * len(test_inputs)}s", True) for _ in test_inputs]
+                else:
+                    # Return error for all inputs
+                    return [(None, str(error), False) for _ in test_inputs]
+            
+            if result is not None:
+                # Process the results
+                results = []
+                for i, output in enumerate(result):
+                    if isinstance(output, tuple) and len(output) == 2 and output[0] == "ERROR":
+                        # This was an error for this specific input
+                        results.append((None, output[1], False))
+                    else:
+                        # Convert numpy types to Python types if needed
+                        converted_output = self._convert_numpy_types(output)
+                        results.append((converted_output, "", False))
+                
+                return results
+            else:
+                return [(None, "Program produced no output", False) for _ in test_inputs]
+                
+        except Exception as e:
+            return [(None, str(e), False) for _ in test_inputs]

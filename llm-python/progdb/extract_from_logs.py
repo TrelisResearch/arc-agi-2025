@@ -13,24 +13,39 @@ from .schema import TrainingExample, LogData
 from .code import strip_comments
 from ..utils.scoring import ProgramExecutor
 from ..utils.task_loader import TaskLoader, TaskData, Grid, TaskExample
+import time
 
 # Initialize utilities
 task_loader = TaskLoader()
-program_executor = ProgramExecutor(timeout=1)
+program_executor = ProgramExecutor(timeout=1, executor_type="unrestricted")
 
 
-def _execute_on_examples(program: str, examples: List[TaskExample]) -> List[Grid]:
+def _validate_grid(output) -> Grid:
+    if output is not None:
+        # Check if output is a list of lists of ints
+        if isinstance(output, list) and all(
+            isinstance(row, list) and all(isinstance(val, int) for val in row)
+            for row in output
+        ):
+            return output
+        else:
+            raise ValueError(f"Object is not a list of lists of ints: {output}")
+
+
+def _execute_on_examples(program: str, examples: List[TaskExample]) -> List:
     """Execute program on a list of examples and return outputs."""
-    outputs = []
-    
-    for example in examples:
-        predicted_output, error, timed_out = (
-            program_executor.execute_program_with_timeout(program, example["input"])
-        )
-        # Don't log expected execution errors (code failures, timeouts, etc.)
-        # These are returned as None and will be handled gracefully
-        outputs.append(predicted_output)
-    
+    if not examples:
+        return []
+
+    # Extract inputs for bulk execution
+    inputs = [example["input"] for example in examples]
+
+    # Use bulk execution for better performance
+    results = program_executor.execute_program_bulk(program, inputs)
+
+    # Extract just the outputs (ignore error messages and timeout flags)
+    outputs = [_validate_grid(result[0]) for result in results]
+
     return outputs
 
 
@@ -45,7 +60,7 @@ def _run_program_on_task(
     """
     train_outputs = _execute_on_examples(program, task_data["train"])
     test_outputs = _execute_on_examples(program, task_data["test"])
-    
+
     return train_outputs, test_outputs
 
 
@@ -101,7 +116,9 @@ def extract_log_data(log_path: str) -> List[LogData]:
     elif "independent_attempts" in api_type or "all_attempts" in api_type:
         # Inline the attempt details extraction logic
         if "independent_attempts" in api_type:
-            attempt_details = log_data.get("independent_attempts_data", {}).get("attempt_details", [])
+            attempt_details = log_data.get("independent_attempts_data", {}).get(
+                "attempt_details", []
+            )
         else:  # all_attempts
             attempt_details = log_data.get("attempt_details", [])
 
@@ -130,9 +147,10 @@ def _compute_accuracy(outputs: List[Grid], examples: List[TaskExample]) -> float
     """Compute accuracy fraction for outputs against expected examples."""
     if not examples:
         return 0.0
-    
+
     correct = sum(
-        1 for i, example in enumerate(examples)
+        1
+        for i, example in enumerate(examples)
         if outputs[i] is not None and outputs[i] == example["output"]
     )
     return correct / len(examples)
@@ -164,15 +182,27 @@ def process_program(log_data: LogData) -> TrainingExample:
     task_data = task_loader.load_task(log_data["task_id"])
 
     # Execute program and get results - expected errors are handled within the function
-    train_outputs, test_outputs = _run_program_on_task(
-        program_to_execute, task_data
-    )
+    train_outputs, test_outputs = _run_program_on_task(program_to_execute, task_data)
+
+    # Replace None outputs with empty lists to avoid PyArrow serialization issues
+    train_outputs = [output if output is not None else [] for output in train_outputs]
+    test_outputs = [output if output is not None else [] for output in test_outputs]
 
     # Extract inputs from task data and combine with outputs for samples
     train_inputs = [example["input"] for example in task_data["train"]]
     test_inputs = [example["input"] for example in task_data["test"]]
     sample_inputs = train_inputs + test_inputs
     sample_outputs = train_outputs + test_outputs
+
+    # Debug check: Validate all outputs are lists
+    for i, output in enumerate(sample_outputs):
+        if not isinstance(output, list):
+            print(
+                f"WARNING: Non-list output detected in task {log_data['task_id']}, "
+                f"index {i}, type: {type(output)}, value: {output}"
+            )
+            # Force convert to empty list if it's not a list
+            sample_outputs[i] = []
 
     # Compute accuracies
     train_correct_fraction = _compute_accuracy(train_outputs, task_data["train"])
@@ -245,13 +275,23 @@ def main():
         }
 
         # Collect results as they complete
+        start_time = time.time()
         for future in as_completed(future_to_file):
             log_file = future_to_file[future]
             processed_count += 1
 
             # Progress reporting every 100 files
             if processed_count % 100 == 0:
-                print(f"  Processed {processed_count}/{len(log_files)} files...")
+                elapsed = time.time() - start_time
+                avg_time_per_file = elapsed / processed_count
+                remaining = len(log_files) - processed_count
+                est_remaining = avg_time_per_file * remaining
+                print(
+                    f"  Processed {processed_count}/{len(log_files)} files, "
+                    f"Programs extracted: {len(all_programs)}, "
+                    f"Elapsed: {elapsed:.1f}s, "
+                    f"ETA: {est_remaining / 60:.1f} min"
+                )
 
             try:
                 programs = future.result()
@@ -266,6 +306,34 @@ def main():
     # Convert to DataFrame and save as parquet
     if all_programs:
         df = pd.DataFrame(all_programs)
+
+        # Debug check: Validate sample_outputs column before saving
+        print("Validating sample_outputs column...")
+        non_list_found = False
+        for idx, sample_outputs in enumerate(df["sample_outputs"]):
+            if not isinstance(sample_outputs, list):
+                print(
+                    f"ERROR: Non-list in sample_outputs at row {idx}: "
+                    f"type: {type(sample_outputs)}, value: {sample_outputs}"
+                )
+                non_list_found = True
+            else:
+                # Check each element in the list
+                for i, output in enumerate(sample_outputs):
+                    if not isinstance(output, list):
+                        print(
+                            f"ERROR: Non-list element in sample_outputs at row {idx}, "
+                            f"element {i}: type: {type(output)}, value: {output}"
+                        )
+                        non_list_found = True
+
+        if non_list_found:
+            print(
+                "Found non-list values in sample_outputs! This will cause PyArrow error."
+            )
+            return
+        else:
+            print("All sample_outputs validated as lists of lists.")
 
         # Ensure output directory exists
         output_path = Path(args.output)

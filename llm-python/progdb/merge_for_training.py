@@ -1,26 +1,63 @@
 #!/usr/bin/env python3
 
 import argparse
+from typing import List
 import pandas as pd
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing
 
-# Import utilities
-try:
-    # Try relative imports first (when run as module)
-    from .schema import TrainingExample, EnrichedTrainingExample
-    from ..utils.scoring import ProgramExecutor
-    from ..utils.task_loader import TaskLoader
-except ImportError:
-    # Fall back to absolute imports (when run directly)
-    from schema import TrainingExample, EnrichedTrainingExample
-    from utils.scoring import ProgramExecutor
-    from utils.task_loader import TaskLoader
+from .schema import TrainingExample, EnrichedTrainingExample
+from ..utils.task_loader import Grid, TaskLoader
+from ..utils.transduction import is_transduction_cheating
 
 # Initialize utilities
 task_loader = TaskLoader()
-program_executor = ProgramExecutor(timeout=0.5)
+
+
+def has_valid_outputs(sample_outputs: List[Grid]) -> bool:
+    """Check if all sample outputs are proper lists of lists with values (not None/null)."""
+    for output in sample_outputs:
+        if output is None:
+            return False
+        if not isinstance(output, list):
+            return False
+        if not output:  # Empty list
+            return False
+        for row in output:
+            if row is None:
+                return False
+            if not isinstance(row, list):
+                return False
+            if not row:  # Empty row
+                return False
+            # Check that all values are not None
+            for val in row:
+                if val is None:
+                    return False
+    return True
+
+
+def _find_matching_outputs(
+    inputs: List[Grid], sample_inputs: List[Grid], sample_outputs: List[Grid]
+) -> List[Grid]:
+    predicted_outputs = []
+
+    for _, input_grid in enumerate(inputs):
+        # Find matching sample input
+        matching_sample_idx = None
+        for j, sample_input in enumerate(sample_inputs):
+            if input_grid == sample_input:
+                matching_sample_idx = j
+                break
+
+        if matching_sample_idx is None:
+            raise ValueError("Could not find matching sample input for task.")
+
+        predicted_output = sample_outputs[matching_sample_idx]
+        predicted_outputs.append(predicted_output)
+
+    return predicted_outputs
 
 
 def enrich_single_program(program_data: TrainingExample) -> EnrichedTrainingExample:
@@ -29,46 +66,46 @@ def enrich_single_program(program_data: TrainingExample) -> EnrichedTrainingExam
     program = program_data["code"]
     reasoning = program_data["reasoning"]
     model = program_data["model"]
-    
+    sample_inputs = program_data["sample_inputs"]
+    sample_outputs = program_data["sample_outputs"]
+
     # Load task data to get proper train/test splits
-    task_data = task_loader.load_task(task_id, "arc-agi-1")
-    
+    task_data = task_loader.load_task(task_id)
+
     # Extract training inputs and outputs
     train_inputs = [example["input"] for example in task_data["train"]]
     train_outputs = [example["output"] for example in task_data["train"]]
-    
+
     # Extract test inputs and outputs
     test_inputs = [example["input"] for example in task_data["test"]]
     test_outputs = [example["output"] for example in task_data["test"]]
-    
-    # Run the program on each training input to get predictions
-    predicted_train_outputs = []
+
+    # Match training inputs with sample inputs to get predicted outputs
+    predicted_train_outputs = _find_matching_outputs(
+        train_inputs, sample_inputs, sample_outputs
+    )
+
+    # Find which train inputs produced correct outputs
     correct_train_inputs = []
-    
-    for i, train_input in enumerate(train_inputs):
-        predicted_output, error, timed_out = program_executor.execute_program_with_timeout(program, train_input)
-        
-        if predicted_output is not None and not error and not timed_out:
-            predicted_train_outputs.append(predicted_output)
-            if predicted_output == train_outputs[i]:
-                correct_train_inputs.append(train_input)
-        else:
-            predicted_train_outputs.append([])  # Empty grid for failed executions
-    
-    # Run the program on each test input to get predictions
-    predicted_test_outputs = []
+    for i, (train_input, predicted_output) in enumerate(
+        zip(train_inputs, predicted_train_outputs)
+    ):
+        if predicted_output == train_outputs[i]:
+            correct_train_inputs.append(train_input)
+
+    # Match test inputs with sample inputs to get predicted outputs
+    predicted_test_outputs = _find_matching_outputs(
+        test_inputs, sample_inputs, sample_outputs
+    )
+
+    # Find which test inputs produced correct outputs
     correct_test_inputs = []
-    
-    for i, test_input in enumerate(test_inputs):
-        predicted_output, error, timed_out = program_executor.execute_program_with_timeout(program, test_input)
-        
-        if predicted_output is not None and not error and not timed_out:
-            predicted_test_outputs.append(predicted_output)
-            if predicted_output == test_outputs[i]:
-                correct_test_inputs.append(test_input)
-        else:
-            predicted_test_outputs.append([])  # Empty grid for failed executions
-    
+    for i, (test_input, predicted_output) in enumerate(
+        zip(test_inputs, predicted_test_outputs)
+    ):
+        if predicted_output == test_outputs[i]:
+            correct_test_inputs.append(test_input)
+
     return EnrichedTrainingExample(
         reasoning=reasoning,
         code=program,
@@ -82,44 +119,34 @@ def enrich_single_program(program_data: TrainingExample) -> EnrichedTrainingExam
         predicted_test_output=predicted_test_outputs,
         task_id=task_id,
         model=model,
-        generation=0  # Default generation if not available
+        generation=0,  # Default generation if not available
     )
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Merge simple training examples into enriched format for actual training")
+    parser = argparse.ArgumentParser(
+        description="Merge simple training examples into enriched format for actual training"
+    )
     parser.add_argument(
-        "input_parquet", 
+        "input_parquet",
         type=str,
-        help="Input parquet file with simple TrainingExample format"
+        help="Input parquet file with simple TrainingExample format",
     )
     parser.add_argument(
-        "--output", 
-        type=str, 
+        "--output",
+        type=str,
         default=None,
-        help="Output parquet file (default: input_enriched.parquet)"
+        help="Output parquet file (default: input_enriched.parquet)",
     )
     parser.add_argument(
-        "--filter-min-train-accuracy",
-        type=float,
-        default=None,
-        help="Filter to only programs with at least this training accuracy"
-    )
-    parser.add_argument(
-        "--filter-min-test-accuracy",
-        type=float,
-        default=None,
-        help="Filter to only programs with at least this test accuracy"
-    )
-    parser.add_argument(
-        "--filter-perfect-train",
+        "--no-filter-valid-outputs",
         action="store_true",
-        help="Filter to only programs with perfect training accuracy"
+        help="Disable filter for valid sample outputs (default: enabled)",
     )
     parser.add_argument(
-        "--filter-perfect-test",
-        action="store_true",
-        help="Filter to only programs with perfect test accuracy"
+        "--no-filter-transduction",
+        action="store_true", 
+        help="Disable transduction cheating filter (default: enabled)",
     )
 
     args = parser.parse_args()
@@ -134,22 +161,23 @@ def main():
     df = pd.read_parquet(args.input_parquet)
     print(f"Loaded {len(df)} programs")
 
-    # Apply filters if specified
-    if args.filter_min_train_accuracy is not None:
-        df = df[df['train_correct_fraction'] >= args.filter_min_train_accuracy]
-        print(f"After min training accuracy filter ({args.filter_min_train_accuracy}): {len(df)} programs")
-    
-    if args.filter_min_test_accuracy is not None:
-        df = df[df['test_correct_fraction'] >= args.filter_min_test_accuracy]
-        print(f"After min test accuracy filter ({args.filter_min_test_accuracy}): {len(df)} programs")
-    
-    if args.filter_perfect_train:
-        df = df[df['train_correct_fraction'] == 1.0]
-        print(f"After perfect training accuracy filter: {len(df)} programs")
-    
-    if args.filter_perfect_test:
-        df = df[df['test_correct_fraction'] == 1.0]
-        print(f"After perfect test accuracy filter: {len(df)} programs")
+    # Apply filters if enabled
+    if not args.no_filter_valid_outputs:
+        initial_count = len(df)
+        df = df[df["sample_outputs"].apply(has_valid_outputs)]
+        print(f"After valid outputs filter: {len(df)} programs (removed {initial_count - len(df)})")
+
+    if not args.no_filter_transduction:
+        initial_count = len(df)
+        filtered_indices = []
+        for idx, row in df.iterrows():
+            # Load task data for transduction check
+            task_data = task_loader.load_task(row["task_id"])
+            is_cheating, _ = is_transduction_cheating(row["code"], task_data)
+            if not is_cheating:
+                filtered_indices.append(idx)
+        df = df.loc[filtered_indices]
+        print(f"After transduction filter: {len(df)} programs (removed {initial_count - len(df)})")
 
     if len(df) == 0:
         print("No programs remain after filtering!")
@@ -158,20 +186,24 @@ def main():
     # Convert DataFrame rows to TrainingExample objects
     training_examples = []
     for _, row in df.iterrows():
-        training_examples.append(TrainingExample(
-            code=row['code'],
-            reasoning=row['reasoning'],
-            model=row['model'],
-            task_id=row['task_id'],
-            train_correct_fraction=row['train_correct_fraction'],
-            test_correct_fraction=row['test_correct_fraction'],
-            sample_inputs=row['sample_inputs'],
-            sample_outputs=row['sample_outputs']
-        ))
+        training_examples.append(
+            TrainingExample(
+                code=row["code"],
+                reasoning=row["reasoning"],
+                model=row["model"],
+                task_id=row["task_id"],
+                train_correct_fraction=row["train_correct_fraction"],
+                test_correct_fraction=row["test_correct_fraction"],
+                sample_inputs=row["sample_inputs"],
+                sample_outputs=row["sample_outputs"],
+            )
+        )
 
     # Calculate number of workers
     max_workers = max(1, multiprocessing.cpu_count() - 2)
-    print(f"Using {max_workers} worker processes to enrich {len(training_examples)} programs...")
+    print(
+        f"Using {max_workers} worker processes to enrich {len(training_examples)} programs..."
+    )
 
     # Process programs in parallel
     enriched_programs = []
@@ -192,60 +224,38 @@ def main():
 
             # Progress reporting every 100 programs
             if processed_count % 100 == 0:
-                print(f"  Processed {processed_count}/{len(training_examples)} programs...")
+                print(
+                    f"  Processed {processed_count}/{len(training_examples)} programs..."
+                )
 
             try:
                 enriched_program = future.result()
                 enriched_programs.append(enriched_program)
             except Exception as e:
                 failed_count += 1
-                print(f"  Warning: Failed to enrich program for task {program['task_id']}: {e}")
+                print(
+                    f"  Warning: Failed to enrich program for task {program['task_id']}: {e}"
+                )
 
-    print(f"Successfully enriched {len(enriched_programs)} programs ({failed_count} failed)")
+    print(
+        f"Successfully enriched {len(enriched_programs)} programs ({failed_count} failed)"
+    )
 
     # Convert to DataFrame and save
     if enriched_programs:
         enriched_df = pd.DataFrame(enriched_programs)
-        
+
         # Ensure output directory exists
         output_path = Path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         enriched_df.to_parquet(output_path, index=False)
         print(f"Saved enriched dataset to {output_path}")
-        
-        # Print some stats
-        print("\nEnriched Dataset Stats:")
-        print(f"  Total programs: {len(enriched_programs)}")
-        print(f"  Unique tasks: {enriched_df['task_id'].nunique()}")
-        print(f"  Unique models: {enriched_df['model'].nunique()}")
-        
-        # Calculate actual training and test accuracy from the enriched data
-        train_accuracies = []
-        test_accuracies = []
-        
-        for _, row in enriched_df.iterrows():
-            # Training accuracy: correct_train_input / train_input
-            train_total = len(row['train_input'])
-            train_correct = len(row['correct_train_input'])
-            train_acc = train_correct / train_total if train_total > 0 else 0
-            train_accuracies.append(train_acc)
-            
-            # Test accuracy: correct_test_input / test_input
-            test_total = len(row['test_input'])
-            test_correct = len(row['correct_test_input'])
-            test_acc = test_correct / test_total if test_total > 0 else 0
-            test_accuracies.append(test_acc)
-        
-        if train_accuracies:
-            print(f"  Average training accuracy: {sum(train_accuracies) / len(train_accuracies):.3f}")
-            perfect_train = sum(1 for acc in train_accuracies if acc == 1.0)
-            print(f"  Perfect training accuracy: {perfect_train}/{len(train_accuracies)} ({perfect_train/len(train_accuracies)*100:.1f}%)")
-        
-        if test_accuracies:
-            print(f"  Average test accuracy: {sum(test_accuracies) / len(test_accuracies):.3f}")
-            perfect_test = sum(1 for acc in test_accuracies if acc == 1.0)
-            print(f"  Perfect test accuracy: {perfect_test}/{len(test_accuracies)} ({perfect_test/len(test_accuracies)*100:.1f}%)")
+
+        # Print basic stats
+        print(f"\nSaved {len(enriched_programs)} enriched programs")
+        print(f"Unique tasks: {enriched_df['task_id'].nunique()}")
+        print(f"Unique models: {enriched_df['model'].nunique()}")
     else:
         print("No programs to save!")
 
