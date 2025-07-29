@@ -4,6 +4,14 @@
 
 ---
 
+## 30/31 July 2025
+- [ ] Improve evaluation
+    [ ] Remove transductive generations from evaluation.
+    [ ] Investigate why the code isn't running clean. Add logging / debug info there. Add max-length debug as well. Add timeout debug. Also, print number of tokens (so I know where to set max).
+    [ ] Add vLLM. LATER.
+- [ ] King dataset:
+    [ ] Test out reasoning (once traces are available).
+
 ## 29 July 2025
 - [x] Review of run_arc_tasks_soar.py
   - [x] Ensure categories for each each result attempt are complete (i.e. test result, train result, api failures, api timeout, max length reached, code extraction failed, code execution failed.)
@@ -26,10 +34,13 @@
 - [x] Fine-tuning:
     - [x] Hoist utils. 
     - [x] Test a small dataset.
-- [ ] Create a simple SOAR dataset of 1k rows to train on.
-    [ ] Create a simple data creation script.
-    [ ] Examine test accuracy during the run.
+- [x] Create a simple SOAR dataset of 1k rows to train on.
+    [x] Create a simple data creation script.
+    [x] Examine test accuracy during the run.
 
+Learnings:
+- unsloth only supports batch size one generation because too much padding difference between tokens causes the model to perform quite poorly.
+- vllm is an option but requires unloading the model (unless I look into how grpo works and see if that can be leveraged, perhaps it can).
 
 ## 28 July 2025
 
