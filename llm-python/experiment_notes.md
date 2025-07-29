@@ -5,28 +5,33 @@
 ---
 
 ## 29 July 2025
-- [ ] Review of run_arc_tasks_soar.py
+- [x] Review of run_arc_tasks_soar.py
   - [x] Ensure categories for each each result attempt are complete (i.e. test result, train result, api failures, api timeout, max length reached, code extraction failed, code execution failed.)
-  - [ ] Manual review of threading and timeouts.
-  - [ ] What does sglang do if a request is stopped? Does it continue - resulting in a build-up in the serverload? https://github.com/sgl-project/sglang/issues/3520 . SOLUTION FOR NOW IS JUST TO INCREASE THE TIMEOUTS.
+  - [x] Manual review of threading and timeouts.
+  - [x] What does sglang do if a request is stopped? Does it continue - resulting in a build-up in the serverload? https://github.com/sgl-project/sglang/issues/3520 . SOLUTION FOR NOW IS JUST TO INCREASE THE TIMEOUTS.
 - [x] Evaluation on shortest 30 evaluation problems:
   - [x] Gemini. ~80%
   - [x] Soar model. 54%+/-2%
   - [x] Qwen Base with reasoning. ~32%+/-2%
   - [x] Qwen Base. 7%
-- [ ] Evaluation on shortest 30 evaluation problems REVERSED:
-  - [ ] Gemini. ~53% [single result].
-  - [ ] Soar model. ~31% +/- 2%
+- [x] Evaluation on shortest 30 evaluation problems REVERSED:
+  - [x] Gemini. ~53% [single result].
+  - [x] Soar model. ~31% +/- 2%
   - [ ] Qwen Base with reasoning. TBD.
   - [ ] Qwen Base. TBD
 - [x] Full evaluation sets for arc-agi-1:
   - [x] Soar model. ~28%
   - [x] Qwen Base. ~0.9%
-- [ ] Generate reversed data.
-- [ ] Fine-tuning:
-    - [ ] Hoist utils. 
-    - [ ] Test a small dataset.
-- [ ] Data generation - Lewis doing this.
+- [x] Generate reversed data.
+- [x] Fine-tuning:
+    - [x] Hoist utils. 
+    - [x] Test a small dataset.
+- [ ] Create a simple SOAR dataset of 1k rows to train on.
+    [ ] Create a simple data creation script.
+    [ ] Examine test accuracy during the run.
+
+
+## 28 July 2025
 
 **Commentary:**
 - Soar model performance is ~28% on all_evaluation for arc-agi-1. Makes me wonder if this was trained on all_train or also on test-time data.

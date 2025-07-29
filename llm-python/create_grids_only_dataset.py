@@ -79,7 +79,7 @@ def create_and_push_hf_dataset(training_examples: List[Dict], validation_example
         timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
         dataset_part = args.dataset or "unknown"
         subset_part = args.subset or "unknown"
-        dataset_name = f"simple_{dataset_part}_{subset_part}_{timestamp}"
+        dataset_name = f"grids_only_{dataset_part}_{subset_part}_{timestamp}"
     
     print(f"Creating Hugging Face dataset: {args.hf_org}/{dataset_name}")
     
@@ -125,7 +125,7 @@ def create_and_push_hf_dataset(training_examples: List[Dict], validation_example
     print(f"Dataset URL: https://huggingface.co/datasets/{args.hf_org}/{dataset_name} ({visibility})")
 
 def main():
-    parser = argparse.ArgumentParser(description="Create simplified training datasets without code or reasoning")
+    parser = argparse.ArgumentParser(description="Create grids-only training datasets (contains grid data without code or reasoning)")
     parser.add_argument("dataset", type=str, 
                        help="Dataset name (e.g., 'arc-agi-1', 'arc-agi-2')")
     parser.add_argument("subset", type=str,
@@ -146,7 +146,7 @@ def main():
     
     args = parser.parse_args()
     
-    print(f"Creating simple dataset from {args.dataset}/{args.subset}")
+    print(f"Creating grids-only dataset from {args.dataset}/{args.subset}")
     
     # Load task IDs from subset
     try:
