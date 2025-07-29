@@ -33,8 +33,8 @@ def load_task_ids_from_subset(dataset: str, subset: str) -> List[str]:
     
     return task_ids
 
-def create_simple_training_example(task_data: Dict, task_id: str) -> Dict:
-    """Create a simplified training example without code or reasoning"""
+def create_grids_only_training_example(task_data: Dict, task_id: str) -> Dict:
+    """Create a grids-only training example (contains grid data without code or reasoning)"""
     
     # Extract training inputs and outputs
     train_inputs = [example['input'] for example in task_data['train']]
@@ -133,13 +133,13 @@ def main():
     parser.add_argument("--validation", action="store_true",
                        help="Create a validation split (10 percent or 32 examples, whichever is smaller)")
     parser.add_argument("--hf-dataset-name", type=str, default=None,
-                       help="Name for the Hugging Face dataset. If not provided, will use simple_{dataset}_{subset}_DATETIME format")
+                       help="Name for the Hugging Face dataset. If not provided, will use grids_only_{dataset}_{subset}_DATETIME format")
     parser.add_argument("--hf-org", type=str, default="Trelis",
                        help="Hugging Face organization to push the dataset to (default: Trelis)")
     parser.add_argument("--hf-private", action="store_true",
                        help="Make the Hugging Face dataset private")
     parser.add_argument("--output", type=str, 
-                       default=f"simple_dataset_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl",
+                       default=f"grids_only_dataset_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl",
                        help="Output JSONL file name (optional, for local saving)")
     parser.add_argument("--save-local", action="store_true",
                        help="Save dataset locally as JSONL file")
@@ -167,7 +167,7 @@ def main():
                 failed_tasks.append(task_id)
                 continue
             
-            training_example = create_simple_training_example(task_data, task_id)
+            training_example = create_grids_only_training_example(task_data, task_id)
             training_examples.append(training_example)
             
         except Exception as e:

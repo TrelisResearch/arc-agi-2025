@@ -7,6 +7,7 @@ A comprehensive tool for testing OpenAI-compatible language models on ARC-AGI ta
 **Main Scripts:**
 - `run_arc_tasks_soar.py` - **Main task runner** with all-attempts evaluation, parallel processing, and voting-based selection
 - `read_log_stats.py` - **Log analysis tool** to retrospectively read and display statistics from log directories
+- `create_grids_only_dataset.py` - **Grids-only dataset creator** for creating datasets with just grid data (no code or reasoning)
 
 **Core Folders:**
 - `utils/` - Core utility modules for task loading, scoring, prompts, and metrics
@@ -56,6 +57,11 @@ Run the shortest training tasks from ARC-AGI-1:
 uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10
 ```
 
+Create a grids-only dataset for evaluation tasks:
+```bash
+uv run python create_grids_only_dataset.py arc-agi-1 all_evaluation --save-local
+```
+
 ### All-Attempts Evaluation Mode (`run_arc_tasks_soar.py`)
 
 **Current system** with all-attempts execution, parallel processing, and voting-based evaluation:
@@ -101,6 +107,37 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --r
 - For maximum parallelization efficiency with high worker counts
 - For systematic comparison of multiple attempts per task
 - When you need real-time progress updates as tasks complete
+
+### Grids-Only Dataset Creation (`create_grids_only_dataset.py`)
+
+The `create_grids_only_dataset.py` script creates datasets containing only grid data without any generated code or reasoning:
+
+```bash
+# Create grids-only dataset for evaluation tasks
+uv run python create_grids_only_dataset.py arc-agi-1 all_evaluation --save-local
+
+# Create grids-only dataset for training tasks
+uv run python create_grids_only_dataset.py arc-agi-1 all_training --save-local
+
+# Push to Hugging Face (default behavior)
+uv run python create_grids_only_dataset.py arc-agi-2 shortest_evaluation_30
+
+# Create with validation split
+uv run python create_grids_only_dataset.py arc-agi-1 all_training --validation
+```
+
+**Features:**
+- **Grid Data Only**: Contains `train_input`, `train_output`, `test_input`, `test_output` fields
+- **No Code/Reasoning**: `code` and `reasoning` fields are empty
+- **No Predictions**: `predicted_*` fields are empty lists
+- **No Correctness Flags**: All `correct_*` fields are False
+- **Hugging Face Integration**: Automatically pushes to HF Hub with descriptive naming
+- **Validation Splits**: Optional train/validation split creation
+
+**Use Cases:**
+- Creating clean datasets for fine-tuning without generated content
+- Extracting raw ARC task data for analysis
+- Preparing datasets for models that don't need code/reasoning examples
 
 ### Log Analysis (`read_log_stats.py`)
 
@@ -281,6 +318,7 @@ llm-python/
 │       ├── test_voting_utils.py
 │       └── test_transduction.py
 ├── generate_training_data.py   # Extract training data from logs
+├── create_grids_only_dataset.py # Create grids-only datasets (no code/reasoning)
 ├── validate_hf_dataset.py      # Validate Hugging Face datasets
 ├── experiment_notes.md         # Development notes and experiments
 ├── archive/                    # Legacy scripts (moved for reference)
