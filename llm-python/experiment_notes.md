@@ -42,6 +42,56 @@ Learnings:
 - unsloth only supports batch size one generation because too much padding difference between tokens causes the model to perform quite poorly.
 - vllm is an option but requires unloading the model (unless I look into how grpo works and see if that can be leveraged, perhaps it can).
 
+### Fine-tuning a quick model
+
+I took 4 rows greedy from soar for each of the 400 evaluation dataset tasks from arc-agi-1.
+
+I fine-tuned and now am going to run evaluation on the 400 evaluation tasks from arc-agi-1.
+
+```bash
+uv run python -m llm-python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B-ds20250729_114431-20250729-142811 --base-url http://38.80.152.249:31159/v1 --qwen-no-think --max-tokens 1000 --unsafe-executor
+```
+Only recorded one run, there's some kind of hanging being hit in the evaluation script...
+
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Max-Len
+--------------------------------------------------------------------------------
+1    400    6.2%       6.0%       7.0%     4.2%       9.5%        1.1%   
+2    400    5.2%       5.2%       5.8%     4.8%       10.5%       0.8%   
+
+AGGREGATE STATISTICS:
+--------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 5.8%
+  Std Dev: 0.7%
+  95% CI: [4.4%, 7.1%]
+
+Train Majority Pass2:
+  Mean: 5.6%
+  Std Dev: 0.5%
+  95% CI: [4.6%, 6.7%]
+
+Oracle Correct:
+  Mean: 6.4%
+  Std Dev: 0.9%
+  95% CI: [4.6%, 8.1%]
+
+All Train Correct:
+  Mean: 4.5%
+  Std Dev: 0.4%
+  95% CI: [3.8%, 5.2%]
+
+Min1 Train Correct:
+  Mean: 10.0%
+  Std Dev: 0.7%
+  95% CI: [8.6%, 11.4%]
+
+Max Length Responses:
+  Mean: 0.9%
+  Std Dev: 0.2%
+  95% CI: [0.5%, 1.3%]
+
 ## 28 July 2025
 
 **Commentary:**
