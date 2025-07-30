@@ -36,7 +36,7 @@ def calculate_task_metrics(
     weighted_pass2 = train_majority_pass2 = 0
     all_test_correct = all_train_correct = 0
     min1_train_correct = min1_transductive = 0
-    min1_code_runs = 0
+    min1_code_success = 0
     total_tasks = 0
 
     # response‑level counters
@@ -69,9 +69,18 @@ def calculate_task_metrics(
         if len(attempts) > len(non_trans):
             min1_transductive += 1
 
-        # ---------- min‑1 code ran ----------
-        if any(att.get("code_ran", False) for att in attempts):
-            min1_code_runs += 1
+        # ---------- min‑1 code success (extracted and executed without errors) ----------
+        code_success = False
+        for att in attempts:
+            if (att.get("code_ran", False) and 
+                not att.get("test_exec_error", False) and 
+                not att.get("test_exec_timeout", False) and
+                att.get("train_exec_errors", 0) == 0 and
+                att.get("train_exec_timeouts", 0) == 0):
+                code_success = True
+                break
+        if code_success:
+            min1_code_success += 1
 
         total_tasks += 1
         if not non_trans:
@@ -83,8 +92,20 @@ def calculate_task_metrics(
         # ---------- weighted voting pass@2 ----------
         try:
             preds = compute_weighted_majority_voting(non_trans)   # list
-            preds = [_to_tuple(_first(p)) for p in preds]
-            if any(p == gt for p in preds):
+            # Handle both single test (raw grid) and multi-test (tuple of grids) cases
+            normalized_preds = []
+            for p in preds:
+                if p is None:
+                    continue
+                # If it's already a tuple (multi-test), keep as is
+                # If it's a single grid, convert to tuple to match gt format
+                if len(gt) == 1:
+                    # Single test case: p should be raw grid, wrap in tuple
+                    normalized_preds.append(_to_tuple([p]))
+                else:
+                    # Multi test case: p should already be tuple
+                    normalized_preds.append(_to_tuple(p))
+            if any(p == gt for p in normalized_preds):
                 weighted_pass2 += 1
         except Exception:
             pass
@@ -92,8 +113,20 @@ def calculate_task_metrics(
         # ---------- train‑majority voting pass@2 ----------
         try:
             preds = compute_train_majority_voting(non_trans)
-            preds = [_to_tuple(_first(p)) for p in preds]
-            if any(p == gt for p in preds):
+            # Handle both single test (raw grid) and multi-test (tuple of grids) cases
+            normalized_preds = []
+            for p in preds:
+                if p is None:
+                    continue
+                # If it's already a tuple (multi-test), keep as is
+                # If it's a single grid, convert to tuple to match gt format
+                if len(gt) == 1:
+                    # Single test case: p should be raw grid, wrap in tuple
+                    normalized_preds.append(_to_tuple([p]))
+                else:
+                    # Multi test case: p should already be tuple
+                    normalized_preds.append(_to_tuple(p))
+            if any(p == gt for p in normalized_preds):
                 train_majority_pass2 += 1
         except Exception:
             pass
@@ -126,7 +159,7 @@ def calculate_task_metrics(
         "all_train_correct":      all_train_correct,
         "min1_train_correct":     min1_train_correct,
         "min1_transductive":      min1_transductive,
-        "min1_code_runs":         min1_code_runs,
+        "min1_code_success":      min1_code_success,
         "total":                  total_tasks,
         # response‑level
         "total_responses":        total_responses,
@@ -159,8 +192,8 @@ def format_metrics_display(metrics: Dict, layer: Optional[int] = None) -> str:
         f"({metrics['all_train_correct']/total:.1%})",
         f"  Min‑1‑train correct (oracle): {metrics['min1_train_correct']}/{total} "
         f"({metrics['min1_train_correct']/total:.1%})",
-        f"  Min‑1‑code runs: {metrics['min1_code_runs']}/{total} "
-        f"({metrics['min1_code_runs']/total:.1%})",
+        f"  Min‑1‑code success: {metrics['min1_code_success']}/{total} "
+        f"({metrics['min1_code_success']/total:.1%})",
         f"  Min‑1‑transductive: {metrics['min1_transductive']}/{total} "
         f"({metrics['min1_transductive']/total:.1%})",
     ]
@@ -191,7 +224,7 @@ def metrics_to_percentages(metrics: Dict) -> Dict:
         "all_train_correct":      metrics["all_train_correct"] / total,
         "min1_train_correct":     metrics["min1_train_correct"] / total,
         "min1_transductive":      metrics["min1_transductive"] / total,
-        "min1_code_runs":         metrics["min1_code_runs"] / total,
+        "min1_code_success":      metrics["min1_code_success"] / total,
         "total_tasks":            total,
         "total_responses":        total_responses,
     }

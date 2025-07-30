@@ -514,25 +514,46 @@ class ARCTaskRunnerSimple:
         
         train_accuracy = train_correct / len(task_data['train']) if task_data['train'] else 0.0
         
-        # Evaluate on test
-        test_input = task_data['test'][0]['input']
-        test_expected = task_data['test'][0]['output']
-        test_exec_error = False
-        test_exec_timeout = False
+        # Evaluate on all test examples
+        test_results = []
+        test_predictions = []
+        test_correct_count = 0
+        any_test_exec_error = False
+        any_test_exec_timeout = False
         
-        if not program_extracted:
-            test_pred, test_err, test_tout = None, 'no program', False
-        elif is_transductive:
-            test_pred, test_err, test_tout = None, 'transductive', False
-        else:
-            test_pred, test_err, test_tout = self.executor.execute_program_with_timeout(program, test_input)
-            if test_err and test_err != 'no program' and test_err != 'transductive':
-                test_exec_error = True
-            if test_tout:
-                test_exec_timeout = True
+        for test_idx, test_example in enumerate(task_data['test']):
+            test_input = test_example['input']
+            test_expected = test_example['output']
+            
+            if not program_extracted:
+                test_pred, test_err, test_tout = None, 'no program', False
+            elif is_transductive:
+                test_pred, test_err, test_tout = None, 'transductive', False
+            else:
+                test_pred, test_err, test_tout = self.executor.execute_program_with_timeout(program, test_input)
+                if test_err and test_err != 'no program' and test_err != 'transductive':
+                    any_test_exec_error = True
+                if test_tout:
+                    any_test_exec_timeout = True
+            
+            # Mark as incorrect if transductive
+            is_correct = (test_pred == test_expected) if (test_pred is not None and not test_err and not test_tout and not is_transductive) else False
+            
+            if is_correct:
+                test_correct_count += 1
+            
+            test_results.append({
+                'test_idx': test_idx,
+                'predicted': test_pred,
+                'expected': test_expected,
+                'correct': is_correct,
+                'error': test_err,
+                'timed_out': test_tout
+            })
+            test_predictions.append(test_pred)
         
-        # Mark as incorrect if transductive
-        test_correct = (test_pred == test_expected) if (test_pred is not None and not test_err and not test_tout and not is_transductive) else False
+        # Overall test correctness (all test cases must be correct)
+        test_correct = (test_correct_count == len(task_data['test'])) if len(task_data['test']) > 0 else False
         
         # Store attempt details
         attempt_detail = {
@@ -549,12 +570,16 @@ class ARCTaskRunnerSimple:
             'train_accuracy': train_accuracy,
             'train_exec_errors': train_exec_errors,
             'train_exec_timeouts': train_exec_timeouts,
-            'test_predicted': test_pred,
-            'test_correct': test_correct,
-            'test_error': test_err,
-            'test_timed_out': test_tout,
-            'test_exec_error': test_exec_error,
-            'test_exec_timeout': test_exec_timeout,
+            # Multi-test support: store all predictions and detailed results  
+            'test_predicted': tuple(test_predictions) if len(task_data['test']) > 1 else (test_predictions[0] if test_predictions else None),  # Tuple for multiple tests, raw prediction for single test
+            'test_results': test_results,        # Detailed results for each test case
+            'test_correct': test_correct,        # True if ALL test cases are correct
+            'test_correct_count': test_correct_count,  # Number of correct test cases
+            'test_exec_error': any_test_exec_error,
+            'test_exec_timeout': any_test_exec_timeout,
+            # Legacy fields for backwards compatibility (using first test case)
+            'test_error': test_results[0]['error'] if test_results else 'no program',
+            'test_timed_out': test_results[0]['timed_out'] if test_results else False,
             'raw_response': serialize_response(response),
             'full_prompt': {'system': system_content, 'user': user_content},
             'sampling_params': sampling_params,
@@ -562,7 +587,10 @@ class ARCTaskRunnerSimple:
             'api_timeout': timed_out,
             'empty_response': empty_response,
             'hit_max_tokens': hit_max_tokens,
-            'error': error
+            'error': error,
+            # Add fields expected by metrics_utils
+            'all_test_correct': test_correct,  # True if ALL test cases are correct
+            'code_ran': program_extracted      # Alias for program_extracted
         }
         
         # Update costs
@@ -820,9 +848,12 @@ class ARCTaskRunnerSimple:
         attempts = task_result['attempts']
         
         # Calculate key stats
-        test_correct_attempts = sum(1 for attempt in attempts if attempt['test_correct'])
-        train_perfect_attempts = sum(1 for attempt in attempts if attempt['train_accuracy'] == 1.0)
-        train_partial_attempts = sum(1 for attempt in attempts if 0 < attempt['train_accuracy'] < 1.0)
+        test_correct_attempts = sum(1 for attempt in attempts if attempt.get('test_correct', False))
+        train_perfect_attempts = sum(1 for attempt in attempts if attempt.get('train_accuracy', 0.0) == 1.0)
+        # Align with Min 1 Train logic: task-level, has partial but not perfect training
+        has_perfect_train = any(attempt.get('train_accuracy', 0.0) == 1.0 for attempt in attempts)
+        has_partial_train = any(0 < attempt.get('train_accuracy', 0.0) < 1.0 for attempt in attempts)
+        task_has_partial_train = has_partial_train and not has_perfect_train
         
         # Calculate issues in timeline order
         api_timeouts = sum(1 for attempt in attempts if attempt.get('api_timeout', False))
@@ -837,10 +868,11 @@ class ARCTaskRunnerSimple:
         test_exec_timeouts = sum(1 for attempt in attempts if attempt.get('test_exec_timeout', False))
         
         # Find best attempt
-        best_attempt = max(attempts, key=lambda x: (x['test_correct'], x['train_accuracy']))
+        best_attempt = max(attempts, key=lambda x: (x.get('test_correct', False), x.get('train_accuracy', 0.0)))
         
         # Build summary
-        summary = f"✅ {task_id}: {test_correct_attempts}/{len(attempts)} test-correct, {train_perfect_attempts} train-perfect, {train_partial_attempts} train-partial"
+        partial_indicator = "train-partial" if task_has_partial_train else "no-partial"
+        summary = f"✅ {task_id}: {test_correct_attempts}/{len(attempts)} test-correct, {train_perfect_attempts} train-perfect, {partial_indicator}"
         
         # Add issues in timeline order if any occurred
         issues = []
@@ -869,10 +901,10 @@ class ARCTaskRunnerSimple:
             summary += f" | Issues: {', '.join(issues)}"
         
         # Add best attempt performance (separate from issues)
-        if best_attempt['test_correct']:
-            summary += f" (best: {best_attempt['train_accuracy']:.1%} train)"
+        if best_attempt.get('test_correct', False):
+            summary += f" (best: {best_attempt.get('train_accuracy', 0.0):.1%} train)"
         else:
-            summary += f" (best: {best_attempt['train_accuracy']:.1%} train, test-failed)"
+            summary += f" (best: {best_attempt.get('train_accuracy', 0.0):.1%} train, test-failed)"
         
         print(summary)
     
@@ -917,6 +949,7 @@ class ARCTaskRunnerSimple:
                 'all_test_correct': 0.0,
                 'all_train_correct': 0.0,
                 'min1_train_correct': 0.0,
+                'min1_code_success': 0.0,
                 'max_length_responses': 0.0,
                 'timeout_responses': 0.0,
                 'api_failure_responses': 0.0
@@ -970,6 +1003,7 @@ class ARCTaskRunnerSimple:
             print(f"  Oracle (Best Attempt):    {percentage_metrics['all_test_correct']:.1%}")
             print(f"  All Train Correct:        {percentage_metrics['all_train_correct']:.1%}")
             print(f"  Min 1 Train Correct:      {percentage_metrics['min1_train_correct']:.1%}")
+            print(f"  Min 1 Code Success:       {percentage_metrics['min1_code_success']:.1%}")
             print(f"  Max Length Responses:     {percentage_metrics['max_length_responses']:.1%}")
             print(f"  Timeout Responses:        {percentage_metrics['timeout_responses']:.1%}")
             print(f"  API Failure Responses:    {percentage_metrics['api_failure_responses']:.1%}")
@@ -1100,6 +1134,7 @@ class ARCTaskRunnerSimple:
                     'all_test_correct': 0.0,
                     'all_train_correct': 0.0,
                     'min1_train_correct': 0.0,
+                    'min1_code_success': 0.0,
                     'max_length_responses': 0.0,
                     'timeout_responses': 0.0,
                     'api_failure_responses': 0.0
@@ -1124,6 +1159,7 @@ class ARCTaskRunnerSimple:
                 'all_test_correct': [s['all_test_correct'] for s in valid_runs],
                 'all_train_correct': [s['all_train_correct'] for s in valid_runs],
                 'min1_train_correct': [s['min1_train_correct'] for s in valid_runs],
+                'min1_code_success': [s['min1_code_success'] for s in valid_runs],
                 'max_length_responses': [s['max_length_responses'] for s in valid_runs],
                 'timeout_responses': [s['timeout_responses'] for s in valid_runs],
                 'api_failure_responses': [s['api_failure_responses'] for s in valid_runs]
@@ -1171,16 +1207,17 @@ class ARCTaskRunnerSimple:
             
             # Individual run results
             print("INDIVIDUAL RUN RESULTS:")
-            print("-" * 82)
-            print(f"{'Run':<4} {'Tasks':<6} {'Weighted':<10} {'Train-Maj':<10} {'Oracle':<8} {'All-Train':<10} {'Min1-Train':<11} {'Max-Len':<8}")
-            print("-" * 82)
+            print("-" * 98)
+            print(f"{'Run':<4} {'Tasks':<6} {'Weighted':<10} {'Train-Maj':<10} {'Oracle':<8} {'All-Train':<10} {'Min1-Train':<11} {'Code-Success':<12} {'Max-Len':<8}")
+            print("-" * 98)
             
             for stats_run in run_stats:
                 if stats_run['total_tasks'] > 0:
                     print(f"{stats_run['run_number']:<4} {stats_run['total_tasks']:<6} "
                           f"{stats_run['weighted_voting_pass2']:<10.1%} {stats_run['train_majority_pass2']:<10.1%} "
                           f"{stats_run['all_test_correct']:<8.1%} {stats_run['all_train_correct']:<10.1%} "
-                          f"{stats_run['min1_train_correct']:<11.1%} {stats_run['max_length_responses']:<8.1%}")
+                          f"{stats_run['min1_train_correct']:<11.1%} "
+                          f"{stats_run['min1_code_success']:<12.1%} {stats_run['max_length_responses']:<8.1%}")
             
             print("")
             print("AGGREGATE STATISTICS:")

@@ -6,6 +6,9 @@ This directory contains comprehensive tests for the `utils` module, following pr
 
 - `test_task_loader.py` - Tests for the `TaskLoader` class
 - `test_scoring.py` - Tests for the `GridScorer` and `ProgramExecutor` classes
+- `test_voting_utils.py` - Tests for voting utility functions
+- `test_voting_edge_cases.py` - Edge case tests for voting functionality
+- `test_metrics_voting_integration.py` - Integration tests for metrics calculation with voting
 
 ## Running Tests
 
@@ -18,6 +21,14 @@ uv run python -m pytest utils/tests/ -v
 ```bash
 uv run python -m pytest utils/tests/test_task_loader.py -v
 uv run python -m pytest utils/tests/test_scoring.py -v
+uv run python -m pytest utils/tests/test_voting_utils.py -v
+uv run python -m pytest utils/tests/test_voting_edge_cases.py -v
+uv run python -m pytest utils/tests/test_metrics_voting_integration.py -v
+```
+
+### Run all voting-related tests:
+```bash
+uv run python -m pytest utils/tests/test_voting* -v
 ```
 
 ### Run only unit tests (excludes integration tests):
@@ -71,6 +82,14 @@ Integration tests will be skipped if the required data or dependencies are not a
 - Programs with no output or invalid functions
 - Numpy type conversion
 - Exception handling during sandbox creation
+
+### Voting and Metrics Tests
+- Voting utility serialization/deserialization
+- Weighted majority voting with train accuracy preferences
+- Train-majority voting with best group filtering
+- Metrics calculation integration with voting results
+- Single vs multi-test case format handling
+- Bug regression tests for the `_first()` function corruption issue
 
 ## Key Features
 
