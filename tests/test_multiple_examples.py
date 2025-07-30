@@ -19,7 +19,7 @@ for line_idx in test_lines:
     print('='*60)
     
     # Load the example
-    with open('/Users/ronanmcgovern/TR/arc-agi-2025/llm-python/training_data/gemini_synth_50_random_split_1_training.jsonl', 'r') as f:
+    with open('/Users/ronanmcgovern/TR/arc-agi-2025/llm_python/training_data/gemini_synth_50_random_split_1_training.jsonl', 'r') as f:
         for i, line in enumerate(f):
             if i == line_idx:
                 example = json.loads(line)

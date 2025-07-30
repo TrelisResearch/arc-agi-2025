@@ -35,10 +35,10 @@ curl --request POST https://rest.runpod.io/v1/pods \
 
 ### UV Project Discovery
 
-**Important**: When you run `uv` commands (like `uv venv`, `uv sync`, `uv run`) from subdirectories such as `llm-python/`, `uv` will automatically search upward through the directory hierarchy to find the root `pyproject.toml` file.
+**Important**: When you run `uv` commands (like `uv venv`, `uv sync`, `uv run`) from subdirectories such as `llm_python/`, `uv` will automatically search upward through the directory hierarchy to find the root `pyproject.toml` file.
 
 This means:
-- Running `uv venv` from `llm-python/` will discover and use the root `pyproject.toml` configuration
+- Running `uv venv` from `llm_python/` will discover and use the root `pyproject.toml` configuration
 - The virtual environment will respect the `requires-python = ">3.10,<3.12"` setting from the root
 - All dependencies and project settings from the root will be applied
 
@@ -53,7 +53,7 @@ uv venv --no-config
 
 ## Folders
 - `data/` contains the ARC-AGI-1 and ARC-AGI-2 datasets.
-- `llm-python` contains scripts for llm-generated python solutions to ARC tasks.
+- `llm_python` contains scripts for llm-generated python solutions to ARC tasks.
 
 ## Data
 
@@ -64,11 +64,11 @@ The `data/` folder contains:
 
 For detailed information about the data structure, file formats, and how to work with the datasets, see the [data folder README](data/README.md).
 
-## llm-python
+## llm_python
 
-The `llm-python/` folder contains a comprehensive testing framework for evaluating OpenAI models (o3, o4, GPT-4, Claude, custom Runpod endpoint, any openai style endpoint) on ARC-AGI tasks:
+The `llm_python/` folder contains a comprehensive testing framework for evaluating OpenAI models (o3, o4, GPT-4, Claude, custom Runpod endpoint, any openai style endpoint) on ARC-AGI tasks:
 
-For complete documentation, usage examples, and detailed configuration options, see the [llm-python README](llm-python/README.md).
+For complete documentation, usage examples, and detailed configuration options, see the [llm_python README](llm_python/README.md).
 
 ## Google Cloud Storage Operations
 
@@ -76,10 +76,10 @@ For complete documentation, usage examples, and detailed configuration options, 
 
 ```bash
 # Using gsutil (works on all platforms, requires Python 3.8-3.12)
-gsutil -m rsync -r llm-python/logs gs://trelis-arc/logs
+gsutil -m rsync -r llm_python/logs gs://trelis-arc/logs
 
 # Using gcloud storage (modern alternative, recommended)
-gcloud storage rsync llm-python/logs gs://trelis-arc/logs --recursive
+gcloud storage rsync llm_python/logs gs://trelis-arc/logs --recursive
 ```
 
 **Note:** Both sync commands perform **incremental synchronization** - they only upload new, modified, or missing files. Files that already exist and haven't changed are automatically skipped, so you can safely run these commands repeatedly without duplicating uploads.

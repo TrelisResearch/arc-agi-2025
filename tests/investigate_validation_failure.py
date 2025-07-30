@@ -18,7 +18,7 @@ for line_num in failing_lines:
     print('='*80)
     
     # Load the training example
-    with open('/Users/ronanmcgovern/TR/arc-agi-2025/llm-python/training_data/gemini_synth_50_random_split_1_training.jsonl', 'r') as f:
+    with open('/Users/ronanmcgovern/TR/arc-agi-2025/llm_python/training_data/gemini_synth_50_random_split_1_training.jsonl', 'r') as f:
         for i, line in enumerate(f, 1):
             if i == line_num:
                 example = json.loads(line)

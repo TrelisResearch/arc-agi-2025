@@ -4,7 +4,7 @@ import json
 import re
 
 # Load line 771
-with open('/Users/ronanmcgovern/TR/arc-agi-2025/llm-python/training_data/gemini_synth_50_random_split_1_training.jsonl', 'r') as f:
+with open('/Users/ronanmcgovern/TR/arc-agi-2025/llm_python/training_data/gemini_synth_50_random_split_1_training.jsonl', 'r') as f:
     for i, line in enumerate(f):
         if i == 770:  # Line 771 (0-indexed)
             example = json.loads(line)

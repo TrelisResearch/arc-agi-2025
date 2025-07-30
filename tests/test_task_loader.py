@@ -8,8 +8,8 @@ from unittest.mock import patch, mock_open
 import sys
 import os
 
-# Add the llm-python directory to the path to import utils
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'llm-python'))
+# Add the llm_python directory to the path to import utils
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'llm_python'))
 from utils.task_loader import TaskLoader, TaskData, TaskExample
 
 
