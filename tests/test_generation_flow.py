@@ -98,7 +98,7 @@ print(f"Generation method shape: {len(gen_output)}x{len(gen_output[0]) if gen_ou
 print("\n" + "="*50)
 print("Checking training data:")
 
-with open('/Users/ronanmcgovern/TR/arc-agi-2025/llm-python/training_data/gemini_synth_50_random_split_1_training.jsonl', 'r') as f:
+with open('/Users/ronanmcgovern/TR/arc-agi-2025/llm_python/training_data/gemini_synth_50_random_split_1_training.jsonl', 'r') as f:
     for i, line in enumerate(f, 1):
         if i == 771:
             example = json.loads(line)
