@@ -152,15 +152,17 @@ class ARCTaskRunnerSimple:
         # Calculate timeouts based on model configuration
         self.api_timeout = 600 if self.qwen_no_think else 1200
         client_timeout = self.api_timeout + 300  # Buffer for retries/overhead
-        self.worker_timeout = 2 * self.api_timeout  # Ample time for parallel execution
+        self.worker_timeout = 7200  # 2 hours per run - much more reasonable for large experiments
         
         # Initialize OpenAI client with calculated timeout
         if base_url:
             self.client = OpenAI(api_key=self.api_key, base_url=base_url, timeout=client_timeout)
-            print(f"📝 Using custom endpoint: {base_url} (timeouts: API={self.api_timeout}s, Client={client_timeout}s, Worker={self.worker_timeout}s)")
+            print(f"📝 Using custom endpoint: {base_url}")
+            print(f"⏰ Timeouts: API={self.api_timeout}s, Client={client_timeout}s, ⚠️ WORKER={self.worker_timeout}s ({self.worker_timeout//60}min per run)")
         else:
             self.client = OpenAI(api_key=self.api_key, timeout=client_timeout)
-            print(f"📝 Using OpenAI endpoint (timeouts: API={self.api_timeout}s, Client={client_timeout}s, Worker={self.worker_timeout}s)")
+            print(f"📝 Using OpenAI endpoint")
+            print(f"⏰ Timeouts: API={self.api_timeout}s, Client={client_timeout}s, ⚠️ WORKER={self.worker_timeout}s ({self.worker_timeout//60}min per run)")
         
         # Initialize fresh instances to prevent state leakage
         self.task_loader = TaskLoader()
@@ -707,6 +709,15 @@ class ARCTaskRunnerSimple:
         else:
             print("Parallelization: DISABLED (sequential execution)")
         
+        # PROMINENTLY display the per-run timeout
+        timeout_minutes = self.worker_timeout // 60
+        print("")
+        print("🚨" * 20)
+        print(f"⏰ GLOBAL TIMEOUT WARNING: {timeout_minutes} MINUTES PER RUN")
+        print(f"   Each run will be forcibly stopped after {self.worker_timeout} seconds")
+        print("🚨" * 20)
+        print("")
+        
         # Display sampling parameters
         if sampling_params:
             print(f"Sampling Parameters: {sampling_params}")
@@ -798,6 +809,7 @@ class ARCTaskRunnerSimple:
             
             # Wait for all attempts to complete
             start_time = time.time()
+            timeout_occurred = False  # Track if we hit the global timeout
             
             try:
                 from concurrent.futures import as_completed
@@ -830,17 +842,98 @@ class ARCTaskRunnerSimple:
                         future.cancel()
                         
                 print(f"Timeout/error details: {e}")
+                
+                # Mark that this run was incomplete due to timeout
+                timeout_occurred = True
             
-            # Check final status
-            successful_attempts = sum(1 for future in futures if future.done() and not future.exception())
-            failed_attempts = sum(1 for future in futures if future.done() and future.exception())
+            # Check final status - handle cancelled futures properly
+            successful_attempts = 0
+            failed_attempts = 0
+            cancelled_attempts = 0
+            
+            for future in futures:
+                if not future.done():
+                    continue
+                elif future.cancelled():
+                    cancelled_attempts += 1
+                else:
+                    try:
+                        exception = future.exception()
+                        if exception is None:
+                            successful_attempts += 1
+                        else:
+                            failed_attempts += 1
+                    except Exception:
+                        # Handle any other edge cases
+                        failed_attempts += 1
             
             if failed_attempts > 0:
                 print(f"❌ {failed_attempts} attempts failed out of {total_attempts} total")
             
-            print(f"📊 Final status: {successful_attempts} successful attempts, {failed_attempts} failed")
+            if cancelled_attempts > 0:
+                print(f"🛑 {cancelled_attempts} attempts were cancelled due to timeout")
+            
+            print(f"📊 Final status: {successful_attempts} successful, {failed_attempts} failed, {cancelled_attempts} cancelled")
         
-        # Convert task_results to the expected format for summary
+        # Handle timeout case - save partial results
+        if timeout_occurred:
+            print("")
+            print("🚨" * 25)
+            print("⏰ TIMEOUT OCCURRED - SAVING PARTIAL RESULTS")
+            print("🚨" * 25)
+            
+            # Count tasks with partial attempts
+            tasks_with_partial_attempts = 0
+            tasks_with_full_attempts = 0
+            tasks_with_no_attempts = 0
+            
+            for task_id, task_data in tasks:
+                if task_id in task_results:
+                    attempt_count = len(task_results[task_id]['attempts'])
+                    if attempt_count == 0:
+                        tasks_with_no_attempts += 1
+                    elif attempt_count < self.max_attempts:
+                        tasks_with_partial_attempts += 1
+                    else:
+                        tasks_with_full_attempts += 1
+                else:
+                    tasks_with_no_attempts += 1
+            
+            print(f"📊 Tasks with full attempts ({self.max_attempts}): {tasks_with_full_attempts}")
+            print(f"📊 Tasks with partial attempts: {tasks_with_partial_attempts}")
+            print(f"📊 Tasks with no attempts: {tasks_with_no_attempts}")
+            print("💾 Saving all available data...")
+            
+            # Save individual partial task results for debugging
+            if tasks_with_partial_attempts > 0:
+                print(f"💾 Saving {tasks_with_partial_attempts} partial task results...")
+                for task_id, task_data in tasks:
+                    if (task_id in task_results and 
+                        0 < len(task_results[task_id]['attempts']) < self.max_attempts):
+                        
+                        attempts = sorted(task_results[task_id]['attempts'], key=lambda x: x['attempt_number'])
+                        valid_attempts = [attempt for attempt in attempts if isinstance(attempt, dict) and 'attempt_number' in attempt]
+                        
+                        partial_task_result = {
+                            'task_id': task_id,
+                            'model': self.model,
+                            'api_type': 'chat_completions_partial_attempts',
+                            'dataset': dataset,
+                            'subset': subset_name,
+                            'attempt_details': valid_attempts,
+                            'all_responses': [attempt.get('raw_response') for attempt in valid_attempts],
+                            'tokens_used': sum(attempt.get('input_tokens', 0) + attempt.get('output_tokens', 0) for attempt in valid_attempts),
+                            'request_cost': sum(attempt.get('attempt_cost', 0.0) for attempt in valid_attempts),
+                            'max_attempts': self.max_attempts,
+                            'actual_attempts': len(valid_attempts),
+                            'timeout_occurred': True,
+                            'api_success': True,
+                            'task_data': task_data
+                        }
+                        self.save_result(partial_task_result)
+            print("")
+        
+        # Convert task_results to the expected format for summary (including partial tasks)
         results = []
         for task_id, task_data in tasks:
             if task_id in task_results and len(task_results[task_id]['attempts']) > 0:
@@ -858,10 +951,14 @@ class ARCTaskRunnerSimple:
                 if len(valid_attempts) != len(attempts):
                     print(f"⚠️ Task {task_id}: {len(attempts) - len(valid_attempts)} invalid attempts filtered out")
                 
+                # Mark if this task has partial attempts due to timeout
+                is_partial = len(valid_attempts) < self.max_attempts
+                api_type = 'chat_completions_partial_attempts' if is_partial else 'chat_completions_all_attempts'
+                
                 result = {
                     'task_id': task_id,
                     'model': self.model,
-                    'api_type': 'chat_completions_all_attempts',
+                    'api_type': api_type,
                     'dataset': dataset,
                     'subset': subset_name,
                     'attempt_details': valid_attempts,
@@ -869,15 +966,21 @@ class ARCTaskRunnerSimple:
                     'tokens_used': sum(attempt.get('input_tokens', 0) + attempt.get('output_tokens', 0) for attempt in valid_attempts),
                     'request_cost': sum(attempt.get('attempt_cost', 0.0) for attempt in valid_attempts),
                     'max_attempts': self.max_attempts,
+                    'actual_attempts': len(valid_attempts),  # Track how many were actually completed
+                    'is_partial': is_partial,
+                    'timeout_occurred': timeout_occurred,
                     'api_success': True,
                     'task_data': task_data
                 }
                 results.append(result)
                 # Note: save_result() is now called when each task completes, not here
             else:
-                print(f"⚠️ Task {task_id} has no valid attempts - skipping")
+                if timeout_occurred:
+                    print(f"⚠️ Task {task_id} has no attempts due to timeout - skipping")
+                else:
+                    print(f"⚠️ Task {task_id} has no valid attempts - skipping")
         
-        summary_filepath = self.save_summary(results, subset_name, dataset)
+        summary_filepath = self.save_summary(results, subset_name, dataset, timeout_occurred=timeout_occurred)
         return results, summary_filepath
     
     def _display_task_summary(self, task_id: str, task_result: Dict):
@@ -966,7 +1069,7 @@ class ARCTaskRunnerSimple:
             print(f"   Error: {e}")
             raise Exception(f"File I/O error for task {result['task_id']}: {e}")
     
-    def save_summary(self, results: List[Dict], subset_name: str, dataset: str):
+    def save_summary(self, results: List[Dict], subset_name: str, dataset: str, timeout_occurred: bool = False):
         """Save summary of all results"""
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         
@@ -992,15 +1095,28 @@ class ARCTaskRunnerSimple:
                 'api_failure_responses': 0.0
             }
         
+        # Determine summary type and calculate additional timeout stats
+        if timeout_occurred:
+            api_type_summary = 'chat_completions_timeout_partial'
+            partial_tasks = sum(1 for r in results if r.get('is_partial', False))
+            complete_tasks = total_tasks - partial_tasks
+        else:
+            api_type_summary = 'chat_completions_all_attempts'
+            partial_tasks = 0
+            complete_tasks = total_tasks
+        
         # Create summary with full results for later aggregation
         summary = {
             'timestamp': timestamp,
             'dataset': dataset,
             'subset': subset_name,
             'model': self.model,
-            'api_type': 'chat_completions_all_attempts',
+            'api_type': api_type_summary,
             'run_number': self.run_number,
             'total_tasks': total_tasks,
+            'complete_tasks': complete_tasks,
+            'partial_tasks': partial_tasks,
+            'timeout_occurred': timeout_occurred,
             'successful_api_calls': successful_api_calls,
             'total_tokens': self.total_tokens,
             'total_cost': self.total_cost,
@@ -1009,10 +1125,12 @@ class ARCTaskRunnerSimple:
             'task_ids': [result['task_id'] for result in results]  # Also include task IDs for convenience
         }
         
+        # Include timeout indicator in filename
+        timeout_suffix = "_TIMEOUT_PARTIAL" if timeout_occurred else ""
         if self.run_number > 0:
-            filename = f"{timestamp}_summary_{dataset}_{subset_name}_simple_run{self.run_number}.json"
+            filename = f"{timestamp}_summary_{dataset}_{subset_name}_simple_run{self.run_number}{timeout_suffix}.json"
         else:
-            filename = f"{timestamp}_summary_{dataset}_{subset_name}_simple.json"
+            filename = f"{timestamp}_summary_{dataset}_{subset_name}_simple{timeout_suffix}.json"
         
         filepath = self.logs_dir / filename
         
@@ -1021,20 +1139,30 @@ class ARCTaskRunnerSimple:
         
         # Print summary
         run_info = f" (Run {self.run_number})" if self.run_number > 0 else ""
+        timeout_info = " - ⏰ TIMEOUT PARTIAL RUN" if timeout_occurred else ""
         print("\n" + "="*50)
-        print(f"SUMMARY{run_info}")
+        print(f"SUMMARY{run_info}{timeout_info}")
         print("="*50)
         print(f"Dataset: {dataset}")
         print(f"Subset: {subset_name}")
         print(f"Model: {self.model}")
-        print(f"Total tasks: {total_tasks}")
+        
+        if timeout_occurred:
+            print(f"⚠️ GLOBAL TIMEOUT OCCURRED - PARTIAL RESULTS ONLY")
+            print(f"Total tasks attempted: {total_tasks}")
+            print(f"Tasks with complete attempts: {complete_tasks}")
+            print(f"Tasks with partial attempts: {partial_tasks}")
+        else:
+            print(f"Total tasks: {total_tasks}")
+            
         print(f"Successful API calls: {successful_api_calls}/{total_tasks} ({successful_api_calls/total_tasks:.1%})")
         print(f"Total tokens used: {self.total_tokens:,}")
         print(f"Total cost: ${self.total_cost:.6f}")
         
         # Print core metrics
         if results:
-            print("\n📊 CORE METRICS:")
+            metrics_warning = " (⚠️ PARTIAL DATA - SOME TASKS INCOMPLETE)" if timeout_occurred else ""
+            print(f"\n📊 CORE METRICS{metrics_warning}:")
             print(f"  Pass@2 (Weighted Voting): {percentage_metrics['weighted_voting_pass2']:.1%}")
             print(f"  Pass@2 (Train Majority):  {percentage_metrics['train_majority_pass2']:.1%}")
             print(f"  Oracle (Best Attempt):    {percentage_metrics['all_test_correct']:.1%}")
@@ -1045,7 +1173,8 @@ class ARCTaskRunnerSimple:
             print(f"  Timeout Responses:        {percentage_metrics['timeout_responses']:.1%}")
             print(f"  API Failure Responses:    {percentage_metrics['api_failure_responses']:.1%}")
         
-        print(f"\nResults saved to: {filepath}")
+        final_message = "⚠️ PARTIAL results saved to:" if timeout_occurred else "Results saved to:"
+        print(f"\n{final_message} {filepath}")
         return filepath
     
     def run_repeated_subset(self, subset_name: str, dataset: str = "arc-agi-1", limit: Optional[int] = None, repeat_runs: int = 3) -> List[List[Dict]]:
@@ -1054,6 +1183,15 @@ class ARCTaskRunnerSimple:
         print(f"Model: {self.model}")
         print(f"{self.max_attempts} attempts")
         print("="*70)
+        
+        # Prominent timeout warning for repeat runs
+        timeout_minutes = self.worker_timeout // 60
+        print("")
+        print("⚠️" * 30)
+        print(f"⏰ REPEAT RUNS TIMEOUT: {timeout_minutes} MINUTES PER INDIVIDUAL RUN")
+        print(f"   Each of {repeat_runs} runs gets {timeout_minutes} minutes before forced termination")
+        print("⚠️" * 30)
+        print("")
         
         # Store run results independently - no shared state
         run_files = []
