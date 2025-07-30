@@ -99,6 +99,13 @@ Quick test of 64 attempts for fun:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 64 --model Trelis/Qwen3-4B-ds20250729_114431-20250730-172810 --base-url http://38.80.152.249:30482/v1 --qwen-no-think --max-tokens 1000 --unsafe-executor
 ```
+📊 Key Results Summary:
+Pass@2 (Weighted Voting): 10.6% - This is your main metric
+Pass@2 (Train Majority): 10.1% - Alternative voting method
+Oracle (Best Attempt): 12.6% - Best possible with perfect attempt selection
+All Train Correct: 9.3% - Tasks that got perfect training accuracy
+Min 1 Train Correct: 25.2% - Tasks with at least some training success
+Code Success Rate: 100.0% - Every attempt produced valid Python code
 
 ## 29 July 2025
 - [x] Review of run_arc_tasks_soar.py
