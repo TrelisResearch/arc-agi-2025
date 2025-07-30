@@ -419,10 +419,17 @@ class ARCTaskRunnerSimple:
                 break
             except Exception as e:
                 error = str(e)
+                # Check if this is actually a timeout error vs other API errors
+                is_timeout_error = (
+                    "timeout" in str(e).lower() or 
+                    "TimeoutError" in str(type(e).__name__) or
+                    "concurrent.futures._base.TimeoutError" in str(type(e))
+                )
                 if retry_attempt < 2:
                     time.sleep(2)
                 else:
-                    timed_out = True
+                    # Only mark as timeout if it's actually a timeout error
+                    timed_out = is_timeout_error
         
         # Extract sampling parameters for logging
         sampling_params = {}
@@ -543,7 +550,6 @@ class ARCTaskRunnerSimple:
             'train_exec_errors': train_exec_errors,
             'train_exec_timeouts': train_exec_timeouts,
             'test_predicted': test_pred,
-            'test_expected': test_expected,
             'test_correct': test_correct,
             'test_error': test_err,
             'test_timed_out': test_tout,

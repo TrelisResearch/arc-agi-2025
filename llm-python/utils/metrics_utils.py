@@ -81,8 +81,8 @@ def calculate_task_metrics(
             total += 1
             continue
         
-        # Get ground truth
-        gt = result['attempt_details'][0]['test_expected']
+        # Get ground truth from task_data (avoiding redundant test_expected field)
+        gt = result['task_data']['test'][0]['output']
         
         # Weighted majority voting (pass@2)
         try:
