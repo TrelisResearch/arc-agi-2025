@@ -735,60 +735,36 @@ class ARCTaskRunnerSimple:
             start_time = time.time()
             
             try:
-                for future_idx, future in enumerate(futures):
-                    remaining_time = self.worker_timeout - (time.time() - start_time)
-                    if remaining_time <= 0:
-                        print("⏰ Timeout reached, some attempts may not have completed")
-                        print("🛑 Cancelling all remaining futures and stopping execution")
-                        # Cancel all remaining futures
-                        for remaining_future in futures[future_idx:]:
-                            remaining_future.cancel()
-                        break
-                    try:
-                        future.result(timeout=remaining_time)
-                    except Exception as future_e:
-                        print(f"🚨 FUTURE TIMEOUT: Future #{future_idx + 1}")
-                        print(f"   Error: {future_e}")
-                        print(f"   Elapsed time: {time.time() - start_time:.1f}s")
-                        print(f"   Remaining time: {remaining_time:.1f}s")
-                        print(f"   Future done: {future.done()}")
-                        print(f"   Future exception: {future.exception()}")
-                        
-                        # Get the task details for this future
-                        task_idx, task_id, task_data, attempt_num = attempt_jobs[future_idx]
-                        print(f"   Task: {task_id}, Attempt: {attempt_num + 1}")
-                        print(f"   Task data keys: {list(task_data.keys()) if task_data else 'None'}")
-                        
-                        # Check if this future has any partial results
-                        if future.done() and not future.exception():
-                            try:
-                                result = future.result(timeout=1)  # Quick check
-                                print(f"   Future actually completed successfully")
-                                if result and 'attempt_detail' in result:
-                                    attempt = result['attempt_detail']
-                                    print(f"   API success: {attempt.get('api_success', 'Unknown')}")
-                                    print(f"   Timed out: {attempt.get('api_timeout', 'Unknown')}")
-                                    print(f"   Error: {attempt.get('error', 'None')}")
-                                    print(f"   Program extracted: {attempt.get('program_extracted', 'Unknown')}")
-                                    print(f"   Test correct: {attempt.get('test_correct', 'Unknown')}")
-                            except Exception as check_e:
-                                print(f"   Could not check future result: {check_e}")
-                        
-                        print(f"   Stopping execution due to future timeout")
-                        # Cancel all remaining futures
-                        for remaining_future in futures[future_idx:]:
-                            remaining_future.cancel()
-                        raise future_e
+                from concurrent.futures import as_completed
+                completed_count = 0
                 
-                # Check if we completed all futures or hit timeout
+                # Use as_completed with global timeout - each future gets fair treatment
+                for future in as_completed(futures, timeout=self.worker_timeout):
+                    completed_count += 1
+                    try:
+                        result = future.result()  # No timeout needed - future is already done
+                    except Exception as future_e:
+                        print(f"🚨 Future #{completed_count} error: {future_e}")
+                        # Continue processing other futures instead of stopping
+                
+                # Check if we completed all futures 
                 completed_futures = sum(1 for future in futures if future.done())
                 if completed_futures == total_attempts:
                     print(f"✅ All {total_attempts} attempts completed")
-                else:
-                    print(f"⚠️ Only {completed_futures}/{total_attempts} attempts completed (timeout hit)")
                     
             except Exception as e:
-                print(f"⚠️ Some attempts may have failed or timed out: {e}")
+                # Handle global timeout from as_completed()
+                completed_futures = sum(1 for future in futures if future.done())
+                print(f"⏰ Global timeout reached after {time.time() - start_time:.1f}s")
+                print(f"⚠️ Only {completed_futures}/{total_attempts} attempts completed")
+                print("🛑 Cancelling all remaining futures")
+                
+                # Cancel any remaining futures
+                for future in futures:
+                    if not future.done():
+                        future.cancel()
+                        
+                print(f"Timeout/error details: {e}")
             
             # Check final status
             successful_attempts = sum(1 for future in futures if future.done() and not future.exception())
@@ -938,11 +914,12 @@ class ARCTaskRunnerSimple:
             percentage_metrics = {
                 'weighted_voting_pass2': 0.0,
                 'train_majority_pass2': 0.0,
-                'oracle_correct': 0.0,
+                'all_test_correct': 0.0,
                 'all_train_correct': 0.0,
                 'min1_train_correct': 0.0,
                 'max_length_responses': 0.0,
-                'all_timeouts': 0.0
+                'timeout_responses': 0.0,
+                'api_failure_responses': 0.0
             }
         
         # Create summary with full results for later aggregation
@@ -990,7 +967,7 @@ class ARCTaskRunnerSimple:
             print("\n📊 CORE METRICS:")
             print(f"  Pass@2 (Weighted Voting): {percentage_metrics['weighted_voting_pass2']:.1%}")
             print(f"  Pass@2 (Train Majority):  {percentage_metrics['train_majority_pass2']:.1%}")
-            print(f"  Oracle (Best Attempt):    {percentage_metrics['oracle_correct']:.1%}")
+            print(f"  Oracle (Best Attempt):    {percentage_metrics['all_test_correct']:.1%}")
             print(f"  All Train Correct:        {percentage_metrics['all_train_correct']:.1%}")
             print(f"  Min 1 Train Correct:      {percentage_metrics['min1_train_correct']:.1%}")
             print(f"  Max Length Responses:     {percentage_metrics['max_length_responses']:.1%}")
@@ -1120,7 +1097,7 @@ class ARCTaskRunnerSimple:
                     'total_tasks': 0,
                     'weighted_voting_pass2': 0.0,
                     'train_majority_pass2': 0.0,
-                    'oracle_correct': 0.0,
+                    'all_test_correct': 0.0,
                     'all_train_correct': 0.0,
                     'min1_train_correct': 0.0,
                     'max_length_responses': 0.0,
@@ -1144,7 +1121,7 @@ class ARCTaskRunnerSimple:
             metrics = {
                 'weighted_voting_pass2': [s['weighted_voting_pass2'] for s in valid_runs],
                 'train_majority_pass2': [s['train_majority_pass2'] for s in valid_runs],
-                'oracle_correct': [s['oracle_correct'] for s in valid_runs],
+                'all_test_correct': [s['all_test_correct'] for s in valid_runs],
                 'all_train_correct': [s['all_train_correct'] for s in valid_runs],
                 'min1_train_correct': [s['min1_train_correct'] for s in valid_runs],
                 'max_length_responses': [s['max_length_responses'] for s in valid_runs],
@@ -1202,7 +1179,7 @@ class ARCTaskRunnerSimple:
                 if stats_run['total_tasks'] > 0:
                     print(f"{stats_run['run_number']:<4} {stats_run['total_tasks']:<6} "
                           f"{stats_run['weighted_voting_pass2']:<10.1%} {stats_run['train_majority_pass2']:<10.1%} "
-                          f"{stats_run['oracle_correct']:<8.1%} {stats_run['all_train_correct']:<10.1%} "
+                          f"{stats_run['all_test_correct']:<8.1%} {stats_run['all_train_correct']:<10.1%} "
                           f"{stats_run['min1_train_correct']:<11.1%} {stats_run['max_length_responses']:<8.1%}")
             
             print("")
