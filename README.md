@@ -10,20 +10,6 @@ This repository contains resources for working with the ARC-AGI (Abstraction and
     b. **Linux**: Configure the fuse mount with: `mkdir -p gcs && gcsfuse trelis-arc ./gcs`
     c. **macOS**: Use `gsutil` or `gcloud storage` commands directly (see examples below)
 
-### UV Project Discovery
-
-**Important**: When you run `uv` commands (like `uv venv`, `uv sync`, `uv run`) from subdirectories such as `llm-python/`, `uv` will automatically search upward through the directory hierarchy to find the root `pyproject.toml` file.
-
-This means:
-- Running `uv venv` from `llm-python/` will discover and use the root `pyproject.toml` configuration
-- The virtual environment will respect the `requires-python = ">3.10,<3.12"` setting from the root
-- All dependencies and project settings from the root will be applied
-
-To create an isolated environment that ignores the root configuration, use:
-```bash
-uv venv --no-config
-```
-
 ### Runpod Setup
 
 You can start a GPU instance using [this Runpod template](https://console.runpod.io/deploy?template=bh0rvngapk&ref=jmfkcdio), which will install .toml dependencies AND unsloth, required for the fine-tuning notebook, via an on-start script.
@@ -40,11 +26,25 @@ curl --request POST https://rest.runpod.io/v1/pods \
      --data '{
        "templateId"     : "bh0rvngapk",
        "name"           : "arc-agi-h200",
-       "cloudType"      : "SECURE",          /* or "COMMUNITY"           */
+       "cloudType"      : "SECURE",
        "gpuTypeIds"     : ["NVIDIA H200"],
        "gpuCount"       : 1,
-       "volumeInGb"     : 150                 /* only if you want to override*/
+       "volumeInGb"     : 150
      }'
+```
+
+### UV Project Discovery
+
+**Important**: When you run `uv` commands (like `uv venv`, `uv sync`, `uv run`) from subdirectories such as `llm-python/`, `uv` will automatically search upward through the directory hierarchy to find the root `pyproject.toml` file.
+
+This means:
+- Running `uv venv` from `llm-python/` will discover and use the root `pyproject.toml` configuration
+- The virtual environment will respect the `requires-python = ">3.10,<3.12"` setting from the root
+- All dependencies and project settings from the root will be applied
+
+To create an isolated environment that ignores the root configuration, use:
+```bash
+uv venv --no-config
 ```
 
 ## Branches
