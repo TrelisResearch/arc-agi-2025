@@ -4,12 +4,13 @@ import argparse
 import glob
 import json
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
+from tokenize import TokenError
 
 from .schema import TrainingExample, LogData
 from .code import strip_comments
@@ -19,32 +20,42 @@ import time
 
 # Initialize utilities
 task_loader = TaskLoader()
-program_executor = ProgramExecutor(timeout=1, executor_type="unrestricted")
+program_executor = ProgramExecutor(timeout=2, executor_type="unrestricted")
 
 # Define explicit PyArrow schema for our parquet file
-PARQUET_SCHEMA = pa.schema([
-    ('task_id', pa.string()),
-    ('code', pa.string()),
-    ('reasoning', pa.string()),
-    ('model', pa.string()),
-    ('train_correct_fraction', pa.float64()),
-    ('test_correct_fraction', pa.float64()),
-    ('sample_inputs', pa.list_(pa.list_(pa.list_(pa.int64())))),  # List[List[List[int]]]
-    ('sample_outputs', pa.list_(pa.list_(pa.list_(pa.int64())))),  # List[List[List[int]]]
-])
+PARQUET_SCHEMA = pa.schema(
+    [
+        ("task_id", pa.string()),
+        ("code", pa.string()),
+        ("reasoning", pa.string()),
+        ("model", pa.string()),
+        ("train_correct_fraction", pa.float64()),
+        ("test_correct_fraction", pa.float64()),
+        (
+            "sample_inputs",
+            pa.list_(pa.list_(pa.list_(pa.int64()))),
+        ),  # List[List[List[int]]]
+        (
+            "sample_outputs",
+            pa.list_(pa.list_(pa.list_(pa.int64()))),
+        ),  # List[List[List[int]]]
+    ]
+)
 
 
-def _save_programs_to_parquet(programs: List[TrainingExample], output_path: Path) -> None:
+def _save_programs_to_parquet(
+    programs: List[TrainingExample], output_path: Path
+) -> None:
     """Save programs to parquet file with explicit schema validation."""
     if not programs:
         print("No programs to save!")
         return
-    
+
     df = pd.DataFrame(programs)
-    
+
     # Ensure output directory exists
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     # Convert to PyArrow table with explicit schema and save
     table = pa.Table.from_pandas(df, schema=PARQUET_SCHEMA)
     pq.write_table(table, output_path)
@@ -56,41 +67,44 @@ def _validate_training_example_against_schema(example: TrainingExample) -> None:
     try:
         # Convert to dict format
         example_dict = {
-            'task_id': example['task_id'],
-            'code': example['code'],
-            'reasoning': example['reasoning'],
-            'model': example['model'],
-            'train_correct_fraction': example['train_correct_fraction'],
-            'test_correct_fraction': example['test_correct_fraction'],
-            'sample_inputs': example['sample_inputs'],
-            'sample_outputs': example['sample_outputs'],
+            "task_id": example["task_id"],
+            "code": example["code"],
+            "reasoning": example["reasoning"],
+            "model": example["model"],
+            "train_correct_fraction": example["train_correct_fraction"],
+            "test_correct_fraction": example["test_correct_fraction"],
+            "sample_inputs": example["sample_inputs"],
+            "sample_outputs": example["sample_outputs"],
         }
-        
+
         # Create arrays for each column with single values
         arrays = []
         for field in PARQUET_SCHEMA:
             arrays.append(pa.array([example_dict[field.name]], type=field.type))
-        
+
         # Try to create a PyArrow table with our schema
         pa.table(arrays, schema=PARQUET_SCHEMA)
-        
+
         # If we get here, the data is valid
         return
-        
+
     except Exception as e:
         raise ValueError(f"TrainingExample failed schema validation: {e}")
 
 
-def _validate_grid(output) -> Grid:
-    if output is not None:
-        # Check if output is a list of lists of ints
-        if isinstance(output, list) and all(
-            isinstance(row, list) and all(isinstance(val, int) for val in row)
-            for row in output
-        ):
-            return output
-        else:
-            raise ValueError(f"Object is not a list of lists of ints: {output}")
+def _validate_grid(output) -> Optional[Grid]:
+    if output is None:
+        return None
+
+    # Check if output is a list of lists of ints
+    if isinstance(output, list) and all(
+        isinstance(row, list) and all(isinstance(val, int) for val in row)
+        for row in output
+    ):
+        return output
+    else:
+        # If output is not a valid grid, return None
+        return None
 
 
 def _execute_on_examples(program: str, examples: List[TaskExample]) -> List:
@@ -222,27 +236,27 @@ def _compute_accuracy(outputs: List[Grid], examples: List[TaskExample]) -> float
     return correct / len(examples)
 
 
-def process_program(log_data: LogData) -> TrainingExample:
+def is_valid_code(code: str) -> bool:
+    """Check if code is valid Python that can be compiled."""
+    try:
+        compile(code, "<string>", "exec")
+        return True
+    except (SyntaxError, TokenError, ValueError, TypeError):
+        return False
+
+
+def process_program(log_data: LogData) -> Optional[TrainingExample]:
     """Process a single program entry with task data and compute accuracy."""
 
-    # Clean code first
-    cleaned_code = strip_comments(log_data["program"])
-
-    # Test that cleaned code compiles, fallback to original if needed
     try:
-        compile(cleaned_code, "<cleaned>", "exec")
-        program_to_execute = cleaned_code
-    except SyntaxError:
-        try:
-            compile(log_data["program"], "<original>", "exec")
-            print(
-                f"Warning: Cleaned code for task {log_data['task_id']} failed to compile, using original."
-            )
-            program_to_execute = log_data["program"]
-        except SyntaxError:
-            # Both versions failed to compile - use original anyway for consistency
-            # This is not unexpected, so no warning needed
-            program_to_execute = log_data["program"]
+        program_to_execute = strip_comments(log_data["program"])
+    except Exception:
+        # If this failed because the original code was invalid, that's fine - return None
+        if not is_valid_code(log_data["program"]):
+            return None
+        else:
+            # If it failed for some other reason, re-raise
+            raise
 
     # Load task data - this could fail due to missing files, which is unexpected
     task_data = task_loader.load_task(log_data["task_id"])
@@ -250,25 +264,15 @@ def process_program(log_data: LogData) -> TrainingExample:
     # Execute program and get results - expected errors are handled within the function
     train_outputs, test_outputs = _run_program_on_task(program_to_execute, task_data)
 
-    # Replace None outputs with empty lists to avoid PyArrow serialization issues
-    train_outputs = [output if output is not None else [] for output in train_outputs]
-    test_outputs = [output if output is not None else [] for output in test_outputs]
+    # If the program failed for any input, return None
+    if any(output is None for output in train_outputs + test_outputs):
+        return None
 
     # Extract inputs from task data and combine with outputs for samples
     train_inputs = [example["input"] for example in task_data["train"]]
     test_inputs = [example["input"] for example in task_data["test"]]
     sample_inputs = train_inputs + test_inputs
     sample_outputs = train_outputs + test_outputs
-
-    # Debug check: Validate all outputs are lists
-    for i, output in enumerate(sample_outputs):
-        if not isinstance(output, list):
-            print(
-                f"WARNING: Non-list output detected in task {log_data['task_id']}, "
-                f"index {i}, type: {type(output)}, value: {output}"
-            )
-            # Force convert to empty list if it's not a list
-            sample_outputs[i] = []
 
     # Compute accuracies
     train_correct_fraction = _compute_accuracy(train_outputs, task_data["train"])
@@ -284,10 +288,10 @@ def process_program(log_data: LogData) -> TrainingExample:
         sample_inputs=sample_inputs,
         sample_outputs=sample_outputs,
     )
-    
+
     # Validate against PyArrow schema immediately
     _validate_training_example_against_schema(training_example)
-    
+
     return training_example
 
 
@@ -295,7 +299,21 @@ def extract_and_process_programs_from_log(log_path: str) -> List[TrainingExample
     """Extract and process programs from a single log file."""
     try:
         log_data_list = extract_log_data(log_path)
-        return [process_program(log_data) for log_data in log_data_list]
+        
+        # Process each log entry and filter out None results
+        results = []
+        for log_data in log_data_list:
+            try:
+                result = process_program(log_data)
+                if result is not None:
+                    results.append(result)
+            except Exception as e:
+                # Skip programs that fail to process, but log the error for debugging
+                print(f"Error processing program in {log_path}: {e}")
+                continue
+        
+        return results
+        
     except Exception as e:
         print(f"Error processing log file {log_path}: {e}")
         return []
@@ -368,11 +386,11 @@ def main():
             try:
                 programs = future.result()
                 all_programs.extend(programs)
-                
+
                 if len(all_programs) > 0 and len(all_programs) % 10000 == 0:
                     print(f"Saving checkpoint at {len(all_programs)} programs...")
                     _save_programs_to_parquet(all_programs, output_path)
-                    
+
             except Exception as e:
                 print(f"  Warning: Error processing {log_file}: {e}")
 
