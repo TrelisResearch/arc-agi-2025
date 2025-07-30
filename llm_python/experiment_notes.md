@@ -4,15 +4,22 @@
 
 ---
 
-## 30/31 July 2025
-- [x] Improve evaluation
-    [x] Remove transductive generations from evaluation.
-    [x] Investigate why the code isn't running clean. Add logging / debug info there. Add max-length debug as well. Add timeout debug. Also, print number of tokens (so I know where to set max).
-    [x] Add vLLM.
+## 31 July 2025
+
+- [ ] Fine-tuning quality checks:
+    [ ] data loading checks, to verify the selected inputs / outputs correspond to the training programs.
+    [ ] inspect some training and validation prompts.
+    [ ] validation checks, by running the soar model and ensuring we see scoring there. Turn on debug for that.
+
 - [ ] King dataset:
     [ ] Test out reasoning (once traces are available).
 
 ## 30 July 2025
+
+- [x] Improve evaluation
+    [x] Remove transductive generations from evaluation.
+    [x] Investigate why the code isn't running clean. Add logging / debug info there. Add max-length debug as well. Add timeout debug. Also, print number of tokens (so I know where to set max).
+    [x] Add vLLM.
 
 Testing out a 1600 row model (now with correctly hindsight relabelled examples) - Trelis/Qwen3-4B-ds20250729_114431-20250730-172810:
 
@@ -24,12 +31,74 @@ uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path Trelis/Qwen3-4B-ds202
 then run inference on the full 400 evaluation tasks:
 
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B-ds20250729_114431-20250730-172810 --base-url http://38.80.152.249:31159/v1 --qwen-no-think --max-tokens 1000
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B-ds20250729_114431-20250730-172810 --base-url http://38.80.152.249:30482/v1 --qwen-no-think --max-tokens 1000 --unsafe-executor
 ```
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B-ds20250729_114431-20250730-172810
+Number of runs: 3
+Valid runs: 2
 
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+2    400    6.2%       6.2%       6.5%     4.8%       11.8%       100.0%       1.2%    
+3    400    5.5%       5.0%       6.0%     3.8%       9.8%        100.0%       1.3%    
 
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 5.9%
+  Std Dev: 0.5%
+  95% CI: [4.8%, 6.9%]
 
+Train Majority Pass2:
+  Mean: 5.6%
+  Std Dev: 0.9%
+  95% CI: [3.9%, 7.4%]
 
+All Test Correct:
+  Mean: 6.2%
+  Std Dev: 0.4%
+  95% CI: [5.6%, 6.9%]
+
+All Train Correct:
+  Mean: 4.2%
+  Std Dev: 0.7%
+  95% CI: [2.9%, 5.6%]
+
+Min1 Train Correct:
+  Mean: 10.8%
+  Std Dev: 1.4%
+  95% CI: [8.0%, 13.5%]
+
+Min1 Code Success:
+  Mean: 100.0%
+  Std Dev: 0.0%
+  95% CI: [100.0%, 100.0%]
+
+Max Length Responses:
+  Mean: 1.3%
+  Std Dev: 0.1%
+  95% CI: [1.0%, 1.5%]
+
+Timeout Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Api Failure Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Aggregate results saved to: /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/logs/20250730_192815/20250730_195459_aggregate_summary_arc-agi-1_all_evaluation_all_attempts_3runs.json
+
+Quick test of 64 attempts for fun:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 64 --model Trelis/Qwen3-4B-ds20250729_114431-20250730-172810 --base-url http://38.80.152.249:30482/v1 --qwen-no-think --max-tokens 1000 --unsafe-executor
+```
 
 ## 29 July 2025
 - [x] Review of run_arc_tasks_soar.py

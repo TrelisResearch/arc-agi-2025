@@ -34,6 +34,39 @@ except ImportError:
 
 load_dotenv()
 
+def _ensure_json_serializable(obj):
+    """Convert any iterators or non-serializable objects to JSON-safe formats"""
+    if obj is None:
+        return None
+    
+    # Handle specific problematic types first
+    if type(obj).__name__ == 'list_reverseiterator':
+        if hasattr(obj, '__len__'):
+            print(f"⚠️  Converting list_reverseiterator with {len(obj)} items to list")
+        else:
+            print(f"⚠️  Converting list_reverseiterator to list")
+        return list(obj)
+    elif type(obj).__name__ in ('map', 'filter', 'enumerate', 'zip'):
+        print(f"⚠️  Converting {type(obj).__name__} iterator to list")
+        return list(obj)
+    elif hasattr(obj, 'tolist'):  # numpy arrays
+        return obj.tolist()
+    
+    # Try JSON serialization test for other objects
+    try:
+        import json
+        json.dumps(obj)
+        return obj  # Already serializable
+    except (TypeError, ValueError):
+        # Not serializable, try to convert
+        if hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes, dict)):
+            try:
+                return list(obj)
+            except (TypeError, ValueError):
+                pass
+        # Final fallback to string representation
+        return str(obj)
+
 def serialize_response(response):
     """Convert OpenAI response to JSON-serializable format"""
     if not response:
@@ -41,10 +74,14 @@ def serialize_response(response):
     
     try:
         choices = []
-        for choice in getattr(response, 'choices', []):
+        response_choices = getattr(response, 'choices', [])
+        # Ensure choices is a list, not an iterator
+        response_choices = _ensure_json_serializable(response_choices)
+        
+        for choice in response_choices:
             message_data = {
-                'role': getattr(choice.message, 'role', None) if hasattr(choice, 'message') else None,
-                'content': getattr(choice.message, 'content', None) if hasattr(choice, 'message') else None,
+                'role': _ensure_json_serializable(getattr(choice.message, 'role', None)) if hasattr(choice, 'message') else None,
+                'content': _ensure_json_serializable(getattr(choice.message, 'content', None)) if hasattr(choice, 'message') else None,
             }
             
             # Capture reasoning content from different model types and standardize to "reasoning" field
@@ -52,11 +89,11 @@ def serialize_response(response):
             
             # Check for Qwen reasoning_content field first
             if hasattr(choice, 'message') and hasattr(choice.message, 'reasoning_content'):
-                reasoning_content = getattr(choice.message, 'reasoning_content', None)
+                reasoning_content = _ensure_json_serializable(getattr(choice.message, 'reasoning_content', None))
             
             # Check for Gemini reasoning field
             if hasattr(choice, 'message') and hasattr(choice.message, 'reasoning'):
-                reasoning_content = getattr(choice.message, 'reasoning', None)
+                reasoning_content = _ensure_json_serializable(getattr(choice.message, 'reasoning', None))
             
             # Standardize to "reasoning" field
             if reasoning_content:
@@ -64,22 +101,22 @@ def serialize_response(response):
             
             # Keep reasoning_details for Gemini (additional structured data)
             if hasattr(choice, 'message') and hasattr(choice.message, 'reasoning_details'):
-                message_data['reasoning_details'] = getattr(choice.message, 'reasoning_details', None)
+                message_data['reasoning_details'] = _ensure_json_serializable(getattr(choice.message, 'reasoning_details', None))
             
             choice_data = {
-                'index': getattr(choice, 'index', None),
+                'index': _ensure_json_serializable(getattr(choice, 'index', None)),
                 'message': message_data,
-                'finish_reason': getattr(choice, 'finish_reason', None),
+                'finish_reason': _ensure_json_serializable(getattr(choice, 'finish_reason', None)),
             }
             choices.append(choice_data)
         
         return {
-            'id': getattr(response, 'id', None),
-            'model': getattr(response, 'model', None),
+            'id': _ensure_json_serializable(getattr(response, 'id', None)),
+            'model': _ensure_json_serializable(getattr(response, 'model', None)),
             'usage': {
-                'prompt_tokens': getattr(response.usage, 'prompt_tokens', 0) if hasattr(response, 'usage') and response.usage else 0,
-                'completion_tokens': getattr(response.usage, 'completion_tokens', 0) if hasattr(response, 'usage') and response.usage else 0,
-                'total_tokens': getattr(response.usage, 'total_tokens', 0) if hasattr(response, 'usage') and response.usage else 0,
+                'prompt_tokens': _ensure_json_serializable(getattr(response.usage, 'prompt_tokens', 0)) if hasattr(response, 'usage') and response.usage else 0,
+                'completion_tokens': _ensure_json_serializable(getattr(response.usage, 'completion_tokens', 0)) if hasattr(response, 'usage') and response.usage else 0,
+                'total_tokens': _ensure_json_serializable(getattr(response.usage, 'total_tokens', 0)) if hasattr(response, 'usage') and response.usage else 0,
             },
             'choices': choices,
         }
