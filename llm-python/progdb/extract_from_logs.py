@@ -8,6 +8,8 @@ from typing import List
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 from .schema import TrainingExample, LogData
 from .code import strip_comments
@@ -18,6 +20,65 @@ import time
 # Initialize utilities
 task_loader = TaskLoader()
 program_executor = ProgramExecutor(timeout=1, executor_type="unrestricted")
+
+# Define explicit PyArrow schema for our parquet file
+PARQUET_SCHEMA = pa.schema([
+    ('task_id', pa.string()),
+    ('code', pa.string()),
+    ('reasoning', pa.string()),
+    ('model', pa.string()),
+    ('train_correct_fraction', pa.float64()),
+    ('test_correct_fraction', pa.float64()),
+    ('sample_inputs', pa.list_(pa.list_(pa.list_(pa.int64())))),  # List[List[List[int]]]
+    ('sample_outputs', pa.list_(pa.list_(pa.list_(pa.int64())))),  # List[List[List[int]]]
+])
+
+
+def _save_programs_to_parquet(programs: List[TrainingExample], output_path: Path) -> None:
+    """Save programs to parquet file with explicit schema validation."""
+    if not programs:
+        print("No programs to save!")
+        return
+    
+    df = pd.DataFrame(programs)
+    
+    # Ensure output directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Convert to PyArrow table with explicit schema and save
+    table = pa.Table.from_pandas(df, schema=PARQUET_SCHEMA)
+    pq.write_table(table, output_path)
+    print(f"Saved {len(programs)} programs to {output_path}")
+
+
+def _validate_training_example_against_schema(example: TrainingExample) -> None:
+    """Validate that a TrainingExample can be encoded by PyArrow with our schema."""
+    try:
+        # Convert to dict format
+        example_dict = {
+            'task_id': example['task_id'],
+            'code': example['code'],
+            'reasoning': example['reasoning'],
+            'model': example['model'],
+            'train_correct_fraction': example['train_correct_fraction'],
+            'test_correct_fraction': example['test_correct_fraction'],
+            'sample_inputs': example['sample_inputs'],
+            'sample_outputs': example['sample_outputs'],
+        }
+        
+        # Create arrays for each column with single values
+        arrays = []
+        for field in PARQUET_SCHEMA:
+            arrays.append(pa.array([example_dict[field.name]], type=field.type))
+        
+        # Try to create a PyArrow table with our schema
+        pa.table(arrays, schema=PARQUET_SCHEMA)
+        
+        # If we get here, the data is valid
+        return
+        
+    except Exception as e:
+        raise ValueError(f"TrainingExample failed schema validation: {e}")
 
 
 def _validate_grid(output) -> Grid:
@@ -58,8 +119,13 @@ def _run_program_on_task(
     Returns:
         train_outputs, test_outputs
     """
-    train_outputs = _execute_on_examples(program, task_data["train"])
-    test_outputs = _execute_on_examples(program, task_data["test"])
+    # Merge train and test examples so we can do this in one bulk call (faster).
+    all_examples = task_data["train"] + task_data["test"]
+    all_outputs = _execute_on_examples(program, all_examples)
+    # Unmerge outputs
+    train_len = len(task_data["train"])
+    train_outputs = all_outputs[:train_len]
+    test_outputs = all_outputs[train_len:]
 
     return train_outputs, test_outputs
 
@@ -208,7 +274,7 @@ def process_program(log_data: LogData) -> TrainingExample:
     train_correct_fraction = _compute_accuracy(train_outputs, task_data["train"])
     test_correct_fraction = _compute_accuracy(test_outputs, task_data["test"])
 
-    return TrainingExample(
+    training_example = TrainingExample(
         task_id=log_data["task_id"],
         code=program_to_execute,  # Store the version we actually executed
         reasoning=log_data["reasoning"],
@@ -218,6 +284,11 @@ def process_program(log_data: LogData) -> TrainingExample:
         sample_inputs=sample_inputs,
         sample_outputs=sample_outputs,
     )
+    
+    # Validate against PyArrow schema immediately
+    _validate_training_example_against_schema(training_example)
+    
+    return training_example
 
 
 def extract_and_process_programs_from_log(log_path: str) -> List[TrainingExample]:
@@ -266,6 +337,7 @@ def main():
     # Process all files in parallel (extract, clean, validate)
     all_programs = []
     processed_count = 0
+    output_path = Path(args.output)
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         # Submit all jobs
@@ -296,6 +368,11 @@ def main():
             try:
                 programs = future.result()
                 all_programs.extend(programs)
+                
+                if len(all_programs) > 0 and len(all_programs) % 10000 == 0:
+                    print(f"Saving checkpoint at {len(all_programs)} programs...")
+                    _save_programs_to_parquet(all_programs, output_path)
+                    
             except Exception as e:
                 print(f"  Warning: Error processing {log_file}: {e}")
 
@@ -303,46 +380,12 @@ def main():
         f"Extracted and validated {len(all_programs)} programs from {len(log_files)} files"
     )
 
-    # Convert to DataFrame and save as parquet
+    # Final save
+    _save_programs_to_parquet(all_programs, output_path)
+
+    # Print some basic stats
     if all_programs:
         df = pd.DataFrame(all_programs)
-
-        # Debug check: Validate sample_outputs column before saving
-        print("Validating sample_outputs column...")
-        non_list_found = False
-        for idx, sample_outputs in enumerate(df["sample_outputs"]):
-            if not isinstance(sample_outputs, list):
-                print(
-                    f"ERROR: Non-list in sample_outputs at row {idx}: "
-                    f"type: {type(sample_outputs)}, value: {sample_outputs}"
-                )
-                non_list_found = True
-            else:
-                # Check each element in the list
-                for i, output in enumerate(sample_outputs):
-                    if not isinstance(output, list):
-                        print(
-                            f"ERROR: Non-list element in sample_outputs at row {idx}, "
-                            f"element {i}: type: {type(output)}, value: {output}"
-                        )
-                        non_list_found = True
-
-        if non_list_found:
-            print(
-                "Found non-list values in sample_outputs! This will cause PyArrow error."
-            )
-            return
-        else:
-            print("All sample_outputs validated as lists of lists.")
-
-        # Ensure output directory exists
-        output_path = Path(args.output)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        df.to_parquet(output_path, index=False)
-        print(f"Saved {len(all_programs)} programs to {output_path}")
-
-        # Print some basic stats
         print("\nStats:")
         print(f"  Unique tasks: {df['task_id'].nunique()}")
         print(f"  Unique models: {df['model'].nunique()}")
@@ -351,8 +394,6 @@ def main():
                 f"  Average training accuracy: {df['train_correct_fraction'].mean():.3f}"
             )
             print(f"  Average test accuracy: {df['test_correct_fraction'].mean():.3f}")
-    else:
-        print("No programs to save!")
 
 
 if __name__ == "__main__":
