@@ -55,7 +55,7 @@ def calculate_task_metrics(
         # ---------- response‑level metrics ----------
         for att in attempts:
             total_responses += 1
-            if max_tokens is not None and att.get("output_tokens", 0) > max_tokens:
+            if att.get("hit_max_tokens", False):
                 max_length_responses += 1
             if att.get("api_timeout", False):
                 timeout_responses += 1

@@ -5,12 +5,31 @@
 ---
 
 ## 30/31 July 2025
-- [ ] Improve evaluation
-    [ ] Remove transductive generations from evaluation.
-    [ ] Investigate why the code isn't running clean. Add logging / debug info there. Add max-length debug as well. Add timeout debug. Also, print number of tokens (so I know where to set max).
-    [ ] Add vLLM. LATER.
+- [x] Improve evaluation
+    [x] Remove transductive generations from evaluation.
+    [x] Investigate why the code isn't running clean. Add logging / debug info there. Add max-length debug as well. Add timeout debug. Also, print number of tokens (so I know where to set max).
+    [x] Add vLLM.
 - [ ] King dataset:
     [ ] Test out reasoning (once traces are available).
+
+## 30 July 2025
+
+Testing out a 1600 row model (now with correctly hindsight relabelled examples) - Trelis/Qwen3-4B-ds20250729_114431-20250730-172810:
+
+Will start a pod first:
+
+```bash
+uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path Trelis/Qwen3-4B-ds20250729_114431-20250730-172810 --reasoning-parser qwen3
+```
+then run inference on the full 400 evaluation tasks:
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B-ds20250729_114431-20250730-172810 --base-url http://38.80.152.249:31159/v1 --qwen-no-think --max-tokens 1000
+```
+
+
+
+
 
 ## 29 July 2025
 - [x] Review of run_arc_tasks_soar.py
