@@ -30,6 +30,8 @@ def calculate_task_metrics(
     oracle_test_correct = 0
     all_train_correct = 0
     min1_train_correct = 0
+    min1_transductive = 0
+    min1_code_runs = 0
     
     # Response-level metrics (across all attempts/layers)
     total_responses = 0
@@ -70,6 +72,10 @@ def calculate_task_metrics(
             'task_data': result['task_data']
         })
         
+        # Check if any attempts were transductive
+        if len(attempt_details) > len(non_transductive):
+            min1_transductive += 1
+        
         if not non_transductive:
             # Even if no non-transductive attempts, still count this task
             total += 1
@@ -106,6 +112,16 @@ def calculate_task_metrics(
         if any(any(tr['correct'] for tr in att['train_results']) for att in non_transductive):
             min1_train_correct += 1
         
+        # Min-1-code runs (any attempt had code that executed successfully)
+        # Check across ALL attempts (not just non-transductive) for code execution
+        if any(
+            att.get('program', '').strip() and  # Has non-empty code
+            (att.get('test_correct', False) or  # Either test executed
+             (att.get('train_results', []) and len(att['train_results']) > 0))  # Or training executed
+            for att in attempt_details
+        ):
+            min1_code_runs += 1
+        
         total += 1
     
     return {
@@ -114,6 +130,8 @@ def calculate_task_metrics(
         'oracle_test_correct': oracle_test_correct,
         'all_train_correct': all_train_correct,
         'min1_train_correct': min1_train_correct,
+        'min1_transductive': min1_transductive,
+        'min1_code_runs': min1_code_runs,
         'total_responses': total_responses,
         'max_length_responses': max_length_responses,
         'timeout_responses': timeout_responses,
@@ -148,6 +166,8 @@ def format_metrics_display(metrics: Dict, layer: Optional[int] = None) -> str:
         f"  Test correct (pass@2, weighted voting): {metrics['test_correct']}/{total} ({metrics['test_correct']/total:.1%})",
         f"  All-train correct (oracle): {metrics['all_train_correct']}/{total} ({metrics['all_train_correct']/total:.1%})",
         f"  Min-1-train correct (oracle): {metrics['min1_train_correct']}/{total} ({metrics['min1_train_correct']/total:.1%})",
+        f"  Min-1-code runs: {metrics['min1_code_runs']}/{total} ({metrics['min1_code_runs']/total:.1%})",
+        f"  Min-1-transductive: {metrics['min1_transductive']}/{total} ({metrics['min1_transductive']/total:.1%})",
     ]
     
     # Response-level metrics (as percentages of total responses)
@@ -189,6 +209,8 @@ def metrics_to_percentages(metrics: Dict) -> Dict:
         'oracle_correct': metrics['oracle_test_correct'] / total,
         'all_train_correct': metrics['all_train_correct'] / total,
         'min1_train_correct': metrics['min1_train_correct'] / total,
+        'min1_transductive': metrics['min1_transductive'] / total,
+        'min1_code_runs': metrics['min1_code_runs'] / total,
         'total_tasks': total,
         'total_responses': total_responses
     }
