@@ -17,6 +17,51 @@
 
 ## 30 July 2025
 
+### SOAR Solution Count Enhancement Project
+
+**Goal**: Improve oracle performance (perfect programs solving both training and test cases) on the "training_tricky" subset from 0-8 programs to 8+ programs by running targeted inference.
+
+**Setup Completed**:
+- ✅ Moved `soar_arc_training_solution_counts.json` to `data/arc-agi-1-training/`
+- ✅ Created `training_tricky.txt` subset with 100 challenging tasks (≤7 solution programs)
+  - 56 tasks with no solutions (null)
+  - 44 tasks with 1-7 solutions
+  - Located in `data/subsets/arc-agi-1/training_tricky.txt`
+
+**Planned Workflow**:
+1. **Run Inference**: Execute `run_arc_tasks_soar.py` on `training_tricky` subset
+   - Target: 8 attempts per task on 100 tasks (800 total attempts)
+   - Expected output: Task completion logs with oracle results
+
+We'll do that with:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_tricky --repeat-runs 1 --max_workers 32 --max_attempts 8 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1/ --reasoning_effort medium --unsafe-executor
+```
+
+2. **Extract Oracle Solutions**: Parse inference results to identify completely correct programs
+   - Filter for programs with: `test_correct=True` AND `train_accuracy=1.0`
+   - Extract task_id and program pairs for successful solutions
+   
+3. **Update Solution Counts**: Create new JSON with enhanced counts
+   - Start with original 400-task dataset from `data/arc-agi-1-training/`
+   - Increment solution counts for tasks that achieved oracle performance
+   - Save as timestamped file: `soar_arc_training_solution_counts_enhanced_YYYYMMDD.json`
+   
+4. **Analysis & Validation**:
+   - Compare before/after solution count distributions
+   - Verify oracle programs actually solve both train and test correctly
+   - Document improvement statistics (target: increase oracle tasks from current to 8+)
+
+**File Organization**:
+- Original data: `data/arc-agi-1-training/soar_arc_training_solution_counts.json`
+- Enhanced data: `data/arc-agi-1-training/soar_arc_training_solution_counts_enhanced_*.json`
+- Subset definition: `data/subsets/arc-agi-1/training_tricky.txt`
+
+**Success Metrics**:
+- Current oracle performance baseline: TBD (to be measured)
+- Target improvement: Achieve 8+ completely correct programs across the 100 challenging tasks
+- Secondary goal: Understand which task types benefit most from additional attempts
+
 - [x] Improve evaluation
     [x] Remove transductive generations from evaluation.
     [x] Investigate why the code isn't running clean. Add logging / debug info there. Add max-length debug as well. Add timeout debug. Also, print number of tokens (so I know where to set max).
