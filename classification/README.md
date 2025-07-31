@@ -1,243 +1,167 @@
-# ARC Program Classification Analysis
+# ARC Program Classification & Similarity Analysis
 
-This directory contains a comprehensive analysis pipeline for classifying ARC (Abstraction and Reasoning Corpus) program solutions as either "overfitting" or "general" using code embeddings and AI classification.
+This directory contains analysis pipelines for classifying and clustering ARC (Abstraction and Reasoning Corpus) program solutions to identify quality patterns and potential duplicates.
 
 ## 🎯 Overview
 
-The analysis pipeline combines **OpenAI code embeddings** with **Gemini 2.5 Flash reasoning** to achieve **100% human-AI classification agreement** on program solutions. The system distinguishes between:
+We explored multiple approaches for analyzing ARC program solutions:
 
-- **Overfitting**: Solutions with hardcoded rules, specific dimensions, magic numbers
-- **General**: Solutions with algorithmic approaches, pattern detection, adaptable logic
+1. **LLM Classification**: Using Gemini 2.5 Flash to classify solutions as "highly overfitting", "overfitting", or "general"
+2. **Embedding Clustering**: Using OpenAI embeddings with k-means clustering to group similar solutions
+3. **Task Distribution Analysis**: Understanding program counts across different ARC tasks
 
-## 📊 Key Results
+## 📊 Key Findings & Conclusions
 
-- **Perfect Agreement**: 100% alignment between human and AI classifications (16/16 programs)
-- **Superior Embeddings**: OpenAI `text-embedding-3-small` (1536D) with 47% better class separation vs Nomic
-- **Detailed Reasoning**: 8k token responses with comprehensive analysis per program
-- **Fast Execution**: 5x parallel processing for ~17-20 second total analysis time
+### LLM Classification Results (620 programs)
+- **3-Category Classification**: 2% highly overfitting, 58.8% overfitting, 39.2% general  
+- **Task Variation**: Overfitting rates vary dramatically by task (0% to 100%)
+- **Model Differences**: Some models show higher overfitting tendencies than others
+
+### Embedding-Based Clustering (3 test tasks)
+- **Optimal Clusters**: 2-6 clusters per task using silhouette method
+- **Clear Groupings**: Semantically similar solutions clustered together effectively
+- **Potential for Deduplication**: Could identify 30-50% reduction opportunities
+
+## 🚨 Key Limitations & Insights
+
+### LLM Classification Accuracy
+- **Inconsistent Results**: LLM classifications show significant variability
+- **Context Dependency**: Classification quality varies greatly by task complexity
+- **Few-Shot Needed**: Would likely require few-shot examples for better accuracy
+- **Subjectivity**: "Overfitting" vs "general" distinction is inherently subjective
+
+### Embedding-Based Similarity
+- **Hard to Calibrate**: Difficult to determine optimal similarity thresholds
+- **Task-Specific**: Clustering quality varies significantly between tasks
+- **Manual Validation Required**: Automated clustering needs human review for quality
+
+## ✅ Final Decision: Length-Based Sorting
+
+Given the challenges with both LLM classification and embedding-based approaches, **we've elected to use a simpler, more reliable method**: 
+
+**Sort solutions by code length and select the shortest ones per task**
+
+This approach is:
+- **Deterministic**: Consistent and reproducible results
+- **Fast**: No API calls or complex ML pipelines required  
+- **Practical**: Shorter code is often cleaner and more maintainable
+- **Simple**: Easy to implement and understand
 
 ## 🗂️ Directory Structure
 
 ```
 classification/
-├── README.md                          # This documentation
-├── analyze_program_embeddings.py      # Main analysis pipeline
-├── embedding_analysis.py              # Statistical analysis and visualization
-├── view_gemini_responses.py           # Utility to view detailed AI reasoning
-├── data/                              # Results and datasets
-│   ├── model-completion-accuracy-check.json     # Input: 16 program solutions
-│   ├── program_analysis_dataset.json            # Output: Complete analysis dataset
-│   ├── embedding_analysis_results.json          # Statistical analysis results
-│   ├── embedding_visualizations.png             # PCA/t-SNE plots
-│   └── similarity_heatmap.png                   # Cosine similarity heatmap
-├── tests/                             # Test scripts and validation
-│   ├── README.md                      # Test documentation
-│   ├── test_nomic_embeddings.py       # Nomic API tests
-│   ├── test_nomic_code_embeddings.py  # Code-specific embedding tests
-│   └── test_gemini_classification.py  # Gemini classification tests
-└── archive/                           # Deprecated/alternative implementations
-    └── analyze_program_embeddings_code.py       # Alternative with Nomic code embeddings
+├── README.md                           # This documentation
+├── analyze_soar_dataset.py             # Main: 3-category LLM classification (620 programs)
+├── similarity_clustering.py            # Main: Embedding-based clustering approach  
+├── upload_to_huggingface.py            # Upload enhanced datasets to Hugging Face
+├── analyze_task_distribution.py        # Utility: Task distribution analysis
+├── view_gemini_responses.py            # Utility: View detailed LLM reasoning
+├── data/                               # Results and datasets
+│   ├── soar_classification_results.json        # SOAR classification results
+│   ├── soar_classification_analysis.png        # SOAR visualizations  
+│   ├── task_distribution_analysis.png          # Task distribution plots
+│   ├── clustering_*.json                       # Clustering results per task
+│   └── clustering_*.png                        # Clustering visualizations
+├── tests/                              # Test scripts and validation
+│   ├── README.md                       # Test documentation
+│   ├── test_nomic_embeddings.py        # Nomic API tests
+│   ├── test_nomic_code_embeddings.py   # Code-specific embedding tests
+│   └── test_gemini_classification.py   # Gemini classification tests
+└── archive/                            # Archived/experimental scripts
+    ├── analyze_program_embeddings.py   # Small dataset (16 programs) analysis
+    ├── embedding_analysis.py           # Statistical analysis for small dataset
+    ├── monitor_progress.py             # Progress monitoring utility
+    └── analyze_program_embeddings_code.py  # Nomic code embeddings experiment
 ```
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 
-1. **API Keys**: Add to root `.env` file:
+1. **API Keys**: Add to appropriate `.env` files:
    ```bash
-   OPENAI_API_KEY_OPENAI="sk-proj-..."      # For embeddings
-   OPENAI_API_KEY="sk-or-v1-..."            # For Gemini via OpenRouter
+   # For OpenAI embeddings (root .env)
+   OPENAI_API_KEY_OPENAI="sk-proj-..."
+   
+   # For Gemini via OpenRouter (llm_python/.env)  
+   OPENAI_API_KEY="sk-or-v1-..."
    ```
 
 2. **Dependencies**: Install with uv:
    ```bash
-   uv add openai python-dotenv numpy scikit-learn matplotlib seaborn
+   uv add openai python-dotenv numpy scikit-learn matplotlib seaborn datasets
    ```
 
-### Run Complete Analysis
+### Run Analysis (For Research Purposes)
 
+#### LLM Classification (3-category analysis)
 ```bash
-# Generate embeddings, classifications, and analysis
-uv run python classification/analyze_program_embeddings.py
+# Classify programs using Gemini with optional limit
+uv run python classification/analyze_soar_dataset.py --limit 100
 
-# Run statistical analysis and generate visualizations  
-uv run python classification/embedding_analysis.py
-
-# View detailed Gemini reasoning for each program
+# View detailed LLM reasoning responses
 uv run python classification/view_gemini_responses.py
 ```
 
-## 📋 Scripts Documentation
+#### Embedding-Based Clustering
+```bash
+# Cluster similar programs within tasks
+uv run python classification/similarity_clustering.py --tasks 3e980e27 4522001f a48eeaf7
 
-### Main Pipeline (`analyze_program_embeddings.py`)
-
-**Purpose**: Complete analysis pipeline from raw programs to classified dataset
-
-**Features**:
-- **Parallel Processing**: 5 workers for Gemini classifications, 4 for exact matching
-- **OpenAI Embeddings**: `text-embedding-3-small` with 1536 dimensions
-- **Detailed Reasoning**: 8k tokens for comprehensive Gemini analysis
-- **Batch Processing**: Rate limit compliance with progress tracking
-
-**Output**: `data/program_analysis_dataset.json` with:
-- Original program code and model
-- 1536D OpenAI embeddings
-- Gemini classification with full reasoning
-- Human classification labels
-- API usage statistics
-
-### Statistical Analysis (`embedding_analysis.py`)
-
-**Purpose**: Analyze embedding patterns and classification correlations
-
-**Features**:
-- **Similarity Analysis**: Cosine similarity matrix computation
-- **Class Separation**: Distance metrics between overfitting/general clusters
-- **Clustering**: K-means analysis with inertia metrics
-- **Visualization**: PCA, t-SNE plots with class coloring
-- **Agreement Analysis**: Confusion matrix and accuracy metrics
-
-**Outputs**:
-- `data/embedding_analysis_results.json`: Detailed statistical results
-- `data/embedding_visualizations.png`: PCA/t-SNE plots by classification
-- `data/similarity_heatmap.png`: Program-to-program similarity matrix
-
-### Utility Scripts
-
-**`view_gemini_responses.py`**: Display full Gemini reasoning for each classification
-**`tests/`**: Validation scripts for API connectivity and model testing
-
-## 🔬 Analysis Methodology
-
-### 1. **Embedding Generation**
-- **Model**: OpenAI `text-embedding-3-small` 
-- **Dimensions**: 1536 (2x higher than Nomic alternatives)
-- **Batch Size**: 10 programs per API call for rate limit compliance
-- **Processing**: Parallel batch processing with progress tracking
-
-### 2. **AI Classification**
-- **Model**: Gemini 2.5 Flash via OpenRouter
-- **Reasoning**: 8k max tokens for detailed analysis
-- **Criteria**: Hardcoded rules vs algorithmic patterns
-- **Parallelization**: 5 concurrent workers for faster processing
-
-### 3. **Human Labeling**
-- **Ground Truth**: Programs 12 and 14 (0-indexed) = "general"
-- **Remainder**: All other programs = "overfitting"
-- **Rationale**: Based on algorithmic structure vs hardcoded specificity
-
-### 4. **Statistical Analysis**
-- **Class Separation**: Distance between mean embeddings
-- **Similarity Distribution**: Cosine similarity statistics
-- **Clustering**: K-means validation of natural groupings
-- **Visualization**: Dimensionality reduction for interpretability
-
-## 📈 Key Findings
-
-### Perfect Classification Alignment
-- **Human vs Gemini**: 100% agreement (16/16 programs)
-- **Confusion Matrix**: Zero misclassifications
-- **Distribution**: 14 overfitting, 2 general (both evaluators)
-
-### Superior Embedding Quality
-- **OpenAI vs Nomic**: 47% better class separation (0.0506 vs 0.0343 distance)
-- **Dimensionality**: 1536D captures richer code semantics
-- **Range**: Wider similarity distribution [0.6195, 1.0000] enables better discrimination
-
-### Optimal Configuration
-- **8k Reasoning Tokens**: Crucial for perfect agreement (vs 87.5% with 2k tokens)
-- **Parallel Processing**: 3-5x performance improvement over sequential
-- **OpenAI Embeddings**: Superior to specialized code embedding models
-
-## 🔧 Configuration Options
-
-### Performance Tuning
-```python
-# In analyze_program_embeddings.py
-max_reasoning_tokens = 8000        # Gemini reasoning depth
-max_workers_classify = 5           # Parallel classification workers  
-max_workers_matches = 4            # Parallel exact match workers
-batch_size = 10                    # OpenAI embedding batch size
+# Analyze task distribution
+uv run python classification/analyze_task_distribution.py
 ```
 
-### Model Alternatives
-- **Embeddings**: Switch to `text-embedding-3-large` for even higher dimensionality
-- **Classification**: Try `gpt-4` for comparison with Gemini reasoning
-- **Reasoning Tokens**: Experiment with 4k-16k range for cost/quality tradeoffs
-
-## 📊 Data Schema
-
-### Program Analysis Dataset
-```json
-{
-  "metadata": {
-    "total_programs": 16,
-    "embedding_model": "text-embedding-3-small", 
-    "classification_model": "google/gemini-2.5-flash",
-    "embedding_dimension": 1536,
-    "exact_matches_found": 0
-  },
-  "programs": [
-    {
-      "index": 0,
-      "code": "def transform(grid_lst: list[list[int]]) -> ...",
-      "model": "Mistral-Large-Instruct-2407",
-      "embedding": [0.021, -0.015, ...],  // 1536 dimensions
-      "gemini_classification": "overfitting",
-      "gemini_full_response": "This function exhibits...",
-      "human_classification": "overfitting",
-      "gemini_usage": {"completion_tokens": 611, ...}
-    }
-  ],
-  "exact_matches": []
-}
+#### Upload Results to Hugging Face
+```bash
+# Upload classification results to HF (requires login)
+uv run python classification/upload_to_huggingface.py --subset 100
 ```
 
-## 🎯 Future Enhancements
+## 📋 Script Overview
 
-### 1. **Expanded Dataset**
-- More program solutions across different complexity levels
-- Additional programming languages and paradigms
-- Cross-domain generalization testing
+### Main Scripts
 
-### 2. **Enhanced Classification**
-- Multi-class labels (overfitting, general, mixed, unclear)
-- Confidence scoring for classification certainty
-- Domain-specific criteria (mathematical, visual, logical patterns)
+- **`analyze_soar_dataset.py`**: LLM-based classification of 620 programs into 3 categories (highly overfitting, overfitting, general)
+- **`similarity_clustering.py`**: Embedding-based clustering to group similar solutions within tasks
+- **`upload_to_huggingface.py`**: Upload enhanced datasets with classifications to Hugging Face
 
-### 3. **Advanced Analysis**
-- **Embedding Interpretability**: Identify which dimensions correlate with overfitting
-- **Feature Engineering**: Extract code metrics (complexity, abstraction levels)
-- **Ensemble Methods**: Combine multiple embedding models and classifiers
+### Utilities
 
-### 4. **Practical Applications**
-- **Code Review Assistant**: Flag potentially overfitted solutions
-- **Education Tool**: Help students understand generalization principles
-- **Benchmark Development**: Create evaluation metrics for code generalization
+- **`analyze_task_distribution.py`**: Analyze distribution of programs across ARC tasks
+- **`view_gemini_responses.py`**: View detailed LLM reasoning for classifications
 
-## 🔍 Troubleshooting
+### Archived (Experimental)
 
-### API Issues
-- **OpenAI Rate Limits**: Reduce `batch_size` or add delays
-- **OpenRouter Timeouts**: Decrease `max_workers_classify`
-- **Missing Keys**: Check `.env` file location and key names
+- **`archive/analyze_program_embeddings.py`**: Small dataset (16 programs) analysis
+- **`archive/embedding_analysis.py`**: Statistical analysis for small dataset
+- **`archive/monitor_progress.py`**: Progress monitoring utility
 
-### Performance Issues
-- **Memory Usage**: Large embeddings may require chunking for massive datasets
-- **Processing Time**: Adjust worker counts based on API rate limits
-- **Storage**: JSON files can become large with many programs
+## 🎯 Research Insights
 
-### Analysis Issues
-- **Poor Separation**: Try different embedding models or preprocessing
-- **Classification Disagreement**: Increase reasoning tokens or refine prompts
-- **Visualization Problems**: Check for NaN values in embeddings
+This analysis explored whether automated approaches could effectively identify high-quality ARC solutions. Key takeaways:
+
+### What Worked
+- **Embedding clustering**: Successfully grouped semantically similar solutions
+- **Task distribution analysis**: Revealed significant variation in solution counts per task
+- **LLM reasoning**: Generated detailed explanations for classification decisions
+
+### What Didn't Work Well
+- **Classification consistency**: LLM classifications showed high variability across runs
+- **Similarity thresholds**: Difficult to calibrate clustering thresholds reliably
+- **Generalization criteria**: "Overfitting" vs "general" proved subjective and context-dependent
+
+### Key Lessons
+- Simple heuristics (like code length) often outperform complex ML approaches
+- Human validation remains essential for any automated classification system
+- Few-shot examples would likely improve LLM classification accuracy
 
 ## 📚 References
 
-- **OpenAI Embeddings**: [API Documentation](https://platform.openai.com/docs/guides/embeddings)
-- **Gemini 2.5 Flash**: [Model Information](https://ai.google.dev/models/gemini)
+- **SOAR Dataset**: [Trelis/soar-program-samples](https://huggingface.co/datasets/Trelis/soar-program-samples)
+- **Enhanced Dataset**: [Trelis/soar-program-samples-classification-100](https://huggingface.co/datasets/Trelis/soar-program-samples-classification-100)
 - **ARC Challenge**: [Original Paper](https://arxiv.org/abs/1911.01547)
-- **Code Classification**: Research on automated code analysis and pattern recognition
 
 ---
 
