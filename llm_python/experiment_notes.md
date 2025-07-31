@@ -9,6 +9,7 @@
 - [ ] Fine-tuning quality checks:
     [ ] data loading checks, to verify the selected inputs / outputs correspond to the training programs.
     [ ] inspect some training and validation prompts.
+    [ ] Run some validation checks on the utils for metrics. Just hard code some tests there to ensure things work.
     [ ] validation checks, by running the soar model and ensuring we see scoring there. Turn on debug for that.
 
 - [ ] King dataset:
