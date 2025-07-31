@@ -7,6 +7,7 @@ A comprehensive tool for testing OpenAI-compatible language models on ARC-AGI ta
 **Main Scripts:**
 - `run_arc_tasks_soar.py` - **Main task runner** with all-attempts evaluation, parallel processing, and voting-based selection
 - `read_log_stats.py` - **Log analysis tool** to retrospectively read and display statistics from log directories
+- `generate_retrospective_summary.py` - **Retrospective summary generator** for creating summaries from incomplete/completed runs
 - `create_grids_only_dataset.py` - **Grids-only dataset creator** for creating datasets with just grid data (no code or reasoning)
 - `create_soar_dataset.py` - **SOAR dataset creator** for combining SOAR data with grid data using filtering options
 
@@ -212,6 +213,34 @@ uv run python read_log_stats.py logs/20250728_114716 --verbose
 - **Comprehensive Metrics**: All core metrics including Pass@2, Oracle, and error rates
 - **Cost Analysis**: Token usage and cost breakdowns
 
+### Retrospective Summary Generation (`generate_retrospective_summary.py`)
+
+Generate summaries from raw results directories, useful for incomplete runs or post-hoc analysis:
+
+```bash
+# Generate summary for a single results directory
+uv run python -m llm_python.generate_retrospective_summary llm_python/logs/20250730_205911 --max-tokens 1000
+
+# Process multiple directories and aggregate statistics
+uv run python -m llm_python.generate_retrospective_summary llm_python/logs/20250730_* --aggregate --max-tokens 1000
+
+# Save summaries to a specific output directory
+uv run python -m llm_python.generate_retrospective_summary llm_python/logs/20250730_205911 --output-dir ./analysis
+```
+
+**Features:**
+- **Completeness Analysis**: Shows attempt distribution and identifies partial/incomplete runs
+- **Metrics Calculation**: Uses same metrics as original runs (Pass@2, Oracle, etc.)
+- **Cost Analysis**: Calculates total tokens and costs from all attempts
+- **Multi-Directory Support**: Process multiple result directories with aggregate statistics
+- **Corruption Handling**: Gracefully handles corrupted or malformed result files
+
+**Use Cases:**
+- Analyzing interrupted runs that stopped due to timeouts or resource limits
+- Generating proper summaries for runs that completed without creating summary files
+- Comparing partial results across multiple experiment runs
+- Retrospective analysis of completed experiments
+
 ### Health Monitoring
 
 The tool automatically monitors execution health during long runs and displays periodic reports:
@@ -347,6 +376,7 @@ All reasoning data is preserved in logs for analysis. The code extraction search
 llm_python/
 ├── run_arc_tasks_soar.py       # Main script (all-attempts, voting-based evaluation)
 ├── read_log_stats.py           # Log analysis tool for retrospective statistics
+├── generate_retrospective_summary.py # Retrospective summary generator for results directories
 ├── utils/                       # Utility modules
 │   ├── __init__.py
 │   ├── task_loader.py          # Load ARC tasks and subsets
