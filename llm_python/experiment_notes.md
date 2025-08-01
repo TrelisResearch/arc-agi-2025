@@ -117,6 +117,50 @@ Total cost: $25.848885
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_ultra_tricky --repeat-runs 1 --max_workers 32 --max_attempts 4 --model openai/o3 --base-url https://openrouter.ai/api/v1/ --unsafe-executor --max-tokens 32000
 ```
+📁 Scanning directory: llm_python/logs/20250801_111451
+📊 Found 76 task files, 0 summary files, 0 other files
+✅ Successfully loaded 76 task results
+📋 Dataset: arc-agi-1
+📋 Subset: training_ultra_tricky
+📋 Model: openai/o3
+
+📊 COMPLETENESS ANALYSIS:
+   Total tasks: 76
+   Max attempts per task: 4
+   Min attempts per task: 4
+   Average attempts per task: 4.0
+   Attempt distribution:
+     4 attempts: 76 tasks
+
+📊 CALCULATING METRICS for 76 tasks...
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 43.4%
+  Pass@2 (Train Majority):  43.4%
+  Oracle (Best Attempt):    43.4%
+  All Train Correct:        40.8%
+  Min 1 Train Correct:      51.3%
+  Min 1 Code Success:       73.7%
+  Max Length Responses:     2.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+ 💰 COST ANALYSIS:
+   Total tokens used: 6,396,047
+   Total cost: $2.996372
+ 
+ 💾 Summary saved to: llm_python/logs/20250801_111451/20250801_132110_retrospective_summary_arc-agi-1_training_ultra_tricky.json
+
+**o3 Oracle Extraction & Enhancement**: ✅ COMPLETED
+- **30 tasks** achieved new oracle solutions (39.5% success rate on ultra_tricky subset)
+- **58 new oracle programs** extracted and added to solution counts
+- **Enhanced JSON**: `data/arc-agi-1-training/soar_arc_training_solution_counts_enhanced_20250801_132748.json`
+- **Top performers**: 7ddcd7ec (+4), 508bd3b6 (+4), d9f24cd1 (+4), 890034e9 (+3), 6e19193c (+3)
+
+**training_mega_tricky Subset Created**: 74 remaining tasks (18.5% of original 400)
+- 36 null, 6 with 1 sol, 6 with 2 sol, 5 with 3 sol, 4 with 4 sol, 4 with 5 sol, 7 with 6 sol, 6 with 7 sol
+- Potential: 439 new oracle programs possible (5.9 avg per task)
+- **Progress**: 26/100 original tricky tasks now have 8+ solutions (26% completion rate)
 
 - [x] Improve evaluation
     [x] Remove transductive generations from evaluation.
