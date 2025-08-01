@@ -102,6 +102,22 @@ Total cost: $25.848885
   Timeout Responses:        0.0%
   API Failure Responses:    2.2%
 
+**o4-mini Oracle Extraction & Enhancement**: ✅ COMPLETED
+- **35 tasks** achieved new oracle solutions (38.9% success rate on remaining subset)
+- **85 new oracle programs** extracted and added to solution counts  
+- **Enhanced JSON**: `data/arc-agi-1-training/soar_arc_training_solution_counts_enhanced_20250801_103130.json`
+- **Top performers**: 7ddcd7ec (+4), 890034e9 (+4), 8403a5d5 (+4), 469497ad (+4), 2c608aff (+4)
+
+**training_ultra_tricky Subset Created**: 80 remaining tasks (20% of original 400)
+- 42 null, 4 with 1 sol, 6 with 2 sol, 7 with 3 sol, 7 with 4 sol, 4 with 5 sol, 5 with 6 sol, 5 with 7 sol
+- Potential: 490 new oracle programs possible (6.1 avg per task)
+- Ready for next iteration with strongest available model
+
+6. **Next Iteration with o3**:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_ultra_tricky --repeat-runs 1 --max_workers 32 --max_attempts 4 --model openai/o3 --base-url https://openrouter.ai/api/v1/ --unsafe-executor --max-tokens 32000
+```
+
 - [x] Improve evaluation
     [x] Remove transductive generations from evaluation.
     [x] Investigate why the code isn't running clean. Add logging / debug info there. Add max-length debug as well. Add timeout debug. Also, print number of tokens (so I know where to set max).
