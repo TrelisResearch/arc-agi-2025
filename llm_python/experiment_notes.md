@@ -1,6 +1,19 @@
 # Experiment Notes
 
-## 28 July 2025 - CRITICAL BUG FIXES: Executor State Corruption
+## Aug 5 2025 Tasks
+
+[ ] Data generation:
+  [ ] Systematically test out the Qwen API for response generation:
+    [ ] Measure toks.
+    [ ] Test concurrent requests possible.
+    [ ] Test on the remaining tasks.
+  [ ] Systematically test out the DeepSeek API for response generation.
+      [ ] Measure toks.
+      [ ] Test concurrent requests possible.
+    [ ] Test on the remaining tasks.
+[ ] Fine-tuning script:
+  [ ] Careful clean up.
+  [ ] Carefully review the metrics scripts.
 
 ---
 
@@ -34,6 +47,16 @@ Total cost: $0.231897
   Max Length Responses:     5.1%
   Timeout Responses:        0.0%
   API Failure Responses:    0.0%
+
+Quick test of a 1600 row model:
+```bash
+uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path Trelis/Qwen3-4B-ds20250729_114431-20250801-141514
+```
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B-ds20250729_114431-20250801-141514 --base-url http://38.80.152.249:30402/v1 --qwen-no-think --max-tokens 1000 --unsafe-executor
+```
+Seems not great... hard to know if was overtrained or not...
 
 ## 31 July 2025
 
