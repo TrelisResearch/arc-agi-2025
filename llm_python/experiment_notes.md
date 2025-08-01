@@ -162,6 +162,12 @@ uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset trai
 - Potential: 439 new oracle programs possible (5.9 avg per task)
 - **Progress**: 26/100 original tricky tasks now have 8+ solutions (26% completion rate)
 
+7. **Next Iteration with qwen3-235b-a22b-thinking-2507**:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_mega_tricky --repeat-runs 1 --max_workers 32 --max_attempts 8 --model qwen/qwen3-235b-a22b-thinking-2507 --base-url https://openrouter.ai/api/v1/ --unsafe-executor --max-tokens 32000 --limit 1
+```
+
+
 - [x] Improve evaluation
     [x] Remove transductive generations from evaluation.
     [x] Investigate why the code isn't running clean. Add logging / debug info there. Add max-length debug as well. Add timeout debug. Also, print number of tokens (so I know where to set max).
