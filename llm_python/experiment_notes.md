@@ -4,13 +4,44 @@
 
 ---
 
+## 1 Aug 2025
+
+- [ ] Fine-tuning quality checks:
+    [ ] validation checks, by running the soar model and ensuring we see scoring there. Turn on debug for that. Need to review manually. Not entirely convinced.
+
+
+### Testing out julien31 Soar model on first 32 problems of evaluation set
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 8 --model julien31/Soar-qwen-7b --base-url http://107.152.109.20:11118/v1 --unsafe-executor --max-tokens 1000 --limit 32
+```
+Gets:
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: julien31/Soar-qwen-7b
+Total tasks: 32
+Successful API calls: 32/32 (100.0%)
+Total tokens used: 1,240,853
+Total cost: $0.231897
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 21.9%
+  Pass@2 (Train Majority):  21.9%
+  Oracle (Best Attempt):    21.9%
+  All Train Correct:        25.0%
+  Min 1 Train Correct:      50.0%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     5.1%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
 ## 31 July 2025
 
 - [ ] Fine-tuning quality checks:
-    [ ] data loading checks, to verify the selected inputs / outputs correspond to the training programs.
-    [ ] inspect some training and validation prompts.
-    [ ] Run some validation checks on the utils for metrics. Just hard code some tests there to ensure things work.
-    [ ] validation checks, by running the soar model and ensuring we see scoring there. Turn on debug for that.
+    [x] data loading checks, to verify the selected inputs / outputs correspond to the training programs.
+    [x] inspect some training and validation prompts.
+    [x] Run some validation checks on the utils for metrics. Just hard code some tests there to ensure things work.
+    [ ] validation checks, by running the soar model and ensuring we see scoring there. Turn on debug for that. 
 
 - [ ] King dataset:
     [ ] Test out reasoning (once traces are available).
@@ -166,6 +197,41 @@ uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset trai
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_mega_tricky --repeat-runs 1 --max_workers 32 --max_attempts 8 --model qwen/qwen3-235b-a22b-thinking-2507 --base-url https://openrouter.ai/api/v1/ --unsafe-executor --max-tokens 32000 --limit 1
 ```
+Far too slow to work.
+
+or try out deepseek/deepseek-r1-0528:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_mega_tricky --repeat-runs 1 --max_workers 32 --max_attempts 8 --model deepseek/deepseek-r1-0528 --base-url https://openrouter.ai/api/v1/ --unsafe-executor --max-tokens 32000 --limit 1
+```
+Far too slow to work.
+
+and also try google/gemini-2.5-pro:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_mega_tricky --repeat-runs 1 --max_workers 32 --max_attempts 8 --model google/gemini-2.5-pro --base-url https://openrouter.ai/api/v1/ --unsafe-executor --max-tokens 32000 --limit 1
+```
+Not able to solve any problems.
+
+Trying Qwen again via HuggingFace Inference API:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_mega_tricky --repeat-runs 1 --max_workers 32 --max_attempts 8 --model qwen3-235b-a22b-thinking-2507 --base-url https://dashscope-intl.aliyuncs.com/compatible-mode/v1 --unsafe-executor --max-tokens 32000 --reasoning_effort high
+```
+...
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 - [x] Improve evaluation
