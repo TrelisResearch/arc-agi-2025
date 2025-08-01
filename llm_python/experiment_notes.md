@@ -213,9 +213,12 @@ Not able to solve any problems.
 
 Trying Qwen again via HuggingFace Inference API:
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_mega_tricky --repeat-runs 1 --max_workers 32 --max_attempts 8 --model qwen3-235b-a22b-thinking-2507 --base-url https://dashscope-intl.aliyuncs.com/compatible-mode/v1 --unsafe-executor --max-tokens 32000 --reasoning_effort high
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_mega_tricky --repeat-runs 1 --max_workers 32 --max_attempts 8 --model qwen3-235b-a22b-thinking-2507 --base-url https://dashscope-intl.aliyuncs.com/compatible-mode/v1 --unsafe-executor --max-tokens 32000 --reasoning_effort medium
 ```
-...
+and try gemini flash with high thinking:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_mega_tricky --repeat-runs 1 --max_workers 32 --max_attempts 8 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1/ --unsafe-executor --max-tokens 64000 --reasoning_effort high
+```
 
 
 
