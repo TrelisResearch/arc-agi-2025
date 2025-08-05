@@ -53,16 +53,20 @@ def extract_oracle_programs(log_dir: str, verbose: bool = False) -> Dict[str, Li
             attempt_details = task_data.get('attempt_details', [])
             
             for attempt in attempt_details:
-                # Oracle criteria: test_correct=True AND train_accuracy=1.0
-                test_correct = attempt.get('test_correct', False)
-                train_accuracy = attempt.get('train_accuracy', 0.0)
+                # Oracle criteria: all_test_correct=True AND all train_results correct
+                test_correct = attempt.get('all_test_correct', False)
+                train_results = attempt.get('train_results', [])
                 
-                if test_correct and train_accuracy == 1.0:
-                    program_code = attempt.get('extracted_code', '')
+                # Check if all training examples are correct
+                all_train_correct = (len(train_results) > 0 and 
+                                   all(tr.get('correct', False) for tr in train_results))
+                
+                if test_correct and all_train_correct:
+                    program_code = attempt.get('program', '')
                     if program_code and program_code.strip():
                         oracle_programs[task_id].append(program_code)
                         if verbose:
-                            print(f"  ✅ Oracle found for {task_id}")
+                            print(f"  ✅ Oracle found for {task_id} (test: {test_correct}, train: {len(train_results)} all correct)")
                         
         except Exception as e:
             if verbose:
@@ -117,7 +121,13 @@ def create_new_subset(counts: Dict[str, Optional[int]],
     tricky_tasks = []
     
     for task_id, count in counts.items():
-        if count is None or count <= max_solutions:
+        # Convert count to int if it's a string, handle None
+        if count is None:
+            count_int = 0
+        else:
+            count_int = int(count) if isinstance(count, str) else count
+        
+        if count is None or count_int <= max_solutions:
             tricky_tasks.append(task_id)
     
     # Sort for consistency
@@ -130,7 +140,8 @@ def create_new_subset(counts: Dict[str, Optional[int]],
         if count is None:
             breakdown['null'] += 1
         else:
-            breakdown[count] += 1
+            count_int = int(count) if isinstance(count, str) else count
+            breakdown[count_int] += 1
     
     print(f"📋 New subset: {len(tricky_tasks)} tasks with ≤{max_solutions} solutions")
     print(f"   Breakdown: {dict(breakdown)}")

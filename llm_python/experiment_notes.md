@@ -139,6 +139,14 @@ uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset trai
 ```
 Seems to get all problems mostly wrong... even with this high level of sampling.
 
+### Oracle Extraction & New Subset Creation
+Analyzed today's o4-mini-high and Gemini 2.5 Flash runs:
+- **Extracted 29 oracle programs** across 23 tasks (test correct + all train correct)
+- **Updated solution counts** in `soar_arc_training_solution_counts_enhanced_20250805_180446.json`
+- **Created new subset** `training_new_tricky.txt` with **66 tasks** having ≤7 solutions
+- Breakdown: 30 null, 9 with 2 sols, 6 with 5 sols, 5 with 7 sols, others scattered 1-6
+- Top performers: a78176bb (+3), 11852cab (+3), 6e19193c (+2), e509e548 (+2)
+
 ## 1 Aug 2025
 
 - [ ] Fine-tuning quality checks:
