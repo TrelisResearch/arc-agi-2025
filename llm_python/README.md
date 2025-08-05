@@ -289,11 +289,11 @@ Executor: unrestricted (timeout: 0.5s) ⚠️  UNSAFE MODE
 ### Advanced Usage
 
 ```bash
-# Run with different models and reasoning efforts
-uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1 --reasoning_effort low
+# OpenRouter OpenAI models - use model variants for reasoning control
+uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10 --model openai/o4-mini-high --base-url https://openrouter.ai/api/v1
 
-# Run with higher reasoning effort (8k tokens)
-uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset middle_training_10 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+# OpenRouter Gemini models - use reasoning_effort parameter
+uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
 
 # RunPod: Use direct TCP to avoid Cloudflare 524 timeouts
 uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10 --model Qwen/Qwen3-4B --base-url http://157.66.254.42:15712/v1
@@ -356,10 +356,23 @@ For compatible models that support reasoning, control reasoning token allocation
 - Uses standard `max_tokens` parameter for reasoning allocation
 - Works with OpenRouter and other compatible APIs automatically
 
+**Reasoning Control by Endpoint:**
+
+**OpenRouter OpenAI Models:** Use model variants for reasoning control:
+- `openai/o4-mini` = Default reasoning, `openai/o4-mini-high` = High reasoning
+- `openai/o3-mini` = Default reasoning, `openai/o3-mini-high` = High reasoning
+- Model choice controls reasoning level, not `--reasoning_effort` parameter
+
+**OpenRouter Gemini Models:** Use `--reasoning_effort` parameter:
+- Creates `extra_body={"reasoning": {"max_tokens": X}}` structure
+
+**DashScope Qwen Models:** Use `--reasoning_effort` for `thinking_budget`:
+- Creates `extra_body={"thinking_budget": X}` parameter
+
 **Token Control Priority:**
-- `--max-tokens` parameter overrides all automatic reasoning effort settings
-- Without `--max-tokens`: reasoning effort controls token allocation automatically
-- With `--max-tokens`: your specified limit takes precedence for all models
+- ⚠️ `--max-tokens` **overrides** `--reasoning_effort` settings (no warning shown)
+- Without `--max-tokens`: reasoning effort controls allocation automatically
+- With `--max-tokens`: your limit takes precedence, reasoning effort ignored
 
 **Example Results:** Gemini Flash gets 7/10 correct on shortest training tasks with 2k reasoning tokens, 5/10 correct on medium difficulty tasks with 8k reasoning tokens.
 

@@ -33,6 +33,7 @@ and then run on what we want to solve - using 16k think tokens!
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_mega_tricky --repeat-runs 1 --max_workers 16 --max_attempts 4 --model qwen3-235b-a22b-thinking-2507 --base-url https://dashscope-intl.aliyuncs.com/compatible-mode/v1 --unsafe-executor --max-tokens 32000 --reasoning_effort high
 ```
+These are getting few questions correct, so not worth it.
 
 ### Testing out deepseek with openrouter
 Quick test on an easy dataset:
@@ -43,7 +44,21 @@ which works, so try the hard dataset:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_mega_tricky --repeat-runs 1 --max_workers 16 --max_attempts 4 --model deepseek/deepseek-r1-0528 --base-url https://openrouter.ai/api/v1/ --unsafe-executor --max-tokens 32000
 ```
+These are getting few questions correct, so not worth it.
 
+### Running o4-mini-high with high reasoning
+
+Probably I'm wasting my time and should just be running o4-mini with high reasoning, this gives the best chance:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_mega_tricky --repeat-runs 1 --max_workers 64 --max_attempts 4 --model openai/o4-mini-high --base-url https://openrouter.ai/api/v1/ --unsafe-executor --reasoning_effort high --max-tokens 64000
+```
+
+### Try out the qwen-plus model on dashscope
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_mega_tricky --repeat-runs 1 --max_workers 64 --max_attempts 16 --model qwen-plus --base-url https://dashscope-intl.aliyuncs.com/compatible-mode/v1 --unsafe-executor --max-tokens 8000
+```
+Seems to get all problems mostly wrong... even with this high level of sampling.
 
 ## 1 Aug 2025
 
