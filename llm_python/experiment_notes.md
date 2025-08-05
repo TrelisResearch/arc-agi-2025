@@ -17,6 +17,34 @@
 
 ---
 
+## 5 Aug 2025
+
+### Test out the Qwen API for response generation.
+
+API only provides thinking mode for the qwen3-235b-a22b-thinking-2507 model.
+
+Will run with this on a simple dataset:
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_training_1 --repeat-runs 1 --max_workers 8 --max_attempts 1 --model qwen3-235b-a22b-thinking-2507 --base-url https://dashscope-intl.aliyuncs.com/compatible-mode/v1 --unsafe-executor --max-tokens 32000 --reasoning_effort medium --limit 1
+```
+
+and then run on what we want to solve - using 16k think tokens!
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_mega_tricky --repeat-runs 1 --max_workers 16 --max_attempts 4 --model qwen3-235b-a22b-thinking-2507 --base-url https://dashscope-intl.aliyuncs.com/compatible-mode/v1 --unsafe-executor --max-tokens 32000 --reasoning_effort high
+```
+
+### Testing out deepseek with openrouter
+Quick test on an easy dataset:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_training_1 --repeat-runs 1 --max_workers 8 --max_attempts 1 --model deepseek/deepseek-r1-0528 --base-url https://openrouter.ai/api/v1/ --unsafe-executor --max-tokens 32000 --limit 1
+```
+which works, so try the hard dataset:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_mega_tricky --repeat-runs 1 --max_workers 16 --max_attempts 4 --model deepseek/deepseek-r1-0528 --base-url https://openrouter.ai/api/v1/ --unsafe-executor --max-tokens 32000
+```
+
+
 ## 1 Aug 2025
 
 - [ ] Fine-tuning quality checks:
@@ -224,7 +252,7 @@ Far too slow to work.
 
 or try out deepseek/deepseek-r1-0528:
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_mega_tricky --repeat-runs 1 --max_workers 32 --max_attempts 8 --model deepseek/deepseek-r1-0528 --base-url https://openrouter.ai/api/v1/ --unsafe-executor --max-tokens 32000 --limit 1
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_mega_tricky --repeat-runs 1 --max_workers 8 --max_attempts 8 --model deepseek/deepseek-r1-0528 --base-url https://openrouter.ai/api/v1/ --unsafe-executor --max-tokens 32000 --limit 1
 ```
 Far too slow to work.
 

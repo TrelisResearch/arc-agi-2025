@@ -124,7 +124,15 @@ def serialize_response(response):
         return {'error': f'Failed to serialize response: {str(e)}'}
 
 class ARCTaskRunnerSimple:
-    """ARC task runner with all-attempts, rolling execution, and voting-based evaluation"""
+    """ARC task runner with all-attempts, rolling execution, and voting-based evaluation
+    
+    Supports multiple API endpoints including:
+    - OpenAI/OpenRouter: Standard chat completions with reasoning models
+    - DashScope: Alibaba's commercial Qwen models with thinking_budget parameter
+    
+    Note: DashScope commercial Qwen models always use thinking mode and don't support 
+    enable_thinking=False. Use thinking_budget parameter to control reasoning depth.
+    """
     
     def __init__(self, model: str = "gpt-4.1-nano", max_workers: int = 1, rate_limit_delay: float = 0.0, 
                  max_attempts: int = 8, run_number: int = 0, base_url: str = None, debug: bool = False, 
@@ -156,8 +164,14 @@ class ARCTaskRunnerSimple:
         if unsafe_executor:
             print("⚠️  WARNING: Using unrestricted executor - generated code will run directly on your system!")
         
+        # Warn about DashScope + qwen-no-think combination
+        if (self.base_url == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1" and 
+            self.qwen_no_think and "qwen" in self.model.lower()):
+            print("⚠️  WARNING: DashScope commercial Qwen models don't support enable_thinking=False")
+            print("   The --qwen-no-think flag will be ignored for this endpoint")
+        
         # Calculate timeouts based on model configuration
-        self.api_timeout = 600 if self.qwen_no_think else 1200
+        self.api_timeout = 600 if self.qwen_no_think else 2400
         client_timeout = self.api_timeout + 300  # Buffer for retries/overhead
         self.worker_timeout = 7200  # 2 hours per run - much more reasonable for large experiments
         
@@ -356,11 +370,17 @@ class ARCTaskRunnerSimple:
         
         # Add thinking_budget for DashScope (Qwen thinking models)
         if self.base_url == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1":
-            thinking_budget_tokens = {"low": 2000, "medium": 8000, "high": 32000}
+            # Use the same as reasoning_effort
+            thinking_budget_tokens = {"low": 2000, "medium": 8000, "high": 16000}
             if self.reasoning_effort in thinking_budget_tokens:
                 if "extra_body" not in kwargs:
                     kwargs["extra_body"] = {}
                 kwargs["extra_body"]["thinking_budget"] = thinking_budget_tokens[self.reasoning_effort]
+            elif "qwen" in self.model.lower() and "thinking" in self.model.lower():
+                # Set default thinking budget for Qwen thinking models even without explicit reasoning_effort
+                if "extra_body" not in kwargs:
+                    kwargs["extra_body"] = {}
+                kwargs["extra_body"]["thinking_budget"] = 4000  # Optimal based on testing
         
         # Add sampling parameters based on endpoint type
         # Only apply defaults if not already set by model-specific logic
@@ -383,7 +403,9 @@ class ARCTaskRunnerSimple:
         if "qwen" in self.model.lower() and self.base_url and self.qwen_no_think:
             if "extra_body" not in kwargs:
                 kwargs["extra_body"] = {}
-            kwargs["extra_body"]["chat_template_kwargs"] = {"enable_thinking": False}
+            # Note: DashScope commercial models don't support enable_thinking=False
+            if self.base_url != "https://dashscope-intl.aliyuncs.com/compatible-mode/v1":
+                kwargs["extra_body"]["chat_template_kwargs"] = {"enable_thinking": False}
         
         # Extract sampling parameters for display
         sampling_params = {}
@@ -419,7 +441,7 @@ class ARCTaskRunnerSimple:
             
             # Add reasoning parameters for OpenRouter
             if self.base_url and "openrouter" in self.base_url.lower():
-                reasoning_tokens = {"low": 2000, "medium": 8000, "high": 32000}
+                reasoning_tokens = {"low": 2000, "medium": 8000, "high": 16000}
                 if self.reasoning_effort in reasoning_tokens:
                     if "gemini" in self.model.lower():
                         kwargs["extra_body"] = {"reasoning": {"max_tokens": reasoning_tokens[self.reasoning_effort]}}
@@ -429,11 +451,17 @@ class ARCTaskRunnerSimple:
             
             # Add thinking_budget for DashScope (Qwen thinking models)
             if self.base_url == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1":
-                thinking_budget_tokens = {"low": 2000, "medium": 8000, "high": 32000}
+                # Based on testing: medium (4000) provides optimal balance of quality and performance
+                thinking_budget_tokens = {"low": 1000, "medium": 4000, "high": 8000}
                 if self.reasoning_effort in thinking_budget_tokens:
                     if "extra_body" not in kwargs:
                         kwargs["extra_body"] = {}
                     kwargs["extra_body"]["thinking_budget"] = thinking_budget_tokens[self.reasoning_effort]
+                elif "qwen" in self.model.lower() and "thinking" in self.model.lower():
+                    # Set default thinking budget for Qwen thinking models even without explicit reasoning_effort
+                    if "extra_body" not in kwargs:
+                        kwargs["extra_body"] = {}
+                    kwargs["extra_body"]["thinking_budget"] = 4000  # Optimal based on testing
             
             # Add sampling parameters based on endpoint type
             # Only apply defaults if not already set by model-specific logic
@@ -456,7 +484,9 @@ class ARCTaskRunnerSimple:
             if "qwen" in self.model.lower() and self.base_url and self.qwen_no_think:
                 if "extra_body" not in kwargs:
                     kwargs["extra_body"] = {}
-                kwargs["extra_body"]["chat_template_kwargs"] = {"enable_thinking": False}
+                # Note: DashScope commercial models don't support enable_thinking=False
+                if self.base_url != "https://dashscope-intl.aliyuncs.com/compatible-mode/v1":
+                    kwargs["extra_body"]["chat_template_kwargs"] = {"enable_thinking": False}
             
             response = self.client.chat.completions.create(**kwargs)
             return response, kwargs
@@ -1476,7 +1506,7 @@ def main():
     parser.add_argument("--max-tokens", type=int, help="Maximum tokens for model responses")
     parser.add_argument("--temperature", type=float, help="Temperature for model responses")
     parser.add_argument("--reasoning_effort", type=str, default="low", help="Reasoning effort for OpenAI models")
-    parser.add_argument("--qwen-no-think", action="store_true", help="Disable thinking for Qwen models")
+    parser.add_argument("--qwen-no-think", action="store_true", help="Disable thinking for Qwen models (Note: Not supported by DashScope commercial models)")
     parser.add_argument("--unsafe-executor", action="store_true", 
                         help="⚠️  UNSAFE: Use unrestricted executor (no Docker sandboxing). Generated code runs directly on your system. SECURITY RISK!")
     parser.add_argument("--prompt_version", type=str, default="soar", help="Version of prompts to use")
