@@ -41,18 +41,19 @@ class ArcTester:
         self.detailed_errors = detailed_errors
     
     def _validate_grid(self, output) -> Optional[Grid]:
-        """Validate that output is a proper grid format."""
+        """Validate that output is a proper grid format and convert to list of lists."""
         if output is None:
             return None
 
-        # Check if output is a list of lists of ints
-        if isinstance(output, list) and all(
-            isinstance(row, list) and all(isinstance(val, int) for val in row)
+        # Check if output is a list/tuple of lists/tuples of ints
+        if isinstance(output, (list, tuple)) and all(
+            isinstance(row, (list, tuple)) and all(isinstance(val, int) for val in row)
             for row in output
         ):
-            return output
+            # Convert to list of lists format (Grid type)
+            return [list(row) for row in output]
         else:
-            # If output is not a valid grid, return None
+            # If output is not a valid grid format, return None
             return None
 
     def _classify_error(self, output, error_message: str, timed_out: bool) -> ExecutionError:
@@ -72,12 +73,12 @@ class ArcTester:
             )
         
         # Check if output has invalid format
-        if not isinstance(output, list) or not all(
-            isinstance(row, list) and all(isinstance(val, int) for val in row)
+        if not isinstance(output, (list, tuple)) or not all(
+            isinstance(row, (list, tuple)) and all(isinstance(val, int) for val in row)
             for row in output
         ):
             return ExecutionError(
-                error_message="Output has invalid format (not a list of lists of ints)",
+                error_message="Output has invalid format (not a list/tuple of lists/tuples of ints)",
                 timed_out=False,
                 output_type="invalid_format"
             )
