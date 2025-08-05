@@ -50,8 +50,87 @@ These are getting few questions correct, so not worth it.
 
 Probably I'm wasting my time and should just be running o4-mini with high reasoning, this gives the best chance:
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_mega_tricky --repeat-runs 1 --max_workers 64 --max_attempts 4 --model openai/o4-mini-high --base-url https://openrouter.ai/api/v1/ --unsafe-executor --reasoning_effort high --max-tokens 64000
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_mega_tricky --repeat-runs 1 --max_workers 16 --max_attempts 1 --model openai/o4-mini-high --base-url https://openrouter.ai/api/v1/ --unsafe-executor --reasoning_effort high --max-tokens 64000
 ```
+Processing: llm_python/logs/20250805_151312
+================================================================================
+🔄 Generating retrospective summary for: llm_python/logs/20250805_151312
+------------------------------------------------------------
+📁 Scanning directory: llm_python/logs/20250805_151312
+📊 Found 58 task files, 0 summary files, 0 other files
+✅ Successfully loaded 58 task results
+📋 Dataset: arc-agi-1
+📋 Subset: training_mega_tricky
+📋 Model: openai/o4-mini-high
+
+📊 COMPLETENESS ANALYSIS:
+   Total tasks: 58
+   Max attempts per task: 1
+   Min attempts per task: 1
+   Average attempts per task: 1.0
+   Attempt distribution:
+     1 attempts: 58 tasks
+
+📊 CALCULATING METRICS for 58 tasks...
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 34.5%
+  Pass@2 (Train Majority):  34.5%
+  Oracle (Best Attempt):    34.5%
+  All Train Correct:        29.3%
+  Min 1 Train Correct:      37.9%
+  Min 1 Code Success:       43.1%
+  Max Length Responses:     1.7%
+  Timeout Responses:        3.4%
+  API Failure Responses:    1.7%
+
+💰 COST ANALYSIS:
+  Total tokens used: 1,082,034
+  Total cost: $0.603355
+  
+### And also run Gemini on high too:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_mega_tricky --repeat-runs 1 --max_workers 16 --max_attempts 1 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1/ --unsafe-executor --reasoning_effort high --max-tokens 64000
+```
+All single attempt:
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
+Dataset: arc-agi-1
+Subset: training_mega_tricky
+Model: google/gemini-2.5-flash
+Number of runs: 2
+Valid runs: 2
+
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    74     10.8%      10.8%      10.8%    8.1%       37.8%       95.9%        0.0%    
+2    74     9.5%       9.5%       9.5%     9.5%       36.5%       94.6%        0.0%    
+
+and then this:
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-1
+Subset: training_mega_tricky
+Model: google/gemini-2.5-flash
+Total tasks: 74
+Successful API calls: 74/74 (100.0%)
+Total tokens used: 9,632,114
+Total cost: $21.134362
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 25.7%
+  Pass@2 (Train Majority):  24.3%
+  Oracle (Best Attempt):    25.7%
+  All Train Correct:        20.3%
+  Min 1 Train Correct:      71.6%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
 ### Try out the qwen-plus model on dashscope
 

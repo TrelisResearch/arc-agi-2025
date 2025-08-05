@@ -345,9 +345,9 @@ For compatible models that support reasoning, control reasoning token allocation
 - Reasoning content captured in logs for analysis
 
 **DashScope Qwen Models (Commercial):**
-- `--reasoning_effort low`: 1,000 thinking tokens
-- `--reasoning_effort medium`: 4,000 thinking tokens (optimal based on testing)
-- `--reasoning_effort high`: 8,000 thinking tokens
+- `--reasoning_effort low`: 2,000 thinking tokens
+- `--reasoning_effort medium`: 8,000 thinking tokens (optimal based on testing)
+- `--reasoning_effort high`: 32,000 thinking tokens
 - Uses `thinking_budget` parameter in `extra_body`
 - Always uses thinking mode (cannot be disabled)
 - Automatically sets default 4,000 token budget for thinking models
