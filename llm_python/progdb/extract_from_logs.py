@@ -13,12 +13,12 @@ from tokenize import TokenError
 
 from .schema import SoarProgramExample
 from .code import strip_comments
-from ..utils.scoring import ProgramExecutor
+from .arc_tester import ArcTester
 from ..utils.task_loader import TaskLoader, TaskData, Grid, TaskExample
 
 # Initialize utilities
 task_loader = TaskLoader()
-program_executor = ProgramExecutor(timeout=2, executor_type="unrestricted")
+arc_tester = ArcTester(timeout=2, executor_type="unrestricted")
 
 # Define explicit PyArrow schema for our parquet file
 PARQUET_SCHEMA = pa.schema(
@@ -83,58 +83,6 @@ def _validate_training_example_against_schema(example: SoarProgramExample) -> No
 
     except Exception as e:
         raise ValueError(f"SoarProgramExample failed schema validation: {e}")
-
-
-def _validate_grid(output) -> Optional[Grid]:
-    if output is None:
-        return None
-
-    # Check if output is a list of lists of ints
-    if isinstance(output, list) and all(
-        isinstance(row, list) and all(isinstance(val, int) for val in row)
-        for row in output
-    ):
-        return output
-    else:
-        # If output is not a valid grid, return None
-        return None
-
-
-def _execute_on_examples(program: str, examples: List[TaskExample]) -> List:
-    """Execute program on a list of examples and return outputs."""
-    if not examples:
-        return []
-
-    # Extract inputs for bulk execution
-    inputs = [example["input"] for example in examples]
-
-    # Use bulk execution for better performance
-    results = program_executor.execute_program_bulk(program, inputs)
-
-    # Extract just the outputs (ignore error messages and timeout flags)
-    outputs = [_validate_grid(result[0]) for result in results]
-
-    return outputs
-
-
-def _run_program_on_task(
-    program: str, task_data: TaskData
-) -> tuple[List[Grid], List[Grid]]:
-    """
-    Execute program on task data and return outputs.
-
-    Returns:
-        train_outputs, test_outputs
-    """
-    # Merge train and test examples so we can do this in one bulk call (faster).
-    all_examples = task_data["train"] + task_data["test"]
-    all_outputs = _execute_on_examples(program, all_examples)
-    # Unmerge outputs
-    train_len = len(task_data["train"])
-    train_outputs = all_outputs[:train_len]
-    test_outputs = all_outputs[train_len:]
-
-    return train_outputs, test_outputs
 
 
 def _extract_reasoning_from_response(raw_response: dict) -> str:
@@ -216,17 +164,6 @@ def extract_log_data(log_path: str) -> List[LogData]:
     return extracted_data
 
 
-def _compute_correctness_list(outputs: List[Grid], examples: List[TaskExample]) -> List[bool]:
-    """Compute boolean list of correctness for outputs against expected examples."""
-    if not examples:
-        return []
-
-    return [
-        outputs[i] is not None and outputs[i] == example["output"]
-        for i, example in enumerate(examples)
-    ]
-
-
 def is_valid_code(code: str) -> bool:
     """Check if code is valid Python that can be compiled."""
     try:
@@ -252,20 +189,12 @@ def process_program(log_data: LogData) -> Optional[SoarProgramExample]:
     # Load task data - this could fail due to missing files, which is unexpected
     task_data = task_loader.load_task(log_data["task_id"])
 
-    # Execute program and get results - expected errors are handled within the function
-    train_outputs, test_outputs = _run_program_on_task(program_to_execute, task_data)
+    # Test the program using the new ArcTester
+    test_result = arc_tester.test_program(program_to_execute, task_data)
 
     # If the program failed for any input, return None
-    if any(output is None for output in train_outputs + test_outputs):
+    if not test_result.success:
         return None
-
-    # Extract inputs from task data (keep train and test separate)
-    train_inputs = [example["input"] for example in task_data["train"]]
-    test_inputs = [example["input"] for example in task_data["test"]]
-
-    # Compute correctness lists
-    correct_train_input = _compute_correctness_list(train_outputs, task_data["train"])
-    correct_test_input = _compute_correctness_list(test_outputs, task_data["test"])
 
     # For generation, we'll default to 0 since it's not available in current logs
     generation = 0
@@ -274,12 +203,12 @@ def process_program(log_data: LogData) -> Optional[SoarProgramExample]:
         task_id=log_data["task_id"],
         reasoning=log_data["reasoning"],
         code=program_to_execute,  # Store the version we actually executed
-        correct_train_input=correct_train_input,
-        correct_test_input=correct_test_input,
-        predicted_train_output=train_outputs,
-        predicted_test_output=test_outputs,
-        train_input=train_inputs,
-        test_input=test_inputs,
+        correct_train_input=test_result.correct_train_input,
+        correct_test_input=test_result.correct_test_input,
+        predicted_train_output=test_result.train_outputs,
+        predicted_test_output=test_result.test_outputs,
+        train_input=test_result.train_inputs,
+        test_input=test_result.test_inputs,
         model=log_data["model"],
         generation=generation,
     )
