@@ -27,9 +27,26 @@ uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path julien31/Soar-qwen-7b
 
 And then run the test to get some scores:
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_10 --repeat-runs 3 --max_workers 32 --max_attempts 8 --model julien31/Soar-qwen-7b --base-url http://38.80.152.249:30813/v1 --unsafe-executor --max-tokens 1000 --limit 32
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_10 --repeat-runs 3 --max_workers 32 --max_attempts 8 --model julien31/Soar-qwen-7b --base-url http://38.80.152.249:30813/v1 --unsafe-executor --max-tokens 1000
 ```
+and run again with single attempt:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_10 --repeat-runs 3 --max_workers 32 --max_attempts 1 --model julien31/Soar-qwen-7b --base-url http://38.80.152.249:30813/v1 --unsafe-executor --max-tokens 1000
+```
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    10     50.0%      50.0%      50.0%    50.0%      50.0%       100.0%       0.0%    
+2    10     70.0%      70.0%      70.0%    70.0%      70.0%       90.0%        0.0%    
+3    10     30.0%      30.0%      30.0%    30.0%      50.0%       80.0%        0.0%    
 
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 50.0%
+  Std Dev: 20.0%
+  95% CI: [10.8%, 89.2%]
 
 ### Running OSS 120B on ultra tricky
 
