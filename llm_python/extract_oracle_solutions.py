@@ -92,6 +92,8 @@ def update_solution_counts(current_counts: Dict[str, Optional[int]],
     
     for task_id, programs in new_oracle_programs.items():
         current_count = current_counts.get(task_id, 0) or 0
+        # Handle case where count might be stored as string
+        current_count = int(current_count) if isinstance(current_count, str) else current_count
         new_count = current_count + len(programs)
         updated_counts[task_id] = new_count
         

@@ -17,6 +17,64 @@
 
 ---
 
+## 6 Aug 2025
+
+Try running the ultra tricky dataset with the new 'openai/gpt-oss-120b' model. We can run with open router using 'openai/gpt-oss-120b':
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_ultra_tricky --repeat-runs 1 --max_workers 32 --max_attempts 2 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1/ --unsafe-executor --max-tokens 32000
+```
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-1
+Subset: training_ultra_tricky
+Model: openai/gpt-oss-120b
+Total tasks: 80
+Successful API calls: 80/80 (100.0%)
+Total tokens used: 7,328,835
+Total cost: $3.281601
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 26.2%
+  Pass@2 (Train Majority):  25.0%
+  Oracle (Best Attempt):    27.5%
+  All Train Correct:        21.2%
+  Min 1 Train Correct:      48.8%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.8%
+
+Results saved to: /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/logs/20250806_162244/20250806_163935_summary_arc-agi-1_training_ultra_tricky_simple.json
+
+and then running with 64 attempts:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_ultra_tricky --repeat-runs 1 --max_workers 32 --max_attempts 64 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1/ --unsafe-executor --max-tokens 32000
+```
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-1
+Subset: training_ultra_tricky
+Model: openai/gpt-oss-120b
+Total tasks: 80
+Successful API calls: 80/80 (100.0%)
+Total tokens used: 14,410,990
+Total cost: $5.850945
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 8.8%
+  Pass@2 (Train Majority):  7.5%
+  Oracle (Best Attempt):    12.5%
+  All Train Correct:        3.8%
+  Min 1 Train Correct:      13.8%
+  Min 1 Code Success:       23.8%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    76.8%
+
+API Failed before all done.
+
 ## 5 Aug 2025
 
 ### Test out the Qwen API for response generation.
@@ -146,6 +204,17 @@ Analyzed today's o4-mini-high and Gemini 2.5 Flash runs:
 - **Created new subset** `training_new_tricky.txt` with **66 tasks** having ≤7 solutions
 - Breakdown: 30 null, 9 with 2 sols, 6 with 5 sols, 5 with 7 sols, others scattered 1-6
 - Top performers: a78176bb (+3), 11852cab (+3), 6e19193c (+2), e509e548 (+2)
+
+### OSS 120B Triple Run & Updated Subset (v3) 
+Analyzed **THREE** 6 Aug 2025 runs with `openai/gpt-oss-120b` on ultra_tricky subset:
+- **Extracted 71 oracle programs** across **16 tasks** from all three runs combined
+- **Major breakthrough on 7ddcd7ec**: 40 total oracle solutions (5+4+35 across runs) - exceptional consistency!
+- **Top performers**: 7ddcd7ec (+40), 6e19193c (+4), ec883f72 (+4), 11852cab (+4), 508bd3b6 (+4)
+- **Updated solution counts** in `soar_arc_training_solution_counts_enhanced_20250806_184213.json`
+- **Created v3 subset** `training_new_tricky_v3.txt` with **64 tasks** having ≤7 solutions  
+- Breakdown: 29 null, 8 with 2 sols, 8 with 5 sols, 6 with 1 sol, 4 with 3 sols, others scattered
+- **Net progress**: 1 task moved from null to solved (447fd412), **2 fewer tasks** in subset overall (66→64)
+- **Multiple tasks promoted**: 228f6490 (7→8), 4c5c2cf0 (8→9) moved above threshold
 
 ## 1 Aug 2025
 

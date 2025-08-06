@@ -8,6 +8,8 @@ A comprehensive tool for testing OpenAI-compatible language models on ARC-AGI ta
 - `run_arc_tasks_soar.py` - **Main task runner** with all-attempts evaluation, parallel processing, and voting-based selection
 - `read_log_stats.py` - **Log analysis tool** to retrospectively read and display statistics from log directories
 - `generate_retrospective_summary.py` - **Retrospective summary generator** for creating summaries from incomplete/completed runs
+- `extract_oracle_solutions.py` - **Oracle solution extractor** for extracting perfect solutions and updating solution counts
+- `create_null_subset.py` - **Null subset creator** for creating subsets of unsolved tasks (no oracle solutions found)
 - `create_grids_only_dataset.py` - **Grids-only dataset creator** for creating datasets with just grid data (no code or reasoning)
 - `create_soar_dataset.py` - **SOAR dataset creator** for combining SOAR data with grid data using filtering options
 
@@ -212,6 +214,41 @@ uv run python read_log_stats.py logs/20250728_114716 --verbose
 - **Auto-Discovery**: Find all runs from a specific date pattern
 - **Comprehensive Metrics**: All core metrics including Pass@2, Oracle, and error rates
 - **Cost Analysis**: Token usage and cost breakdowns
+
+### Oracle Solution Extraction (`extract_oracle_solutions.py`)
+
+Extract oracle solutions from experiment runs and update solution counts for creating targeted subsets:
+
+```bash
+# Extract oracle solutions from recent runs and update solution counts
+uv run python llm_python/extract_oracle_solutions.py --log-dirs llm_python/logs/20250806_165009 --solution-counts data/arc-agi-1-training/soar_arc_training_solution_counts_enhanced_20250805_180446.json --output-dir data/arc-agi-1-training --verbose
+
+# Create subset of tasks with ≤7 solutions (automatically included)
+uv run python llm_python/extract_oracle_solutions.py --log-dirs llm_python/logs/20250806_165009 --solution-counts data/arc-agi-1-training/soar_arc_training_solution_counts_enhanced_20250805_180446.json --output-dir data/arc-agi-1-training --max-solutions 7
+
+# Extract from multiple run directories
+uv run python llm_python/extract_oracle_solutions.py --log-dirs llm_python/logs/20250805_151312 llm_python/logs/20250805_162928 llm_python/logs/20250806_165009 --solution-counts data/arc-agi-1-training/soar_arc_training_solution_counts_enhanced_20250805_180446.json --output-dir data/arc-agi-1-training
+```
+
+**Features:**
+- **Oracle Criteria**: Extracts programs where `all_test_correct=True` AND all training examples correct
+- **Solution Count Updates**: Automatically updates existing solution counts with new oracle programs  
+- **Subset Generation**: Creates new subsets of tasks with ≤N solutions (default: 7)
+- **Multi-Directory Support**: Process multiple log directories in a single run
+- **Statistics Reporting**: Shows task distribution breakdown and update summary
+- **Deduplication**: Prevents adding duplicate programs to solution counts
+
+**Oracle Detection:**
+- Scans all attempt files in specified log directories
+- Identifies programs that solve all test cases AND all training examples
+- Extracts the generated code for each oracle solution
+- Updates solution counts incrementally with new discoveries
+
+**Use Cases:**
+- Creating increasingly difficult subsets as models improve
+- Tracking solution discovery progress across experiments  
+- Identifying tasks that remain unsolved across multiple model runs
+- Generating targeted training subsets for fine-tuning
 
 ### Retrospective Summary Generation (`generate_retrospective_summary.py`)
 
@@ -443,6 +480,8 @@ llm_python/
 ├── run_arc_tasks_soar.py       # Main script (all-attempts, voting-based evaluation)
 ├── read_log_stats.py           # Log analysis tool for retrospective statistics
 ├── generate_retrospective_summary.py # Retrospective summary generator for results directories
+├── extract_oracle_solutions.py # Oracle solution extractor and solution count updater
+├── create_null_subset.py       # Create subsets of unsolved tasks (no oracle solutions)
 ├── utils/                       # Utility modules
 │   ├── __init__.py
 │   ├── task_loader.py          # Load ARC tasks and subsets
