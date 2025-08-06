@@ -44,24 +44,18 @@ def create_grids_only_training_example(task_data: Dict, task_id: str) -> Dict:
     test_inputs = [example['input'] for example in task_data['test']]
     test_outputs = [example['output'] for example in task_data['test']]
     
-    # Create empty lists for predicted outputs and correct flags
-    predicted_train_outputs = [[] for _ in train_inputs]
-    predicted_test_outputs = [[] for _ in test_inputs]
-    correct_train_inputs = [False for _ in train_inputs]
-    correct_test_inputs = [False for _ in test_inputs]
-    
     # Create the training example with same structure but empty code/reasoning
     training_example = {
         "reasoning": "",  # Always empty
         "code": "",  # Always empty
-        "correct_train_input": correct_train_inputs,  # Always False
+        "correct_train_input": [],  # Empty - no predictions to evaluate
         "train_input": train_inputs,
         "train_output": train_outputs,
-        "predicted_train_output": predicted_train_outputs,  # Always empty lists
-        "correct_test_input": correct_test_inputs,  # Always False
+        "predicted_train_output": [],  # Empty - no predictions made
+        "correct_test_input": [],  # Empty - no predictions to evaluate
         "test_input": test_inputs,
         "test_output": test_outputs,
-        "predicted_test_output": predicted_test_outputs,  # Always empty lists
+        "predicted_test_output": [],  # Empty - no predictions made
         "task_id": task_id,
         "model": "",  # Always empty
         "generation": 0  # Always 0

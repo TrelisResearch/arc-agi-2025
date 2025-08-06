@@ -19,6 +19,20 @@
 
 ## 6 Aug 2025
 
+### Testing out shortest evaluation 10 with soar model
+Startup the soar model:
+```bash
+uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path julien31/Soar-qwen-7b
+```
+
+And then run the test to get some scores:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_10 --repeat-runs 3 --max_workers 32 --max_attempts 8 --model julien31/Soar-qwen-7b --base-url http://38.80.152.249:30813/v1 --unsafe-executor --max-tokens 1000 --limit 32
+```
+
+
+### Running OSS 120B on ultra tricky
+
 Try running the ultra tricky dataset with the new 'openai/gpt-oss-120b' model. We can run with open router using 'openai/gpt-oss-120b':
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_ultra_tricky --repeat-runs 1 --max_workers 32 --max_attempts 2 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1/ --unsafe-executor --max-tokens 32000
