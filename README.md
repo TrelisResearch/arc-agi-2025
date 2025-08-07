@@ -76,13 +76,24 @@ For complete documentation, usage examples, and detailed configuration options, 
 
 ```bash
 # Using gsutil (works on all platforms, requires Python 3.8-3.12)
+# Bidirectional sync (can both push and pull)
 gsutil -m rsync -r llm_python/logs gs://trelis-arc/logs
 
+# Push only (upload local files without downloading from GCS)
+gsutil -m cp -r llm_python/logs/* gs://trelis-arc/logs/
+
 # Using gcloud storage (modern alternative, recommended)
+# Bidirectional sync (can both push and pull)
 gcloud storage rsync llm_python/logs gs://trelis-arc/logs --recursive
+
+# Push only (upload local files without downloading from GCS)
+gcloud storage cp llm_python/logs gs://trelis-arc/logs --recursive
 ```
 
-**Note:** Both sync commands perform **incremental synchronization** - they only upload new, modified, or missing files. Files that already exist and haven't changed are automatically skipped, so you can safely run these commands repeatedly without duplicating uploads.
+**Note:** 
+- **rsync** commands perform **bidirectional synchronization** - they upload new/modified files and can also download files that exist in GCS but not locally
+- **cp** commands are **push-only** - they only upload local files to GCS without downloading anything
+- Both skip files that already exist and haven't changed, so you can safely run them repeatedly
 
 ### Other useful GCS commands (macOS/no fuse mount)
 

@@ -129,12 +129,79 @@ uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path Trelis/Qwen3-4B_dsarc
 ```
 and then run the benchmarking:
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-correct-10_20250806-233707-c132 --base-url http://38.80.152.249:31044/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-correct-10_20250806-233707-c132 --base-url http://38.80.152.249:30866/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
 ```
+================================================================================
+Processing: llm_python/logs/20250807_111551
+================================================================================
+🔄 Generating retrospective summary for: llm_python/logs/20250807_111551
+------------------------------------------------------------
+📁 Scanning directory: llm_python/logs/20250807_111551
+📊 Found 400 task files, 1 summary files, 0 other files
+📋 Existing summary files: ['20250807_112401_summary_arc-agi-1_all_evaluation_simple_run1.json']
+✅ Successfully loaded 400 task results
+📋 Dataset: arc-agi-1
+📋 Subset: all_evaluation
+📋 Model: Trelis/Qwen3-4B_dsarc-programs-correct-10_20250806-233707-c132
+
+📊 COMPLETENESS ANALYSIS:
+   Total tasks: 400
+   Max attempts per task: 8
+   Min attempts per task: 8
+   Average attempts per task: 8.0
+   Attempt distribution:
+     8 attempts: 400 tasks
+
+📊 CALCULATING METRICS for 400 tasks...
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 8.5%
+  Pass@2 (Train Majority):  8.2%
+  Oracle (Best Attempt):    9.2%
+  All Train Correct:        5.8%
+  Min 1 Train Correct:      13.2%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     2.1%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
 and then the correct-50 pod:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716-c453 --base-url http://107.152.109.12:11603/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
 ```
+================================================================================
+Processing: llm_python/logs/20250807_110806
+================================================================================
+🔄 Generating retrospective summary for: llm_python/logs/20250807_110806
+------------------------------------------------------------
+📁 Scanning directory: llm_python/logs/20250807_110806
+📊 Found 400 task files, 1 summary files, 0 other files
+📋 Existing summary files: ['20250807_111601_summary_arc-agi-1_all_evaluation_simple_run1.json']
+✅ Successfully loaded 400 task results
+📋 Dataset: arc-agi-1
+📋 Subset: all_evaluation
+📋 Model: Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716-c453
+
+📊 COMPLETENESS ANALYSIS:
+   Total tasks: 400
+   Max attempts per task: 8
+   Min attempts per task: 8
+   Average attempts per task: 8.0
+   Attempt distribution:
+     8 attempts: 400 tasks
+
+📊 CALCULATING METRICS for 400 tasks...
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 7.8%
+  Pass@2 (Train Majority):  7.5%
+  Oracle (Best Attempt):    7.8%
+  All Train Correct:        6.2%
+  Min 1 Train Correct:      12.5%
+  Min 1 Code Success:       99.5%
+  Max Length Responses:     2.3%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
 
 
