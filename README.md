@@ -94,6 +94,7 @@ gcloud storage cp llm_python/logs gs://trelis-arc/logs --recursive
 - **rsync** commands perform **bidirectional synchronization** - they upload new/modified files and can also download files that exist in GCS but not locally
 - **cp** commands are **push-only** - they only upload local files to GCS without downloading anything
 - Both skip files that already exist and haven't changed, so you can safely run them repeatedly
+- **Log optimization**: Prompts are now stored once per task instead of per attempt, reducing log file sizes by ~87% (7/8ths reduction)
 
 ### Other useful GCS commands (macOS/no fuse mount)
 

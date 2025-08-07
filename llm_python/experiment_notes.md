@@ -19,6 +19,13 @@
 
 ## 7 Aug 2025
 
+### Only save the prompt once per task run with multiple attempts
+
+Test with gemini via openrouter:
+```bash
+uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_evaluation_10 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1/ --max_attempts 2 --unsafe-executor
+```
+
 ### Comparing performance of the fine-tuned models for correct-10 and correct-50
 
 Models to compare:

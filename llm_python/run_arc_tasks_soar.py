@@ -510,9 +510,10 @@ class ARCTaskRunnerSimple:
         return extract_python_code(full_text, self.debug)
     
     def run_single_attempt(self, task_id: str, task_data: Dict, attempt_num: int, 
-                          dataset: str = None, subset: str = None) -> Dict:
+                          dataset: str = None, subset: str = None, full_prompt: Dict = None) -> Dict:
         """Run a single attempt for an ARC task"""
-        system_content, user_content = self.create_prompt(task_data)
+        system_content = full_prompt['system']
+        user_content = full_prompt['user']
         
         attempt_start_time = datetime.datetime.now()
         exec_start_time = time.time()  # Track execution timing
@@ -697,7 +698,6 @@ class ARCTaskRunnerSimple:
             'test_error': test_results[0]['error'] if test_results else 'no program',
             'test_timed_out': test_results[0]['timed_out'] if test_results else False,
             'raw_response': serialize_response(response),
-            'full_prompt': {'system': system_content, 'user': user_content},
             'sampling_params': sampling_params,
             'api_success': api_call_successful,
             'api_timeout': timed_out,
@@ -726,7 +726,8 @@ class ARCTaskRunnerSimple:
             'attempt_detail': attempt_detail,
             'task_data': task_data,
             'dataset': dataset,
-            'subset': subset
+            'subset': subset,
+            'full_prompt': full_prompt or {'system': system_content, 'user': user_content}
         }
     
 
@@ -819,9 +820,11 @@ class ARCTaskRunnerSimple:
         from collections import defaultdict
         task_results = defaultdict(lambda: {'attempts': [], 'task_data': None})
         
-        # Initialize task results with task data
+        # Initialize task results with task data and prompts (create once per task)
         for task_id, task_data in tasks:
             task_results[task_id]['task_data'] = task_data
+            system_content, user_content = self.create_prompt(task_data)
+            task_results[task_id]['full_prompt'] = {'system': system_content, 'user': user_content}
         
         completed_attempts = 0
         completed_tasks = 0
@@ -831,7 +834,9 @@ class ARCTaskRunnerSimple:
             nonlocal completed_attempts, completed_tasks
             attempt_start = time.time()
             try:
-                result = self.run_single_attempt(task_id, task_data, attempt_num, dataset, subset_name)
+                # Get the pre-created prompt for this task
+                full_prompt = task_results[task_id]['full_prompt']
+                result = self.run_single_attempt(task_id, task_data, attempt_num, dataset, subset_name, full_prompt)
                 attempt_duration = time.time() - attempt_start
                 if attempt_duration > 60:  # Log slow attempts
                     print(f"🐌 Slow attempt: {task_id} attempt {attempt_num + 1} took {attempt_duration:.1f}s (timeout: {self.api_timeout}s)")
@@ -840,6 +845,7 @@ class ARCTaskRunnerSimple:
                     # Store attempt result - use thread-safe access
                     if task_id in task_results:
                         task_results[task_id]['attempts'].append(result['attempt_detail'])
+                        # Prompt is already stored at task level during initialization
                         completed_attempts += 1
                         
                         # Check if task is complete
@@ -864,7 +870,8 @@ class ARCTaskRunnerSimple:
                                 'request_cost': sum(attempt.get('attempt_cost', 0.0) for attempt in valid_attempts),
                                 'max_attempts': self.max_attempts,
                                 'api_success': True,
-                                'task_data': task_data
+                                'task_data': task_data,
+                                'full_prompt': task_results[task_id].get('full_prompt')  # Store prompt once per task
                             }
                             self.save_result(task_result)
                             # print(f"💾 Saved log for task {task_id}")
