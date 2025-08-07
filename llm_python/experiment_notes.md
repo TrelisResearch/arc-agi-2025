@@ -17,6 +17,128 @@
 
 ---
 
+## 7 Aug 2025
+
+### Comparing performance of the fine-tuned models for correct-10 and correct-50
+
+Models to compare:
+- Trelis/Qwen3-4B_dsarc-programs-correct-10_20250806-233707
+- Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716
+
+Start an instance of the model:
+```bash
+uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path Trelis/Qwen3-4B_dsarc-programs-correct-10_20250806-233707
+```
+and then run benchmarking 3x runs 
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-correct-10_20250806-233707 --base-url http://38.80.152.249:31044/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+and then try this one: Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716:
+```bash
+uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716
+```
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B_dsarc-programs-correct-10_20250806-233707
+Number of runs: 3
+Valid runs: 3
+
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    400    6.5%       6.5%       6.8%     6.0%       13.2%       100.0%       1.9%    
+2    400    6.8%       6.5%       7.8%     5.2%       11.2%       100.0%       1.8%    
+3    400    8.5%       7.8%       9.5%     7.2%       14.0%       100.0%       1.7%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 7.3%
+  Std Dev: 1.1%
+  95% CI: [5.1%, 9.4%]
+  
+and then run benchmarking 3x runs 
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716 --base-url http://107.152.109.12:11909/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716
+Number of runs: 3
+Valid runs: 3
+
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    400    10.0%      9.2%       11.0%    8.5%       17.2%       100.0%       0.8%    
+2    400    9.0%       9.0%       9.2%     6.8%       15.0%       100.0%       0.8%    
+3    400    8.5%       8.2%       9.0%     7.5%       15.8%       100.0%       1.2%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 9.2%
+  Std Dev: 0.8%
+  95% CI: [7.7%, 10.7%]
+
+Try out one run on training, just to see where that scores:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_training --repeat-runs 1 --max_workers 32 --max_attempts 1 --model Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716 --base-url http://107.152.109.12:11909/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-1
+Subset: all_training
+Model: Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716
+Total tasks: 400
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 1,177,695
+Total cost: $0.219667
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 26.5%
+  Pass@2 (Train Majority):  26.5%
+  Oracle (Best Attempt):    26.5%
+  All Train Correct:        24.2%
+  Min 1 Train Correct:      31.2%
+  Min 1 Code Success:       87.5%
+  Max Length Responses:     0.5%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+and now run the 60% checkpoints:
+- Trelis/Qwen3-4B_dsarc-programs-correct-10_20250806-233707-c132
+- Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716-c453
+
+So start up the pods:
+```bash
+uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path Trelis/Qwen3-4B_dsarc-programs-correct-10_20250806-233707-c132
+```
+and the correct-50 pod:
+```bash
+uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716-c453
+```
+and then run the benchmarking:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-correct-10_20250806-233707-c132 --base-url http://38.80.152.249:31044/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+and then the correct-50 pod:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716-c453 --base-url http://107.152.109.12:11603/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+
+
+
+
 ## 6 Aug 2025
 
 ### Testing out shortest evaluation 10 with soar model
