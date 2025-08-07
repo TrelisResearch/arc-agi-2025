@@ -19,6 +19,40 @@
 
 ## 7 Aug 2025
 
+### Pushing the full trainer state and loras up to hub
+
+https://chatgpt.com/c/689496a4-21c8-8326-a27f-62ca18ddf831
+
+In training arguments:
+```
+    hub_model_id="your-org/awesome-bert",  # ← this sets the repo to push to
+    hub_strategy="checkpoint",         # when to push (end, every_save, checkpoint, all_checkpoints)
+    hub_private_repo=True,             # optional: make it private
+```
+
+### Notes on running loras
+
+https://chatgpt.com/c/68949467-f558-8332-a6c9-162173123423
+
+When starting the server:
+```bash
+python -m sglang.launch_server \
+  --model-path meta-llama/Meta-Llama-3-8B-Instruct \
+  --lora-paths myrun=my-user/my-ft-run/checkpoints/checkpoint-1000 \
+  --max-loras-per-batch 1
+```
+
+When calling the lora - requires updating the run arc script:
+```bash
+curl -X POST http://SERVER:PORT/load_lora_adapter \
+  -H "Content-Type: application/json" \
+  -d '{
+        "name":  "myrun",
+        "path":  "my-user/my-ft-run/checkpoints/checkpoint-1000",
+        "pin_on_gpu": false
+      }'
+```
+
 ### Only save the prompt once per task run with multiple attempts
 
 Test with gemini via openrouter:
