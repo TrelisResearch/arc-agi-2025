@@ -8,6 +8,8 @@ A comprehensive tool for testing OpenAI-compatible language models on ARC-AGI ta
 - `run_arc_tasks_soar.py` - **Main task runner** with all-attempts evaluation, parallel processing, and voting-based selection
 - `read_log_stats.py` - **Log analysis tool** to retrospectively read and display statistics from log directories
 - `generate_retrospective_summary.py` - **Retrospective summary generator** for creating summaries from incomplete/completed runs
+- `extract_oracle_solutions.py` - **Oracle solution extractor** for extracting perfect solutions and updating solution counts
+- `create_null_subset.py` - **Null subset creator** for creating subsets of unsolved tasks (no oracle solutions found)
 - `create_grids_only_dataset.py` - **Grids-only dataset creator** for creating datasets with just grid data (no code or reasoning)
 - `create_soar_dataset.py` - **SOAR dataset creator** for combining SOAR data with grid data using filtering options
 
@@ -213,6 +215,41 @@ uv run python read_log_stats.py logs/20250728_114716 --verbose
 - **Comprehensive Metrics**: All core metrics including Pass@2, Oracle, and error rates
 - **Cost Analysis**: Token usage and cost breakdowns
 
+### Oracle Solution Extraction (`extract_oracle_solutions.py`)
+
+Extract oracle solutions from experiment runs and update solution counts for creating targeted subsets:
+
+```bash
+# Extract oracle solutions from recent runs and update solution counts
+uv run python llm_python/extract_oracle_solutions.py --log-dirs llm_python/logs/20250806_165009 --solution-counts data/arc-agi-1-training/soar_arc_training_solution_counts_enhanced_20250805_180446.json --output-dir data/arc-agi-1-training --verbose
+
+# Create subset of tasks with ≤7 solutions (automatically included)
+uv run python llm_python/extract_oracle_solutions.py --log-dirs llm_python/logs/20250806_165009 --solution-counts data/arc-agi-1-training/soar_arc_training_solution_counts_enhanced_20250805_180446.json --output-dir data/arc-agi-1-training --max-solutions 7
+
+# Extract from multiple run directories
+uv run python llm_python/extract_oracle_solutions.py --log-dirs llm_python/logs/20250805_151312 llm_python/logs/20250805_162928 llm_python/logs/20250806_165009 --solution-counts data/arc-agi-1-training/soar_arc_training_solution_counts_enhanced_20250805_180446.json --output-dir data/arc-agi-1-training
+```
+
+**Features:**
+- **Oracle Criteria**: Extracts programs where `all_test_correct=True` AND all training examples correct
+- **Solution Count Updates**: Automatically updates existing solution counts with new oracle programs  
+- **Subset Generation**: Creates new subsets of tasks with ≤N solutions (default: 7)
+- **Multi-Directory Support**: Process multiple log directories in a single run
+- **Statistics Reporting**: Shows task distribution breakdown and update summary
+- **Deduplication**: Prevents adding duplicate programs to solution counts
+
+**Oracle Detection:**
+- Scans all attempt files in specified log directories
+- Identifies programs that solve all test cases AND all training examples
+- Extracts the generated code for each oracle solution
+- Updates solution counts incrementally with new discoveries
+
+**Use Cases:**
+- Creating increasingly difficult subsets as models improve
+- Tracking solution discovery progress across experiments  
+- Identifying tasks that remain unsolved across multiple model runs
+- Generating targeted training subsets for fine-tuning
+
 ### Retrospective Summary Generation (`generate_retrospective_summary.py`)
 
 Generate summaries from raw results directories, useful for incomplete runs or post-hoc analysis:
@@ -289,11 +326,11 @@ Executor: unrestricted (timeout: 0.5s) ⚠️  UNSAFE MODE
 ### Advanced Usage
 
 ```bash
-# Run with different models and reasoning efforts
-uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1 --reasoning_effort low
+# OpenRouter OpenAI models - use model variants for reasoning control
+uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10 --model openai/o4-mini-high --base-url https://openrouter.ai/api/v1
 
-# Run with higher reasoning effort (8k tokens)
-uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset middle_training_10 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
+# OpenRouter Gemini models - use reasoning_effort parameter
+uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
 
 # RunPod: Use direct TCP to avoid Cloudflare 524 timeouts
 uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10 --model Qwen/Qwen3-4B --base-url http://157.66.254.42:15712/v1
@@ -305,7 +342,11 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-2 --subset shortest_traini
 uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10 --repeat-runs 3
 
 # Disable thinking for Qwen models (sets enable_thinking=false in chat_template_kwargs)
+# Note: This does NOT work with DashScope commercial models - they always use thinking mode
 uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10 --model Qwen/Qwen3-4B --base-url http://localhost:8000/v1 --qwen-no-think
+
+# DashScope commercial Qwen models with thinking_budget control
+uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10 --model qwen3-235b-a22b-thinking-2507 --base-url https://dashscope-intl.aliyuncs.com/compatible-mode/v1 --reasoning_effort medium
 
 # Set specific token limit for responses (overrides reasoning effort defaults)
 uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10 --model gpt-4.1-mini --max-tokens 2000
@@ -324,7 +365,7 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_traini
 #   --max_attempts: Maximum number of attempts per task (default: 8)
 #   --max_workers: Number of parallel workers (default: 1, efficient up to 50+)
 #   --repeat-runs: Number of times to repeat the entire test (default: 1, max: 10)
-#   --qwen-no-think: Disable thinking for Qwen models (sets enable_thinking=false in chat_template_kwargs)
+#   --qwen-no-think: Disable thinking for Qwen models (Note: Not supported by DashScope commercial models)
 #   --unsafe-executor: ⚠️ UNSAFE: Use unrestricted executor (no Docker sandboxing) - SECURITY RISK!
 #   --prompt_version: Version of prompts to use (default: soar)
 ```
@@ -340,14 +381,35 @@ For compatible models that support reasoning, control reasoning token allocation
 - Uses optimal `extra_body={"reasoning": {"max_tokens": X}}` parameter structure
 - Reasoning content captured in logs for analysis
 
+**DashScope Qwen Models (Commercial):**
+- `--reasoning_effort low`: 2,000 thinking tokens
+- `--reasoning_effort medium`: 8,000 thinking tokens (optimal based on testing)
+- `--reasoning_effort high`: 32,000 thinking tokens
+- Uses `thinking_budget` parameter in `extra_body`
+- Always uses thinking mode (cannot be disabled)
+- Automatically sets default 4,000 token budget for thinking models
+
 **Other Reasoning Models:**
 - Uses standard `max_tokens` parameter for reasoning allocation
 - Works with OpenRouter and other compatible APIs automatically
 
+**Reasoning Control by Endpoint:**
+
+**OpenRouter OpenAI Models:** Use model variants for reasoning control:
+- `openai/o4-mini` = Default reasoning, `openai/o4-mini-high` = High reasoning
+- `openai/o3-mini` = Default reasoning, `openai/o3-mini-high` = High reasoning
+- Model choice controls reasoning level, not `--reasoning_effort` parameter
+
+**OpenRouter Gemini Models:** Use `--reasoning_effort` parameter:
+- Creates `extra_body={"reasoning": {"max_tokens": X}}` structure
+
+**DashScope Qwen Models:** Use `--reasoning_effort` for `thinking_budget`:
+- Creates `extra_body={"thinking_budget": X}` parameter
+
 **Token Control Priority:**
-- `--max-tokens` parameter overrides all automatic reasoning effort settings
-- Without `--max-tokens`: reasoning effort controls token allocation automatically
-- With `--max-tokens`: your specified limit takes precedence for all models
+- ⚠️ `--max-tokens` **overrides** `--reasoning_effort` settings (no warning shown)
+- Without `--max-tokens`: reasoning effort controls allocation automatically
+- With `--max-tokens`: your limit takes precedence, reasoning effort ignored
 
 **Example Results:** Gemini Flash gets 7/10 correct on shortest training tasks with 2k reasoning tokens, 5/10 correct on medium difficulty tasks with 8k reasoning tokens.
 
@@ -363,12 +425,53 @@ The tool automatically captures and standardizes reasoning content from models t
 - **Qwen models**: 
   - Via TCP endpoints: `reasoning_content` → standardized to `reasoning` field
   - Via OpenRouter: `reasoning` field preserved
-  - Automatically disabled with `--qwen-no-think` flag (sets `enable_thinking=false`)
+  - Via DashScope: `reasoning_content` captured (always enabled, cannot disable thinking)
+  - Open-source models: Can be disabled with `--qwen-no-think` flag (sets `enable_thinking=false`)
 - **o1/o3 models** (via OpenAI): Hidden reasoning tokens captured when available
 - **Other models**: Standard content logging
 
 All reasoning data is preserved in logs for analysis. The code extraction searches both content and reasoning fields, ensuring no code is missed regardless of where models place their solutions.
 
+### DashScope API Support
+
+The tool now supports Alibaba's commercial Qwen models via DashScope with specialized handling for thinking models:
+
+**Setup:**
+```bash
+export DASHSCOPE_API_KEY=your_dashscope_key_here
+```
+
+**Usage:**
+```bash
+# Use the high-performance thinking model with optimal settings
+uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 \
+  --model qwen3-235b-a22b-thinking-2507 \
+  --base-url https://dashscope-intl.aliyuncs.com/compatible-mode/v1 \
+  --reasoning_effort medium
+
+# High concurrency for maximum throughput (400+ tokens/sec aggregate)
+uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_30 \
+  --model qwen3-235b-a22b-thinking-2507 \
+  --base-url https://dashscope-intl.aliyuncs.com/compatible-mode/v1 \
+  --max_workers 8
+```
+
+**Key Features:**
+- **Optimized for ARC-AGI**: `qwen3-235b-a22b-thinking-2507` excels at logical reasoning and complex inference
+- **Automatic Thinking Budget**: Sets optimal 4,000 token budget by default (based on performance testing)
+- **High Concurrency**: Tested at 8 parallel workers with excellent efficiency (75%+ parallelization)
+- **Reasoning Capture**: Full thinking process captured in logs for analysis
+- **Performance**: 400+ tokens/sec aggregate throughput with concurrent requests
+
+**Important Notes:**
+- ✅ **Always uses thinking mode** - Commercial DashScope models cannot disable reasoning
+- ⚠️ **`--qwen-no-think` flag ignored** - Shows warning and continues with thinking enabled
+- 🎯 **Medium effort recommended** - Optimal balance of quality (4,000 tokens) and performance
+- 📊 **Excellent scaling** - Linear performance gains up to 8 workers tested
+
+**Model Recommendations:**
+- **`qwen3-235b-a22b-thinking-2507`**: Best for high-difficulty ARC tasks, logical reasoning
+- **`qwen3-30b-a3b-thinking-2507`**: Good for complex reasoning, math, science tasks
 
 ## File Structure
 
@@ -377,6 +480,8 @@ llm_python/
 ├── run_arc_tasks_soar.py       # Main script (all-attempts, voting-based evaluation)
 ├── read_log_stats.py           # Log analysis tool for retrospective statistics
 ├── generate_retrospective_summary.py # Retrospective summary generator for results directories
+├── extract_oracle_solutions.py # Oracle solution extractor and solution count updater
+├── create_null_subset.py       # Create subsets of unsolved tasks (no oracle solutions)
 ├── utils/                       # Utility modules
 │   ├── __init__.py
 │   ├── task_loader.py          # Load ARC tasks and subsets

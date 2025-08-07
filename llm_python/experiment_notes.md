@@ -17,6 +17,358 @@
 
 ---
 
+## 7 Aug 2025
+
+### Comparing performance of the fine-tuned models for correct-10 and correct-50
+
+Models to compare:
+- Trelis/Qwen3-4B_dsarc-programs-correct-10_20250806-233707
+- Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716
+
+Start an instance of the model:
+```bash
+uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path Trelis/Qwen3-4B_dsarc-programs-correct-10_20250806-233707
+```
+and then run benchmarking 3x runs 
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-correct-10_20250806-233707 --base-url http://38.80.152.249:31044/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+and then try this one: Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716:
+```bash
+uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716
+```
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B_dsarc-programs-correct-10_20250806-233707
+Number of runs: 3
+Valid runs: 3
+
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    400    6.5%       6.5%       6.8%     6.0%       13.2%       100.0%       1.9%    
+2    400    6.8%       6.5%       7.8%     5.2%       11.2%       100.0%       1.8%    
+3    400    8.5%       7.8%       9.5%     7.2%       14.0%       100.0%       1.7%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 7.3%
+  Std Dev: 1.1%
+  95% CI: [5.1%, 9.4%]
+  
+and then run benchmarking 3x runs 
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716 --base-url http://107.152.109.12:11909/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716
+Number of runs: 3
+Valid runs: 3
+
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    400    10.0%      9.2%       11.0%    8.5%       17.2%       100.0%       0.8%    
+2    400    9.0%       9.0%       9.2%     6.8%       15.0%       100.0%       0.8%    
+3    400    8.5%       8.2%       9.0%     7.5%       15.8%       100.0%       1.2%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 9.2%
+  Std Dev: 0.8%
+  95% CI: [7.7%, 10.7%]
+
+Try out one run on training, just to see where that scores:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_training --repeat-runs 1 --max_workers 32 --max_attempts 1 --model Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716 --base-url http://107.152.109.12:11909/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-1
+Subset: all_training
+Model: Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716
+Total tasks: 400
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 1,177,695
+Total cost: $0.219667
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 26.5%
+  Pass@2 (Train Majority):  26.5%
+  Oracle (Best Attempt):    26.5%
+  All Train Correct:        24.2%
+  Min 1 Train Correct:      31.2%
+  Min 1 Code Success:       87.5%
+  Max Length Responses:     0.5%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+and now run the 60% checkpoints:
+- Trelis/Qwen3-4B_dsarc-programs-correct-10_20250806-233707-c132
+- Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716-c453
+
+So start up the pods:
+```bash
+uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path Trelis/Qwen3-4B_dsarc-programs-correct-10_20250806-233707-c132
+```
+and the correct-50 pod:
+```bash
+uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716-c453
+```
+and then run the benchmarking:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-correct-10_20250806-233707-c132 --base-url http://38.80.152.249:31044/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+and then the correct-50 pod:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716-c453 --base-url http://107.152.109.12:11603/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+
+
+
+
+## 6 Aug 2025
+
+### Testing out shortest evaluation 10 with soar model
+Startup the soar model:
+```bash
+uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path julien31/Soar-qwen-7b
+```
+
+And then run the test to get some scores:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_10 --repeat-runs 3 --max_workers 32 --max_attempts 8 --model julien31/Soar-qwen-7b --base-url http://38.80.152.249:30813/v1 --unsafe-executor --max-tokens 1000
+```
+and run again with single attempt:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_evaluation_10 --repeat-runs 3 --max_workers 32 --max_attempts 1 --model julien31/Soar-qwen-7b --base-url http://38.80.152.249:30813/v1 --unsafe-executor --max-tokens 1000
+```
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    10     50.0%      50.0%      50.0%    50.0%      50.0%       100.0%       0.0%    
+2    10     70.0%      70.0%      70.0%    70.0%      70.0%       90.0%        0.0%    
+3    10     30.0%      30.0%      30.0%    30.0%      50.0%       80.0%        0.0%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 50.0%
+  Std Dev: 20.0%
+  95% CI: [10.8%, 89.2%]
+
+### Running OSS 120B on ultra tricky
+
+Try running the ultra tricky dataset with the new 'openai/gpt-oss-120b' model. We can run with open router using 'openai/gpt-oss-120b':
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_ultra_tricky --repeat-runs 1 --max_workers 32 --max_attempts 2 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1/ --unsafe-executor --max-tokens 32000
+```
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-1
+Subset: training_ultra_tricky
+Model: openai/gpt-oss-120b
+Total tasks: 80
+Successful API calls: 80/80 (100.0%)
+Total tokens used: 7,328,835
+Total cost: $3.281601
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 26.2%
+  Pass@2 (Train Majority):  25.0%
+  Oracle (Best Attempt):    27.5%
+  All Train Correct:        21.2%
+  Min 1 Train Correct:      48.8%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.8%
+
+Results saved to: /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/logs/20250806_162244/20250806_163935_summary_arc-agi-1_training_ultra_tricky_simple.json
+
+and then running with 64 attempts:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_ultra_tricky --repeat-runs 1 --max_workers 32 --max_attempts 64 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1/ --unsafe-executor --max-tokens 32000
+```
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-1
+Subset: training_ultra_tricky
+Model: openai/gpt-oss-120b
+Total tasks: 80
+Successful API calls: 80/80 (100.0%)
+Total tokens used: 14,410,990
+Total cost: $5.850945
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 8.8%
+  Pass@2 (Train Majority):  7.5%
+  Oracle (Best Attempt):    12.5%
+  All Train Correct:        3.8%
+  Min 1 Train Correct:      13.8%
+  Min 1 Code Success:       23.8%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    76.8%
+
+API Failed before all done.
+
+## 5 Aug 2025
+
+### Test out the Qwen API for response generation.
+
+API only provides thinking mode for the qwen3-235b-a22b-thinking-2507 model.
+
+Will run with this on a simple dataset:
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_training_1 --repeat-runs 1 --max_workers 8 --max_attempts 1 --model qwen3-235b-a22b-thinking-2507 --base-url https://dashscope-intl.aliyuncs.com/compatible-mode/v1 --unsafe-executor --max-tokens 32000 --reasoning_effort medium --limit 1
+```
+
+and then run on what we want to solve - using 16k think tokens!
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_mega_tricky --repeat-runs 1 --max_workers 16 --max_attempts 4 --model qwen3-235b-a22b-thinking-2507 --base-url https://dashscope-intl.aliyuncs.com/compatible-mode/v1 --unsafe-executor --max-tokens 32000 --reasoning_effort high
+```
+These are getting few questions correct, so not worth it.
+
+### Testing out deepseek with openrouter
+Quick test on an easy dataset:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset shortest_training_1 --repeat-runs 1 --max_workers 8 --max_attempts 1 --model deepseek/deepseek-r1-0528 --base-url https://openrouter.ai/api/v1/ --unsafe-executor --max-tokens 32000 --limit 1
+```
+which works, so try the hard dataset:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_mega_tricky --repeat-runs 1 --max_workers 16 --max_attempts 4 --model deepseek/deepseek-r1-0528 --base-url https://openrouter.ai/api/v1/ --unsafe-executor --max-tokens 32000
+```
+These are getting few questions correct, so not worth it.
+
+### Running o4-mini-high with high reasoning
+
+Probably I'm wasting my time and should just be running o4-mini with high reasoning, this gives the best chance:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_mega_tricky --repeat-runs 1 --max_workers 16 --max_attempts 1 --model openai/o4-mini-high --base-url https://openrouter.ai/api/v1/ --unsafe-executor --reasoning_effort high --max-tokens 64000
+```
+Processing: llm_python/logs/20250805_151312
+================================================================================
+🔄 Generating retrospective summary for: llm_python/logs/20250805_151312
+------------------------------------------------------------
+📁 Scanning directory: llm_python/logs/20250805_151312
+📊 Found 58 task files, 0 summary files, 0 other files
+✅ Successfully loaded 58 task results
+📋 Dataset: arc-agi-1
+📋 Subset: training_mega_tricky
+📋 Model: openai/o4-mini-high
+
+📊 COMPLETENESS ANALYSIS:
+   Total tasks: 58
+   Max attempts per task: 1
+   Min attempts per task: 1
+   Average attempts per task: 1.0
+   Attempt distribution:
+     1 attempts: 58 tasks
+
+📊 CALCULATING METRICS for 58 tasks...
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 34.5%
+  Pass@2 (Train Majority):  34.5%
+  Oracle (Best Attempt):    34.5%
+  All Train Correct:        29.3%
+  Min 1 Train Correct:      37.9%
+  Min 1 Code Success:       43.1%
+  Max Length Responses:     1.7%
+  Timeout Responses:        3.4%
+  API Failure Responses:    1.7%
+
+💰 COST ANALYSIS:
+  Total tokens used: 1,082,034
+  Total cost: $0.603355
+  
+### And also run Gemini on high too:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_mega_tricky --repeat-runs 1 --max_workers 16 --max_attempts 1 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1/ --unsafe-executor --reasoning_effort high --max-tokens 64000
+```
+All single attempt:
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
+Dataset: arc-agi-1
+Subset: training_mega_tricky
+Model: google/gemini-2.5-flash
+Number of runs: 2
+Valid runs: 2
+
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    74     10.8%      10.8%      10.8%    8.1%       37.8%       95.9%        0.0%    
+2    74     9.5%       9.5%       9.5%     9.5%       36.5%       94.6%        0.0%    
+
+and then this:
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-1
+Subset: training_mega_tricky
+Model: google/gemini-2.5-flash
+Total tasks: 74
+Successful API calls: 74/74 (100.0%)
+Total tokens used: 9,632,114
+Total cost: $21.134362
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 25.7%
+  Pass@2 (Train Majority):  24.3%
+  Oracle (Best Attempt):    25.7%
+  All Train Correct:        20.3%
+  Min 1 Train Correct:      71.6%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+### Try out the qwen-plus model on dashscope
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_mega_tricky --repeat-runs 1 --max_workers 64 --max_attempts 16 --model qwen-plus --base-url https://dashscope-intl.aliyuncs.com/compatible-mode/v1 --unsafe-executor --max-tokens 8000
+```
+Seems to get all problems mostly wrong... even with this high level of sampling.
+
+### Oracle Extraction & New Subset Creation
+Analyzed today's o4-mini-high and Gemini 2.5 Flash runs:
+- **Extracted 29 oracle programs** across 23 tasks (test correct + all train correct)
+- **Updated solution counts** in `soar_arc_training_solution_counts_enhanced_20250805_180446.json`
+- **Created new subset** `training_new_tricky.txt` with **66 tasks** having ≤7 solutions
+- Breakdown: 30 null, 9 with 2 sols, 6 with 5 sols, 5 with 7 sols, others scattered 1-6
+- Top performers: a78176bb (+3), 11852cab (+3), 6e19193c (+2), e509e548 (+2)
+
+### OSS 120B Triple Run & Updated Subset (v3) 
+Analyzed **THREE** 6 Aug 2025 runs with `openai/gpt-oss-120b` on ultra_tricky subset:
+- **Extracted 71 oracle programs** across **16 tasks** from all three runs combined
+- **Major breakthrough on 7ddcd7ec**: 40 total oracle solutions (5+4+35 across runs) - exceptional consistency!
+- **Top performers**: 7ddcd7ec (+40), 6e19193c (+4), ec883f72 (+4), 11852cab (+4), 508bd3b6 (+4)
+- **Updated solution counts** in `soar_arc_training_solution_counts_enhanced_20250806_184213.json`
+- **Created v3 subset** `training_new_tricky_v3.txt` with **64 tasks** having ≤7 solutions  
+- Breakdown: 29 null, 8 with 2 sols, 8 with 5 sols, 6 with 1 sol, 4 with 3 sols, others scattered
+- **Net progress**: 1 task moved from null to solved (447fd412), **2 fewer tasks** in subset overall (66→64)
+- **Multiple tasks promoted**: 228f6490 (7→8), 4c5c2cf0 (8→9) moved above threshold
+
 ## 1 Aug 2025
 
 - [ ] Fine-tuning quality checks:
@@ -224,7 +576,7 @@ Far too slow to work.
 
 or try out deepseek/deepseek-r1-0528:
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_mega_tricky --repeat-runs 1 --max_workers 32 --max_attempts 8 --model deepseek/deepseek-r1-0528 --base-url https://openrouter.ai/api/v1/ --unsafe-executor --max-tokens 32000 --limit 1
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset training_mega_tricky --repeat-runs 1 --max_workers 8 --max_attempts 8 --model deepseek/deepseek-r1-0528 --base-url https://openrouter.ai/api/v1/ --unsafe-executor --max-tokens 32000 --limit 1
 ```
 Far too slow to work.
 
