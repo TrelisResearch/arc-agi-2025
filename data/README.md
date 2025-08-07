@@ -199,6 +199,7 @@ The following subset files are available:
 - Similar files for **middle** and **longest** (up to 30 tasks each)
 - **grid_size_distributed_30_training.txt**: 30 training tasks evenly distributed by grid size
 - **grid_size_distributed_30_evaluation.txt**: 30 evaluation tasks evenly distributed by grid size
+- **unique_training_tasks.txt**: 233 ARC-AGI-2 training tasks that are NOT present in ARC-AGI-1 (unique to ARC-AGI-2)
 
 **For both datasets:**
 - **tasks_with_multiple_tests.json**: Tasks with more than one test example (JSON, not a subset for evaluation)
@@ -334,6 +335,39 @@ The ARC-AGI-1r dataset is a programmatically generated reverse version of ARC-AG
   "test": [{"input": [[7,0,7,0,0,0,7,0,7]], "output": [[7,0,7]]}]
 }
 ```
+
+## ARC-AGI-2 Unique Training Tasks
+
+A comprehensive analysis of dataset overlap between ARC-AGI-1 and ARC-AGI-2 revealed significant overlap in the training sets. The unique tasks subset provides access to truly novel tasks for experimentation.
+
+### Overlap Analysis Summary:
+
+**ARC-AGI-2 Training Set (1,000 tasks):**
+- **Overlap with ARC-AGI-1 Training**: 391 tasks (39.1%)
+- **Overlap with ARC-AGI-1 Evaluation**: 376 tasks (37.6%)
+- **Total Overlap with ARC-AGI-1**: 767 tasks (76.7%)
+- **Unique to ARC-AGI-2**: 233 tasks (23.3%)
+
+**ARC-AGI-2 Evaluation Set (120 tasks):**
+- **Overlap with ARC-AGI-1**: 6 tasks (5.0%)
+  - Task IDs: `0934a4d8`, `136b0064`, `16b78196`, `981571dc`, `aa4ec2a5`, `da515329`
+- **Unique to ARC-AGI-2**: 114 tasks (95.0%)
+
+### Files:
+- **unique_training_tasks.txt**: List of 233 task IDs unique to ARC-AGI-2
+- **unique_training_tasks_details.json**: Complete overlap analysis with task lists
+- **analyze_dataset_overlap.py**: Script that generated the analysis
+
+This analysis was performed by the `analyze_dataset_overlap.py` script and ensures researchers can work with truly novel tasks when experimenting with ARC-AGI-2.
+
+## Solution Counts and Performance Data
+
+The `data/arc-agi-1-training/` directory contains solution count files that track the number of solution programs found for each ARC-AGI-1 training task:
+
+- **soar_arc_training_solution_counts_enhanced_YYYYMMDD_HHMMSS.json**: Multiple versions with timestamps
+- **training_new_tricky_YYYYMMDD_HHMMSS.txt**: Task lists for particularly challenging tasks
+
+These files contain solution program counts in JSON format, with some tasks having null counts indicating no solutions were found. The most recent enhanced file (20250806_184213) provides the current solution status for ARC-AGI-1 training tasks.
 
 ## grid_size_distributed_30 Subset
 
