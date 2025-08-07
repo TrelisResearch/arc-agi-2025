@@ -83,15 +83,15 @@ def load_hodel_program(py_file_path: str) -> Optional[str]:
         # The content should define a solve function
         # We need to wrap the solve function to handle list->tuple conversion
         # since Hodel programs expect tuple inputs but our framework provides list inputs
-        wrapped_code = content + """
-
-# Wrap the original solve function to handle input conversion
-_original_solve = solve
+        
+        # Replace the function definition to avoid infinite recursion
+        # This handles the case where solve() might be called from within the same module
+        wrapped_code = content.replace('def solve(', 'def solve_original(') + """
 
 def solve(grid):
-    # Convert list of lists to tuple of tuples for Hodel programs
+    # Convert list of lists to tuple of tuples for Hodel programs  
     grid_as_tuples = tuple(tuple(row) for row in grid)
-    result = _original_solve(grid_as_tuples)
+    result = solve_original(grid_as_tuples)
     # Convert result back to list of lists format for consistency
     if isinstance(result, (list, tuple)) and all(isinstance(row, (list, tuple)) for row in result):
         return [list(row) for row in result]

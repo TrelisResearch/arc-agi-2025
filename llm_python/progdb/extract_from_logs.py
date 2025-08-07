@@ -4,17 +4,18 @@ import argparse
 import glob
 import json
 from pathlib import Path
-from typing import List, Optional, TypedDict
+from typing import List, Optional, TypedDict, Set
 import multiprocessing
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 from tokenize import TokenError
+import hashlib
 
 from .schema import SoarProgramExample
 from .code import strip_comments
 from .arc_tester import ArcTester
-from ..utils.task_loader import TaskLoader, TaskData, Grid, TaskExample
+from ..utils.task_loader import TaskLoader
 
 # Initialize utilities
 task_loader = TaskLoader()
@@ -45,23 +46,76 @@ class LogData(TypedDict):
     model: str
 
 
+def _create_program_hash(task_id: str, code: str) -> str:
+    """Create a hash for a (task_id, code) pair to identify duplicates."""
+    content = f"{task_id}:{code}"
+    return hashlib.sha256(content.encode('utf-8')).hexdigest()
+
+
+def _load_existing_programs_index(output_path: Path) -> Set[str]:
+    """Load existing programs and return a set of hashes for duplicate detection."""
+    if not output_path.exists():
+        return set()
+    
+    try:
+        # Read only the columns we need for hashing to reduce memory usage
+        df = pd.read_parquet(output_path, columns=['task_id', 'code'])
+        existing_hashes = set()
+        
+        # Process in chunks to reduce memory usage
+        for _, row in df.iterrows():
+            hash_key = _create_program_hash(row['task_id'], row['code'])
+            existing_hashes.add(hash_key)
+        
+        # Delete the dataframe to free memory immediately
+        del df
+        
+        print(f"Loaded {len(existing_hashes)} existing programs for duplicate detection")
+        return existing_hashes
+    except Exception as e:
+        print(f"Error loading existing parquet file: {e}")
+        return set()
+
+
 def _save_programs_to_parquet(
-    programs: List[SoarProgramExample], output_path: Path
+    programs: List[SoarProgramExample], output_path: Path, append_mode: bool = False
 ) -> None:
     """Save programs to parquet file with explicit schema validation."""
     if not programs:
-        print("No programs to save!")
+        print("No new programs to save!")
         return
 
-    df = pd.DataFrame(programs)
+    new_df = pd.DataFrame(programs)
 
     # Ensure output directory exists
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    if append_mode and output_path.exists():
+        # Append to existing file more efficiently
+        try:
+            # Read existing file
+            existing_df = pd.read_parquet(output_path)
+            
+            # Combine dataframes
+            df = pd.concat([existing_df, new_df], ignore_index=True)
+            print(f"Merged {len(existing_df)} existing programs with {len(new_df)} new programs")
+            
+            # Free memory immediately
+            del existing_df
+        except Exception as e:
+            print(f"Error reading existing file for append: {e}, creating new file")
+            df = new_df
+    else:
+        df = new_df
+        print(f"Saving {len(new_df)} new programs (no existing data)")
+
     # Convert to PyArrow table with explicit schema and save
     table = pa.Table.from_pandas(df, schema=PARQUET_SCHEMA)
     pq.write_table(table, output_path)
-    print(f"Saved {len(programs)} programs to {output_path}")
+    print(f"Saved {len(df)} total programs to {output_path}")
+    
+    # Free memory
+    del df, table
 
 
 def _validate_training_example_against_schema(example: SoarProgramExample) -> None:
@@ -173,7 +227,7 @@ def is_valid_code(code: str) -> bool:
         return False
 
 
-def process_program(log_data: LogData) -> Optional[SoarProgramExample]:
+def process_program(log_data: LogData, existing_hashes: Set[str]) -> Optional[SoarProgramExample]:
     """Process a single program entry with task data and compute correctness."""
 
     try:
@@ -185,6 +239,11 @@ def process_program(log_data: LogData) -> Optional[SoarProgramExample]:
         else:
             # If it failed for some other reason, re-raise
             raise
+
+    # Check if this (task_id, code) pair already exists
+    program_hash = _create_program_hash(log_data["task_id"], program_to_execute)
+    if program_hash in existing_hashes:
+        return None  # Skip duplicate
 
     # Load task data - this could fail due to missing files, which is unexpected
     task_data = task_loader.load_task(log_data["task_id"])
@@ -216,11 +275,20 @@ def process_program(log_data: LogData) -> Optional[SoarProgramExample]:
     # Validate against PyArrow schema immediately
     _validate_training_example_against_schema(training_example)
 
+    # Add this program's hash to the set for future duplicate detection within this run
+    existing_hashes.add(program_hash)
+
     return training_example
 
 
-def extract_and_process_programs_from_log(log_path: str) -> List[SoarProgramExample]:
+def extract_and_process_programs_from_log(args_tuple) -> List[SoarProgramExample]:
     """Extract and process programs from a single log file."""
+    log_path, existing_hashes = args_tuple
+    
+    # Create a local copy of hashes for this worker to modify
+    # This prevents race conditions while still avoiding duplicates from existing data
+    local_hashes = existing_hashes.copy() if isinstance(existing_hashes, set) else set(existing_hashes)
+    
     try:
         log_data_list = extract_log_data(log_path)
         
@@ -228,7 +296,7 @@ def extract_and_process_programs_from_log(log_path: str) -> List[SoarProgramExam
         results = []
         for log_data in log_data_list:
             try:
-                result = process_program(log_data)
+                result = process_program(log_data, local_hashes)
                 if result is not None:
                     results.append(result)
             except Exception as e:
@@ -259,6 +327,12 @@ def main():
         default="programs.parquet",
         help="Output parquet file (default: programs.parquet)",
     )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=1000,
+        help="Number of programs to process before saving (default: 1000)",
+    )
 
     args = parser.parse_args()
 
@@ -268,53 +342,77 @@ def main():
         f"Using {max_workers} worker processes (total cores: {multiprocessing.cpu_count()})"
     )
 
+    output_path = Path(args.output)
+    
+    # Load existing programs for duplicate detection
+    existing_hashes = _load_existing_programs_index(output_path)
+    
     # Find log files
     log_files = glob.glob(args.logs_pattern, recursive=True)
     if not log_files:
         print(f"No log files found matching pattern: {args.logs_pattern}")
         return
 
-    print(f"Processing {len(log_files)} log files...")
+    print(f"Processing {len(log_files)} log files in batches of {args.batch_size}...")
 
-    # Process all files in parallel using multiprocessing
-    all_programs = []
-    output_path = Path(args.output)
+    # Process files in batches to control memory usage
+    total_new_programs = 0
+    batch_programs = []
+    files_processed = 0
+    
+    # Don't copy the hash set for each worker - use shared reference
+    # This reduces memory usage significantly
+    args_list = [(log_file, existing_hashes) for log_file in log_files]
     
     with multiprocessing.Pool(processes=max_workers) as pool:
-        # Process files in parallel with progress reporting
-        results = []
-        for i, result in enumerate(pool.imap(extract_and_process_programs_from_log, log_files)):
-            results.append(result)
+        # Process files and save in batches
+        for i, result in enumerate(pool.imap(extract_and_process_programs_from_log, args_list)):
+            batch_programs.extend(result)
+            files_processed += 1
+            
             # Simple progress reporting every 100 files
-            if (i + 1) % 100 == 0:
-                print(f"  Processed {i + 1}/{len(log_files)} files")
+            if files_processed % 100 == 0:
+                print(f"  Processed {files_processed}/{len(log_files)} files, {len(batch_programs)} programs in current batch")
+            
+            # Save batch when it reaches the specified size
+            if len(batch_programs) >= args.batch_size:
+                if batch_programs:  # Only save if we have programs
+                    append_mode = total_new_programs > 0  # Append if not the first batch
+                    _save_programs_to_parquet(batch_programs, output_path, append_mode)
+                    total_new_programs += len(batch_programs)
+                    print(f"  Saved batch of {len(batch_programs)} programs. Total saved: {total_new_programs}")
+                    batch_programs = []  # Clear the batch
         
-        # Flatten results and collect all programs
-        for programs in results:
-            all_programs.extend(programs)
+        # Save any remaining programs in the final batch
+        if batch_programs:
+            append_mode = total_new_programs > 0
+            _save_programs_to_parquet(batch_programs, output_path, append_mode)
+            total_new_programs += len(batch_programs)
+            print(f"  Saved final batch of {len(batch_programs)} programs")
 
-    print(
-        f"Extracted and validated {len(all_programs)} programs from {len(log_files)} files"
-    )
+    print(f"Extracted and validated {total_new_programs} new programs from {len(log_files)} files")
 
-    # Final save
-    _save_programs_to_parquet(all_programs, output_path)
-
-    # Print some basic stats
-    if all_programs:
-        df = pd.DataFrame(all_programs)
-        print("\nStats:")
-        print(f"  Unique tasks: {df['task_id'].nunique()}")
-        print(f"  Unique models: {df['model'].nunique()}")
-        
-        # Calculate average accuracies from boolean lists
-        train_accuracies = [sum(correct_list) / len(correct_list) if correct_list else 0.0 
-                           for correct_list in df['correct_train_input']]
-        test_accuracies = [sum(correct_list) / len(correct_list) if correct_list else 0.0 
-                          for correct_list in df['correct_test_input']]
-        
-        print(f"  Average training accuracy: {sum(train_accuracies) / len(train_accuracies):.3f}")
-        print(f"  Average test accuracy: {sum(test_accuracies) / len(test_accuracies):.3f}")
+    # Print some basic stats on the new programs (read only final batch to avoid memory issues)
+    if total_new_programs > 0:
+        print("\nFinal statistics:")
+        try:
+            # Read the output file to get total stats
+            total_df = pd.read_parquet(output_path)
+            print(f"  Total programs in output file: {len(total_df)}")
+            print(f"  Total unique tasks: {total_df['task_id'].nunique()}")
+            print(f"  Total unique models: {total_df['model'].nunique()}")
+            
+            # Calculate average accuracies from boolean lists (on full dataset)
+            train_accuracies = [sum(correct_list) / len(correct_list) if correct_list else 0.0 
+                               for correct_list in total_df['correct_train_input']]
+            test_accuracies = [sum(correct_list) / len(correct_list) if correct_list else 0.0 
+                              for correct_list in total_df['correct_test_input']]
+            
+            print(f"  Average training accuracy: {sum(train_accuracies) / len(train_accuracies):.3f}")
+            print(f"  Average test accuracy: {sum(test_accuracies) / len(test_accuracies):.3f}")
+            
+        except Exception as e:
+            print(f"Error reading final parquet file for stats: {e}")
 
 
 if __name__ == "__main__":
