@@ -1,6 +1,6 @@
 # RunPod Pod Management
 
-Create and manage RunPod pods using YAML/JSON templates.
+This directory contains scripts and templates for creating and managing RunPod pods with configurable health checks.
 
 ## Setup
 
@@ -12,50 +12,119 @@ Or add it to your `.env` file.
 
 ## Usage
 
-**Recommended (TCP with testing):**
 ```bash
-uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path <model> [options]
-```
-*Waits for container + tests endpoint = ready-to-use experience*
-
-**Skip endpoint testing (faster setup):**
-```bash
-uv run runpod/create_pod_tcp.py sglang-tcp --no-health-check -- --model-path <model> [options]
-```
-*Shows connection info immediately, no waiting*
-
-**Legacy (HTTP only):**
-```bash
-uv run runpod/create_pod.py <template> [options] -- [extra_args...]
+python3 create_pod.py <template> [--no-health-check] [--debug] -- [docker_args...]
 ```
 
-## Examples
+### Examples
 
-**Recommended - TCP with automatic testing:**
 ```bash
-uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path Qwen/Qwen3-4B
+# Create an HTTP pod with default health checks
+python3 create_pod.py sglang -- --model-path Qwen/Qwen3-4B
+
+# Create a TCP pod with OpenAI endpoint testing
+python3 create_pod.py sglang-tcp -- --model-path Qwen/Qwen3-4B --reasoning-parser qwen3
+
+# Skip health checks entirely
+python3 create_pod.py sglang --no-health-check -- --model-path Qwen/Qwen3-4B
+
+# Enable debug output
+python3 create_pod.py sglang --debug -- --model-path Qwen/Qwen3-4B
 ```
 
-**With reasoning parser:**
-```bash
-uv run runpod/create_pod_tcp.py sglang-tcp -- --model-path Qwen/Qwen3-4B --reasoning-parser qwen3
+## Health Check Configuration
+
+Templates can include a `healthCheck` section to configure how the pod's readiness is verified. This section is automatically stripped before sending the configuration to RunPod.
+
+### Health Check Types
+
+1. **HTTP** (`type: "http"`)
+   - Tests HTTP endpoint at specified path
+   - Default path: `/health`
+   - Good for: Web services, APIs with health endpoints
+
+2. **OpenAI** (`type: "openai"`)
+   - Tests OpenAI-compatible API endpoint with a dummy request
+   - Requires model path from command line arguments
+   - Good for: SGLang, vLLM, other inference libraries
+
+3. **TCP** (`type: "tcp"`)
+   - Basic TCP connectivity check
+   - Tests if port is accepting connections
+   - Good for: Database connections, basic service validation
+
+4. **None** (`type: "none"`)
+   - Skips health checks entirely
+   - Pod is considered ready immediately after startup
+
+### Configuration Options
+
+```yaml
+healthCheck:
+  type: "http"        # Required: http, openai, tcp, or none
+  path: "/health"     # Optional: Path for HTTP checks (default: /health)
+  timeout: 300        # Optional: Timeout in seconds (default varies by type)
 ```
 
-**Skip health check for faster startup:**
-```bash
-uv run runpod/create_pod_tcp.py sglang-tcp --no-health-check -- --model-path Qwen/Qwen2.5-72B
+### Default Behavior
+
+If no `healthCheck` section is provided:
+- **TCP ports**: Uses OpenAI health check (tests `/v1` endpoint)
+- **HTTP ports**: Uses HTTP health check with `/health` path
+
+## Template Examples
+
+### HTTP Service with Custom Health Endpoint
+```yaml
+name: "my-web-service"
+# ... other config ...
+ports:
+  - "8080/http"
+healthCheck:
+  type: "http"
+  path: "/api/health"
+  timeout: 180
 ```
 
-## Advanced Options
-
-**Debug mode (shows full pod info):**
-```bash
-uv run runpod/create_pod_tcp.py sglang-tcp --debug -- --model-path Qwen/Qwen3-4B
+### OpenAI-Compatible Inference Server
+```yaml
+name: "sglang-server"
+# ... other config ...
+ports:
+  - "8080/tcp"
+healthCheck:
+  type: "openai"
+  timeout: 600
 ```
 
-**Skip health check for faster startup:**
-```bash
-uv run runpod/create_pod_tcp.py sglang-tcp --no-health-check -- --model-path Qwen/Qwen3-4B
+### Database with TCP Check
+```yaml
+name: "postgres-db"
+# ... other config ...
+ports:
+  - "5432/tcp"
+healthCheck:
+  type: "tcp"
+  timeout: 120
 ```
 
-The scripts automatically handle pod creation, health checks, and cleanup on Ctrl+C.
+### Skip Health Checks
+```yaml
+name: "debug-pod"
+# ... other config ...
+healthCheck:
+  type: "none"
+```
+
+## Features
+
+- **Unified Script**: Handles both HTTP and TCP ports in a single script
+- **Configurable Health Checks**: Template-based health check configuration
+- **Auto-detection**: Smart defaults based on port types
+- **Direct + Proxy**: Tests both direct IP connections and RunPod proxy
+- **Graceful Shutdown**: Ctrl+C properly cleans up pods
+- **Debug Mode**: Show detailed pod information with `--debug`
+
+## Environment
+
+Requires `RUNPOD_API_KEY` environment variable to be set.
