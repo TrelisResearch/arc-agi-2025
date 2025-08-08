@@ -7,6 +7,7 @@ import datetime
 import time
 import threading
 import numpy as np
+import requests
 from pathlib import Path
 from typing import Dict, List, Optional
 from dotenv import load_dotenv
@@ -137,7 +138,8 @@ class ARCTaskRunnerSimple:
     def __init__(self, model: str = "gpt-4.1-nano", max_workers: int = 1, rate_limit_delay: float = 0.0, 
                  max_attempts: int = 8, run_number: int = 0, base_url: str = None, debug: bool = False, 
                  max_tokens: int = None, temperature: float = None, reasoning_effort: str = "low", 
-                 qwen_no_think: bool = False, prompt_version: str = "soar", unsafe_executor: bool = False):
+                 qwen_no_think: bool = False, prompt_version: str = "soar", unsafe_executor: bool = False, 
+                 lora_adapter: str = None):
         self.model = model
         self.max_workers = max_workers
         self.rate_limit_delay = rate_limit_delay
@@ -158,6 +160,7 @@ class ARCTaskRunnerSimple:
         self.debug = debug
         self.max_tokens = max_tokens
         self.temperature = temperature
+        self.lora_adapter = lora_adapter
         
         # Set executor type based on safety flag
         self.executor_type = "unrestricted" if unsafe_executor else "docker"
@@ -184,6 +187,8 @@ class ARCTaskRunnerSimple:
             self.client = OpenAI(api_key=self.api_key, timeout=client_timeout)
             print(f"📝 Using OpenAI endpoint")
             print(f"⏰ Timeouts: API={self.api_timeout}s, Client={client_timeout}s, ⚠️ WORKER={self.worker_timeout}s ({self.worker_timeout//60}min per run)")
+        
+        # LORA adapter will be specified in API calls if provided
         
         # Initialize fresh instances to prevent state leakage
         self.task_loader = TaskLoader()
@@ -487,6 +492,12 @@ class ARCTaskRunnerSimple:
                 # Note: DashScope commercial models don't support enable_thinking=False
                 if self.base_url != "https://dashscope-intl.aliyuncs.com/compatible-mode/v1":
                     kwargs["extra_body"]["chat_template_kwargs"] = {"enable_thinking": False}
+            
+            # Add LORA adapter specification if provided
+            if self.lora_adapter:
+                if "extra_body" not in kwargs:
+                    kwargs["extra_body"] = {}
+                kwargs["extra_body"]["lora"] = self.lora_adapter
             
             response = self.client.chat.completions.create(**kwargs)
             return response, kwargs
@@ -1302,7 +1313,8 @@ class ARCTaskRunnerSimple:
                 reasoning_effort=self.reasoning_effort,
                 qwen_no_think=self.qwen_no_think,
                 prompt_version=self.prompt_version,
-                unsafe_executor=(self.executor_type == "unrestricted")
+                unsafe_executor=(self.executor_type == "unrestricted"),
+                lora_adapter=self.lora_adapter
             )
             
             try:
@@ -1517,6 +1529,7 @@ def main():
     parser.add_argument("--unsafe-executor", action="store_true", 
                         help="⚠️  UNSAFE: Use unrestricted executor (no Docker sandboxing). Generated code runs directly on your system. SECURITY RISK!")
     parser.add_argument("--prompt_version", type=str, default="soar", help="Version of prompts to use")
+    parser.add_argument("--lora-adapter", type=str, help="LORA adapter name to load on sglang server (e.g., 'ckpt-1057')")
     
     args = parser.parse_args()
     
@@ -1542,7 +1555,8 @@ def main():
         reasoning_effort=args.reasoning_effort,
         qwen_no_think=args.qwen_no_think,
         prompt_version=args.prompt_version,
-        unsafe_executor=args.unsafe_executor
+        unsafe_executor=args.unsafe_executor,
+        lora_adapter=args.lora_adapter
     )
     
     try:

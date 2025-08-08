@@ -17,7 +17,84 @@
 
 ---
 
+## 8 Aug 2025 Tasks
+
+### Support LoRA adapters in run_arc_tasks_soar
+
+Start a pod with three lora adapters:
+```bash
+uv run runpod/create_pod.py sglang -- --model-path Qwen/Qwen3-4B \
+  --lora-paths \
+    ckpt-1057=Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-trainer/checkpoint-1057 \
+    ckpt-2114=Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-trainer/checkpoint-2114 \
+    ckpt-3171=Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-trainer/checkpoint-3171 \
+  --max-loras-per-batch 3 \
+  --max-loaded-loras 3
+```
+Then run the benchmarking on arc-agi-1 eval all tasks:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 8 --model Qwen/Qwen3-4B --base-url http://38.80.152.249:30565/v1 --unsafe-executor --max-tokens 1000 --lora-adapter ckpt-1057 --qwen-no-think
+```
+
+
+and then the next adapter:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 8 --model Qwen/Qwen3-4B --base-url http://38.80.152.249:30565/v1 --unsafe-executor --max-tokens 1000 --lora-adapter ckpt-2114 --qwen-no-think
+```
+
+
+and then the last adapter:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 8 --model Qwen/Qwen3-4B --base-url http://38.80.152.249:30565/v1 --unsafe-executor --max-tokens 1000 --lora-adapter ckpt-3171 --qwen-no-think
+```
+
+
+
+
+
+
+### Generate arc-agi-2 programs with the soar model julien 7b
+
+Start a pod (note the updated command as of yesterday):
+```bash
+uv run runpod/create_pod.py sglang -- --model-path julien31/Soar-qwen-7b
+```
+
+and then run the benchmarking:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset unique_training_tasks --repeat-runs 1 --max_workers 32 --max_attempts 64 --model julien31/Soar-qwen-7b --base-url http://38.80.152.249:30565/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+
+
+
 ## 7 Aug 2025
+
+### Try out the new unique training tasks for arc-agi-2
+
+Use the openai oss model with 8 attempts:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset unique_training_tasks --repeat-runs 1 --max_workers 32 --max_attempts 8 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1/ --unsafe-executor --max-tokens 32000
+```
+Dataset: arc-agi-2
+Subset: unique_training_tasks
+Model: openai/gpt-oss-120b
+Total tasks: 233
+Successful API calls: 233/233 (100.0%)
+Total tokens used: 21,949,739
+Total cost: $10.098633
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 35.6%
+  Pass@2 (Train Majority):  34.8%
+  Oracle (Best Attempt):    38.6%
+  All Train Correct:        30.9%
+  Min 1 Train Correct:      54.5%
+  Min 1 Code Success:       99.6%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    1.1%
+
+idea is to just run the soar model to get loads of programs.
 
 ### Pushing the full trainer state and loras up to hub
 

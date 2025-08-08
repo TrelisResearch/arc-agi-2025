@@ -88,6 +88,9 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --m
 
 # Run repeated tests with statistics
 uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --repeat-runs 3
+
+# Use LORA adapter (server must be started with LORA loaded)
+uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --base-url http://localhost:8000/v1 --lora-adapter ckpt-1057
 ```
 
 **Key Features:**
