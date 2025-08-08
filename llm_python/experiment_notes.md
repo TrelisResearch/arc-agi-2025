@@ -268,6 +268,39 @@ and re-run again, this time without the transductive filtering:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171 --base-url http://107.152.109.18:11155/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
 ```
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171
+Number of runs: 3
+Valid runs: 3
+
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    400    15.0%      14.2%      15.8%    12.0%      31.2%       100.0%       2.7%    
+2    400    14.8%      14.8%      17.5%    14.0%      30.5%       99.8%        3.2%    
+3    400    15.5%      14.2%      16.5%    12.5%      31.8%       100.0%       2.6%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 15.1%
+  Std Dev: 0.4%
+  95% CI: [14.3%, 15.8%]
+
+Train Majority Pass2:
+  Mean: 14.4%
+  Std Dev: 0.3%
+  95% CI: [13.9%, 15.0%]
+
+All Test Correct:
+  Mean: 16.6%
+  Std Dev: 0.9%
+  95% CI: [14.9%, 18.3%]
 
 and to be sure, run the final checkpoint:
 ```bash
@@ -406,6 +439,16 @@ Total cost: $9.805773
   Max Length Responses:     3.2%
   Timeout Responses:        0.0%
   API Failure Responses:    0.0%
+
+For comparison, let's start up a pod of julien31/Soar-qwen-7b and run the same ARC-AGI-2 eval set:
+```bash
+uv run runpod/create_pod.py sglang -- --model-path julien31/Soar-qwen-7b
+```
+and then run the benchmarking:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset all_evaluation --repeat-runs 1 --max_workers 64 --max_attempts 64 --model julien31/Soar-qwen-7b --base-url http://38.80.152.249:30886/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+
 
 
 ### Test out turning off the transductive filtering
