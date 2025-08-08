@@ -805,10 +805,12 @@ class ARCTaskRunnerSimple:
         program_extracted = bool(program and program.strip())
         
         # Check for transductive/cheating behavior
-        is_transductive = False
-        transduction_reason = ""
+        is_train_transductive = False
+        train_transduction_reason = ""
+        is_test_transductive = False
+        test_transduction_reason = ""
         if program_extracted:
-            is_transductive, transduction_reason = is_transduction_cheating(program, task_data)
+            is_train_transductive, train_transduction_reason, is_test_transductive, test_transduction_reason = is_transduction_cheating(program, task_data)
         
         # Evaluate on training examples (skip if transductive)
         train_results = []
@@ -819,18 +821,18 @@ class ARCTaskRunnerSimple:
         for ex in task_data['train']:
             if not program_extracted:
                 pred, err, tout = None, 'no program', False
-            elif is_transductive:
-                pred, err, tout = None, 'transductive', False
+            elif is_train_transductive:
+                pred, err, tout = None, 'train_transductive', False
             else:
                 pred, err, tout = self.executor.execute_program_with_timeout(program, ex['input'])
             
-            # Mark as incorrect if transductive
-            is_corr = (pred == ex['output']) if (pred is not None and not err and not tout and not is_transductive) else False
+            # Mark as incorrect if train transductive
+            is_corr = (pred == ex['output']) if (pred is not None and not err and not tout and not is_train_transductive) else False
             train_results.append({'predicted': pred, 'expected': ex['output'], 'correct': is_corr, 'error': err, 'timed_out': tout})
             
             if is_corr:
                 train_correct += 1
-            elif err and err != 'no program' and err != 'transductive':
+            elif err and err != 'no program' and err != 'train_transductive':
                 train_exec_errors += 1
             elif tout:
                 train_exec_timeouts += 1
@@ -850,17 +852,18 @@ class ARCTaskRunnerSimple:
             
             if not program_extracted:
                 test_pred, test_err, test_tout = None, 'no program', False
-            elif is_transductive:
-                test_pred, test_err, test_tout = None, 'transductive', False
+            elif is_train_transductive:
+                test_pred, test_err, test_tout = None, 'train_transductive', False
             else:
+                # Allow test execution even if test_transductive (for metadata logging)
                 test_pred, test_err, test_tout = self.executor.execute_program_with_timeout(program, test_input)
-                if test_err and test_err != 'no program' and test_err != 'transductive':
+                if test_err and test_err != 'no program' and test_err != 'train_transductive':
                     any_test_exec_error = True
                 if test_tout:
                     any_test_exec_timeout = True
             
-            # Mark as incorrect if transductive
-            is_correct = (test_pred == test_expected) if (test_pred is not None and not test_err and not test_tout and not is_transductive) else False
+            # Mark as correct/incorrect normally (test transduction doesn't block execution)
+            is_correct = (test_pred == test_expected) if (test_pred is not None and not test_err and not test_tout and not is_train_transductive) else False
             
             if is_correct:
                 test_correct_count += 1
@@ -887,8 +890,13 @@ class ARCTaskRunnerSimple:
             'attempt_cost': attempt_cost,
             'program_extracted': program_extracted,
             'program': program,
-            'is_transductive': is_transductive,
-            'transduction_reason': transduction_reason,
+            'is_train_transductive': is_train_transductive,
+            'train_transduction_reason': train_transduction_reason,
+            'is_test_transductive': is_test_transductive,
+            'test_transduction_reason': test_transduction_reason,
+            # Legacy field for backwards compatibility
+            'is_transductive': is_train_transductive,
+            'transduction_reason': train_transduction_reason,
             'train_results': train_results,
             'train_accuracy': train_accuracy,
             'train_exec_errors': train_exec_errors,
@@ -1295,7 +1303,8 @@ class ARCTaskRunnerSimple:
         empty_responses = sum(1 for attempt in attempts if attempt.get('empty_response', False))
         max_length_hits = sum(1 for attempt in attempts if attempt.get('hit_max_tokens', False))
         no_code_extracted = sum(1 for attempt in attempts if not attempt.get('program_extracted', False))
-        transductive_attempts = sum(1 for attempt in attempts if attempt.get('is_transductive', False))
+        train_transductive_attempts = sum(1 for attempt in attempts if attempt.get('is_train_transductive', False))
+        test_transductive_attempts = sum(1 for attempt in attempts if attempt.get('is_test_transductive', False))
         train_exec_errors = sum(1 for attempt in attempts if attempt.get('train_exec_errors', 0) > 0)
         train_exec_timeouts = sum(1 for attempt in attempts if attempt.get('train_exec_timeouts', 0) > 0)
         test_exec_errors = sum(1 for attempt in attempts if attempt.get('test_exec_error', False))
@@ -1320,8 +1329,10 @@ class ARCTaskRunnerSimple:
             issues.append(f"{max_length_hits} max-len")
         if no_code_extracted > 0:
             issues.append(f"{no_code_extracted} no-code")
-        if transductive_attempts > 0:
-            issues.append(f"{transductive_attempts} transductive")
+        if train_transductive_attempts > 0:
+            issues.append(f"{train_transductive_attempts} train-transductive")
+        if test_transductive_attempts > 0:
+            issues.append(f"{test_transductive_attempts} test-transductive")
         if train_exec_errors > 0:
             issues.append(f"{train_exec_errors} train-exec-error")
         if train_exec_timeouts > 0:

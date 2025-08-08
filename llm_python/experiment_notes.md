@@ -180,8 +180,29 @@ And then run 3x on the second checkpoint:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c2114 --base-url http://107.152.109.18:11154/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
 ```
-Run 1: 
-Run 2: 18.8%
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c2114
+Number of runs: 3
+Valid runs: 3
+
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    400    15.0%      14.0%      16.5%    10.5%      26.5%       100.0%       4.8%    
+2    400    14.5%      13.8%      16.5%    10.5%      25.0%       100.0%       4.5%    
+3    400    12.0%      11.0%      13.2%    10.5%      24.8%       100.0%       4.1%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 13.8%
+  Std Dev: 1.6%
+  95% CI: [10.7%, 17.0%]
 
 and then the third checkpoint:
 ```bash
@@ -219,8 +240,34 @@ And then run 3x on the third checkpoint:
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171 --base-url http://107.152.109.18:11155/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
 ```
 
-Run 1: 
-Run 2: 16.2%
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171
+Number of runs: 3
+Valid runs: 3
+
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    400    17.8%      17.2%      19.5%    13.8%      32.2%       100.0%       2.7%    
+2    400    15.8%      15.8%      16.5%    12.5%      27.8%       100.0%       3.0%    
+3    400    16.5%      15.8%      19.2%    13.2%      32.8%       100.0%       2.6%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 16.7%
+  Std Dev: 1.0%
+  95% CI: [14.7%, 18.6%]
+
+and re-run again, this time without the transductive filtering:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171 --base-url http://107.152.109.18:11155/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
 
 and to be sure, run the final checkpoint:
 ```bash
@@ -257,7 +304,41 @@ And then run 3x on the final checkpoint:
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c4228 --base-url http://107.152.109.18:11142/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
 ```
 
-Run 1: 15.8
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c4228
+Number of runs: 3
+Valid runs: 3
+
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    400    13.2%      13.0%      13.8%    11.5%      26.8%       100.0%       1.2%    
+2    400    13.5%      13.2%      14.5%    9.8%       26.8%       100.0%       1.3%    
+3    400    14.0%      13.8%      15.2%    11.0%      26.0%       100.0%       1.8%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 13.6%
+  Std Dev: 0.4%
+  95% CI: [12.8%, 14.3%]
+
+### Checkpoint Performance Summary
+
+![Checkpoint Performance Comparison](../checkpoint_performance_comparison.png)
+
+**Summary of four checkpoints with multiple runs:**
+- **Checkpoint c1057**: 12.2% ± 2.0%
+- **Checkpoint c2114**: 13.8% ± 1.6% 
+- **Checkpoint c3171**: 16.7% ± 1.0% (Best Performance)
+- **Checkpoint c4228**: 13.6% ± 0.4% (Most Consistent)
+
+Checkpoint c3171 achieved the highest performance at 16.7% weighted voting score, while c4228 showed the most consistency with ±0.4% standard deviation.
 
 And also run 3x on the final pushed model - Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749:
 
@@ -276,8 +357,41 @@ Run 2: 12%
 ### Test out the final pushed model on ARC-AGI-2 eval set
 and then run inference on it with 3x runs:
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 64 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749 --base-url http://107.152.109.18:11813/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset all_evaluation --repeat-runs 1 --max_workers 64 --max_attempts 64 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749 --base-url http://107.152.109.18:11813/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
 ```
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-2
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749
+Total tasks: 120
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 56,195,615
+Total cost: $9.803030
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 4.2%
+  Pass@2 (Train Majority):  4.2%
+  Oracle (Best Attempt):    4.2%
+  All Train Correct:        3.3%
+  Min 1 Train Correct:      16.7%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     3.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+and re-run now that the transductive logic has been updated:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset all_evaluation --repeat-runs 1 --max_workers 64 --max_attempts 64 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749 --base-url http://107.152.109.18:11813/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+
+
+
+
+
+### Test out turning off the transductive filtering
+We'll run the best checkpoint, which is...
 
 ### Generate arc-agi-2 programs with the soar model julien 7b
 
