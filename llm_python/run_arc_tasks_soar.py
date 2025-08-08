@@ -16,7 +16,8 @@ from openai import OpenAI
 try:
     # Try relative imports first (when run as module)
     from .utils.task_loader import TaskLoader
-    from .utils.scoring import GridScorer, ProgramExecutor
+    from .utils.scoring import GridScorer
+    from .progdb.arc_tester import ArcTester
     from .utils.prompt_utils import create_arc_prompt, extract_python_code
     from .utils.metrics_utils import calculate_task_metrics, format_metrics_display, metrics_to_percentages
     from .utils.timeout_utils import execute_with_timeout
@@ -25,7 +26,8 @@ try:
 except ImportError:
     # Fall back to absolute imports (when run directly)
     from utils.task_loader import TaskLoader
-    from utils.scoring import GridScorer, ProgramExecutor
+    from utils.scoring import GridScorer
+    from progdb.arc_tester import ArcTester
     from utils.prompt_utils import create_arc_prompt, extract_python_code
     from utils.metrics_utils import calculate_task_metrics, format_metrics_display, metrics_to_percentages
     from utils.timeout_utils import execute_with_timeout
@@ -196,7 +198,7 @@ class ARCTaskRunnerSimple:
         # Initialize fresh instances to prevent state leakage
         self.task_loader = TaskLoader()
         self.scorer = GridScorer()
-        self.executor = ProgramExecutor(timeout=0.5, executor_type=self.executor_type)
+        self.executor = ArcTester(timeout=0.5, executor_type=self.executor_type)
         self.prompt_loader = PromptLoader()
         
         # Thread-safe cost tracking
@@ -1363,11 +1365,11 @@ class ARCTaskRunnerSimple:
                 run_files.append(None)  # Mark as failed
             finally:
                 # Explicit cleanup to prevent state leakage
-                # ProgramExecutor uses singleton class variables that persist across instances
+                # ArcTester uses singleton class variables that persist across instances
                 # Without cleanup, second run reuses stale executor context causing systematic failures
                 with self._cleanup_lock:  # Thread-safe cleanup
                     try:
-                        ProgramExecutor.cleanup_executor()  # Fix: Clean up singleton state
+                        ArcTester.cleanup_executor()  # Fix: Clean up singleton state
                         if run_num < repeat_runs:  # Only print for non-final runs
                             print(f"🧹 Cleaned up executor state after run {run_num}")
                     except Exception as cleanup_e:
@@ -1599,7 +1601,7 @@ def main():
         # Final cleanup to ensure clean shutdown
         with runner._cleanup_lock:  # Thread-safe cleanup
             try:
-                ProgramExecutor.cleanup_executor()
+                ArcTester.cleanup_executor()
             except Exception as e:
                 print(f"⚠️ Final cleanup warning: {e}")
 

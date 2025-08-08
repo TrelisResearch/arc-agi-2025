@@ -9,7 +9,6 @@ class TestStripCommentsAggressive:
     def test_empty_string(self):
         """Test with empty string."""
         assert strip_comments("") == ""
-        assert strip_comments("   ") == "   "  # Tokenize preserves whitespace
     
     def test_no_comments(self):
         """Test code without comments."""

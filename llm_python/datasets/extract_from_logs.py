@@ -12,31 +12,16 @@ import pyarrow.parquet as pq
 from tokenize import TokenError
 import hashlib
 
+from .schema import PARQUET_SCHEMA
+
 from .schema import SoarProgramExample
-from .code import strip_comments
-from .arc_tester import ArcTester
+from ..utils.code import strip_comments
+from ..utils.arc_tester import ArcTester
 from ..utils.task_loader import TaskLoader
 
 # Initialize utilities
 task_loader = TaskLoader()
 arc_tester = ArcTester(timeout=2, executor_type="unrestricted")
-
-# Define explicit PyArrow schema for our parquet file
-PARQUET_SCHEMA = pa.schema(
-    [
-        ("task_id", pa.string()),
-        ("reasoning", pa.string()),
-        ("code", pa.string()),
-        ("correct_train_input", pa.list_(pa.bool_())),
-        ("correct_test_input", pa.list_(pa.bool_())),
-        ("predicted_train_output", pa.list_(pa.list_(pa.list_(pa.int64())))),
-        ("predicted_test_output", pa.list_(pa.list_(pa.list_(pa.int64())))),
-        ("train_input", pa.list_(pa.list_(pa.list_(pa.int64())))),
-        ("test_input", pa.list_(pa.list_(pa.list_(pa.int64())))),
-        ("model", pa.string()),
-        ("generation", pa.int64()),
-    ]
-)
 
 class LogData(TypedDict):
     """Schema for data extracted from log files"""
@@ -264,8 +249,14 @@ def process_program(log_data: LogData, existing_hashes: Set[str]) -> Optional[So
         code=program_to_execute,  # Store the version we actually executed
         correct_train_input=test_result.correct_train_input,
         correct_test_input=test_result.correct_test_input,
-        predicted_train_output=test_result.train_outputs,
-        predicted_test_output=test_result.test_outputs,
+        predicted_train_output=[
+            output if output is not None else []
+            for output in test_result.train_outputs
+        ],
+        predicted_test_output=[
+            output if output is not None else []
+            for output in test_result.test_outputs
+        ],
         train_input=test_result.train_inputs,
         test_input=test_result.test_inputs,
         model=log_data["model"],

@@ -2,7 +2,8 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from utils.scoring import GridScorer, ProgramExecutor
+from llm_python.utils.scoring import GridScorer
+from llm_python.progdb.arc_tester import ArcTester
 
 class TestGridScorer:
     """Basic tests for GridScorer"""
@@ -40,12 +41,12 @@ class TestGridScorer:
         assert result['error'] == 'Grid height mismatch'
 
 
-class TestProgramExecutor:
-    """Basic tests for ProgramExecutor using real executor"""
+class TestArcTester:
+    """Basic tests for ArcTester using real executor"""
     
     def test_simple_transform(self):
         """Test executing a simple transform function"""
-        executor = ProgramExecutor(timeout=1.0, executor_type="unrestricted")
+        executor = ArcTester(timeout=1.0, executor_type="unrestricted")
         
         program = """
 def transform(grid):
@@ -61,7 +62,7 @@ def transform(grid):
     
     def test_solve_function(self):
         """Test executing a solve function"""
-        executor = ProgramExecutor(timeout=1.0, executor_type="unrestricted")
+        executor = ArcTester(timeout=1.0, executor_type="unrestricted")
         
         program = """
 def solve(grid):
@@ -77,7 +78,7 @@ def solve(grid):
     
     def test_syntax_error(self):
         """Test program with syntax error"""
-        executor = ProgramExecutor(timeout=1.0, executor_type="unrestricted")
+        executor = ArcTester(timeout=1.0, executor_type="unrestricted")
         
         program = """
 def transform(grid):
@@ -93,7 +94,7 @@ def transform(grid):
     
     def test_no_function(self):
         """Test program with no valid function"""
-        executor = ProgramExecutor(timeout=1.0, executor_type="unrestricted")
+        executor = ArcTester(timeout=1.0, executor_type="unrestricted")
         
         program = "x = 5"  # No function
         test_input = [[1, 2]]
@@ -107,4 +108,4 @@ def transform(grid):
     @classmethod
     def teardown_class(cls):
         """Cleanup the executor after tests"""
-        ProgramExecutor.cleanup_executor()
+        ArcTester.cleanup_executor()
