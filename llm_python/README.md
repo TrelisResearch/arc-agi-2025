@@ -495,12 +495,12 @@ llm_python/
 │   ├── voting_utils.py         # Voting algorithms and prediction processing
 │   ├── metrics_utils.py        # Metrics calculation and formatting
 │   ├── transduction.py         # Transductive cheating detection
-│   ├── test_scoring.py         # Tests for scoring utilities
 │   └── tests/                  # Tests for utility modules
 │       ├── __init__.py
 │       ├── test_task_loader.py
 │       ├── test_prompt_utils.py
 │       ├── test_timeout_utils.py
+│       ├── test_scoring.py     # Tests for scoring utilities
 │       ├── test_voting_utils.py
 │       └── test_transduction.py
 ├── generate_training_data.py   # Extract training data from logs

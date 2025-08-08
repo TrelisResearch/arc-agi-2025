@@ -12,10 +12,10 @@ from datetime import datetime
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 try:
-    from progdb.arc_tester import ArcTester
+    from llm_python.utils.arc_tester import ArcTester
 except ImportError:
     # Fallback for different import structure
-    from llm_python.progdb.arc_tester import ArcTester
+    from llm_python.utils.arc_tester import ArcTester
 
 
 def test_code_execution_timeouts():

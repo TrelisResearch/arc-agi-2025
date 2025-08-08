@@ -18,7 +18,7 @@ try:
     # Try relative imports first (when run as module)
     from .utils.task_loader import TaskLoader
     from .utils.scoring import GridScorer
-    from .progdb.arc_tester import ArcTester
+    from .utils.arc_tester import ArcTester
     from .utils.prompt_utils import create_arc_prompt, extract_python_code
     from .utils.metrics_utils import calculate_task_metrics, format_metrics_display, metrics_to_percentages
     from .utils.timeout_utils import execute_with_timeout
@@ -26,14 +26,14 @@ try:
     from .utils.prompt_loader import PromptLoader
 except ImportError:
     # Fall back to absolute imports (when run directly)
-    from utils.task_loader import TaskLoader
-    from utils.scoring import GridScorer
-    from progdb.arc_tester import ArcTester
-    from utils.prompt_utils import create_arc_prompt, extract_python_code
-    from utils.metrics_utils import calculate_task_metrics, format_metrics_display, metrics_to_percentages
-    from utils.timeout_utils import execute_with_timeout
-    from utils.transduction import is_transduction_cheating
-    from utils.prompt_loader import PromptLoader
+    from llm_python.utils.task_loader import TaskLoader
+    from llm_python.utils.scoring import GridScorer
+    from llm_python.utils.arc_tester import ArcTester
+    from llm_python.utils.prompt_utils import create_arc_prompt, extract_python_code
+    from llm_python.utils.metrics_utils import calculate_task_metrics, format_metrics_display, metrics_to_percentages
+    from llm_python.utils.timeout_utils import execute_with_timeout
+    from llm_python.utils.transduction import is_transduction_cheating
+    from llm_python.utils.prompt_loader import PromptLoader
 
 load_dotenv()
 

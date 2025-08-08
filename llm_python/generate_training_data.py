@@ -21,13 +21,13 @@ from huggingface_hub import HfApi
 try:
     # Try relative imports first (when run as module)
     from .utils.task_loader import TaskLoader
-    from .progdb.arc_tester import ArcTester
+    from .utils.arc_tester import ArcTester
     from .utils.transduction import is_transduction_cheating
 except ImportError:
     # Fall back to absolute imports (when run directly)
-    from utils.task_loader import TaskLoader
-    from progdb.arc_tester import ArcTester
-    from utils.transduction import is_transduction_cheating
+    from llm_python.utils.task_loader import TaskLoader
+    from llm_python.utils.arc_tester import ArcTester
+    from llm_python.utils.transduction import is_transduction_cheating
 
 # Initialize utilities
 task_loader = TaskLoader()

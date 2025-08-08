@@ -104,17 +104,28 @@ uv run runpod/create_pod.py sglang -- --model-path Trelis/Qwen3-4B_dsarc-program
 ```
 and then run inference on it:
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c2114 --base-url http://107.152.109.12:11385/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c2114 --base-url http://107.152.109.18:11154/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
 ```
+...
 and then the third checkpoint:
 ```bash
 uv run runpod/create_pod.py sglang -- --model-path Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171
 ```
+...
 and then run inference on it:
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171 --base-url http://107.152.109.12:11385/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171 --base-url http://107.152.109.18:11155/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
 ```
-
+and to be sure, run the final checkpoint:
+```bash
+uv run runpod/create_pod.py sglang -- --model-path Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c4228
+```
+...
+and then run inference on it:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c4228 --base-url http://107.152.109.18:11142/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+...
 
 
 
