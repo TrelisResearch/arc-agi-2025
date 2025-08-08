@@ -29,7 +29,15 @@ uv run create_pod.py sglang -- --model-path Qwen/Qwen3-4B --reasoning-parser qwe
 uv run create_pod.py sglang -- --model-path Qwen/Qwen3-4B --lora-paths ckpt-1057=Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-trainer/checkpoint-1057 --max-loras-per-batch 1 --disable-radix-cache
 
 # Create a TCP pod with multiple LORA adapters loaded (requires --disable-radix-cache)
-uv run runpod/create_pod.py sglang -- --model-path Qwen/Qwen3-4B --lora-paths ckpt-1057=Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-trainer/checkpoint-1057,ckpt-2114=Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-trainer/checkpoint-2114,ckpt-3171=Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-trainer/checkpoint-3171 --max-loras-per-batch 3 --disable-radix-cache
+```bash
+uv run runpod/create_pod.py sglang -- --model-path Qwen/Qwen3-4B \
+  --lora-paths \
+    ckpt-1057=Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-trainer/checkpoint-1057 \
+    ckpt-2114=Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-trainer/checkpoint-2114 \
+    ckpt-3171=Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-trainer/checkpoint-3171 \
+  --max-loras-per-batch 3 \
+  --max-loaded-loras 3
+```
 
 # Skip health checks entirely
 uv run create_pod.py sglang --no-health-check -- --model-path Qwen/Qwen3-4B
