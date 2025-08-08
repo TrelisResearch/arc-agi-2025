@@ -21,20 +21,20 @@ from huggingface_hub import HfApi
 try:
     # Try relative imports first (when run as module)
     from .utils.task_loader import TaskLoader
-    from .utils.scoring import ProgramExecutor
+    from .progdb.arc_tester import ArcTester
     from .utils.transduction import is_transduction_cheating
 except ImportError:
     # Fall back to absolute imports (when run directly)
     from utils.task_loader import TaskLoader
-    from utils.scoring import ProgramExecutor
+    from progdb.arc_tester import ArcTester
     from utils.transduction import is_transduction_cheating
 
 # Initialize utilities
 task_loader = TaskLoader()
 
-def get_program_executor():
-    """Get a ProgramExecutor instance (lazy initialization)"""
-    return ProgramExecutor(timeout=0.5)
+def get_arc_tester():
+    """Get an ArcTester instance (lazy initialization)"""
+    return ArcTester(timeout=0.5)
 
 def format_grid(grid: List[List[int]]) -> str:
     """Format a grid as a string, preserving empty rows with special marker"""
@@ -124,7 +124,7 @@ def evaluate_program_on_task(program: str, task_data: Dict) -> Dict:
         input_grid = example['input']
         expected_output = example['output']
         
-        predicted_output, error, timed_out = get_program_executor().execute_program_with_timeout(program, input_grid)
+        predicted_output, error, timed_out = get_arc_tester().execute_program_with_timeout(program, input_grid)
         
         if predicted_output is not None and not error and not timed_out:
             # Check if output matches expected
@@ -332,7 +332,7 @@ def create_training_example(program_data: Dict, task_data: Dict, args) -> Dict:
     correct_train_inputs = []
     
     for i, train_input in enumerate(train_inputs):
-        predicted_output, error, timed_out = get_program_executor().execute_program_with_timeout(program, train_input)
+        predicted_output, error, timed_out = get_arc_tester().execute_program_with_timeout(program, train_input)
         
         if predicted_output is not None and not error and not timed_out:
             # Validate output format
@@ -358,7 +358,7 @@ def create_training_example(program_data: Dict, task_data: Dict, args) -> Dict:
     correct_test_inputs = []
     
     for i, test_input in enumerate(test_inputs):
-        predicted_output, error, timed_out = get_program_executor().execute_program_with_timeout(program, test_input)
+        predicted_output, error, timed_out = get_arc_tester().execute_program_with_timeout(program, test_input)
         
         if predicted_output is not None and not error and not timed_out:
             # Validate output format
@@ -500,7 +500,7 @@ def deduplicate_programs_by_task(qualified_programs: List[Dict], args) -> Tuple[
             if task_data.get('test') and len(task_data['test']) > 0:
                 test_input = task_data['test'][0]['input']
                 expected_test_output = task_data['test'][0]['output']
-                predicted_test_output, error, timed_out = get_program_executor().execute_program_with_timeout(program, test_input)
+                predicted_test_output, error, timed_out = get_arc_tester().execute_program_with_timeout(program, test_input)
                 
                 if (predicted_test_output is not None and not error and not timed_out and 
                     predicted_test_output == expected_test_output):
@@ -539,7 +539,7 @@ def deduplicate_programs_by_task(qualified_programs: List[Dict], args) -> Tuple[
                 # Generate output signature by running program on all training inputs
                 outputs = []
                 for example in task_data['train']:
-                    predicted_output, error, timed_out = get_program_executor().execute_program_with_timeout(program, example['input'])
+                    predicted_output, error, timed_out = get_arc_tester().execute_program_with_timeout(program, example['input'])
                     if predicted_output is not None and not error and not timed_out:
                         try:
                             # Validate that predicted_output is a valid 2D list structure with hashable elements

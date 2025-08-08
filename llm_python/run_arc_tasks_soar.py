@@ -17,7 +17,8 @@ from openai import OpenAI
 try:
     # Try relative imports first (when run as module)
     from .utils.task_loader import TaskLoader
-    from .utils.scoring import GridScorer, ProgramExecutor
+    from .utils.scoring import GridScorer
+    from .progdb.arc_tester import ArcTester
     from .utils.prompt_utils import create_arc_prompt, extract_python_code
     from .utils.metrics_utils import calculate_task_metrics, format_metrics_display, metrics_to_percentages
     from .utils.timeout_utils import execute_with_timeout
@@ -26,7 +27,8 @@ try:
 except ImportError:
     # Fall back to absolute imports (when run directly)
     from utils.task_loader import TaskLoader
-    from utils.scoring import GridScorer, ProgramExecutor
+    from utils.scoring import GridScorer
+    from progdb.arc_tester import ArcTester
     from utils.prompt_utils import create_arc_prompt, extract_python_code
     from utils.metrics_utils import calculate_task_metrics, format_metrics_display, metrics_to_percentages
     from utils.timeout_utils import execute_with_timeout
@@ -157,6 +159,14 @@ class ARCTaskRunnerSimple:
             self.api_key = os.getenv('DASHSCOPE_API_KEY')
         else:
             self.api_key = os.getenv('OPENAI_API_KEY')
+        
+        # Use appropriate API key based on endpoint
+        if base_url == "https://router.huggingface.co/v1":
+            self.api_key = self._get_hf_token()
+        elif base_url == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1":
+            self.api_key = os.getenv('DASHSCOPE_API_KEY')
+        else:
+            self.api_key = os.getenv('OPENAI_API_KEY')
         self.debug = debug
         self.max_tokens = max_tokens
         self.temperature = temperature
@@ -193,7 +203,7 @@ class ARCTaskRunnerSimple:
         # Initialize fresh instances to prevent state leakage
         self.task_loader = TaskLoader()
         self.scorer = GridScorer()
-        self.executor = ProgramExecutor(timeout=0.5, executor_type=self.executor_type)
+        self.executor = ArcTester(timeout=0.5, executor_type=self.executor_type)
         self.prompt_loader = PromptLoader()
         
         # Thread-safe cost tracking
@@ -220,6 +230,30 @@ class ARCTaskRunnerSimple:
         self.logs_dir = Path(__file__).parent / "logs" / timestamp
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         print(f"📁 Logs will be saved to: {self.logs_dir}")
+    
+    def _get_hf_token(self) -> str:
+        """Get HuggingFace token from various sources"""
+        # Try environment variable first
+        if 'HF_TOKEN' in os.environ:
+            return os.environ['HF_TOKEN']
+        
+        # Try HuggingFace CLI token file locations
+        token_paths = [
+            Path.home() / ".cache" / "huggingface" / "token",
+            Path.home() / ".huggingface" / "token"
+        ]
+        
+        for token_path in token_paths:
+            if token_path.exists():
+                try:
+                    with open(token_path, 'r') as f:
+                        token = f.read().strip()
+                    if token:
+                        return token
+                except Exception as e:
+                    print(f"⚠️ Warning: Could not read HF token from {token_path}: {e}")
+        
+        raise ValueError("HuggingFace token not found. Please run 'huggingface-cli login' or set HF_TOKEN environment variable")
     
     def _get_hf_token(self) -> str:
         """Get HuggingFace token from various sources"""
@@ -387,6 +421,14 @@ class ARCTaskRunnerSimple:
                     kwargs["extra_body"] = {}
                 kwargs["extra_body"]["thinking_budget"] = 4000  # Optimal based on testing
         
+        # Add thinking_budget for DashScope (Qwen thinking models)
+        if self.base_url == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1":
+            thinking_budget_tokens = {"low": 2000, "medium": 8000, "high": 32000}
+            if self.reasoning_effort in thinking_budget_tokens:
+                if "extra_body" not in kwargs:
+                    kwargs["extra_body"] = {}
+                kwargs["extra_body"]["thinking_budget"] = thinking_budget_tokens[self.reasoning_effort]
+        
         # Add sampling parameters based on endpoint type
         # Only apply defaults if not already set by model-specific logic
         if "top_p" not in kwargs and "min_p" not in kwargs:
@@ -415,12 +457,14 @@ class ARCTaskRunnerSimple:
         # Extract sampling parameters for display
         sampling_params = {}
         for param in ['temperature', 'max_tokens', 'top_p', 'top_k', 'min_p', 'thinking_budget']:
+        for param in ['temperature', 'max_tokens', 'top_p', 'top_k', 'min_p', 'thinking_budget']:
             if param in kwargs:
                 sampling_params[param] = kwargs[param]
         
         # Also check extra_body for nested parameters
         if 'extra_body' in kwargs:
             extra_body = kwargs['extra_body']
+            for param in ['top_k', 'min_p', 'thinking_budget']:
             for param in ['top_k', 'min_p', 'thinking_budget']:
                 if param in extra_body:
                     sampling_params[param] = extra_body[param]
@@ -467,6 +511,14 @@ class ARCTaskRunnerSimple:
                     if "extra_body" not in kwargs:
                         kwargs["extra_body"] = {}
                     kwargs["extra_body"]["thinking_budget"] = 4000  # Optimal based on testing
+            
+            # Add thinking_budget for DashScope (Qwen thinking models)
+            if self.base_url == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1":
+                thinking_budget_tokens = {"low": 2000, "medium": 8000, "high": 32000}
+                if self.reasoning_effort in thinking_budget_tokens:
+                    if "extra_body" not in kwargs:
+                        kwargs["extra_body"] = {}
+                    kwargs["extra_body"]["thinking_budget"] = thinking_budget_tokens[self.reasoning_effort]
             
             # Add sampling parameters based on endpoint type
             # Only apply defaults if not already set by model-specific logic
@@ -564,11 +616,13 @@ class ARCTaskRunnerSimple:
         if api_call_successful and 'api_kwargs' in locals():
             # Extract sampling parameters from actual API call
             for param in ['temperature', 'max_tokens', 'top_p', 'top_k', 'min_p', 'thinking_budget']:
+            for param in ['temperature', 'max_tokens', 'top_p', 'top_k', 'min_p', 'thinking_budget']:
                 if param in api_kwargs:
                     sampling_params[param] = api_kwargs[param]
             # Also check extra_body for nested parameters
             if 'extra_body' in api_kwargs:
                 extra_body = api_kwargs['extra_body']
+                for param in ['top_k', 'min_p', 'thinking_budget']:
                 for param in ['top_k', 'min_p', 'thinking_budget']:
                     if param in extra_body:
                         sampling_params[param] = extra_body[param]
@@ -1330,11 +1384,11 @@ class ARCTaskRunnerSimple:
                 run_files.append(None)  # Mark as failed
             finally:
                 # Explicit cleanup to prevent state leakage
-                # ProgramExecutor uses singleton class variables that persist across instances
+                # ArcTester uses singleton class variables that persist across instances
                 # Without cleanup, second run reuses stale executor context causing systematic failures
                 with self._cleanup_lock:  # Thread-safe cleanup
                     try:
-                        ProgramExecutor.cleanup_executor()  # Fix: Clean up singleton state
+                        ArcTester.cleanup_executor()  # Fix: Clean up singleton state
                         if run_num < repeat_runs:  # Only print for non-final runs
                             print(f"🧹 Cleaned up executor state after run {run_num}")
                     except Exception as cleanup_e:
@@ -1568,7 +1622,7 @@ def main():
         # Final cleanup to ensure clean shutdown
         with runner._cleanup_lock:  # Thread-safe cleanup
             try:
-                ProgramExecutor.cleanup_executor()
+                ArcTester.cleanup_executor()
             except Exception as e:
                 print(f"⚠️ Final cleanup warning: {e}")
 

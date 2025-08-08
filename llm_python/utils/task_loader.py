@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 
-import os
 import json
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, TypedDict
+from typing import List, Optional, Tuple, TypedDict
 
 # Type definitions for ARC-AGI data structures
 Grid = List[List[int]]
@@ -30,7 +29,7 @@ class TaskLoader:
     Legacy mixed subsets are in archive/.
     """
 
-    def __init__(self, data_root: str = None):
+    def __init__(self, data_root: Optional[str] = None):
         if data_root is None:
             # Find the data directory by searching up the directory tree
             current_path = Path(__file__).resolve()
@@ -47,8 +46,34 @@ class TaskLoader:
         if not self.data_root.exists():
             raise ValueError(f"Data root directory not found: {data_root}")
 
-    def load_task(self, task_id: str, dataset: str = "arc-agi-1") -> TaskData:
-        """Load a single task by ID from the specified dataset"""
+    def load_task(self, task_id: str, dataset: Optional[str] = None) -> TaskData:
+        """Load a single task by ID from the specified dataset(s).
+        
+        Args:
+            task_id: The task ID to load
+            dataset: Specific dataset to search in. If None, searches both arc-agi-1 and arc-agi-2
+            
+        Returns:
+            The task data
+            
+        Raises:
+            FileNotFoundError: If task is not found
+        """
+        # If no dataset specified, search across both datasets
+        if dataset is None:
+            datasets_to_search = ["arc-agi-1", "arc-agi-2"]
+            for ds in datasets_to_search:
+                try:
+                    return self._load_task_from_dataset(task_id, ds)
+                except FileNotFoundError:
+                    continue
+            raise FileNotFoundError(f"Task {task_id} not found in any dataset")
+        else:
+            # Search in specific dataset
+            return self._load_task_from_dataset(task_id, dataset)
+    
+    def _load_task_from_dataset(self, task_id: str, dataset: str) -> TaskData:
+        """Helper method to load a task from a specific dataset"""
         # Check training directory first, then evaluation
         for split in ["training", "evaluation"]:
             task_path = self.data_root / dataset / split / f"{task_id}.json"

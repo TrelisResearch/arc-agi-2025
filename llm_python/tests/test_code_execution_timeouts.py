@@ -12,10 +12,10 @@ from datetime import datetime
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 try:
-    from utils.scoring import ProgramExecutor
+    from progdb.arc_tester import ArcTester
 except ImportError:
     # Fallback for different import structure
-    from llm_python.utils.scoring import ProgramExecutor
+    from llm_python.progdb.arc_tester import ArcTester
 
 
 def test_code_execution_timeouts():
@@ -26,7 +26,7 @@ def test_code_execution_timeouts():
     
     # Initialize executor with short timeout for testing
     timeout_duration = 0.1  # Very short timeout for testing
-    executor = ProgramExecutor(timeout=timeout_duration, executor_type="docker")
+    executor = ArcTester(timeout=timeout_duration, executor_type="docker")
     
     print(f"Executor timeout: {timeout_duration}s")
     print(f"Executor type: {executor.executor_type}")
@@ -129,7 +129,7 @@ def test_timeout_metrics_integration():
     
     # This simulates what happens in the main runner
     timeout_duration = 0.1
-    executor = ProgramExecutor(timeout=timeout_duration, executor_type="docker")
+    executor = ArcTester(timeout=timeout_duration, executor_type="docker")
     
     # Test data that simulates attempt details
     test_input = [[1, 0], [0, 1]]
