@@ -19,25 +19,14 @@ uv run create_pod.py <template> [--no-health-check] [--debug] -- [docker_args...
 ### Examples
 
 ```bash
-# Create an HTTP pod with default health checks
+# Create a basic TCP pod 
 uv run create_pod.py sglang -- --model-path Qwen/Qwen3-4B
 
-# Create a TCP pod with OpenAI endpoint testing
-uv run create_pod.py sglang -- --model-path Qwen/Qwen3-4B --reasoning-parser qwen3
+# Create a TCP pod with LORA adapter
+uv run create_pod.py sglang -- --model-path Qwen/Qwen3-4B --lora-paths ckpt-1057=Trelis/my-lora-adapter --max-loras-per-batch 1 --disable-radix-cache
 
-# Create a TCP pod with LORA adapter loaded (requires --disable-radix-cache)
-uv run create_pod.py sglang -- --model-path Qwen/Qwen3-4B --lora-paths ckpt-1057=Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-trainer/checkpoint-1057 --max-loras-per-batch 1 --disable-radix-cache
-
-# Create a TCP pod with multiple LORA adapters loaded (requires --disable-radix-cache)
-```bash
-uv run runpod/create_pod.py sglang -- --model-path Qwen/Qwen3-4B \
-  --lora-paths \
-    ckpt-1057=Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-trainer/checkpoint-1057 \
-    ckpt-2114=Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-trainer/checkpoint-2114 \
-    ckpt-3171=Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-trainer/checkpoint-3171 \
-  --max-loras-per-batch 3 \
-  --max-loaded-loras 3
-```
+# Create a TCP pod with multiple LORA adapters  
+uv run create_pod.py sglang -- --model-path Qwen/Qwen3-4B --lora-paths ckpt-1057=Trelis/lora-1,ckpt-2114=Trelis/lora-2 --max-loras-per-batch 2 --disable-radix-cache
 
 # Skip health checks entirely
 uv run create_pod.py sglang --no-health-check -- --model-path Qwen/Qwen3-4B

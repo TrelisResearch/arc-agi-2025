@@ -200,6 +200,10 @@ class ARCTaskRunnerSimple:
         
         # LORA adapter will be specified in API calls if provided
         
+        # Check /models endpoint to show what's available
+        if base_url:
+            self._check_models_endpoint()
+        
         # Initialize fresh instances to prevent state leakage
         self.task_loader = TaskLoader()
         self.scorer = GridScorer()
@@ -255,29 +259,51 @@ class ARCTaskRunnerSimple:
         
         raise ValueError("HuggingFace token not found. Please run 'huggingface-cli login' or set HF_TOKEN environment variable")
     
-    def _get_hf_token(self) -> str:
-        """Get HuggingFace token from various sources"""
-        # Try environment variable first
-        if 'HF_TOKEN' in os.environ:
-            return os.environ['HF_TOKEN']
-        
-        # Try HuggingFace CLI token file locations
-        token_paths = [
-            Path.home() / ".cache" / "huggingface" / "token",
-            Path.home() / ".huggingface" / "token"
-        ]
-        
-        for token_path in token_paths:
-            if token_path.exists():
-                try:
-                    with open(token_path, 'r') as f:
-                        token = f.read().strip()
-                    if token:
-                        return token
-                except Exception as e:
-                    print(f"⚠️ Warning: Could not read HF token from {token_path}: {e}")
-        
-        raise ValueError("HuggingFace token not found. Please run 'huggingface-cli login' or set HF_TOKEN environment variable")
+    def _check_models_endpoint(self):
+        """Check what models are available at the /models endpoint and validate arguments"""
+        try:
+            print("🔍 Checking available models...")
+            models_response = self.client.models.list()
+            
+            if hasattr(models_response, 'data') and models_response.data:
+                available_models = []
+                available_lora_adapters = []
+                
+                print(f"📋 Available models ({len(models_response.data)}):")
+                for model in models_response.data:
+                    model_id = getattr(model, 'id', 'unknown')
+                    owned_by = getattr(model, 'owned_by', 'unknown')
+                    available_models.append(model_id)
+                    
+                    # Show LORA adapters if present
+                    if hasattr(model, 'lora_adapters') and model.lora_adapters:
+                        lora_list = model.lora_adapters
+                        available_lora_adapters.extend(lora_list)
+                        print(f"   • {model_id} (owner: {owned_by}) [LORA: {', '.join(lora_list)}]")
+                    elif 'lora' in model_id.lower() or 'adapter' in model_id.lower():
+                        available_lora_adapters.append(model_id)
+                        print(f"   • {model_id} (owner: {owned_by}) [LORA adapter]")
+                    else:
+                        print(f"   • {model_id} (owner: {owned_by})")
+                
+                # Validate model argument
+                if self.model not in available_models:
+                    print(f"⚠️  WARNING: Specified model '{self.model}' not found in available models")
+                    print(f"   Available models: {', '.join(available_models)}")
+                    print("   This may cause API errors during execution")
+                else:
+                    print(f"✅ Model '{self.model}' found in endpoint")
+                
+                # LORA adapter info (no validation since not exposed via /models)
+                if self.lora_adapter:
+                    print(f"🎯 Will use LORA adapter: {self.lora_adapter}")
+            else:
+                print("   No models found in response")
+                
+        except Exception as e:
+            print(f"⚠️  Could not check /models endpoint: {e}")
+            print("   This might be normal for some endpoints (OpenAI, etc.)")
+            print("   Skipping validation - will attempt to use specified model/LORA")
     
     def _update_costs(self, cost: float, tokens: int):
         """Thread-safe method to update total costs and tokens"""
@@ -457,14 +483,12 @@ class ARCTaskRunnerSimple:
         # Extract sampling parameters for display
         sampling_params = {}
         for param in ['temperature', 'max_tokens', 'top_p', 'top_k', 'min_p', 'thinking_budget']:
-        for param in ['temperature', 'max_tokens', 'top_p', 'top_k', 'min_p', 'thinking_budget']:
             if param in kwargs:
                 sampling_params[param] = kwargs[param]
         
         # Also check extra_body for nested parameters
         if 'extra_body' in kwargs:
             extra_body = kwargs['extra_body']
-            for param in ['top_k', 'min_p', 'thinking_budget']:
             for param in ['top_k', 'min_p', 'thinking_budget']:
                 if param in extra_body:
                     sampling_params[param] = extra_body[param]
@@ -616,13 +640,11 @@ class ARCTaskRunnerSimple:
         if api_call_successful and 'api_kwargs' in locals():
             # Extract sampling parameters from actual API call
             for param in ['temperature', 'max_tokens', 'top_p', 'top_k', 'min_p', 'thinking_budget']:
-            for param in ['temperature', 'max_tokens', 'top_p', 'top_k', 'min_p', 'thinking_budget']:
                 if param in api_kwargs:
                     sampling_params[param] = api_kwargs[param]
             # Also check extra_body for nested parameters
             if 'extra_body' in api_kwargs:
                 extra_body = api_kwargs['extra_body']
-                for param in ['top_k', 'min_p', 'thinking_budget']:
                 for param in ['top_k', 'min_p', 'thinking_budget']:
                     if param in extra_body:
                         sampling_params[param] = extra_body[param]

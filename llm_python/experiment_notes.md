@@ -21,19 +21,10 @@
 
 ### Support LoRA adapters in run_arc_tasks_soar
 
-Start a pod with three lora adapters:
+The Lora results seem to be worse when not merged. So we'll stick with merged.
+
 ```bash
-uv run runpod/create_pod.py sglang -- --model-path Qwen/Qwen3-4B \
-  --lora-paths \
-    ckpt-1057=Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-trainer/checkpoint-1057 \
-    ckpt-2114=Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-trainer/checkpoint-2114 \
-    ckpt-3171=Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-trainer/checkpoint-3171 \
-  --max-loras-per-batch 3 \
-  --max-loaded-loras 3
-```
-Then run the benchmarking on arc-agi-1 eval all tasks:
-```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 8 --model Qwen/Qwen3-4B --base-url http://38.80.152.249:30565/v1 --unsafe-executor --max-tokens 1000 --lora-adapter ckpt-1057 --qwen-no-think
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 8 --model Qwen/Qwen3-4B --base-url http://38.80.152.249:30575/v1 --unsafe-executor --max-tokens 1000 --lora-adapter latest --qwen-no-think
 ```
 ==================================================
 SUMMARY
@@ -43,82 +34,88 @@ Subset: all_evaluation
 Model: Qwen/Qwen3-4B
 Total tasks: 400
 Successful API calls: 400/400 (100.0%)
-Total tokens used: 14,605,643
-Total cost: $2.668845
+Total tokens used: 14,687,193
+Total cost: $2.712015
 
 📊 CORE METRICS:
-  Pass@2 (Weighted Voting): 31.8%
-  Pass@2 (Train Majority):  30.0%
-  Oracle (Best Attempt):    32.2%
-  All Train Correct:        27.3%
-  Min 1 Train Correct:      56.5%
-  Min 1 Code Success:       99.2%
-  Max Length Responses:     3.4%
+  Pass@2 (Weighted Voting): 0.8%
+  Pass@2 (Train Majority):  0.8%
+  Oracle (Best Attempt):    1.0%
+  All Train Correct:        0.2%
+  Min 1 Train Correct:      4.0%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     10.1%
   Timeout Responses:        0.0%
   API Failure Responses:    0.0%
 
-and then the next adapter:
+### Running eval on 50-correct 200 partial on the arc-agi-1 evaluation dataset
+
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 8 --model Qwen/Qwen3-4B --base-url http://38.80.152.249:30565/v1 --unsafe-executor --max-tokens 1000 --lora-adapter ckpt-2114 --qwen-no-think
+uv run runpod/create_pod.py sglang -- --model-path Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749
+```
+and then run the benchmarking:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749 --base-url http://107.152.109.12:11193/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
 ```
 ==================================================
 SUMMARY
 ==================================================
 Dataset: arc-agi-1
 Subset: all_evaluation
-Model: Qwen/Qwen3-4B
+Model: Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749
 Total tasks: 400
 Successful API calls: 400/400 (100.0%)
-Total tokens used: 14,603,353
-Total cost: $2.667471
+Total tokens used: 14,619,274
+Total cost: $2.671264
 
 📊 CORE METRICS:
-  Pass@2 (Weighted Voting): 29.8%
-  Pass@2 (Train Majority):  28.2%
-  Oracle (Best Attempt):    31.0%
-  All Train Correct:        26.5%
-  Min 1 Train Correct:      56.0%
-  Min 1 Code Success:       99.8%
-  Max Length Responses:     3.2%
+  Pass@2 (Weighted Voting): 11.5%
+  Pass@2 (Train Majority):  11.0%
+  Oracle (Best Attempt):    12.8%
+  All Train Correct:        11.0%
+  Min 1 Train Correct:      26.0%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     1.4%
   Timeout Responses:        0.0%
   API Failure Responses:    0.0%
 
-and then the last adapter:
+Merged lora models:
+- Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c1057
+- Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c2114
+- Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171
+- Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c4228
+
+Now test out the first checkpoint:
+- Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c1057
+
+Start a pod:
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 8 --model Qwen/Qwen3-4B --base-url http://38.80.152.249:30565/v1 --unsafe-executor --max-tokens 1000 --lora-adapter ckpt-3171 --qwen-no-think
+uv run runpod/create_pod.py sglang -- --model-path Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c1057
 ```
-==================================================
-SUMMARY
-==================================================
-Dataset: arc-agi-1
-Subset: all_evaluation
-Model: Qwen/Qwen3-4B
-Total tasks: 400
-Successful API calls: 400/400 (100.0%)
-Total tokens used: 14,608,147
-Total cost: $2.670347
-
-📊 CORE METRICS:
-  Pass@2 (Weighted Voting): 30.8%
-  Pass@2 (Train Majority):  29.5%
-  Oracle (Best Attempt):    31.8%
-  All Train Correct:        26.5%
-  Min 1 Train Correct:      55.2%
-  Min 1 Code Success:       99.8%
-  Max Length Responses:     2.9%
-  Timeout Responses:        0.0%
-  API Failure Responses:    0.0%
-
-Now try the first checkpoint with the lora adapter on the arc-agi-2 eval:
+and then run inference on it:
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 64 --model julien31/Soar-qwen-7b --base-url http://38.80.152.249:30565/v1 --unsafe-executor --max-tokens 1000 --lora-adapter ckpt-1057 --qwen-no-think
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c1057 --base-url http://107.152.109.12:11385/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
 ```
 ...
 
-and then try the first checkpoint with the lora adapter with 64 attempts on the arc-agi-1 eval all tasks:
+Now check the second checkpoint:
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 64 --model Qwen/Qwen3-4B --base-url http://38.80.152.249:30565/v1 --unsafe-executor --max-tokens 1000 --lora-adapter ckpt-1057 --qwen-no-think
+uv run runpod/create_pod.py sglang -- --model-path Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c2114
 ```
+and then run inference on it:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c2114 --base-url http://107.152.109.12:11385/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+and then the third checkpoint:
+```bash
+uv run runpod/create_pod.py sglang -- --model-path Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171
+```
+and then run inference on it:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171 --base-url http://107.152.109.12:11385/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+
+
 
 
 
