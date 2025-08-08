@@ -449,7 +449,27 @@ and then run the benchmarking:
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset all_evaluation --repeat-runs 1 --max_workers 64 --max_attempts 64 --model julien31/Soar-qwen-7b --base-url http://38.80.152.249:30886/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
 ```
 
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-2
+Subset: all_evaluation
+Model: julien31/Soar-qwen-7b
+Total tasks: 120
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 55,647,911
+Total cost: $9.488231
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.8%
+  Pass@2 (Train Majority):  0.8%
+  Oracle (Best Attempt):    1.7%
+  All Train Correct:        0.8%
+  Min 1 Train Correct:      6.7%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     2.2%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
 ### Test out turning off the transductive filtering
 We'll run the best checkpoint, which is...
