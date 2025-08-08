@@ -266,7 +266,7 @@ Weighted Voting Pass2:
 
 and re-run again, this time without the transductive filtering:
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171 --base-url http://107.152.109.18:11155/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171 --base-url http://107.152.109.18:11155/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
 ```
 
 and to be sure, run the final checkpoint:
@@ -385,9 +385,27 @@ and re-run now that the transductive logic has been updated:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset all_evaluation --repeat-runs 1 --max_workers 64 --max_attempts 64 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749 --base-url http://107.152.109.18:11813/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
 ```
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-2
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749
+Total tasks: 120
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 56,200,187
+Total cost: $9.805773
 
-
-
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 3.3%
+  Pass@2 (Train Majority):  3.3%
+  Oracle (Best Attempt):    3.3%
+  All Train Correct:        5.0%
+  Min 1 Train Correct:      17.5%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     3.2%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
 
 ### Test out turning off the transductive filtering
