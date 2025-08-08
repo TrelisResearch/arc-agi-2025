@@ -35,19 +35,90 @@ Then run the benchmarking on arc-agi-1 eval all tasks:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 8 --model Qwen/Qwen3-4B --base-url http://38.80.152.249:30565/v1 --unsafe-executor --max-tokens 1000 --lora-adapter ckpt-1057 --qwen-no-think
 ```
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Qwen/Qwen3-4B
+Total tasks: 400
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 14,605,643
+Total cost: $2.668845
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 31.8%
+  Pass@2 (Train Majority):  30.0%
+  Oracle (Best Attempt):    32.2%
+  All Train Correct:        27.3%
+  Min 1 Train Correct:      56.5%
+  Min 1 Code Success:       99.2%
+  Max Length Responses:     3.4%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
 and then the next adapter:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 8 --model Qwen/Qwen3-4B --base-url http://38.80.152.249:30565/v1 --unsafe-executor --max-tokens 1000 --lora-adapter ckpt-2114 --qwen-no-think
 ```
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Qwen/Qwen3-4B
+Total tasks: 400
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 14,603,353
+Total cost: $2.667471
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 29.8%
+  Pass@2 (Train Majority):  28.2%
+  Oracle (Best Attempt):    31.0%
+  All Train Correct:        26.5%
+  Min 1 Train Correct:      56.0%
+  Min 1 Code Success:       99.8%
+  Max Length Responses:     3.2%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
 and then the last adapter:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 8 --model Qwen/Qwen3-4B --base-url http://38.80.152.249:30565/v1 --unsafe-executor --max-tokens 1000 --lora-adapter ckpt-3171 --qwen-no-think
 ```
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Qwen/Qwen3-4B
+Total tasks: 400
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 14,608,147
+Total cost: $2.670347
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 30.8%
+  Pass@2 (Train Majority):  29.5%
+  Oracle (Best Attempt):    31.8%
+  All Train Correct:        26.5%
+  Min 1 Train Correct:      55.2%
+  Min 1 Code Success:       99.8%
+  Max Length Responses:     2.9%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+Now try the first checkpoint with the lora adapter on the arc-agi-2 eval:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 64 --model julien31/Soar-qwen-7b --base-url http://38.80.152.249:30565/v1 --unsafe-executor --max-tokens 1000 --lora-adapter ckpt-1057 --qwen-no-think
+```
+...
+
+and then try the first checkpoint with the lora adapter with 64 attempts on the arc-agi-1 eval all tasks:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 64 --model Qwen/Qwen3-4B --base-url http://38.80.152.249:30565/v1 --unsafe-executor --max-tokens 1000 --lora-adapter ckpt-1057 --qwen-no-think
+```
 
 
 
@@ -64,7 +135,31 @@ and then run the benchmarking:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset unique_training_tasks --repeat-runs 1 --max_workers 32 --max_attempts 64 --model julien31/Soar-qwen-7b --base-url http://38.80.152.249:30565/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
 ```
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-2
+Subset: unique_training_tasks
+Model: julien31/Soar-qwen-7b
+Total tasks: 233
+Successful API calls: 233/233 (100.0%)
+Total tokens used: 61,788,949
+Total cost: $11.225312
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 5.2%
+  Pass@2 (Train Majority):  5.2%
+  Oracle (Best Attempt):    7.3%
+  All Train Correct:        3.0%
+  Min 1 Train Correct:      19.7%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     1.1%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+### Test out the first checkpoint with the lora adapter on the arc-agi-2 eval
+
+now run the first checkpoint with the lora adapter on th
 
 
 ## 7 Aug 2025
