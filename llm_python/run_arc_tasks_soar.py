@@ -215,6 +215,9 @@ class ARCTaskRunnerSimple:
         self.total_cost = 0.0
         self.total_tokens = 0
         
+        # Track large file errors (thread-safe)
+        self.large_file_errors = []
+        
         # Thread-safe state management to prevent race conditions
         self._cleanup_lock = threading.Lock()
         
@@ -310,6 +313,122 @@ class ARCTaskRunnerSimple:
         with self._cost_lock:
             self.total_cost += cost
             self.total_tokens += tokens
+    
+    def _check_file_size_before_save(self, data: Dict, filename: str, max_size_gb: float = 1.0) -> tuple[bool, str]:
+        """Check if JSON data would exceed size limit before saving
+        
+        Returns:
+            tuple: (should_save, error_message)
+        """
+        try:
+            # Estimate JSON size by serializing to string
+            json_str = json.dumps(data, indent=2)
+            size_bytes = len(json_str.encode('utf-8'))
+            size_gb = size_bytes / (1024**3)
+            
+            if size_gb > max_size_gb:
+                # Analyze what's making the file large
+                size_details = self._analyze_large_file_components(data, size_bytes)
+                
+                error_msg = f"File {filename} would be {size_gb:.2f}GB (>{max_size_gb}GB limit). {size_details}"
+                
+                # Thread-safe error tracking
+                with self._cost_lock:
+                    self.large_file_errors.append({
+                        'filename': filename,
+                        'size_gb': size_gb,
+                        'size_bytes': size_bytes,
+                        'details': size_details,
+                        'timestamp': datetime.datetime.now().isoformat()
+                    })
+                
+                return False, error_msg
+            
+            return True, ""
+            
+        except Exception as e:
+            # If we can't estimate size, err on the side of caution
+            error_msg = f"Could not estimate size for {filename}: {e}"
+            return True, error_msg  # Allow saving if we can't check
+    
+    def _analyze_large_file_components(self, data: Dict, total_size: int) -> str:
+        """Analyze what components are making a file large"""
+        details = []
+        
+        try:
+            # Check major components
+            if 'attempt_details' in data:
+                attempt_details_size = len(json.dumps(data['attempt_details']).encode('utf-8'))
+                if attempt_details_size > total_size * 0.1:  # >10% of total
+                    details.append(f"attempt_details: {attempt_details_size / (1024**2):.1f}MB")
+                    
+                    # Check individual attempts for large components
+                    for i, attempt in enumerate(data['attempt_details'][:3]):  # Check first 3
+                        if 'raw_response' in attempt:
+                            resp_size = len(json.dumps(attempt['raw_response']).encode('utf-8'))
+                            if resp_size > 50 * 1024 * 1024:  # >50MB
+                                details.append(f"attempt {i+1} response: {resp_size / (1024**2):.1f}MB")
+                        
+                        if 'program' in attempt:
+                            prog_size = len(str(attempt['program']).encode('utf-8'))
+                            if prog_size > 1024 * 1024:  # >1MB
+                                details.append(f"attempt {i+1} program: {prog_size / 1024:.1f}KB")
+            
+            if 'results' in data:
+                results_size = len(json.dumps(data['results']).encode('utf-8'))
+                if results_size > total_size * 0.1:  # >10% of total
+                    details.append(f"results array: {results_size / (1024**2):.1f}MB")
+            
+            if 'all_responses' in data:
+                responses_size = len(json.dumps(data['all_responses']).encode('utf-8'))
+                if responses_size > total_size * 0.1:  # >10% of total
+                    details.append(f"all_responses: {responses_size / (1024**2):.1f}MB")
+            
+            return "Large components: " + ", ".join(details) if details else "Unknown large components"
+            
+        except Exception as e:
+            return f"Error analyzing file size: {e}"
+    
+    def _report_large_file_errors(self):
+        """Report any large file errors that occurred during the run"""
+        if not self.large_file_errors:
+            return
+        
+        print("")
+        print("🚨" * 30)
+        print("LARGE FILE ERRORS SUMMARY")
+        print("🚨" * 30)
+        print(f"Number of files that exceeded 1GB limit: {len(self.large_file_errors)}")
+        print("")
+        
+        # Sort by size for easier analysis
+        sorted_errors = sorted(self.large_file_errors, key=lambda x: x['size_gb'], reverse=True)
+        
+        print("Files blocked from saving (largest first):")
+        print("-" * 80)
+        
+        for i, error in enumerate(sorted_errors[:10], 1):  # Show top 10
+            print(f"{i:2d}. {error['filename']}")
+            print(f"    Size: {error['size_gb']:.2f}GB ({error['size_bytes']:,} bytes)")
+            print(f"    {error['details']}")
+            print(f"    Time: {error['timestamp']}")
+            print("")
+        
+        if len(sorted_errors) > 10:
+            print(f"... and {len(sorted_errors) - 10} more files blocked")
+            print("")
+        
+        # Provide guidance
+        total_blocked_size = sum(e['size_gb'] for e in self.large_file_errors)
+        print(f"Total data blocked: {total_blocked_size:.2f}GB")
+        print("")
+        print("💡 RECOMMENDATIONS:")
+        print("   • Large responses often indicate very verbose model outputs")
+        print("   • Consider using lower max_tokens to reduce response size")
+        print("   • Check if model is generating extremely long programs")
+        print("   • Monitor raw_response fields which may contain large reasoning traces")
+        print("   • For debugging, you can increase the size limit parameter")
+        print("🚨" * 30)
     
     def _update_health_metrics(self, attempt_detail: Dict, exec_time: float):
         """Update health monitoring metrics (thread-safe)"""
@@ -1152,6 +1271,10 @@ class ARCTaskRunnerSimple:
                     print(f"⚠️ Task {task_id} has no valid attempts - skipping")
         
         summary_filepath = self.save_summary(results, subset_name, dataset, timeout_occurred=timeout_occurred)
+        
+        # Report any large file errors at the end of the run
+        self._report_large_file_errors()
+        
         return results, summary_filepath
     
     def _display_task_summary(self, task_id: str, task_result: Dict):
@@ -1231,6 +1354,15 @@ class ARCTaskRunnerSimple:
         
         filepath = self.logs_dir / filename
         
+        # Check file size before saving
+        should_save, size_error = self._check_file_size_before_save(result, filename)
+        
+        if not should_save:
+            print(f"🚨 LARGE FILE ERROR: {size_error}")
+            print(f"   Task: {result['task_id']}")
+            print(f"   Skipping file save to prevent disk issues")
+            return  # Skip saving but continue execution
+        
         try:
             with open(filepath, 'w') as f:
                 json.dump(result, f, indent=2)
@@ -1305,8 +1437,21 @@ class ARCTaskRunnerSimple:
         
         filepath = self.logs_dir / filename
         
-        with open(filepath, 'w') as f:
-            json.dump(summary, f, indent=2)
+        # Check file size before saving summary
+        should_save, size_error = self._check_file_size_before_save(summary, filename)
+        
+        if not should_save:
+            print(f"🚨 LARGE SUMMARY FILE ERROR: {size_error}")
+            print(f"   Summary will not be saved to prevent disk issues")
+            print(f"   Consider reducing data collection or increasing size limit")
+            # Still continue with printing the summary statistics
+        else:
+            try:
+                with open(filepath, 'w') as f:
+                    json.dump(summary, f, indent=2)
+            except Exception as e:
+                print(f"🚨 SUMMARY FILE I/O ERROR: {e}")
+                should_save = False  # Mark as unsaved
         
         # Print summary
         run_info = f" (Run {self.run_number})" if self.run_number > 0 else ""
@@ -1344,9 +1489,15 @@ class ARCTaskRunnerSimple:
             print(f"  Timeout Responses:        {percentage_metrics['timeout_responses']:.1%}")
             print(f"  API Failure Responses:    {percentage_metrics['api_failure_responses']:.1%}")
         
-        final_message = "⚠️ PARTIAL results saved to:" if timeout_occurred else "Results saved to:"
-        print(f"\n{final_message} {filepath}")
-        return filepath
+        # Update final message based on whether file was actually saved
+        if should_save:
+            final_message = "⚠️ PARTIAL results saved to:" if timeout_occurred else "Results saved to:"
+            print(f"\n{final_message} {filepath}")
+            return filepath
+        else:
+            final_message = "⚠️ Results NOT SAVED due to size limit - see errors above"
+            print(f"\n{final_message}")
+            return None
     
     def run_repeated_subset(self, subset_name: str, dataset: str = "arc-agi-1", limit: Optional[int] = None, repeat_runs: int = 3) -> List[List[Dict]]:
         """Run the same subset multiple times with completely independent runs"""
@@ -1420,6 +1571,10 @@ class ARCTaskRunnerSimple:
         
         # Load results from files and calculate aggregate statistics
         all_run_results = self._load_and_aggregate_results(run_files, subset_name, dataset, repeat_runs)
+        
+        # Report any large file errors that occurred across all runs
+        # Note: Each individual run reports its own errors, but this provides a summary
+        self._report_large_file_errors()
         
         return all_run_results
     
@@ -1538,8 +1693,21 @@ class ARCTaskRunnerSimple:
             filename = f"{timestamp}_aggregate_summary_{dataset}_{subset_name}_all_attempts_{repeat_runs}runs.json"
             filepath = self.logs_dir / filename
             
-            with open(filepath, 'w') as f:
-                json.dump(aggregate_summary, f, indent=2)
+            # Check file size before saving aggregate summary
+            should_save, size_error = self._check_file_size_before_save(aggregate_summary, filename)
+            
+            if not should_save:
+                print(f"🚨 LARGE AGGREGATE SUMMARY ERROR: {size_error}")
+                print(f"   Aggregate summary will not be saved to prevent disk issues")
+                print(f"   Consider reducing data collection or increasing size limit")
+                filepath = None  # Mark as unsaved
+            else:
+                try:
+                    with open(filepath, 'w') as f:
+                        json.dump(aggregate_summary, f, indent=2)
+                except Exception as e:
+                    print(f"🚨 AGGREGATE SUMMARY FILE I/O ERROR: {e}")
+                    filepath = None  # Mark as unsaved
             
             # Display results
             print("\n" + "="*70)
@@ -1582,7 +1750,10 @@ class ARCTaskRunnerSimple:
                     print(f"  95% CI: [{ci_lower:.1%}, {ci_upper:.1%}]")
                 print("")
             
-            print(f"Aggregate results saved to: {filepath}")
+            if filepath:
+                print(f"Aggregate results saved to: {filepath}")
+            else:
+                print("⚠️ Aggregate results NOT SAVED due to size limit - see errors above")
         else:
             print("\n❌ No valid run statistics to aggregate")
 

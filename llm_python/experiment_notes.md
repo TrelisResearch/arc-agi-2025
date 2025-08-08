@@ -96,7 +96,55 @@ and then run inference on it:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c1057 --base-url http://107.152.109.12:11385/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
 ```
-...
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c1057
+Total tasks: 400
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 14,885,003
+Total cost: $2.830701
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 11.8%
+  Pass@2 (Train Majority):  11.8%
+  Oracle (Best Attempt):    12.8%
+  All Train Correct:        10.2%
+  Min 1 Train Correct:      26.2%
+  Min 1 Code Success:       99.8%
+  Max Length Responses:     5.4%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+Run 3x on the first checkpoint:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c1057 --base-url http://107.152.109.12:11385/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c1057
+Number of runs: 3
+Valid runs: 3
+
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    400    11.5%      10.5%      13.0%    7.5%       23.0%       100.0%       5.4%    
+2    400    14.5%      13.2%      15.2%    10.8%      25.2%       100.0%       5.2%    
+3    400    10.8%      10.2%      12.2%    10.2%      25.2%       100.0%       5.3%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 12.2%
+  Std Dev: 2.0%
+  95% CI: [8.4%, 16.1%]
 
 Now check the second checkpoint:
 ```bash
@@ -106,31 +154,130 @@ and then run inference on it:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c2114 --base-url http://107.152.109.18:11154/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
 ```
-...
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c2114
+Total tasks: 400
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 14,835,658
+Total cost: $2.801094
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 11.8%
+  Pass@2 (Train Majority):  10.8%
+  Oracle (Best Attempt):    13.5%
+  All Train Correct:        8.8%
+  Min 1 Train Correct:      24.8%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     4.4%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+And then run 3x on the second checkpoint:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c2114 --base-url http://107.152.109.18:11154/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+Run 1: 
+Run 2: 18.8%
+
 and then the third checkpoint:
 ```bash
 uv run runpod/create_pod.py sglang -- --model-path Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171
 ```
-...
 and then run inference on it:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171 --base-url http://107.152.109.18:11155/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
 ```
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171
+Total tasks: 400
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 14,724,346
+Total cost: $2.734307
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 15.0%
+  Pass@2 (Train Majority):  14.0%
+  Oracle (Best Attempt):    16.5%
+  All Train Correct:        11.5%
+  Min 1 Train Correct:      29.2%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     3.1%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+
+And then run 3x on the third checkpoint:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171 --base-url http://107.152.109.18:11155/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+
+Run 1: 
+Run 2: 16.2%
+
 and to be sure, run the final checkpoint:
 ```bash
 uv run runpod/create_pod.py sglang -- --model-path Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c4228
 ```
-...
 and then run inference on it:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c4228 --base-url http://107.152.109.18:11142/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
 ```
-...
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c4228
+Total tasks: 400
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 14,639,945
+Total cost: $2.683666
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 14.5%
+  Pass@2 (Train Majority):  14.2%
+  Oracle (Best Attempt):    16.2%
+  All Train Correct:        11.8%
+  Min 1 Train Correct:      29.2%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     1.4%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
+And then run 3x on the final checkpoint:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c4228 --base-url http://107.152.109.18:11142/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
 
+Run 1: 15.8
 
+And also run 3x on the final pushed model - Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749:
 
+Start up a pod:
+```bash
+uv run runpod/create_pod.py sglang -- --model-path Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749
+```
+and then run inference on it with 3x runs:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749 --base-url http://107.152.109.18:11813/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+
+Run 1: 14.5
+Run 2: 12%
+
+### Test out the final pushed model on ARC-AGI-2 eval set
+and then run inference on it with 3x runs:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 64 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749 --base-url http://107.152.109.18:11813/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
 
 ### Generate arc-agi-2 programs with the soar model julien 7b
 
