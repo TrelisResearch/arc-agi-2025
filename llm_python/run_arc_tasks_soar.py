@@ -254,7 +254,13 @@ class ARCTaskRunnerSimple:
         # Initialize fresh instances to prevent state leakage
         self.task_loader = TaskLoader()
         self.scorer = GridScorer()
-        self.executor = ArcTester(timeout=0.5, executor_type=self.executor_type)
+        # Enforce output size limits at execution time to prevent giant grids
+        self.executor = ArcTester(
+            timeout=0.5,
+            executor_type=self.executor_type,
+            max_output_chars=10_000,
+            max_output_cells=1_800,
+        )
         self.prompt_loader = PromptLoader()
         
         # Thread-safe cost tracking
@@ -1097,7 +1103,63 @@ class ARCTaskRunnerSimple:
             try:
                 # Get the pre-created prompt for this task
                 full_prompt = task_results[task_id]['full_prompt']
-                result = self.run_single_attempt(task_id, task_data, attempt_num, dataset, subset_name, full_prompt)
+                # Hard wall-time for an entire attempt to avoid rare hangs beyond API timeout
+                # Provide a small buffer above API timeout for local processing
+                attempt_wall_time = (self.api_timeout or 0) + 20
+                try:
+                    result = execute_with_timeout(
+                        self.run_single_attempt,
+                        task_id,
+                        task_data,
+                        attempt_num,
+                        dataset,
+                        subset_name,
+                        full_prompt,
+                        timeout=attempt_wall_time,
+                    )
+                except TimeoutError:
+                    # Synthesize a timeout attempt detail so progress continues
+                    attempt_detail = {
+                        'attempt_number': attempt_num + 1,
+                        'timestamp': datetime.datetime.now().isoformat(),
+                        'input_tokens': 0,
+                        'output_tokens': 0,
+                        'attempt_cost': 0.0,
+                        'program_extracted': False,
+                        'program': '',
+                        'is_train_transductive': False,
+                        'train_transduction_reason': '',
+                        'is_test_transductive': False,
+                        'test_transduction_reason': '',
+                        'train_results': [],
+                        'train_accuracy': 0.0,
+                        'train_exec_errors': 0,
+                        'train_exec_timeouts': 0,
+                        'test_predicted': None,
+                        'test_results': [],
+                        'test_correct': False,
+                        'test_correct_count': 0,
+                        'test_exec_error': False,
+                        'test_exec_timeout': False,
+                        'raw_response': None,
+                        'sampling_params': {},
+                        'api_success': False,
+                        'api_timeout': True,
+                        'empty_response': True,
+                        'hit_max_tokens': False,
+                        'error': f'attempt_wall_timeout_{attempt_wall_time}s',
+                        'all_test_correct': False,
+                        'code_ran': False,
+                    }
+                    result = {
+                        'task_id': task_id,
+                        'attempt_num': attempt_num,
+                        'attempt_detail': attempt_detail,
+                        'task_data': task_data,
+                        'dataset': dataset,
+                        'subset': subset_name,
+                        'full_prompt': full_prompt,
+                    }
                 attempt_duration = time.time() - attempt_start
                 if attempt_duration > 60:  # Log slow attempts
                     print(f"🐌 Slow attempt: {task_id} attempt {attempt_num + 1} took {attempt_duration:.1f}s (timeout: {self.api_timeout}s)")
@@ -1152,44 +1214,47 @@ class ARCTaskRunnerSimple:
             
             print(f"🚀 Started {total_attempts} attempts with {self.max_workers} workers")
             
-            # Wait for all attempts to complete
+            # Wait for all attempts to complete, reporting progress periodically
             start_time = time.time()
             timeout_occurred = False  # Track if we hit the global timeout
             
-            try:
-                from concurrent.futures import as_completed
-                completed_count = 0
-                
-                # Use as_completed with global timeout - each future gets fair treatment
-                for future in as_completed(futures, timeout=self.worker_timeout):
-                    completed_count += 1
-                    try:
-                        result = future.result()  # No timeout needed - future is already done
-                    except Exception as future_e:
-                        print(f"🚨 Future #{completed_count} error: {future_e}")
-                        # Continue processing other futures instead of stopping
-                
-                # Check if we completed all futures 
-                completed_futures = sum(1 for future in futures if future.done())
-                if completed_futures == total_attempts:
-                    print(f"✅ All {total_attempts} attempts completed")
-                    
-            except Exception as e:
-                # Handle global timeout from as_completed()
-                completed_futures = sum(1 for future in futures if future.done())
-                print(f"⏰ Global timeout reached after {time.time() - start_time:.1f}s")
-                print(f"⚠️ Only {completed_futures}/{total_attempts} attempts completed")
-                print("🛑 Cancelling all remaining futures")
-                
-                # Cancel any remaining futures
-                for future in futures:
-                    if not future.done():
-                        future.cancel()
-                        
-                print(f"Timeout/error details: {e}")
-                
-                # Mark that this run was incomplete due to timeout
-                timeout_occurred = True
+            from concurrent.futures import as_completed
+            completed_count = 0
+            remaining = set(futures)
+            progress_interval = 15.0
+            
+            while remaining:
+                time_elapsed = time.time() - start_time
+                time_left = self.worker_timeout - time_elapsed
+                if time_left <= 0:
+                    print(f"⏰ Global timeout reached after {time_elapsed:.1f}s")
+                    print(f"⚠️ Only {completed_count}/{total_attempts} attempts completed")
+                    print("🛑 Cancelling all remaining futures")
+                    for future in list(remaining):
+                        if not future.done():
+                            future.cancel()
+                    timeout_occurred = True
+                    break
+                try:
+                    # Use a short timeout so we can log periodic progress
+                    for future in as_completed(list(remaining), timeout=min(progress_interval, time_left)):
+                        remaining.discard(future)
+                        completed_count += 1
+                        try:
+                            _ = future.result()
+                        except Exception as future_e:
+                            print(f"🚨 Future #{completed_count} error: {future_e}")
+                    # Periodic progress log
+                    done_now = total_attempts - len(remaining)
+                    print(f"⏳ Progress: {done_now}/{total_attempts} attempts done; {len(remaining)} remaining")
+                except Exception:
+                    # No futures completed in this window; print a heartbeat
+                    done_now = total_attempts - len(remaining)
+                    print(f"⏳ No completions in last {progress_interval:.0f}s — {done_now}/{total_attempts} done; {len(remaining)} remaining")
+                    continue
+            
+            if not timeout_occurred and completed_count == total_attempts:
+                print(f"✅ All {total_attempts} attempts completed")
             
             # Check final status - handle cancelled futures properly
             successful_attempts = 0
@@ -1467,7 +1532,25 @@ class ARCTaskRunnerSimple:
             partial_tasks = 0
             complete_tasks = total_tasks
         
-        # Create summary with full results for later aggregation
+        # Build compact results for summary (strip heavy fields like raw_response/program/all_responses)
+        results_for_summary = []
+        for r in results:
+            try:
+                compact = {k: v for k, v in r.items() if k != 'all_responses'}
+                compact_attempts = []
+                for att in r.get('attempt_details', []):
+                    if isinstance(att, dict):
+                        compact_att = {k: v for k, v in att.items() if k not in ('raw_response', 'program')}
+                        compact_attempts.append(compact_att)
+                    else:
+                        compact_attempts.append(att)
+                compact['attempt_details'] = compact_attempts
+                results_for_summary.append(compact)
+            except Exception:
+                # Fallback to original entry on unexpected structure
+                results_for_summary.append(r)
+
+        # Create summary with compact results for later aggregation
         summary = {
             'timestamp': timestamp,
             'dataset': dataset,
@@ -1483,7 +1566,7 @@ class ARCTaskRunnerSimple:
             'total_tokens': self.total_tokens,
             'total_cost': self.total_cost,
             'metrics': percentage_metrics,
-            'results': results,  # Include full results for aggregation
+            'results': results_for_summary,  # Compact results to keep summary small
             'task_ids': [result['task_id'] for result in results]  # Also include task IDs for convenience
         }
         

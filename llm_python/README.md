@@ -113,6 +113,7 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --b
 - **Optimized File I/O**: 30-second timeout for file operations with detailed error logging for debugging
 - **Independent Multiple Runs**: Each repeated run is completely isolated with no shared state - results loaded from files for aggregation
 - **Robust State Management**: Explicit garbage collection and thread-safe cleanup between runs prevents state spillover and race conditions
+ - **Output Size Guards**: Predicted grids exceeding size limits are dropped to prevent runaway logs (default ≤10,000 chars and ≤1,800 cells)
 
 **When to use:**
 - For comprehensive evaluation with statistical rigor
@@ -123,7 +124,7 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --b
 
 ### Timeouts
 
-- **API (per attempt)**: 120s with `--qwen-no-think`; otherwise 2400s. Client timeout = API timeout + 300s.
+- **API (per attempt)**: 120s with `--qwen-no-think`; otherwise 2400s. Client timeout = API timeout + 15s.
 - **Global run**: 7200s per run (cancels remaining attempts if exceeded).
 - **Program execution**: 0.5s per train/test execution in the executor.
 
@@ -131,6 +132,10 @@ Behavior when timeouts occur:
 - **API timeout**: Retries up to 3 times; on final timeout the attempt is recorded with `api_timeout=True`, `api_success=False` and logged.
 - **Global timeout**: Remaining futures are cancelled; partial results are saved and the summary includes `TIMEOUT_PARTIAL` with `timeout_occurred=True`.
 - **Execution timeout**: Per-example `timed_out=True`; included in health and summary metrics.
+
+### Output Size Limits
+
+- Predicted grid outputs are validated after execution. If the serialized grid exceeds 10,000 characters, or the grid contains more than 1,800 cells (sum of row lengths), the output is rejected for that attempt with `error: "output_too_large(...)"` and no prediction is recorded. This prevents pathological outputs from inflating logs.
 
 ### Grids-Only Dataset Creation (`create_grids_only_dataset.py`)
 

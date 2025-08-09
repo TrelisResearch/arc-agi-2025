@@ -39,7 +39,9 @@ class ArcTester:
     _executor_context = None
     _executor_type = None
     
-    def __init__(self, timeout: int = 2, executor_type: str = "unrestricted"):
+    def __init__(self, timeout: int = 2, executor_type: str = "unrestricted",
+                 max_output_chars: Optional[int] = None,
+                 max_output_cells: Optional[int] = None):
         """Initialize the ARC tester.
         
         Args:
@@ -48,6 +50,8 @@ class ArcTester:
         """
         self.timeout = timeout
         self.executor_type = executor_type
+        self.max_output_chars = max_output_chars
+        self.max_output_cells = max_output_cells
         
         # Initialize the executor if not already done or if type changed
         if (ArcTester._executor is None or 
@@ -160,6 +164,29 @@ else:
             if result is not None:
                 # Convert numpy types to Python types if needed
                 result = self._convert_numpy_types(result)
+                # Oversize output guard
+                try:
+                    import json as _json
+                    reason = None
+                    if self.max_output_cells is not None:
+                        try:
+                            total_cells = sum(len(row) for row in result) if isinstance(result, list) else 0
+                            if total_cells > self.max_output_cells:
+                                reason = f"cells={total_cells}>max={self.max_output_cells}"
+                        except Exception:
+                            pass
+                    if reason is None and self.max_output_chars is not None:
+                        try:
+                            s = _json.dumps(result, separators=(",", ":"))
+                            if len(s) > self.max_output_chars:
+                                reason = f"chars={len(s)}>max={self.max_output_chars}"
+                        except Exception:
+                            pass
+                    if reason is not None:
+                        return None, f"output_too_large({reason})", False
+                except Exception:
+                    # If guard fails, proceed with result
+                    pass
                 return result, "", False
             else:
                 return None, "Program produced no output", False
