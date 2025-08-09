@@ -160,6 +160,9 @@ def _json_safe(obj):
         return [_json_safe(x) for x in obj]
     elif isinstance(obj, tuple):
         return [_json_safe(x) for x in obj]
+    elif isinstance(obj, set):
+        # Sets are not JSON-serializable; convert to list (order not guaranteed)
+        return [_json_safe(x) for x in obj]
     else:
         # Scalars and other containers
         if isinstance(obj, np_integer):
@@ -171,6 +174,23 @@ def _json_safe(obj):
                 return obj.tolist()
             except Exception:
                 return str(obj)
+        # Handle common iterator/generator types that appear in responses or logs
+        tname = type(obj).__name__
+        if tname in ('list_reverseiterator', 'map', 'filter', 'zip', 'enumerate'):
+            try:
+                return [_json_safe(x) for x in list(obj)]
+            except Exception:
+                return str(obj)
+        # Generic iterable fallback (avoid strings/bytes/dicts which are handled above)
+        try:
+            from collections.abc import Iterable
+            if isinstance(obj, Iterable) and not isinstance(obj, (str, bytes, dict)):
+                try:
+                    return [_json_safe(x) for x in list(obj)]
+                except Exception:
+                    return str(obj)
+        except Exception:
+            pass
         return obj
 
 class ARCTaskRunnerSimple:
