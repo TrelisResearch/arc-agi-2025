@@ -184,7 +184,7 @@ class ARCTaskRunnerSimple:
             print("   The --qwen-no-think flag will be ignored for this endpoint")
         
         # Calculate timeouts based on model configuration
-        self.api_timeout = 600 if self.qwen_no_think else 2400
+        self.api_timeout = 120 if self.qwen_no_think else 2400
         client_timeout = self.api_timeout + 300  # Buffer for retries/overhead
         self.worker_timeout = 7200  # 2 hours per run - much more reasonable for large experiments
         

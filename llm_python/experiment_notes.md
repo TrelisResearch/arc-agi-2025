@@ -46,6 +46,26 @@ and run inference
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/incorrect2874__partial2114_ties --base-url http://38.80.152.249:30827/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
 ```
+This resulted in garbage... so this won't work. Density was 0.3.
+
+Trying a linear merge instead, weighted [1,1] - Trelis/incorrect2874__partial2114_linear:
+```bash
+uv run runpod/create_pod.py sglang -- --model-path Trelis/incorrect2874__partial2114_linear
+```
+and then run inference:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/incorrect2874__partial2114_linear --base-url http://38.80.152.249:30934/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+Again absolute garbage.
+
+Let's run the final checkpoint - Trelis/Qwen3-4B_dsarc-programs-50-full-200-incorrect_20250808-134330-c5748:
+```bash
+uv run runpod/create_pod.py sglang -- --model-path Trelis/Qwen3-4B_dsarc-programs-50-full-200-incorrect_20250808-134330-c5748
+```
+and then run inference:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-incorrect_20250808-134330-c5748 --base-url http://38.80.152.249:30956/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+``` 
 
 
 
