@@ -126,6 +126,53 @@ def serialize_response(response):
     except Exception as e:
         return {'error': f'Failed to serialize response: {str(e)}'}
 
+def _json_safe(obj):
+    """Recursively convert data to JSON-safe types, including dict KEYS.
+    - Coerces numpy scalars to Python scalars
+    - Converts tuples to lists
+    - Ensures dict keys are str/int/float/bool/None (numpy scalars -> python; others -> str)
+    """
+    # Lazy numpy type checks (without hard dependency if not installed)
+    np_integer = ()
+    np_floating = ()
+    try:
+        import numpy as _np  # local import
+        np_integer = (getattr(_np, 'integer'),)
+        np_floating = (getattr(_np, 'floating'),)
+    except Exception:
+        pass
+
+    # Values
+    if isinstance(obj, dict):
+        safe_dict = {}
+        for k, v in obj.items():
+            # Normalize key
+            new_k = k
+            if isinstance(k, np_integer):
+                new_k = int(k)  # type: ignore[arg-type]
+            elif isinstance(k, np_floating):
+                new_k = float(k)  # type: ignore[arg-type]
+            elif not isinstance(k, (str, int, float, bool, type(None))):
+                new_k = str(k)
+            safe_dict[new_k] = _json_safe(v)
+        return safe_dict
+    elif isinstance(obj, list):
+        return [_json_safe(x) for x in obj]
+    elif isinstance(obj, tuple):
+        return [_json_safe(x) for x in obj]
+    else:
+        # Scalars and other containers
+        if isinstance(obj, np_integer):
+            return int(obj)  # type: ignore[arg-type]
+        if isinstance(obj, np_floating):
+            return float(obj)  # type: ignore[arg-type]
+        if hasattr(obj, 'tolist'):
+            try:
+                return obj.tolist()
+            except Exception:
+                return str(obj)
+        return obj
+
 class ARCTaskRunnerSimple:
     """ARC task runner with all-attempts, rolling execution, and voting-based evaluation
     
@@ -185,7 +232,7 @@ class ARCTaskRunnerSimple:
         
         # Calculate timeouts based on model configuration
         self.api_timeout = 120 if self.qwen_no_think else 2400
-        client_timeout = self.api_timeout + 300  # Buffer for retries/overhead
+        client_timeout = self.api_timeout + 15  # Small buffer so HTTP calls don't outlive API timeout
         self.worker_timeout = 7200  # 2 hours per run - much more reasonable for large experiments
         
         # Initialize OpenAI client with calculated timeout
@@ -322,7 +369,7 @@ class ARCTaskRunnerSimple:
         """
         try:
             # Estimate JSON size by serializing to string
-            json_str = json.dumps(data, indent=2)
+            json_str = json.dumps(_json_safe(data), indent=2)
             size_bytes = len(json_str.encode('utf-8'))
             size_gb = size_bytes / (1024**3)
             
@@ -1365,8 +1412,9 @@ class ARCTaskRunnerSimple:
         
         filepath = self.logs_dir / filename
         
-        # Check file size before saving
-        should_save, size_error = self._check_file_size_before_save(result, filename)
+        # Sanitize for JSON and check size before saving
+        safe_result = _json_safe(result)
+        should_save, size_error = self._check_file_size_before_save(safe_result, filename)
         
         if not should_save:
             print(f"🚨 LARGE FILE ERROR: {size_error}")
@@ -1376,7 +1424,7 @@ class ARCTaskRunnerSimple:
         
         try:
             with open(filepath, 'w') as f:
-                json.dump(result, f, indent=2)
+                json.dump(safe_result, f, indent=2)
         except Exception as e:
             print(f"🚨 FILE I/O ERROR: Task {result['task_id']}, Attempt {result['attempt_details'][0]['attempt_number']}")
             print(f"   File: {filepath}")
@@ -1448,8 +1496,9 @@ class ARCTaskRunnerSimple:
         
         filepath = self.logs_dir / filename
         
-        # Check file size before saving summary
-        should_save, size_error = self._check_file_size_before_save(summary, filename)
+        # Sanitize for JSON and check file size before saving summary
+        safe_summary = _json_safe(summary)
+        should_save, size_error = self._check_file_size_before_save(safe_summary, filename)
         
         if not should_save:
             print(f"🚨 LARGE SUMMARY FILE ERROR: {size_error}")
@@ -1459,7 +1508,7 @@ class ARCTaskRunnerSimple:
         else:
             try:
                 with open(filepath, 'w') as f:
-                    json.dump(summary, f, indent=2)
+                    json.dump(safe_summary, f, indent=2)
             except Exception as e:
                 print(f"🚨 SUMMARY FILE I/O ERROR: {e}")
                 should_save = False  # Mark as unsaved

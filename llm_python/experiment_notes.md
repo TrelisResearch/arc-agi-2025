@@ -19,8 +19,10 @@ Lewis Reminders:
 - test transduction is now metadata
 
 Ronan reminders:
+Training speed-ups:
 - Use pissa for Lora initialization.
-
+- Move to 2e-4 for learning rate.
+- Reduce max seq length to around 24000.
 
 ---
 
@@ -36,6 +38,59 @@ then run inference on it:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-incorrect_20250808-134330-trainercheckpoint-2874-temp --base-url http://107.152.109.26:11879/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
 ```
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B_dsarc-programs-50-full-200-incorrect_20250808-134330-trainercheckpoint-2874-temp
+Number of runs: 3
+Valid runs: 1
+
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+2    400    6.8%       6.0%       7.8%     4.0%       13.0%       100.0%       0.8%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 6.8%
+  Std Dev: 0.0%
+
+Train Majority Pass2:
+  Mean: 6.0%
+  Std Dev: 0.0%
+
+All Test Correct:
+  Mean: 7.8%
+  Std Dev: 0.0%
+
+All Train Correct:
+  Mean: 4.0%
+  Std Dev: 0.0%
+
+Min1 Train Correct:
+  Mean: 13.0%
+  Std Dev: 0.0%
+
+Min1 Code Success:
+  Mean: 100.0%
+  Std Dev: 0.0%
+
+Max Length Responses:
+  Mean: 0.8%
+  Std Dev: 0.0%
+
+Timeout Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+
+Api Failure Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+
 
 and we'll also test out the hybrid model - Trelis/incorrect2874__partial2114_ties:
 ```bash
@@ -67,14 +122,69 @@ and then run inference:
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-incorrect_20250808-134330-c5748 --base-url http://38.80.152.249:30956/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
 ``` 
 
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B_dsarc-programs-50-full-200-incorrect_20250808-134330-c5748
+Number of runs: 3
+Valid runs: 3
 
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    400    8.0%       7.8%       9.2%     5.8%       15.2%       100.0%       0.4%    
+2    400    8.2%       7.8%       9.0%     5.2%       16.0%       100.0%       0.2%    
+3    400    6.8%       6.5%       7.5%     4.2%       15.8%       100.0%       0.3%    
 
-==================================================
-SUMMARY
-==================================================
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 7.7%
+  Std Dev: 0.8%
+  95% CI: [6.1%, 9.2%]
 
+Train Majority Pass2:
+  Mean: 7.3%
+  Std Dev: 0.7%
+  95% CI: [5.9%, 8.7%]
 
+All Test Correct:
+  Mean: 8.6%
+  Std Dev: 0.9%
+  95% CI: [6.7%, 10.4%]
 
+All Train Correct:
+  Mean: 5.1%
+  Std Dev: 0.8%
+  95% CI: [3.6%, 6.6%]
+
+Min1 Train Correct:
+  Mean: 15.7%
+  Std Dev: 0.4%
+  95% CI: [14.9%, 16.4%]
+
+Min1 Code Success:
+  Mean: 100.0%
+  Std Dev: 0.0%
+  95% CI: [100.0%, 100.0%]
+
+Max Length Responses:
+  Mean: 0.3%
+  Std Dev: 0.1%
+  95% CI: [0.2%, 0.5%]
+
+Timeout Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Api Failure Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
 
 
 ## 8 Aug 2025 Tasks
