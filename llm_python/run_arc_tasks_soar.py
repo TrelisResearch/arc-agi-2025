@@ -24,6 +24,10 @@ try:
     from .utils.timeout_utils import execute_with_timeout
     from .utils.transduction import is_transduction_cheating
     from .utils.prompt_loader import PromptLoader
+    from .utils.serialization import ResponseSerializer
+    from .utils.api_client import ARCAPIClient
+    from .utils.result_processor import ResultProcessor
+    from .utils.validator import ARCTaskValidator
 except ImportError:
     # Fall back to absolute imports (when run directly)
     from llm_python.utils.task_loader import TaskLoader
@@ -34,164 +38,13 @@ except ImportError:
     from llm_python.utils.timeout_utils import execute_with_timeout
     from llm_python.utils.transduction import is_transduction_cheating
     from llm_python.utils.prompt_loader import PromptLoader
+    from llm_python.utils.serialization import ResponseSerializer
+    from llm_python.utils.api_client import ARCAPIClient
+    from llm_python.utils.result_processor import ResultProcessor
+    from llm_python.utils.validator import ARCTaskValidator
 
 load_dotenv()
 
-def _ensure_json_serializable(obj):
-    """Convert any iterators or non-serializable objects to JSON-safe formats"""
-    if obj is None:
-        return None
-    
-    # Handle specific problematic types first
-    if type(obj).__name__ == 'list_reverseiterator':
-        if hasattr(obj, '__len__'):
-            print(f"⚠️  Converting list_reverseiterator with {len(obj)} items to list")
-        else:
-            print(f"⚠️  Converting list_reverseiterator to list")
-        return list(obj)
-    elif type(obj).__name__ in ('map', 'filter', 'enumerate', 'zip'):
-        print(f"⚠️  Converting {type(obj).__name__} iterator to list")
-        return list(obj)
-    elif hasattr(obj, 'tolist'):  # numpy arrays
-        return obj.tolist()
-    
-    # Try JSON serialization test for other objects
-    try:
-        import json
-        json.dumps(obj)
-        return obj  # Already serializable
-    except (TypeError, ValueError):
-        # Not serializable, try to convert
-        if hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes, dict)):
-            try:
-                return list(obj)
-            except (TypeError, ValueError):
-                pass
-        # Final fallback to string representation
-        return str(obj)
-
-def serialize_response(response):
-    """Convert OpenAI response to JSON-serializable format"""
-    if not response:
-        return None
-    
-    try:
-        choices = []
-        response_choices = getattr(response, 'choices', [])
-        # Ensure choices is a list, not an iterator
-        response_choices = _ensure_json_serializable(response_choices)
-        
-        for choice in response_choices:
-            message_data = {
-                'role': _ensure_json_serializable(getattr(choice.message, 'role', None)) if hasattr(choice, 'message') else None,
-                'content': _ensure_json_serializable(getattr(choice.message, 'content', None)) if hasattr(choice, 'message') else None,
-            }
-            
-            # Capture reasoning content from different model types and standardize to "reasoning" field
-            reasoning_content = None
-            
-            # Check for Qwen reasoning_content field first
-            if hasattr(choice, 'message') and hasattr(choice.message, 'reasoning_content'):
-                reasoning_content = _ensure_json_serializable(getattr(choice.message, 'reasoning_content', None))
-            
-            # Check for Gemini reasoning field
-            if hasattr(choice, 'message') and hasattr(choice.message, 'reasoning'):
-                reasoning_content = _ensure_json_serializable(getattr(choice.message, 'reasoning', None))
-            
-            # Standardize to "reasoning" field
-            if reasoning_content:
-                message_data['reasoning'] = reasoning_content
-            
-            # Keep reasoning_details for Gemini (additional structured data)
-            if hasattr(choice, 'message') and hasattr(choice.message, 'reasoning_details'):
-                message_data['reasoning_details'] = _ensure_json_serializable(getattr(choice.message, 'reasoning_details', None))
-            
-            choice_data = {
-                'index': _ensure_json_serializable(getattr(choice, 'index', None)),
-                'message': message_data,
-                'finish_reason': _ensure_json_serializable(getattr(choice, 'finish_reason', None)),
-            }
-            choices.append(choice_data)
-        
-        return {
-            'id': _ensure_json_serializable(getattr(response, 'id', None)),
-            'model': _ensure_json_serializable(getattr(response, 'model', None)),
-            'usage': {
-                'prompt_tokens': _ensure_json_serializable(getattr(response.usage, 'prompt_tokens', 0)) if hasattr(response, 'usage') and response.usage else 0,
-                'completion_tokens': _ensure_json_serializable(getattr(response.usage, 'completion_tokens', 0)) if hasattr(response, 'usage') and response.usage else 0,
-                'total_tokens': _ensure_json_serializable(getattr(response.usage, 'total_tokens', 0)) if hasattr(response, 'usage') and response.usage else 0,
-            },
-            'choices': choices,
-        }
-    except Exception as e:
-        return {'error': f'Failed to serialize response: {str(e)}'}
-
-def _json_safe(obj):
-    """Recursively convert data to JSON-safe types, including dict KEYS.
-    - Coerces numpy scalars to Python scalars
-    - Converts tuples to lists
-    - Ensures dict keys are str/int/float/bool/None (numpy scalars -> python; others -> str)
-    """
-    # Lazy numpy type checks (without hard dependency if not installed)
-    np_integer = ()
-    np_floating = ()
-    try:
-        import numpy as _np  # local import
-        np_integer = (getattr(_np, 'integer'),)
-        np_floating = (getattr(_np, 'floating'),)
-    except Exception:
-        pass
-
-    # Values
-    if isinstance(obj, dict):
-        safe_dict = {}
-        for k, v in obj.items():
-            # Normalize key
-            new_k = k
-            if isinstance(k, np_integer):
-                new_k = int(k)  # type: ignore[arg-type]
-            elif isinstance(k, np_floating):
-                new_k = float(k)  # type: ignore[arg-type]
-            elif not isinstance(k, (str, int, float, bool, type(None))):
-                new_k = str(k)
-            safe_dict[new_k] = _json_safe(v)
-        return safe_dict
-    elif isinstance(obj, list):
-        return [_json_safe(x) for x in obj]
-    elif isinstance(obj, tuple):
-        return [_json_safe(x) for x in obj]
-    elif isinstance(obj, set):
-        # Sets are not JSON-serializable; convert to list (order not guaranteed)
-        return [_json_safe(x) for x in obj]
-    else:
-        # Scalars and other containers
-        if isinstance(obj, np_integer):
-            return int(obj)  # type: ignore[arg-type]
-        if isinstance(obj, np_floating):
-            return float(obj)  # type: ignore[arg-type]
-        if hasattr(obj, 'tolist'):
-            try:
-                return obj.tolist()
-            except Exception:
-                return str(obj)
-        # Handle common iterator/generator types that appear in responses or logs
-        tname = type(obj).__name__
-        if tname in ('list_reverseiterator', 'map', 'filter', 'zip', 'enumerate'):
-            try:
-                return [_json_safe(x) for x in list(obj)]
-            except Exception:
-                return str(obj)
-        # Generic iterable fallback (avoid strings/bytes/dicts which are handled above)
-        try:
-            from collections.abc import Iterable
-            if isinstance(obj, Iterable) and not isinstance(obj, (str, bytes, dict)):
-                try:
-                    return [_json_safe(x) for x in list(obj)]
-                except Exception:
-                    return str(obj)
-        except Exception:
-            pass
-        return obj
 
 class ARCTaskRunnerSimple:
     """ARC task runner with all-attempts, rolling execution, and voting-based evaluation
@@ -209,75 +62,44 @@ class ARCTaskRunnerSimple:
                  max_tokens: int = None, temperature: float = None, reasoning_effort: str = "low", 
                  qwen_no_think: bool = False, prompt_version: str = "soar", unsafe_executor: bool = False, 
                  lora_adapter: str = None):
-        self.model = model
+        # Core configuration
         self.max_workers = max_workers
         self.rate_limit_delay = rate_limit_delay
         self.max_attempts = max_attempts
         self.run_number = run_number
-        self.reasoning_effort = reasoning_effort
-        self.qwen_no_think = qwen_no_think
-        self.prompt_version = prompt_version
-        self.base_url = base_url
-        
-        # Use appropriate API key based on endpoint
-        if base_url == "https://router.huggingface.co/v1":
-            self.api_key = self._get_hf_token()
-        elif base_url == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1":
-            self.api_key = os.getenv('DASHSCOPE_API_KEY')
-        else:
-            self.api_key = os.getenv('OPENAI_API_KEY')
-        
-        # Use appropriate API key based on endpoint
-        if base_url == "https://router.huggingface.co/v1":
-            self.api_key = self._get_hf_token()
-        elif base_url == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1":
-            self.api_key = os.getenv('DASHSCOPE_API_KEY')
-        else:
-            self.api_key = os.getenv('OPENAI_API_KEY')
         self.debug = debug
-        self.max_tokens = max_tokens
-        self.temperature = temperature
-        self.lora_adapter = lora_adapter
+        self.prompt_version = prompt_version
         
-        # Set executor type based on safety flag
-        self.executor_type = "unrestricted" if unsafe_executor else "docker"
+        # Calculate timeouts based on model configuration
+        api_timeout = 120 if qwen_no_think else 2400
+        self.worker_timeout = 7200  # 2 hours per run
+        
+        # Warn about safety settings
+        executor_type = "unrestricted" if unsafe_executor else "docker"
         if unsafe_executor:
             print("⚠️  WARNING: Using unrestricted executor - generated code will run directly on your system!")
         
-        # Warn about DashScope + qwen-no-think combination
-        if (self.base_url == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1" and 
-            self.qwen_no_think and "qwen" in self.model.lower()):
-            print("⚠️  WARNING: DashScope commercial Qwen models don't support enable_thinking=False")
-            print("   The --qwen-no-think flag will be ignored for this endpoint")
+        # Store references needed by other methods
+        self.large_file_errors = []
         
-        # Calculate timeouts based on model configuration
-        self.api_timeout = 120 if self.qwen_no_think else 2400
-        client_timeout = self.api_timeout + 15  # Small buffer so HTTP calls don't outlive API timeout
-        self.worker_timeout = 7200  # 2 hours per run - much more reasonable for large experiments
+        # Initialize services
+        self.api_client = ARCAPIClient(
+            model=model, base_url=base_url, max_tokens=max_tokens, 
+            temperature=temperature, reasoning_effort=reasoning_effort,
+            qwen_no_think=qwen_no_think, lora_adapter=lora_adapter,
+            api_timeout=api_timeout
+        )
         
-        # Initialize OpenAI client with calculated timeout
-        if base_url:
-            self.client = OpenAI(api_key=self.api_key, base_url=base_url, timeout=client_timeout)
-            print(f"📝 Using custom endpoint: {base_url}")
-            print(f"⏰ Timeouts: API={self.api_timeout}s, Client={client_timeout}s, ⚠️ WORKER={self.worker_timeout}s ({self.worker_timeout//60}min per run)")
-        else:
-            self.client = OpenAI(api_key=self.api_key, timeout=client_timeout)
-            print(f"📝 Using OpenAI endpoint")
-            print(f"⏰ Timeouts: API={self.api_timeout}s, Client={client_timeout}s, ⚠️ WORKER={self.worker_timeout}s ({self.worker_timeout//60}min per run)")
+        self.result_processor = ResultProcessor(
+            model=model, run_number=run_number, max_tokens=max_tokens
+        )
         
-        # LORA adapter will be specified in API calls if provided
-        
-        # Check /models endpoint to show what's available
-        if base_url:
-            self._check_models_endpoint()
-        
-        # Initialize fresh instances to prevent state leakage
+        # Initialize remaining components
         self.task_loader = TaskLoader()
         self.scorer = GridScorer()
-        # Enforce output size limits at execution time to prevent giant grids
         self.executor = ArcTester(
             timeout=0.5,
-            executor_type=self.executor_type,
+            executor_type=executor_type,
             max_output_chars=10_000,
             max_output_cells=1_800,
         )
@@ -288,10 +110,7 @@ class ARCTaskRunnerSimple:
         self.total_cost = 0.0
         self.total_tokens = 0
         
-        # Track large file errors (thread-safe)
-        self.large_file_errors = []
-        
-        # Thread-safe state management to prevent race conditions
+        # Thread-safe state management
         self._cleanup_lock = threading.Lock()
         
         # Health monitoring for long runs
@@ -301,45 +120,70 @@ class ARCTaskRunnerSimple:
             'exec_timeouts': 0,
             'exec_errors': 0,
             'exec_times': [],
-            'recent_window': 100,  # Rolling window size
-            'report_interval': 100  # Report every N attempts
+            'recent_window': 100,
+            'report_interval': 100
         }
         
-        # Create logs directory with timestamped subfolder
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.logs_dir = Path(__file__).parent / "logs" / timestamp
-        self.logs_dir.mkdir(parents=True, exist_ok=True)
-        print(f"📁 Logs will be saved to: {self.logs_dir}")
+        print(f"⏰ Timeouts: API={api_timeout}s, Worker={self.worker_timeout}s ({self.worker_timeout//60}min per run)")
+        print(f"📁 Logs will be saved to: {self.result_processor.logs_dir}")
     
-    def _get_hf_token(self) -> str:
-        """Get HuggingFace token from various sources"""
-        # Try environment variable first
-        if 'HF_TOKEN' in os.environ:
-            return os.environ['HF_TOKEN']
-        
-        # Try HuggingFace CLI token file locations
-        token_paths = [
-            Path.home() / ".cache" / "huggingface" / "token",
-            Path.home() / ".huggingface" / "token"
-        ]
-        
-        for token_path in token_paths:
-            if token_path.exists():
-                try:
-                    with open(token_path, 'r') as f:
-                        token = f.read().strip()
-                    if token:
-                        return token
-                except Exception as e:
-                    print(f"⚠️ Warning: Could not read HF token from {token_path}: {e}")
-        
-        raise ValueError("HuggingFace token not found. Please run 'huggingface-cli login' or set HF_TOKEN environment variable")
+    @property
+    def model(self):
+        """Get the model name from the API client"""
+        return self.api_client.model
+    
+    @property
+    def logs_dir(self):
+        """Get the logs directory from the result processor"""
+        return self.result_processor.logs_dir
+    
+    @property
+    def base_url(self):
+        """Get the base URL from the API client"""
+        return self.api_client.base_url
+    
+    @property
+    def max_tokens(self):
+        """Get max tokens from the API client"""
+        return self.api_client.max_tokens
+    
+    @property
+    def temperature(self):
+        """Get temperature from the API client"""
+        return self.api_client.temperature
+    
+    @property
+    def reasoning_effort(self):
+        """Get reasoning effort from the API client"""
+        return self.api_client.reasoning_effort
+    
+    @property
+    def qwen_no_think(self):
+        """Get qwen no think setting from the API client"""
+        return self.api_client.qwen_no_think
+    
+    @property
+    def lora_adapter(self):
+        """Get LORA adapter from the API client"""
+        return self.api_client.lora_adapter
+    
+    @property
+    def executor_type(self):
+        """Get executor type from the executor"""
+        return self.executor.executor_type
+    
+    @property
+    def api_timeout(self):
+        """Get API timeout from the API client"""
+        return self.api_client.api_timeout
+    
+    # HF token handling moved to ARCAPIClient
     
     def _check_models_endpoint(self):
         """Check what models are available at the /models endpoint and validate arguments"""
         try:
             print("🔍 Checking available models...")
-            models_response = self.client.models.list()
+            models_response = self.api_client.client.models.list()
             
             if hasattr(models_response, 'data') and models_response.data:
                 available_models = []
@@ -395,7 +239,7 @@ class ARCTaskRunnerSimple:
         """
         try:
             # Estimate JSON size by serializing to string
-            json_str = json.dumps(_json_safe(data), indent=2)
+            json_str = json.dumps(ResponseSerializer.make_json_safe(data), indent=2)
             size_bytes = len(json_str.encode('utf-8'))
             size_gb = size_bytes / (1024**3)
             
@@ -564,39 +408,6 @@ class ARCTaskRunnerSimple:
               f"ExecErr {error_rate:.0f}% | "
               f"AvgTime {recent_avg_time:.2f}s")
     
-    def get_model_pricing(self, model: str) -> tuple[float, float]:
-        """Get input and output pricing rates for a model in $/1M tokens"""
-        model_lower = model.lower()
-        
-        # Reasoning models
-        if model_lower.startswith('o3-pro'):
-            return (20.00, 80.00)
-        elif model_lower.startswith('o3-mini'):
-            return (1.10, 4.40)
-        elif model_lower.startswith('o3'):
-            return (2.00, 8.00)
-        elif model_lower.startswith('o4-mini'):
-            return (1.10, 4.40)
-        
-        # GPT-4 models
-        elif model_lower.startswith('gpt-4.1-nano'):
-            return (0.10, 0.40)
-        elif model_lower.startswith('gpt-4.1-mini'):
-            return (0.40, 1.60)
-        elif model_lower.startswith('gpt-4.1'):
-            return (2.00, 8.00)
-        elif model_lower.startswith('gpt-4o-mini'):
-            return (0.15, 0.60)
-        elif model_lower.startswith('gpt-4o'):
-            return (2.50, 10.00)
-        
-        # Google models
-        elif model_lower.startswith('google/gemini-2.5-flash'):
-            return (0.30, 2.50)
-        
-        # Default fallback
-        else:
-            return (0.15, 0.60)
     
     def create_prompt(self, task_data: Dict) -> tuple[str, str]:
         """Create a prompt for the model to solve an ARC task"""
@@ -604,174 +415,16 @@ class ARCTaskRunnerSimple:
     
     def get_sampling_parameters(self) -> Dict:
         """Get the sampling parameters that will be used for API calls"""
-        kwargs = {}
-        
-        if self.max_tokens is not None:
-            kwargs["max_tokens"] = self.max_tokens
-        
-        # Set temperature (use instance value or default to 1.0)
-        if self.temperature is not None:
-            kwargs["temperature"] = self.temperature
-        else:
-            kwargs["temperature"] = 1.0  # Default temperature
-        
-        # Add reasoning parameters for OpenRouter
-        if self.base_url and "openrouter" in self.base_url.lower():
-            reasoning_tokens = {"low": 2000, "medium": 8000, "high": 32000}
-            if self.reasoning_effort in reasoning_tokens:
-                if "gemini" in self.model.lower():
-                    kwargs["extra_body"] = {"reasoning": {"max_tokens": reasoning_tokens[self.reasoning_effort]}}
-                else:
-                    if self.max_tokens is None:
-                        kwargs["max_tokens"] = reasoning_tokens[self.reasoning_effort]
-        
-        # Add thinking_budget for DashScope (Qwen thinking models)
-        if self.base_url == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1":
-            # Use the same as reasoning_effort
-            thinking_budget_tokens = {"low": 2000, "medium": 8000, "high": 16000}
-            if self.reasoning_effort in thinking_budget_tokens:
-                if "extra_body" not in kwargs:
-                    kwargs["extra_body"] = {}
-                kwargs["extra_body"]["thinking_budget"] = thinking_budget_tokens[self.reasoning_effort]
-            elif "qwen" in self.model.lower() and "thinking" in self.model.lower():
-                # Set default thinking budget for Qwen thinking models even without explicit reasoning_effort
-                if "extra_body" not in kwargs:
-                    kwargs["extra_body"] = {}
-                kwargs["extra_body"]["thinking_budget"] = 4000  # Optimal based on testing
-        
-        # Add thinking_budget for DashScope (Qwen thinking models)
-        if self.base_url == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1":
-            thinking_budget_tokens = {"low": 2000, "medium": 8000, "high": 32000}
-            if self.reasoning_effort in thinking_budget_tokens:
-                if "extra_body" not in kwargs:
-                    kwargs["extra_body"] = {}
-                kwargs["extra_body"]["thinking_budget"] = thinking_budget_tokens[self.reasoning_effort]
-        
-        # Add sampling parameters based on endpoint type
-        # Only apply defaults if not already set by model-specific logic
-        if "top_p" not in kwargs and "min_p" not in kwargs:
-            # For TCP endpoints, use min_p instead of top_p/top_k
-            if self.base_url and ":" in self.base_url and not self.base_url.startswith("https://"):
-                if "extra_body" not in kwargs:
-                    kwargs["extra_body"] = {}
-                kwargs["extra_body"]["min_p"] = 0.05
-            else:
-                # For most endpoints, use top_p and top_k defaults
-                kwargs["top_p"] = 0.9
-                # Put top_k in extra_body to avoid API errors
-                if "extra_body" not in kwargs:
-                    kwargs["extra_body"] = {}
-                if "top_k" not in kwargs["extra_body"]:
-                    kwargs["extra_body"]["top_k"] = 50
-        
-        # Add Qwen-specific parameters (only for no-think flag)
-        if "qwen" in self.model.lower() and self.base_url and self.qwen_no_think:
-            if "extra_body" not in kwargs:
-                kwargs["extra_body"] = {}
-            # Note: DashScope commercial models don't support enable_thinking=False
-            if self.base_url != "https://dashscope-intl.aliyuncs.com/compatible-mode/v1":
-                kwargs["extra_body"]["chat_template_kwargs"] = {"enable_thinking": False}
-        
-        # Extract sampling parameters for display
-        sampling_params = {}
-        for param in ['temperature', 'max_tokens', 'top_p', 'top_k', 'min_p', 'thinking_budget']:
-            if param in kwargs:
-                sampling_params[param] = kwargs[param]
-        
-        # Also check extra_body for nested parameters
-        if 'extra_body' in kwargs:
-            extra_body = kwargs['extra_body']
-            for param in ['top_k', 'min_p', 'thinking_budget']:
-                if param in extra_body:
-                    sampling_params[param] = extra_body[param]
-        
-        return sampling_params
+        return self.api_client.get_sampling_parameters()
     
-    def call_chat_completions_api(self, messages: List[Dict]) -> Dict:
+    def call_chat_completions_api(self, messages: List[Dict]) -> tuple:
         """Call the OpenAI Chat Completions API"""
-        try:
-            kwargs = {
-                "model": self.model,
-                "messages": messages
-            }
-            
-            if self.max_tokens is not None:
-                kwargs["max_tokens"] = self.max_tokens
-            
-            # Set temperature (use instance value or default to 1.0)
-            if self.temperature is not None:
-                kwargs["temperature"] = self.temperature
-            else:
-                kwargs["temperature"] = 1.0  # Default temperature
-            
-            # Add reasoning parameters for OpenRouter
-            if self.base_url and "openrouter" in self.base_url.lower():
-                reasoning_tokens = {"low": 2000, "medium": 8000, "high": 16000}
-                if self.reasoning_effort in reasoning_tokens:
-                    if "gemini" in self.model.lower():
-                        kwargs["extra_body"] = {"reasoning": {"max_tokens": reasoning_tokens[self.reasoning_effort]}}
-                    else:
-                        if self.max_tokens is None:
-                            kwargs["max_tokens"] = reasoning_tokens[self.reasoning_effort]
-            
-            # Add thinking_budget for DashScope (Qwen thinking models)
-            if self.base_url == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1":
-                # Based on testing: medium (4000) provides optimal balance of quality and performance
-                thinking_budget_tokens = {"low": 1000, "medium": 4000, "high": 8000}
-                if self.reasoning_effort in thinking_budget_tokens:
-                    if "extra_body" not in kwargs:
-                        kwargs["extra_body"] = {}
-                    kwargs["extra_body"]["thinking_budget"] = thinking_budget_tokens[self.reasoning_effort]
-                elif "qwen" in self.model.lower() and "thinking" in self.model.lower():
-                    # Set default thinking budget for Qwen thinking models even without explicit reasoning_effort
-                    if "extra_body" not in kwargs:
-                        kwargs["extra_body"] = {}
-                    kwargs["extra_body"]["thinking_budget"] = 4000  # Optimal based on testing
-            
-            # Add thinking_budget for DashScope (Qwen thinking models)
-            if self.base_url == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1":
-                thinking_budget_tokens = {"low": 2000, "medium": 8000, "high": 32000}
-                if self.reasoning_effort in thinking_budget_tokens:
-                    if "extra_body" not in kwargs:
-                        kwargs["extra_body"] = {}
-                    kwargs["extra_body"]["thinking_budget"] = thinking_budget_tokens[self.reasoning_effort]
-            
-            # Add sampling parameters based on endpoint type
-            # Only apply defaults if not already set by model-specific logic
-            if "top_p" not in kwargs and "min_p" not in kwargs:
-                # For TCP endpoints, use min_p instead of top_p/top_k
-                if self.base_url and ":" in self.base_url and not self.base_url.startswith("https://"):
-                    if "extra_body" not in kwargs:
-                        kwargs["extra_body"] = {}
-                    kwargs["extra_body"]["min_p"] = 0.05
-                else:
-                    # For most endpoints, use top_p and top_k defaults
-                    kwargs["top_p"] = 0.9
-                    # Put top_k in extra_body to avoid API errors
-                    if "extra_body" not in kwargs:
-                        kwargs["extra_body"] = {}
-                    if "top_k" not in kwargs["extra_body"]:
-                        kwargs["extra_body"]["top_k"] = 50
-            
-            # Add Qwen-specific parameters (only for no-think flag)
-            if "qwen" in self.model.lower() and self.base_url and self.qwen_no_think:
-                if "extra_body" not in kwargs:
-                    kwargs["extra_body"] = {}
-                # Note: DashScope commercial models don't support enable_thinking=False
-                if self.base_url != "https://dashscope-intl.aliyuncs.com/compatible-mode/v1":
-                    kwargs["extra_body"]["chat_template_kwargs"] = {"enable_thinking": False}
-            
-            # Add LORA adapter specification if provided
-            if self.lora_adapter:
-                if "extra_body" not in kwargs:
-                    kwargs["extra_body"] = {}
-                kwargs["extra_body"]["lora"] = self.lora_adapter
-            
-            response = self.client.chat.completions.create(**kwargs)
-            return response, kwargs
-            
-        except Exception as e:
-            raise Exception(f"API call failed: {e}")
+        result = self.api_client.call_chat_completions_api(messages)
+        if result['success']:
+            return result['response'], result['sampling_params']
+        else:
+            # Return None response with error info
+            return None, result['sampling_params']
     
     def extract_code_from_response(self, response) -> str:
         """Extract Python code from the Chat Completions API result"""
@@ -851,7 +504,7 @@ class ARCTaskRunnerSimple:
         usage = getattr(response, 'usage', None)
         input_tokens = usage.prompt_tokens if usage else 0
         output_tokens = usage.completion_tokens if usage else 0
-        input_rate, output_rate = self.get_model_pricing(self.model)
+        input_rate, output_rate = self.api_client.get_model_pricing()
         attempt_cost = (input_tokens / 1_000_000) * input_rate + (output_tokens / 1_000_000) * output_rate
         total_tokens = usage.total_tokens if usage else 0
         
@@ -984,7 +637,7 @@ class ARCTaskRunnerSimple:
             # Legacy fields for backwards compatibility (using first test case)
             'test_error': test_results[0]['error'] if test_results else 'no program',
             'test_timed_out': test_results[0]['timed_out'] if test_results else False,
-            'raw_response': serialize_response(response),
+            'raw_response': ResponseSerializer.serialize_response(response),
             'sampling_params': sampling_params,
             'api_success': api_call_successful,
             'api_timeout': timed_out,
@@ -1028,25 +681,7 @@ class ARCTaskRunnerSimple:
             total_tasks = len(tasks)
             
             # Validate task data integrity to prevent corruption issues
-            print(f"🔍 Validating {total_tasks} tasks...")
-            validated_tasks = []
-            for task_id, task_data in tasks:
-                if not isinstance(task_data, dict):
-                    print(f"❌ Invalid task data type for {task_id}: {type(task_data)}")
-                    continue
-                if 'train' not in task_data or 'test' not in task_data:
-                    print(f"❌ Missing train/test data for {task_id}")
-                    continue
-                if not isinstance(task_data['train'], list) or not isinstance(task_data['test'], list):
-                    print(f"❌ Invalid train/test data structure for {task_id}")
-                    continue
-                if len(task_data['train']) == 0:
-                    print(f"❌ No training examples for {task_id}")
-                    continue
-                if len(task_data['test']) == 0:
-                    print(f"❌ No test examples for {task_id}")
-                    continue
-                validated_tasks.append((task_id, task_data))
+            validated_tasks = ARCTaskValidator.validate_tasks(tasks)
             
             if len(validated_tasks) != total_tasks:
                 print(f"⚠️ {total_tasks - len(validated_tasks)} tasks failed validation, using {len(validated_tasks)} valid tasks")
@@ -1057,7 +692,7 @@ class ARCTaskRunnerSimple:
             
         except Exception as e:
             print(f"Error loading tasks: {e}")
-            return []
+            return [], None
         
         total_attempts = total_tasks * self.max_attempts
         
@@ -1487,34 +1122,7 @@ class ARCTaskRunnerSimple:
     
     def save_result(self, result: Dict):
         """Save individual task result"""
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        thread_id = threading.get_ident()
-        
-        if self.run_number > 0:
-            filename = f"{timestamp}_{thread_id}_{result['task_id']}_simple_run{self.run_number}.json"
-        else:
-            filename = f"{timestamp}_{thread_id}_{result['task_id']}_simple.json"
-        
-        filepath = self.logs_dir / filename
-        
-        # Sanitize for JSON and check size before saving
-        safe_result = _json_safe(result)
-        should_save, size_error = self._check_file_size_before_save(safe_result, filename)
-        
-        if not should_save:
-            print(f"🚨 LARGE FILE ERROR: {size_error}")
-            print(f"   Task: {result['task_id']}")
-            print(f"   Skipping file save to prevent disk issues")
-            return  # Skip saving but continue execution
-        
-        try:
-            with open(filepath, 'w') as f:
-                json.dump(safe_result, f, indent=2)
-        except Exception as e:
-            print(f"🚨 FILE I/O ERROR: Task {result['task_id']}, Attempt {result['attempt_details'][0]['attempt_number']}")
-            print(f"   File: {filepath}")
-            print(f"   Error: {e}")
-            raise Exception(f"File I/O error for task {result['task_id']}: {e}")
+        self.result_processor.save_result(result)
     
     def save_summary(self, results: List[Dict], subset_name: str, dataset: str, timeout_occurred: bool = False):
         """Save summary of all results"""
@@ -1537,9 +1145,10 @@ class ARCTaskRunnerSimple:
                 'all_train_correct': 0.0,
                 'min1_train_correct': 0.0,
                 'min1_code_success': 0.0,
+                'passes_examples_all': 0.0,
                 'max_length_responses': 0.0,
                 'timeout_responses': 0.0,
-                'api_failure_responses': 0.0
+                'api_failure_responses': 0.0,
             }
         
         # Determine summary type and calculate additional timeout stats
@@ -1600,7 +1209,7 @@ class ARCTaskRunnerSimple:
         filepath = self.logs_dir / filename
         
         # Sanitize for JSON and check file size before saving summary
-        safe_summary = _json_safe(summary)
+        safe_summary = ResponseSerializer.make_json_safe(summary)
         should_save, size_error = self._check_file_size_before_save(safe_summary, filename)
         
         if not should_save:
@@ -1717,6 +1326,11 @@ class ARCTaskRunnerSimple:
                 
             except Exception as e:
                 print(f"\n❌ RUN {run_num} FAILED: {e}")
+                try:
+                    import traceback as _tb
+                    _tb.print_exc()
+                except Exception:
+                    pass
                 run_files.append(None)  # Mark as failed
             finally:
                 # Explicit cleanup to prevent state leakage

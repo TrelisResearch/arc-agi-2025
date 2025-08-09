@@ -4,6 +4,8 @@ Lewis Reminders:
 - test transduction is now metadata
 - can we remove all_responses? it's duplicating everything.
 - note that currently, there are incorrect programs that generate massive grids.
+- Discuss logs going into folders vs not going into folders.
+- Mathieu.
 
 Ronan reminders:
 Training speed-ups:

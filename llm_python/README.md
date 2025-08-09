@@ -15,6 +15,10 @@ A comprehensive tool for testing OpenAI-compatible language models on ARC-AGI ta
 
 **Core Folders:**
 - `utils/` - Core utility modules for task loading, scoring, prompts, and metrics
+  - `serialization.py` - JSON serialization utilities for API responses
+  - `api_client.py` - API client with model-specific configuration
+  - `result_processor.py` - File I/O and metrics processing
+  - `validator.py` - Task validation utilities
 - `fine-tuning/` - Jupyter notebooks for fine-tuning as well as a logs folder for tensorboard logs
 - `tests/` - Miscellaneous test scripts  
 - `archive/` - Legacy scripts and tools moved for reference
