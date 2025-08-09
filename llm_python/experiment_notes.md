@@ -6,6 +6,8 @@ Lewis Reminders:
 - note that currently, there are incorrect programs that generate massive grids.
 - Discuss logs going into folders vs not going into folders.
 - Mathieu.
+- How will we want to save data, during test time tuning?
+- For test time tuning, will we a) try to train on all data, b) continued training on the ttt data, c) continued training on the ttt data + a small blend. Worth considering how we do this, perhaps best done via the run_arc_tasks_soar script.
 
 Ronan reminders:
 Training speed-ups:
