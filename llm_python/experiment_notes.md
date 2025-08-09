@@ -9,9 +9,11 @@ Lewis Reminders:
 
 Ronan reminders:
 Training speed-ups:
-- Use pissa for Lora initialization.
+- Use 'pissa' for Lora initialization.
 - Move to 2e-4 for learning rate.
 - Reduce max seq length to around 24000.
+- Turn off prediction loop, to use a larger batch size.
+- Use GPT OSS? (slower to fine-tune, but fast inference). Needs vLLM, not sglang, requiring some updates to the codebase.
 
 ---
 
