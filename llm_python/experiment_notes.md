@@ -27,7 +27,60 @@ then run inference on it:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-incorrect_20250808-134330-trainercheckpoint-2874-temp --base-url http://107.152.109.26:11879/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
 ```
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    400    5.5%       4.8%       6.2%     3.2%       13.0%       100.0%       0.9%    
+2    400    5.0%       4.5%       6.2%     3.0%       12.8%       99.8%        1.1%    
+3    400    6.5%       6.2%       7.2%     4.8%       13.5%       100.0%       1.0%    
 
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 5.7%
+  Std Dev: 0.8%
+  95% CI: [4.2%, 7.2%]
+
+Train Majority Pass2:
+  Mean: 5.2%
+  Std Dev: 0.9%
+  95% CI: [3.3%, 7.0%]
+
+All Test Correct:
+  Mean: 6.6%
+  Std Dev: 0.6%
+  95% CI: [5.5%, 7.7%]
+
+All Train Correct:
+  Mean: 3.7%
+  Std Dev: 0.9%
+  95% CI: [1.8%, 5.5%]
+
+Min1 Train Correct:
+  Mean: 13.1%
+  Std Dev: 0.4%
+  95% CI: [12.3%, 13.8%]
+
+Min1 Code Success:
+  Mean: 99.9%
+  Std Dev: 0.1%
+  95% CI: [99.6%, 100.0%]
+
+Max Length Responses:
+  Mean: 1.0%
+  Std Dev: 0.1%
+  95% CI: [0.8%, 1.3%]
+
+Timeout Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Api Failure Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
 
 
 and we'll also test out the hybrid model - Trelis/incorrect2874__partial2114_ties:

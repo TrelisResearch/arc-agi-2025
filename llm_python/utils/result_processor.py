@@ -16,8 +16,11 @@ class ResultProcessor:
         self.model = model
         self.run_number = run_number
         self.max_tokens = max_tokens
-        self.logs_dir = Path("logs")
-        self.logs_dir.mkdir(exist_ok=True)
+        
+        # Create run-specific subdirectory
+        run_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.logs_dir = Path("logs") / run_timestamp
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
         
         # Thread-safe tracking
         self.large_file_errors = []
