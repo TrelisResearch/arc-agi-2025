@@ -15,7 +15,47 @@
   [ ] Careful clean up.
   [ ] Carefully review the metrics scripts.
 
+Lewis Reminders:
+- test transduction is now metadata
+
+Ronan reminders:
+- Use pissa for Lora initialization.
+
+
 ---
+
+## 9 Aug 2025
+
+Test out the 1 epoch point of 50 correct, 200 incorrect: Trelis/Qwen3-4B_dsarc-programs-50-full-200-incorrect_20250808-134330-trainercheckpoint-2874-temp
+
+Start up a pod:
+```bash
+uv run runpod/create_pod.py sglang -- --model-path Trelis/Qwen3-4B_dsarc-programs-50-full-200-incorrect_20250808-134330-trainercheckpoint-2874-temp
+```
+then run inference on it:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-incorrect_20250808-134330-trainercheckpoint-2874-temp --base-url http://107.152.109.26:11879/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+
+and we'll also test out the hybrid model - Trelis/incorrect2874__partial2114_ties:
+```bash
+uv run runpod/create_pod.py sglang -- --model-path Trelis/incorrect2874__partial2114_ties
+```
+
+and run inference
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/incorrect2874__partial2114_ties --base-url http://38.80.152.249:30827/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+
+
+
+==================================================
+SUMMARY
+==================================================
+
+
+
+
 
 ## 8 Aug 2025 Tasks
 
