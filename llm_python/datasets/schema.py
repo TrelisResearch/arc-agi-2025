@@ -11,7 +11,10 @@ class SoarProgramExample(TypedDict):
     correct_test_input: List[bool] # Test inputs where program produced correct output
     predicted_train_output: List[List[List[int]]] # Program's predicted outputs for training inputs
     predicted_test_output: List[List[List[int]]] # Program's predicted outputs for test inputs
+    train_input: List[List[List[int]]] # Training input grids (optional)
+    test_input: List[List[List[int]]] # Test input grids (optional)
     model: str # What model generated this example
+    generation: int # Generation number (default 0)
 
 
 # Define explicit PyArrow schema for our parquet file
