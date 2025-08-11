@@ -27,6 +27,47 @@ Training speed-ups:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 8 --max_workers 32 --max_attempts 8 --model openai/gpt-oss-20b --base-url http://157.66.255.60:11970/v1 --unsafe-executor --max-tokens 32000
 ```
+📊 CORE METRICS (⚠️ PARTIAL DATA - SOME TASKS INCOMPLETE):
+  Pass@2 (Weighted Voting): 21.1%
+  Pass@2 (Train Majority):  20.6%
+  Oracle (Best Attempt):    23.7%
+  All Train Correct:        18.0%
+  Min 1 Train Correct:      36.0%
+  Min 1 Code Success:       99.6%
+  Max Length Responses:     6.9%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+I just did one run here with 8 max attempts.
+
+Quick try at doing just 4 attempts for one run on arc agi 2:
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 4 --model openai/gpt-oss-20b --base-url http://157.66.255.60:11970/v1 --unsafe-executor --max-tokens 32000
+```
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-2
+Subset: all_evaluation
+Model: openai/gpt-oss-20b
+Total tasks: 120
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 6,641,827
+Total cost: $2.494016
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 1.7%
+  Pass@2 (Train Majority):  1.7%
+  Oracle (Best Attempt):    2.5%
+  All Train Correct:        0.8%
+  Min 1 Train Correct:      4.2%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     5.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+Results saved to: logs/20250811_180442/20250811_183103_summary_arc-agi-2_all_evaluation_simple.json
 
 
 ### Slashing Training Time
@@ -70,6 +111,12 @@ New dataset performance (would have to run original dataset... to really know if
 - models:
   - qwen
   - openai
+
+### Trainning OSS
+
+OSS is a nightmare, at least with unsloth. I need to wait til they fix that stuff, or else re-write in transformers: https://github.com/unslothai/unsloth/issues/3119 .
+
+Seems merging to base doesn't work well. Requires batch size of 1 as well to work, and is quite slow.
 
 ## 9 Aug 2025
 
