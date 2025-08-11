@@ -6,18 +6,23 @@ Lewis Reminders:
 - note that currently, there are incorrect programs that generate massive grids.
 - Discuss logs going into folders vs not going into folders.
 - Mathieu.
-- How will we want to save data, during test time tuning?
-- For test time tuning, will we a) try to train on all data, b) continued training on the ttt data, c) continued training on the ttt data + a small blend. Worth considering how we do this, perhaps best done via the run_arc_tasks_soar script.
+- How will we want to save data, during test time tuning? DuckDB!
+- For test time tuning, will we a) try to train on all data, b) continued training on the ttt data, c) continued training on the ttt data + a small blend. Worth considering how we do this, perhaps best done via the run_arc_tasks_soar script. We will opt for c.
 
 Ronan reminders:
 Training speed-ups:
 - Use 'pissa' for Lora initialization.
 - Move to 2e-4 for learning rate.
 - Reduce max seq length to around 24000.
+  - Check context lengths on all problems.
+- Flash Attention 2
 - Turn off prediction loop, to use a larger batch size.
 - Use GPT OSS? (slower to fine-tune, but fast inference). Needs vLLM, not sglang, requiring some updates to the codebase.
 
 ---
+
+11 Aug 2025
+
 
 ## 9 Aug 2025
 

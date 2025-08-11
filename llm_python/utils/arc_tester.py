@@ -15,6 +15,13 @@ except ImportError:
     # Fall back to absolute imports (when run directly or from notebook)
     from llm_python.utils.task_loader import TaskData, Grid, TaskExample
 
+try:
+    # Try relative imports first (when run as module)
+    from ..utils.task_loader import TaskData, Grid, TaskExample
+except ImportError:
+    # Fall back to absolute imports (when run directly or from notebook)
+    from llm_python.utils.task_loader import TaskData, Grid, TaskExample
+
 class ExecutionError(NamedTuple):
     """Detailed information about a program execution error."""
     error_message: str
