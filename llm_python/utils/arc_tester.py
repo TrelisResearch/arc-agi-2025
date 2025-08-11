@@ -1,26 +1,9 @@
 #!/usr/bin/env python3
 
 from typing import List, Optional, NamedTuple, Any, Tuple
-import sys
-import os
-
-# Add project root to path to find sandbox module
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from sandbox import create_executor
+from .task_loader import TaskData, Grid, TaskExample
 
-try:
-    # Try relative imports first (when run as module)
-    from ..utils.task_loader import TaskData, Grid, TaskExample
-except ImportError:
-    # Fall back to absolute imports (when run directly or from notebook)
-    from llm_python.utils.task_loader import TaskData, Grid, TaskExample
-
-try:
-    # Try relative imports first (when run as module)
-    from ..utils.task_loader import TaskData, Grid, TaskExample
-except ImportError:
-    # Fall back to absolute imports (when run directly or from notebook)
-    from llm_python.utils.task_loader import TaskData, Grid, TaskExample
 
 class ExecutionError(NamedTuple):
     """Detailed information about a program execution error."""

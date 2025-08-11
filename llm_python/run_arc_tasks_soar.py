@@ -1,47 +1,28 @@
 #!/usr/bin/env python3
 
-import os
 import json
 import argparse
 import datetime
 import time
 import threading
 import numpy as np
-import requests
 from pathlib import Path
 from typing import Dict, List, Optional
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor
-from openai import OpenAI
 
-try:
-    # Try relative imports first (when run as module)
-    from .utils.task_loader import TaskLoader
-    from .utils.scoring import GridScorer
-    from .utils.arc_tester import ArcTester
-    from .utils.prompt_utils import create_arc_prompt, extract_python_code
-    from .utils.metrics_utils import calculate_task_metrics, format_metrics_display, metrics_to_percentages
-    from .utils.timeout_utils import execute_with_timeout
-    from .utils.transduction import is_transduction_cheating
-    from .utils.prompt_loader import PromptLoader
-    from .utils.serialization import ResponseSerializer
-    from .utils.api_client import ARCAPIClient
-    from .utils.result_processor import ResultProcessor
-    from .utils.validator import ARCTaskValidator
-except ImportError:
-    # Fall back to absolute imports (when run directly)
-    from llm_python.utils.task_loader import TaskLoader
-    from llm_python.utils.scoring import GridScorer
-    from llm_python.utils.arc_tester import ArcTester
-    from llm_python.utils.prompt_utils import create_arc_prompt, extract_python_code
-    from llm_python.utils.metrics_utils import calculate_task_metrics, format_metrics_display, metrics_to_percentages
-    from llm_python.utils.timeout_utils import execute_with_timeout
-    from llm_python.utils.transduction import is_transduction_cheating
-    from llm_python.utils.prompt_loader import PromptLoader
-    from llm_python.utils.serialization import ResponseSerializer
-    from llm_python.utils.api_client import ARCAPIClient
-    from llm_python.utils.result_processor import ResultProcessor
-    from llm_python.utils.validator import ARCTaskValidator
+from llm_python.utils.task_loader import TaskLoader
+from llm_python.utils.scoring import GridScorer
+from llm_python.utils.arc_tester import ArcTester
+from llm_python.utils.prompt_utils import create_arc_prompt, extract_python_code
+from llm_python.utils.metrics_utils import calculate_task_metrics, metrics_to_percentages
+from llm_python.utils.timeout_utils import execute_with_timeout
+from llm_python.utils.transduction import is_transduction_cheating
+from llm_python.utils.prompt_loader import PromptLoader
+from llm_python.utils.serialization import ResponseSerializer
+from llm_python.utils.api_client import ARCAPIClient
+from llm_python.utils.result_processor import ResultProcessor
+from llm_python.utils.validator import ARCTaskValidator
 
 load_dotenv()
 
