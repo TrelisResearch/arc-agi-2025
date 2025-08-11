@@ -22,7 +22,54 @@ Training speed-ups:
 ---
 
 11 Aug 2025
+### Running inference on OSS model - (157.66.255.60:11970), openai/gpt-oss-20b on all evaluation arc agi 1 for 8 attempts.
 
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 8 --max_workers 32 --max_attempts 8 --model openai/gpt-oss-20b --base-url http://157.66.255.60:11970/v1 --unsafe-executor --max-tokens 32000
+```
+
+
+### Slashing Training Time
+
+**Core remarks:**
+- *MAX Length* The script is already padding to max length of data, not of model, so there are no savings there.
+- *Batch Size* ...
+- *FA2* ...
+- *2e-4* ...
+
+Ideas:
+- Sort the length of the sequences for training, to start with the shorter ones. Would save quite a few flops.
+
+Probably need to measure for at least 100 steps to know if this is working well or not... these were run for too short a time period.
+- Triton; bsz8; grad checkpointing: [8/8 02:12, Epoch 2/2]
+- Triton; bsz16; grad checkpointing: [8/8 02:12, Epoch 2/2]
+- Triton; bsz4; grad checkpointing: [8/8 02:01, Epoch 2/2]
+- Triton; bsz4; NO grad checkpointing: [8/8 01:42, Epoch 2/2]
+- FA2...
+
+Things to figure out with 100 steps of training - can run on new dataset BUT these are done with only 128 rows of data:
+- Triton; bsz32; grad checkpointing. Does a larger batch size help with speed? [100/100 19:01, Epoch 25/25]
+- Triton; bsz4; grad checkpointing. Replicate prior approach. [100/100 16:09, Epoch 25/25]
+**Seems like smaller batch size is faster... and similar loss(?)**
+
+
+Now with all of the rows (but 100 steps):
+- Triton; bsz4; grad checkpointing. Replicate prior approach. about 16 mins.
+- FA2; bsz4; grad checkpointing. Does FA2 speed up the training? [100/100 20:22, Epoch 0/1]
+- FA2; bsz4; grad checkpointing. PEFT update.
+- FA2; bsz4; grad checkpointing. 2x LR + incl. warmup and annealing.
+
+New dataset performance (would have to run original dataset... to really know if this is better or not...):
+- Bells and whistles:
+  - peft improvement with pissa. Seems we're already getting benefit via rslora.
+  - batch size choice. Seems smaller is faster, so sticking with four.
+  - FA2. Is slower, surprisingly (perhaps loses some unsloth speedups?).
+  - sequence length. We're already only padding to data max so no gain here.
+  - warmup + annealing. Can't hurt. Will add it in.
+- Full runs on the new dataset.
+- models:
+  - qwen
+  - openai
 
 ## 9 Aug 2025
 

@@ -10,6 +10,11 @@ export RUNPOD_API_KEY="your-api-key-here"
 
 Or add it to your `.env` file.
 
+## Available Templates
+
+- **`sglang`**: SGLang inference server (recommended for most models)
+- **`vllm`**: vLLM inference server (optimized for OSS models)
+
 ## Usage
 
 ```bash
@@ -18,8 +23,10 @@ uv run create_pod.py <template> [--no-health-check] [--debug] -- [docker_args...
 
 ### Examples
 
+#### SGLang (recommended for most models)
+
 ```bash
-# Create a basic TCP pod 
+# Create a basic TCP pod with SGLang
 uv run create_pod.py sglang -- --model-path Qwen/Qwen3-4B
 
 # Create a TCP pod with LORA adapter
@@ -27,12 +34,31 @@ uv run create_pod.py sglang -- --model-path Qwen/Qwen3-4B --lora-paths ckpt-1057
 
 # Create a TCP pod with multiple LORA adapters  
 uv run create_pod.py sglang -- --model-path Qwen/Qwen3-4B --lora-paths ckpt-1057=Trelis/lora-1,ckpt-2114=Trelis/lora-2 --max-loras-per-batch 2 --disable-radix-cache
+```
 
-# Skip health checks entirely
+#### vLLM (optimized for OSS models)
+
+```bash
+# Create a basic TCP pod with vLLM
+uv run create_pod.py vllm -- --model microsoft/DialoGPT-medium
+
+# Create a vLLM pod with tensor parallel processing
+uv run create_pod.py vllm -- --model meta-llama/Llama-2-7b-hf --tensor-parallel-size 2
+
+# Create a vLLM pod with custom settings
+uv run create_pod.py vllm -- --model huggingface-hub/CodeLlama-7b-Python-hf --max-model-len 4096 --dtype float16
+```
+
+#### General Options
+
+```bash
+# Skip health checks entirely (works with any template)
 uv run create_pod.py sglang --no-health-check -- --model-path Qwen/Qwen3-4B
+uv run create_pod.py vllm --no-health-check -- --model microsoft/DialoGPT-medium
 
-# Enable debug output
+# Enable debug output (works with any template)
 uv run create_pod.py sglang --debug -- --model-path Qwen/Qwen3-4B
+uv run create_pod.py vllm --debug -- --model microsoft/DialoGPT-medium
 ```
 
 ## Health Check Configuration
