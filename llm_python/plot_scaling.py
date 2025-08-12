@@ -2,9 +2,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # Data for c3171 checkpoint
-attempts = [1, 8, 256]
-scores = [5.1, 15.1, 43.8]
-std_devs = [0.8, 0.4, None]  # No std dev for 256 attempts (only 1 run)
+attempts = [1, 8, 64, 256]
+scores = [5.1, 15.1, 32.8, 43.8]
+std_devs = [0.8, 0.4, None, None]  # No std dev for 64 and 256 attempts (only 1 run each)
 
 # Convert to log base 2
 log_attempts = np.log2(attempts)
@@ -44,10 +44,10 @@ ax = plt.gca()
 ax.set_xticks(log_attempts)
 ax.set_xticklabels([f'{int(2**x)}\n(2^{int(x)})' for x in log_attempts])
 
-# Add note about pending 64 attempts
-plt.text(0.02, 0.98, 'Note: 64 attempts data pending', 
+# Add note about data collection
+plt.text(0.02, 0.98, 'Note: Error bars shown for 3 runs (1 & 8 attempts)\nSingle runs for 64 & 256 attempts', 
          transform=ax.transAxes, 
-         fontsize=10, 
+         fontsize=9, 
          verticalalignment='top',
          bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
 
@@ -70,7 +70,7 @@ plt.show()
 
 print("Plot saved to experimental/checkpoint_c3171_scaling.png")
 print(f"\nScaling results for c3171 checkpoint:")
-print(f"1 attempt:   {scores[0]}% ± {std_devs[0]}%")
-print(f"8 attempts:  {scores[1]}% ± {std_devs[1]}%") 
-print(f"256 attempts: {scores[2]}% (single run)")
-print(f"64 attempts: Data pending...")
+print(f"1 attempt:    {scores[0]}% ± {std_devs[0]}%")
+print(f"8 attempts:   {scores[1]}% ± {std_devs[1]}%") 
+print(f"64 attempts:  {scores[2]}% (single run)")
+print(f"256 attempts: {scores[3]}% (single run)")

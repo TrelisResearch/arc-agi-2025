@@ -4,11 +4,23 @@ This directory contains scripts and templates for creating and managing RunPod p
 
 ## Setup
 
+### Required Environment Variables
+
 ```bash
 export RUNPOD_API_KEY="your-api-key-here"
 ```
 
 Or add it to your `.env` file.
+
+### RunPod Secrets (for Hugging Face models)
+
+For private Hugging Face models, you need to configure a RunPod secret:
+
+1. Go to your [RunPod Settings](https://www.runpod.io/console/user/settings)
+2. Add a new secret named `HUGGING_FACE_HUB_TOKEN` with your HF token
+3. The templates will automatically use this secret via `{{ RUNPOD_SECRET_HUGGING_FACE_HUB_TOKEN }}`
+
+Alternatively, you can modify the template to use a local environment variable instead of a RunPod secret.
 
 ## Available Templates
 
@@ -17,9 +29,62 @@ Or add it to your `.env` file.
 
 ## Usage
 
+### Basic Pod Creation
+
 ```bash
 uv run create_pod.py <template> [--no-health-check] [--debug] -- [docker_args...]
 ```
+
+### Automated Pod Creation + ARC Task Running
+
+```bash
+uv run runpod/create_pod_and_run_tasks.py <dataset> <model_path> [options]
+```
+
+This combined script will:
+1. Create a RunPod pod with the specified model
+2. Wait for the OpenAI endpoint to be ready
+3. Automatically run ARC tasks with configured settings
+4. Keep the pod running for reuse until you press Ctrl+C
+
+#### Arguments:
+- `dataset`: Either `arc-agi-1` or `arc-agi-2`
+- `model_path`: Full Hugging Face model path (e.g., `Trelis/Qwen3-4B_...`)
+
+#### Options:
+- `--template`: RunPod template to use (default: `sglang`, can also use `vllm`)
+- `--skip-tasks`: Only create the pod without running ARC tasks
+- `--no-health-check`: Skip health check after pod creation
+
+#### Task Runner Configuration:
+The script automatically runs tasks with these settings:
+- Subset: `all_evaluation`
+- Attempts: 8
+- Repeat runs: 3
+- Max workers: 32
+- Max tokens: 1000
+- Includes `--unsafe-executor` and `--qwen-no-think` flags
+
+#### Examples:
+
+```bash
+# Run arc-agi-1 evaluation with default sglang template
+uv run runpod/create_pod_and_run_tasks.py arc-agi-1 Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-155856-c904
+
+# Run arc-agi-2 evaluation with vllm template
+uv run runpod/create_pod_and_run_tasks.py arc-agi-2 Trelis/Your-Model --template vllm
+
+# Just create pod without running tasks (for manual testing)
+uv run runpod/create_pod_and_run_tasks.py arc-agi-1 Trelis/Your-Model --skip-tasks
+```
+
+#### What happens after task completion:
+- The script reports success/failure of the task runs
+- The pod remains running so you can:
+  - Run additional experiments with the same endpoint
+  - Manually test the model
+  - Avoid model reload time for subsequent runs
+- Press Ctrl+C to terminate and delete the pod when done
 
 ### Examples
 

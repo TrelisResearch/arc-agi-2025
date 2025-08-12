@@ -42,22 +42,208 @@ And now run those all three attempts with 8 max attempts:
 ```bash 
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-155856-c904 --base-url http://38.80.152.249:30848/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
 ```
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-155856-c904
+Number of runs: 3
+Valid runs: 3
+
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    400    13.5%      13.0%      15.0%    10.8%      27.8%       100.0%       3.2%    
+2    400    18.2%      17.8%      19.8%    12.5%      33.2%       100.0%       3.2%    
+3    400    15.0%      14.8%      16.5%    13.0%      30.8%       100.0%       2.9%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 15.6%
+  Std Dev: 2.4%
+  95% CI: [10.8%, 20.3%]
+
+Train Majority Pass2:
+  Mean: 15.2%
+  Std Dev: 2.4%
+  95% CI: [10.5%, 19.9%]
+
+All Test Correct:
+  Mean: 17.1%
+  Std Dev: 2.4%
+  95% CI: [12.3%, 21.8%]
+
+All Train Correct:
+  Mean: 12.1%
+  Std Dev: 1.2%
+  95% CI: [9.8%, 14.4%]
+
+Min1 Train Correct:
+  Mean: 30.6%
+  Std Dev: 2.8%
+  95% CI: [25.2%, 36.0%]
+
+Min1 Code Success:
+  Mean: 100.0%
+  Std Dev: 0.0%
+  95% CI: [100.0%, 100.0%]
+
+Max Length Responses:
+  Mean: 3.1%
+  Std Dev: 0.2%
+  95% CI: [2.7%, 3.4%]
+
+Timeout Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Api Failure Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
 and then with three runs, with 8 max attempts, second checkpoint:
 ```bash 
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-155856-c1808 --base-url http://38.80.152.249:30848/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
 ```
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    400    15.5%      14.8%      16.2%    12.2%      30.0%       99.8%        2.7%    
+2    400    15.8%      14.5%      16.2%    11.8%      31.0%       100.0%       2.8%    
+3    400    15.0%      14.5%      16.5%    12.2%      28.5%       100.0%       3.4%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 15.4%
+  Std Dev: 0.4%
+  95% CI: [14.7%, 16.2%]
+
+Train Majority Pass2:
+  Mean: 14.6%
+  Std Dev: 0.1%
+  95% CI: [14.3%, 14.9%]
+
+All Test Correct:
+  Mean: 16.3%
+  Std Dev: 0.1%
+  95% CI: [16.1%, 16.6%]
+
+All Train Correct:
+  Mean: 12.1%
+  Std Dev: 0.3%
+  95% CI: [11.5%, 12.6%]
+
+Min1 Train Correct:
+  Mean: 29.8%
+  Std Dev: 1.3%
+  95% CI: [27.4%, 32.3%]
+
+Min1 Code Success:
+  Mean: 99.9%
+  Std Dev: 0.1%
+  95% CI: [99.6%, 100.0%]
+
+Max Length Responses:
+  Mean: 3.0%
+  Std Dev: 0.4%
+  95% CI: [2.3%, 3.7%]
+
+Timeout Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Api Failure Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
 and third checkpoint:
 ```bash 
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-155856-c2712 --base-url http://107.152.109.27:11872/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
 ```
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    400    12.8%      12.8%      15.0%    11.0%      27.8%       100.0%       2.9%    
+2    400    14.2%      13.5%      15.5%    11.2%      28.5%       100.0%       2.0%    
+3    400    15.2%      14.0%      16.0%    10.8%      28.2%       100.0%       2.9%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 14.1%
+  Std Dev: 1.3%
+  95% CI: [11.6%, 16.5%]
+
+Train Majority Pass2:
+  Mean: 13.4%
+  Std Dev: 0.6%
+  95% CI: [12.2%, 14.6%]
+
+All Test Correct:
+  Mean: 15.5%
+  Std Dev: 0.5%
+  95% CI: [14.5%, 16.5%]
+
+All Train Correct:
+  Mean: 11.0%
+  Std Dev: 0.3%
+  95% CI: [10.5%, 11.5%]
+
+Min1 Train Correct:
+  Mean: 28.2%
+  Std Dev: 0.4%
+  95% CI: [27.4%, 28.9%]
+
+Min1 Code Success:
+  Mean: 100.0%
+  Std Dev: 0.0%
+  95% CI: [100.0%, 100.0%]
+
+Max Length Responses:
+  Mean: 2.6%
+  Std Dev: 0.5%
+  95% CI: [1.6%, 3.6%]
+
+Timeout Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Api Failure Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
 and the fourth checkpoint, where I'll use the new script to do everything:
 ```bash
-uv run runpod/create_pod_and_run_tasks.py arc-agi-1 Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-155856-c3616
+uv run runpod/create_pod_and_run_tasks.py arc-agi-1 Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-155856-c3614
 ```
 
 
 
-
+### Testing out the constant learning rate
+Starting with this checkpoint - Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-221545_cst-c3614 - and then2712, 1808, 904.
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-agi-1 Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-221545_cst-c3614
+```
+then 2712:
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-agi-1 Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-221545_cst-c2712
+```
+then 1808:
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-agi-1 Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-221545_cst-c1808
+```
+then 904:
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-agi-1 Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-221545_cst-c904
+```
 
 
 11 Aug 2025
@@ -94,7 +280,27 @@ and then test it out on 64 attempts, just once to see how it goes:
 ```bash 
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 64 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171 --base-url http://107.152.109.26:11489/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
 ```
-...
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171
+Total tasks: 400
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 117,776,446
+Total cost: $21.863461
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 32.8%
+  Pass@2 (Train Majority):  31.0%
+  Oracle (Best Attempt):    37.8%
+  All Train Correct:        28.5%
+  Min 1 Train Correct:      53.8%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     2.8%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 and then with 1 attempts, three runs:
 ```bash 
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 1 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171 --base-url http://107.152.109.26:11489/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think

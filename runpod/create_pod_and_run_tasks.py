@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 import subprocess
 import sys
+import os
 import argparse
 import signal
 import time
-import os
 import requests
 from dotenv import load_dotenv
 
@@ -125,24 +125,29 @@ This script will:
     print(f"🚀 Step 1: Creating RunPod pod with model {args.model_path}")
     
     create_cmd = [
-        "python", "runpod/create_pod.py", 
+        "uv", "run", "python", "runpod/create_pod.py", 
         args.template,
         "--",
         "--model-path", args.model_path
     ]
     
     if args.no_health_check:
-        create_cmd.insert(3, "--no-health-check")
+        create_cmd.insert(5, "--no-health-check")  # Insert after "create_pod.py"
     
     print(f"📝 Running: {' '.join(create_cmd)}")
     
-    # Start the pod creation process
+    # Start the pod creation process with unbuffered output
+    # Set environment to ensure unbuffered output
+    env = os.environ.copy()
+    env['PYTHONUNBUFFERED'] = '1'
+    
     pod_process = subprocess.Popen(
         create_cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         universal_newlines=True,
-        bufsize=1
+        bufsize=0,  # Use unbuffered mode
+        env=env
     )
     
     # Variables to track pod status
@@ -154,49 +159,60 @@ This script will:
     
     # Read output from the pod creation process
     print("\n--- Pod Creation Output ---")
-    for line in pod_process.stdout:
-        print(line, end='')
-        
-        # Parse pod ID
-        if "Pod created successfully! ID:" in line:
-            pod_id = line.split("ID:")[1].strip()
-        
-        # Parse direct connection info
-        if "Direct TCP:" in line and direct_ip is None:
-            parts = line.split("Direct TCP:")[1].strip()
-            if ":" in parts:
-                direct_ip, external_port = parts.split(":")
-                direct_ip = direct_ip.strip()
-                external_port = external_port.strip()
-        
-        # Parse proxy connection
-        if "TCP proxy:" in line and proxy_url is None:
-            proxy_url = line.split("TCP proxy:")[1].strip()
-        
-        # Check if endpoint is ready
-        if "OPENAI ENDPOINT READY!" in line:
-            endpoint_ready = True
-            break
-        
-        # Check for health check completion
-        if "Health check completed successfully!" in line:
-            endpoint_ready = True
-            break
-        
-        # Check if health check was skipped
-        if args.no_health_check and "The pod is now running" in line:
-            endpoint_ready = True
-            break
+    print("", flush=True)
     
-    # If we didn't get endpoint ready status, wait for it
-    if not endpoint_ready and not args.no_health_check:
-        print("\n⏳ Waiting for endpoint to be fully ready...")
-        # Continue reading until we get the ready signal
-        for line in pod_process.stdout:
-            print(line, end='')
-            if "OPENAI ENDPOINT READY!" in line or "Health check completed successfully!" in line:
-                endpoint_ready = True
+    try:
+        while True:
+            line = pod_process.stdout.readline()
+            if not line and pod_process.poll() is not None:
                 break
+            if line:
+                # Print immediately with flush
+                sys.stdout.write(line)
+                sys.stdout.flush()
+                
+                # Parse pod ID
+                if "Pod created successfully! ID:" in line:
+                    pod_id = line.split("ID:")[1].strip()
+                
+                # Parse direct connection info
+                if "Direct TCP:" in line and direct_ip is None:
+                    parts = line.split("Direct TCP:")[1].strip()
+                    if ":" in parts:
+                        direct_ip, external_port = parts.split(":")
+                        direct_ip = direct_ip.strip()
+                        external_port = external_port.strip()
+                
+                # Parse proxy connection
+                if "TCP proxy:" in line and proxy_url is None:
+                    proxy_url = line.split("TCP proxy:")[1].strip()
+                
+                # Check if endpoint is ready
+                if "OPENAI ENDPOINT READY!" in line:
+                    endpoint_ready = True
+                    # Don't break, keep reading to get all output
+                
+                # Check for health check completion
+                if "Health check completed successfully!" in line:
+                    endpoint_ready = True
+                
+                # Check if health check was skipped
+                if args.no_health_check and "The pod is now running" in line:
+                    endpoint_ready = True
+                
+                # Check if waiting message appears (pod is running, keep alive)
+                if "The pod is now running. Press Ctrl+C" in line:
+                    endpoint_ready = True
+                    break  # This is where create_pod.py enters its wait loop
+                    
+    except Exception as e:
+        print(f"\n❌ Error reading pod creation output: {e}")
+        pass  # Error details already printed
+    
+    # Check if process ended with error
+    if not endpoint_ready and pod_process.poll() is not None:
+        print(f"\n❌ Pod creation process ended unexpectedly with code: {pod_process.returncode}")
+        sys.exit(1)
     
     # Determine the base URL to use
     base_url = None
@@ -209,7 +225,8 @@ This script will:
         print(f"\n🔌 Using proxy connection: {base_url}")
     else:
         print("\n❌ Failed to determine pod endpoint URL")
-        pod_process.terminate()
+        if pod_process.poll() is None:
+            pod_process.terminate()
         sys.exit(1)
     
     # Additional wait to ensure the endpoint is ready
