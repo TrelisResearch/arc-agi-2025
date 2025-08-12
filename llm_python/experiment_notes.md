@@ -773,7 +773,7 @@ uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset uniq
 ```
 Had to stop so restarting now using a smaller subset of 'remaining_tasks_no_512_attempts.txt'
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset remaining_tasks_no_512_attempts --repeat-runs 1 --max_workers 32 --max_attempts 512 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171 --base-url http://38.80.152.249:30524/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset remaining_tasks_no_512_attempts --repeat-runs 1 --max_workers 64 --max_attempts 512 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171 --base-url http://38.80.152.249:30524/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
 ```
 
 

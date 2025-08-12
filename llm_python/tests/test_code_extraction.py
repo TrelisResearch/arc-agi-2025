@@ -8,7 +8,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import openai
-from run_arc_tasks import ARCTaskRunner
+from run_arc_tasks_soar import ARCTaskRunnerSimple
 
 def test_code_extraction():
     """Test if code extraction works with RunPod's content=None format"""
@@ -16,7 +16,7 @@ def test_code_extraction():
     print("=== Testing Code Extraction from RunPod Response ===")
     
     # Create a mock runner to test the extraction method
-    runner = ARCTaskRunner(
+    runner = ARCTaskRunnerSimple(
         model="Qwen/Qwen3-32B-FP8",
         base_url="https://g8xfhnpws0tqwu-8000.proxy.runpod.net/v1"
     )

@@ -35,17 +35,15 @@ def test_basic_chat_completions_api():
         print(f"Content: {response.choices[0].message.content[:100]}...")
         print(f"Tokens used: {response.usage.prompt_tokens} input, {response.usage.completion_tokens} output")
         
-        return response.id, response.choices[0].message.content
+        assert response.id is not None, "Response should have an ID"
+        assert response.choices[0].message.content is not None, "Response should have content"
         
     except Exception as e:
         print(f"❌ Basic API call failed: {e}")
-        return None, None
+        assert False, f"Basic API call should not fail: {e}"
 
-def test_multi_turn_conversation(first_content):
+def test_multi_turn_conversation():
     """Test multi-turn conversation by maintaining message history"""
-    if not first_content:
-        print("❌ Cannot test multi-turn without valid first response content")
-        return
         
     load_dotenv()
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))

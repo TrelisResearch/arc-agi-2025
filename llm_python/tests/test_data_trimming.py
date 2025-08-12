@@ -74,9 +74,9 @@ def test_trimming_logic():
     exec_error_attempt = create_test_attempt(exec_error=True)
     trimmed = runner._trim_failed_attempt(exec_error_attempt)
     
-    assert 'raw_response' not in trimmed, "Exec error attempt should drop raw_response"
-    assert 'program' not in trimmed, "Exec error attempt should drop program"
-    assert 'train_results' not in trimmed, "Exec error attempt should drop train_results"
+    assert trimmed.get('raw_response') is None, "Exec error attempt should have None raw_response"
+    assert trimmed.get('program') == '', "Exec error attempt should have empty program"
+    assert trimmed.get('train_results') == [], "Exec error attempt should have empty train_results"
     assert trimmed.get('data_trimmed') == True, "Should be marked as trimmed"
     assert trimmed.get('trim_reason') == 'execution_failure', "Should have trim reason"
     assert trimmed.get('train_exec_errors') == 3, "Should keep error counts"
@@ -88,8 +88,8 @@ def test_trimming_logic():
     no_code_attempt = create_test_attempt(no_code=True)
     trimmed = runner._trim_failed_attempt(no_code_attempt)
     
-    assert 'raw_response' not in trimmed, "No-code attempt should drop raw_response"
-    assert 'program' not in trimmed, "No-code attempt should drop program"
+    assert trimmed.get('raw_response') is None, "No-code attempt should have None raw_response"
+    assert trimmed.get('program') == '', "No-code attempt should have empty program"
     assert trimmed.get('data_trimmed') == True, "Should be marked as trimmed"
     assert trimmed.get('program_extracted') == False, "Should keep extraction flag"
     print("   ✓ No-code attempt correctly trimmed")
@@ -99,8 +99,8 @@ def test_trimming_logic():
     timeout_attempt = create_test_attempt(api_timeout=True)
     trimmed = runner._trim_failed_attempt(timeout_attempt)
     
-    assert 'raw_response' not in trimmed, "Timeout attempt should drop raw_response"
-    assert 'program' not in trimmed, "Timeout attempt should drop program"
+    assert trimmed.get('raw_response') is None, "Timeout attempt should have None raw_response"
+    assert trimmed.get('program') == '', "Timeout attempt should have empty program"
     assert trimmed.get('data_trimmed') == True, "Should be marked as trimmed"
     assert trimmed.get('api_timeout') == True, "Should keep timeout flag"
     print("   ✓ API timeout attempt correctly trimmed")
