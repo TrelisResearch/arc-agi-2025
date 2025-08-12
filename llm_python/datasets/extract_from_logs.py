@@ -365,11 +365,20 @@ def main():
         default=1000,
         help="Number of programs to process before saving (default: 1000)",
     )
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=None,
+        help="Maximum number of worker processes (default: total cores - 2, minimum 1)",
+    )
 
     args = parser.parse_args()
 
-    # Calculate number of workers (total cores - 2, minimum 1)
-    max_workers = max(1, multiprocessing.cpu_count() - 2)
+    # Calculate number of workers
+    if args.max_workers is not None:
+        max_workers = max(1, args.max_workers)
+    else:
+        max_workers = max(1, multiprocessing.cpu_count() - 2)
     print(
         f"Using {max_workers} worker processes (total cores: {multiprocessing.cpu_count()})"
     )

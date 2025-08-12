@@ -7,8 +7,8 @@ import numpy as np
 models = {
     'Best Length Filtered (Constant LR)': {
         'checkpoints': ['c904', 'c1808', 'c2712', 'c3614'],
-        'means': [12.4, None, 13.3, 11.3],  # c1808 missing
-        'std_devs': [1.5, None, 0.9, 1.0],
+        'means': [12.4, 12.3, 13.3, 11.3],  # c1808 now included
+        'std_devs': [1.5, 1.6, 0.9, 1.0],
         'color': '#2E86AB',
         'marker': 'o'
     },
@@ -25,6 +25,13 @@ models = {
         'std_devs': [2.0, 1.6, 1.0, 0.4],
         'color': '#F18F01',
         'marker': '^'
+    },
+    '50 Correct 200 Partial (No Test Transduction)': {
+        'checkpoints': ['c1057', 'c2114', 'c3171', 'c4228'],
+        'means': [None, None, 15.1, None],  # Only c3171 has data
+        'std_devs': [None, None, 0.4, None],
+        'color': '#C1666B',
+        'marker': 'v'
     }
 }
 
@@ -35,19 +42,31 @@ fig, ax = plt.subplots(figsize=(12, 8))
 for model_name, data in models.items():
     x_positions = np.arange(len(data['checkpoints']))
     
-    # Filter out None values for CST LR model
+    # Filter out None values
     valid_indices = [i for i, m in enumerate(data['means']) if m is not None]
+    if not valid_indices:  # Skip if no valid data
+        continue
+        
     valid_x = [x_positions[i] for i in valid_indices]
     valid_means = [data['means'][i] for i in valid_indices]
     valid_stds = [data['std_devs'][i] for i in valid_indices]
     
     # Plot with error bars (using 2*std for ~95% confidence interval)
     error_bars = [2 * std for std in valid_stds]
-    ax.errorbar(valid_x, valid_means, yerr=error_bars,
-                label=model_name, color=data['color'], 
-                marker=data['marker'], markersize=10,
-                linewidth=2, capsize=5, capthick=2,
-                alpha=0.8)
+    
+    # For single point series, don't draw lines
+    if len(valid_x) == 1:
+        ax.errorbar(valid_x, valid_means, yerr=error_bars,
+                    label=model_name, color=data['color'], 
+                    marker=data['marker'], markersize=10,
+                    capsize=5, capthick=2, alpha=0.8,
+                    linestyle='None')
+    else:
+        ax.errorbar(valid_x, valid_means, yerr=error_bars,
+                    label=model_name, color=data['color'], 
+                    marker=data['marker'], markersize=10,
+                    linewidth=2, capsize=5, capthick=2,
+                    alpha=0.8)
     
     # Add value labels
     for x, y, std in zip(valid_x, valid_means, valid_stds):
@@ -64,7 +83,7 @@ for model_name, data in models.items():
 ax.set_xlabel('Checkpoint', fontsize=14, fontweight='bold')
 ax.set_ylabel('Weighted Voting Pass@2 Accuracy (%)', fontsize=14, fontweight='bold')
 ax.set_title('Model Performance Across Training Checkpoints\n(3 runs, 8 attempts, arc-agi-1 evaluation set)\nError bars show 2σ (~95% confidence interval)', 
-             fontsize=16, fontweight='bold', pad=20)
+             fontsize=15, fontweight='bold', pad=20)
 
 # Set x-axis labels
 all_checkpoints = ['Checkpoint 1', 'Checkpoint 2', 'Checkpoint 3', 'Checkpoint 4']
