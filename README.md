@@ -78,11 +78,11 @@ The preferred workflow is to first extract logs to parquet format, then upload t
 
 #### Step 1: Extract logs to parquet
 ```bash
-# Extract logs to parquet format
-uv run python -m llm_python.datasets.extract_from_logs --output your_output_file.parquet --logs-pattern=logs/20250811*/*
+# Extract all logs to parquet format
+uv run python -m llm_python.datasets.extract_from_logs --output your_output_file.parquet --logs-pattern="llm_python/logs/**/*.json" --batch-size 2000 --max-workers 4
 
 # Example for capturing a specific day's run:
-uv run python -m llm_python.datasets.extract_from_logs --output soar_log_programs_faking.parquet --logs-pattern=logs/20250811*/*
+uv run python -m llm_python.datasets.extract_from_logs --output programs_20250811.parquet --logs-pattern="llm_python/logs/20250811*/*.json" --max-workers 4
 ```
 
 #### Step 2: Upload parquet files to GCS
