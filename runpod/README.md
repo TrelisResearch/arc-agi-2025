@@ -53,12 +53,13 @@ This combined script will:
 
 #### Options:
 - `--template`: RunPod template to use (default: `sglang`, can also use `vllm`)
+- `--subset`: Dataset subset to run (default: `all_evaluation`)
 - `--skip-tasks`: Only create the pod without running ARC tasks
 - `--no-health-check`: Skip health check after pod creation
 
 #### Task Runner Configuration:
 The script automatically runs tasks with these settings:
-- Subset: `all_evaluation`
+- Subset: `all_evaluation` (configurable with `--subset`)
 - Attempts: 8
 - Repeat runs: 3
 - Max workers: 32
@@ -73,6 +74,9 @@ uv run runpod/create_pod_and_run_tasks.py arc-agi-1 Trelis/Qwen3-4B_dsarc-agi-1-
 
 # Run arc-agi-2 evaluation with vllm template
 uv run runpod/create_pod_and_run_tasks.py arc-agi-2 Trelis/Your-Model --template vllm
+
+# Run with specific subset
+uv run runpod/create_pod_and_run_tasks.py arc-agi-1 Trelis/Your-Model --subset shortest_1
 
 # Just create pod without running tasks (for manual testing)
 uv run runpod/create_pod_and_run_tasks.py arc-agi-1 Trelis/Your-Model --skip-tasks

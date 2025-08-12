@@ -19,7 +19,7 @@ class ResultProcessor:
         
         # Create run-specific subdirectory
         run_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.logs_dir = Path("logs") / run_timestamp
+        self.logs_dir = Path("llm_python/logs") / run_timestamp
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         
         # Thread-safe tracking

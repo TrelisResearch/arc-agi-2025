@@ -86,6 +86,8 @@ class ARCAPIClient:
             return (0.15, 0.60)
         elif model_lower.startswith('gpt-4o'):
             return (2.50, 10.00)
+        elif model_lower.startswith('gpt-oss-120b'):
+            return (0.073, 0.29)
         
         # Google models
         elif model_lower.startswith('google/gemini-2.5-flash'):

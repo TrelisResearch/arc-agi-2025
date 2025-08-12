@@ -282,7 +282,7 @@ def validate_single_program(prog_data: Dict, args) -> Optional[Dict]:
     
     # Check for transduction/cheating (unless disabled)
     if not args.no_transduction_filter:
-        is_cheating, cheat_reason = is_transduction_cheating(program, task_data, debug=args.debug)
+        is_cheating, cheat_reason, _, _ = is_transduction_cheating(program, task_data, debug=args.debug)
         if is_cheating:
             prog_data['transduction_reason'] = cheat_reason
             return None  # Reject cheating programs

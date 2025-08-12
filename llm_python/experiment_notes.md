@@ -224,7 +224,66 @@ and the fourth checkpoint, where I'll use the new script to do everything:
 ```bash
 uv run runpod/create_pod_and_run_tasks.py arc-agi-1 Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-155856-c3614
 ```
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-155856-c3614
+Number of runs: 3
+Valid runs: 3
 
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    400    10.2%      10.0%      10.8%    8.5%       22.2%       100.0%       1.6%    
+2    400    10.5%      10.2%      11.5%    8.2%       21.5%       100.0%       1.8%    
+3    400    9.8%       9.5%       10.0%    7.0%       22.5%       100.0%       1.8%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 10.2%
+  Std Dev: 0.4%
+  95% CI: [9.4%, 10.9%]
+
+Train Majority Pass2:
+  Mean: 9.9%
+  Std Dev: 0.4%
+  95% CI: [9.2%, 10.7%]
+
+All Test Correct:
+  Mean: 10.8%
+  Std Dev: 0.8%
+  95% CI: [9.3%, 12.2%]
+
+All Train Correct:
+  Mean: 7.9%
+  Std Dev: 0.8%
+  95% CI: [6.3%, 9.5%]
+
+Min1 Train Correct:
+  Mean: 22.1%
+  Std Dev: 0.5%
+  95% CI: [21.1%, 23.1%]
+
+Min1 Code Success:
+  Mean: 100.0%
+  Std Dev: 0.0%
+  95% CI: [100.0%, 100.0%]
+
+Max Length Responses:
+  Mean: 1.8%
+  Std Dev: 0.1%
+  95% CI: [1.5%, 2.0%]
+
+Timeout Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Api Failure Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
 
 
 ### Testing out the constant learning rate
@@ -232,18 +291,272 @@ Starting with this checkpoint - Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-
 ```bash
 uv run runpod/create_pod_and_run_tasks.py arc-agi-1 Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-221545_cst-c3614
 ```
+<!-- Dataset: arc-agi-1 -->
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-221545_cst-c3614
+Number of runs: 3
+Valid runs: 3
+
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    400    12.2%      11.2%      13.0%    8.2%       23.5%       100.0%       1.8%    
+2    400    11.5%      10.8%      11.8%    8.8%       23.2%       100.0%       1.9%    
+3    400    10.2%      10.2%      11.5%    7.5%       21.8%       100.0%       2.2%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 11.3%
+  Std Dev: 1.0%
+  95% CI: [9.4%, 13.3%]
+
+Train Majority Pass2:
+  Mean: 10.8%
+  Std Dev: 0.5%
+  95% CI: [9.8%, 11.7%]
+
+All Test Correct:
+  Mean: 12.1%
+  Std Dev: 0.8%
+  95% CI: [10.5%, 13.7%]
+
+All Train Correct:
+  Mean: 8.2%
+  Std Dev: 0.6%
+  95% CI: [6.9%, 9.4%]
+
+Min1 Train Correct:
+  Mean: 22.8%
+  Std Dev: 0.9%
+  95% CI: [21.0%, 24.7%]
+
+Min1 Code Success:
+  Mean: 100.0%
+  Std Dev: 0.0%
+  95% CI: [100.0%, 100.0%]
+
+Max Length Responses:
+  Mean: 2.0%
+  Std Dev: 0.2%
+  95% CI: [1.6%, 2.3%]
+
+Timeout Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Api Failure Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
 then 2712:
 ```bash
 uv run runpod/create_pod_and_run_tasks.py arc-agi-1 Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-221545_cst-c2712
 ```
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-221545_cst-c2712
+Number of runs: 3
+Valid runs: 3
+
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    400    13.8%      13.2%      15.0%    11.8%      27.8%       100.0%       3.6%    
+2    400    12.2%      11.5%      14.0%    8.2%       27.3%       100.0%       3.8%    
+3    400    14.0%      13.5%      15.2%    11.0%      26.8%       100.0%       3.1%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 13.3%
+  Std Dev: 0.9%
+  95% CI: [11.5%, 15.2%]
+
+Train Majority Pass2:
+  Mean: 12.8%
+  Std Dev: 1.1%
+  95% CI: [10.6%, 14.9%]
+
+All Test Correct:
+  Mean: 14.8%
+  Std Dev: 0.7%
+  95% CI: [13.5%, 16.0%]
+
+All Train Correct:
+  Mean: 10.3%
+  Std Dev: 1.8%
+  95% CI: [6.7%, 13.9%]
+
+Min1 Train Correct:
+  Mean: 27.3%
+  Std Dev: 0.5%
+  95% CI: [26.3%, 28.2%]
+
+Min1 Code Success:
+  Mean: 100.0%
+  Std Dev: 0.0%
+  95% CI: [100.0%, 100.0%]
+
+Max Length Responses:
+  Mean: 3.5%
+  Std Dev: 0.4%
+  95% CI: [2.8%, 4.2%]
+
+Timeout Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Api Failure Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
 then 1808:
 ```bash
 uv run runpod/create_pod_and_run_tasks.py arc-agi-1 Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-221545_cst-c1808
 ```
+...
 then 904:
 ```bash
 uv run runpod/create_pod_and_run_tasks.py arc-agi-1 Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-221545_cst-c904
 ```
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-221545_cst-c904
+Number of runs: 3
+Valid runs: 3
+
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    400    11.0%      10.8%      13.0%    9.2%       27.0%       100.0%       3.5%    
+2    400    12.2%      12.0%      13.2%    9.8%       29.8%       100.0%       3.9%    
+3    400    14.0%      13.0%      16.0%    10.0%      30.2%       100.0%       3.8%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 12.4%
+  Std Dev: 1.5%
+  95% CI: [9.5%, 15.4%]
+
+Train Majority Pass2:
+  Mean: 11.9%
+  Std Dev: 1.1%
+  95% CI: [9.7%, 14.1%]
+
+All Test Correct:
+  Mean: 14.1%
+  Std Dev: 1.7%
+  95% CI: [10.8%, 17.3%]
+
+All Train Correct:
+  Mean: 9.7%
+  Std Dev: 0.4%
+  95% CI: [8.9%, 10.4%]
+
+Min1 Train Correct:
+  Mean: 29.0%
+  Std Dev: 1.7%
+  95% CI: [25.6%, 32.4%]
+
+Min1 Code Success:
+  Mean: 100.0%
+  Std Dev: 0.0%
+  95% CI: [100.0%, 100.0%]
+
+Max Length Responses:
+  Mean: 3.7%
+  Std Dev: 0.2%
+  95% CI: [3.3%, 4.1%]
+
+Timeout Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Api Failure Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+### Testing out openai/gpt-oss-120b on openrouter on arc-agi-2 unique train tasks for one attempt:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset unique_training_tasks --repeat-runs 1 --max_workers 32 --max_attempts 1 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000
+```
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-2
+Subset: unique_training_tasks
+Model: openai/gpt-oss-120b
+Total tasks: 233
+Successful API calls: 233/233 (100.0%)
+Total tokens used: 1,950,135
+Total cost: $0.871882
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 12.4%
+  Pass@2 (Train Majority):  12.4%
+  Oracle (Best Attempt):    12.4%
+  All Train Correct:        11.6%
+  Min 1 Train Correct:      17.2%
+  Min 1 Code Success:       51.9%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+Results saved to: logs/20250812_101027/20250812_102401_summary_arc-agi-2_unique_training_tasks_simple.json
+
+and then try it on arc 2 eval to test how good it is:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 1 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000
+```
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-2
+Subset: all_evaluation
+Model: openai/gpt-oss-120b
+Total tasks: 120
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 1,404,693
+Total cost: $0.537394
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 1.7%
+  Pass@2 (Train Majority):  1.7%
+  Oracle (Best Attempt):    1.7%
+  All Train Correct:        1.7%
+  Min 1 Train Correct:      5.8%
+  Min 1 Code Success:       67.5%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+Results saved to: llm_python/logs/20250812_103854/20250812_104602_summary_arc-agi-2_all_evaluation_simple.json
+
+And do a quick test on arc-agi-1 eval with 120B:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 1 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000
+```
+
+
+
+
+
+Try to cheapen up data generation by using a soar model we have trained, we'll try 8 attempts on the unique training tasks:
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-agi-2 Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171 --subset unique_training_tasks
+```
+
+
+
 
 
 11 Aug 2025

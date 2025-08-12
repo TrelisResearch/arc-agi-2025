@@ -44,9 +44,9 @@ def wait_for_openai_endpoint(base_url, model_name, timeout=600, check_interval=1
     print(f"❌ Endpoint failed to become ready after {timeout}s")
     return False
 
-def run_arc_tasks(dataset, model_path, base_url):
+def run_arc_tasks(dataset, model_path, base_url, subset="all_evaluation"):
     """Run the ARC tasks with the specified configuration"""
-    print(f"\n🎯 Running ARC tasks for {dataset}...")
+    print(f"\n🎯 Running ARC tasks for {dataset} with subset {subset}...")
     
     # Extract model name from path for display
     model_name = model_path.split('/')[-1]
@@ -54,7 +54,7 @@ def run_arc_tasks(dataset, model_path, base_url):
     cmd = [
         "uv", "run", "python", "-m", "llm_python.run_arc_tasks_soar",
         "--dataset", dataset,
-        "--subset", "all_evaluation",
+        "--subset", subset,
         "--repeat-runs", "3",
         "--max_workers", "32",
         "--max_attempts", "8",
@@ -85,12 +85,13 @@ def main():
         epilog="""
 Examples:
   %(prog)s arc-agi-1 Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-155856-c904
-  %(prog)s arc-agi-2 Trelis/Qwen3-4B_dsarc-agi-2-custom-model
+  %(prog)s arc-agi-2 Trelis/Qwen3-4B_dsarc-agi-2-custom-model --subset shortest_1
+  %(prog)s arc-agi-1 Trelis/Qwen3-4B_model --subset all_evaluation
 
 This script will:
 1. Create a RunPod pod with the specified model
 2. Wait for the OpenAI endpoint to be ready
-3. Run ARC tasks with 8 attempts and 3 runs on all_evaluation subset
+3. Run ARC tasks with 8 attempts and 3 runs on specified subset (default: all_evaluation)
 4. Keep the pod running until you press Ctrl+C
         """
     )
@@ -109,6 +110,9 @@ This script will:
     parser.add_argument('--no-health-check',
                        action='store_true',
                        help='Skip health check after pod creation')
+    parser.add_argument('--subset',
+                       default='all_evaluation',
+                       help='Dataset subset to run (default: all_evaluation)')
     
     args = parser.parse_args()
     
@@ -240,7 +244,7 @@ This script will:
         # Step 2: Run ARC tasks
         print(f"\n🎯 Step 2: Running ARC tasks for {args.dataset}")
         
-        if run_arc_tasks(args.dataset, args.model_path, base_url):
+        if run_arc_tasks(args.dataset, args.model_path, base_url, args.subset):
             print(f"\n🎉 All tasks completed successfully!")
         else:
             print(f"\n⚠️  Some tasks may have failed. Check the output above for details.")

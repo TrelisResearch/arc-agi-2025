@@ -47,7 +47,7 @@ def filter_non_transductive_attempts(result: Dict) -> List[Dict]:
             is_cheat = att['is_transductive']
         else:
             # Fallback for backwards compatibility with older logs
-            is_cheat, _ = is_transduction_cheating(att['program'], result['task_data'])
+            is_cheat, _, _, _ = is_transduction_cheating(att['program'], result['task_data'])
         
         if not is_cheat:
             non_transductive.append(att)
