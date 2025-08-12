@@ -23,8 +23,10 @@ from ..utils.task_loader import TaskLoader
 task_loader = TaskLoader()
 arc_tester = ArcTester(timeout=2, executor_type="unrestricted")
 
+
 class LogData(TypedDict):
     """Schema for data extracted from log files"""
+
     task_id: str
     program: str
     reasoning: str
@@ -34,28 +36,30 @@ class LogData(TypedDict):
 def _create_program_hash(task_id: str, code: str) -> str:
     """Create a hash for a (task_id, code) pair to identify duplicates."""
     content = f"{task_id}:{code}"
-    return hashlib.sha256(content.encode('utf-8')).hexdigest()
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
 def _load_existing_programs_index(output_path: Path) -> Set[str]:
     """Load existing programs and return a set of hashes for duplicate detection."""
     if not output_path.exists():
         return set()
-    
+
     try:
         # Read only the columns we need for hashing to reduce memory usage
-        df = pd.read_parquet(output_path, columns=['task_id', 'code'])
+        df = pd.read_parquet(output_path, columns=["task_id", "code"])
         existing_hashes = set()
-        
+
         # Process in chunks to reduce memory usage
         for _, row in df.iterrows():
-            hash_key = _create_program_hash(row['task_id'], row['code'])
+            hash_key = _create_program_hash(row["task_id"], row["code"])
             existing_hashes.add(hash_key)
-        
+
         # Delete the dataframe to free memory immediately
         del df
-        
-        print(f"Loaded {len(existing_hashes)} existing programs for duplicate detection")
+
+        print(
+            f"Loaded {len(existing_hashes)} existing programs for duplicate detection"
+        )
         return existing_hashes
     except Exception as e:
         print(f"Error loading existing parquet file: {e}")
@@ -80,11 +84,13 @@ def _save_programs_to_parquet(
         try:
             # Read existing file
             existing_df = pd.read_parquet(output_path)
-            
+
             # Combine dataframes
             df = pd.concat([existing_df, new_df], ignore_index=True)
-            print(f"Merged {len(existing_df)} existing programs with {len(new_df)} new programs")
-            
+            print(
+                f"Merged {len(existing_df)} existing programs with {len(new_df)} new programs"
+            )
+
             # Free memory immediately
             del existing_df
         except Exception as e:
@@ -98,7 +104,7 @@ def _save_programs_to_parquet(
     table = pa.Table.from_pandas(df, schema=PARQUET_SCHEMA)
     pq.write_table(table, output_path)
     print(f"Saved {len(df)} total programs to {output_path}")
-    
+
     # Free memory
     del df, table
 
@@ -108,7 +114,7 @@ def _validate_training_example_against_schema(example: SoarProgramExample) -> No
     try:
         # Convert to a regular dict to avoid TypedDict key access issues
         example_dict = dict(example)
-        
+
         # Create arrays for each column with single values
         arrays = []
         for field in PARQUET_SCHEMA:
@@ -212,7 +218,27 @@ def is_valid_code(code: str) -> bool:
         return False
 
 
-def process_program(log_data: LogData, existing_hashes: Set[str]) -> Optional[SoarProgramExample]:
+def _has_oversized_grids(outputs: List[List[List[int]]], max_size: int = 40) -> bool:
+    """Check if any output grid exceeds the maximum size (default 40x40)."""
+    for output in outputs:
+        if output:  # Skip None/empty outputs
+            # Check if it's a valid 2D grid
+            if isinstance(output, list) and len(output) > 0:
+                height = len(output)
+                if height > max_size:
+                    return True
+
+                # Check width of first row (assuming rectangular grid)
+                if isinstance(output[0], list):
+                    width = len(output[0])
+                    if width > max_size:
+                        return True
+    return False
+
+
+def process_program(
+    log_data: LogData, existing_hashes: Set[str]
+) -> Optional[SoarProgramExample]:
     """Process a single program entry with task data and compute correctness."""
 
     try:
@@ -240,6 +266,19 @@ def process_program(log_data: LogData, existing_hashes: Set[str]) -> Optional[So
     if not test_result.success:
         return None
 
+    # Check if any output grids exceed 40x40 size limit
+    train_outputs_no_none = [
+        output for output in test_result.train_outputs if output is not None
+    ]
+    test_outputs_no_none = [
+        output for output in test_result.test_outputs if output is not None
+    ]
+
+    if _has_oversized_grids(train_outputs_no_none) or _has_oversized_grids(
+        test_outputs_no_none
+    ):
+        return None
+
     # For generation, we'll default to 0 since it's not available in current logs
     generation = 0
 
@@ -250,12 +289,10 @@ def process_program(log_data: LogData, existing_hashes: Set[str]) -> Optional[So
         correct_train_input=test_result.correct_train_input,
         correct_test_input=test_result.correct_test_input,
         predicted_train_output=[
-            output if output is not None else []
-            for output in test_result.train_outputs
+            output if output is not None else [] for output in test_result.train_outputs
         ],
         predicted_test_output=[
-            output if output is not None else []
-            for output in test_result.test_outputs
+            output if output is not None else [] for output in test_result.test_outputs
         ],
         train_input=test_result.train_inputs,
         test_input=test_result.test_inputs,
@@ -275,14 +312,18 @@ def process_program(log_data: LogData, existing_hashes: Set[str]) -> Optional[So
 def extract_and_process_programs_from_log(args_tuple) -> List[SoarProgramExample]:
     """Extract and process programs from a single log file."""
     log_path, existing_hashes = args_tuple
-    
+
     # Create a local copy of hashes for this worker to modify
     # This prevents race conditions while still avoiding duplicates from existing data
-    local_hashes = existing_hashes.copy() if isinstance(existing_hashes, set) else set(existing_hashes)
-    
+    local_hashes = (
+        existing_hashes.copy()
+        if isinstance(existing_hashes, set)
+        else set(existing_hashes)
+    )
+
     try:
         log_data_list = extract_log_data(log_path)
-        
+
         # Process each log entry and filter out None results
         results = []
         for log_data in log_data_list:
@@ -294,9 +335,9 @@ def extract_and_process_programs_from_log(args_tuple) -> List[SoarProgramExample
                 # Skip programs that fail to process, but log the error for debugging
                 print(f"Error processing program in {log_path}: {e}")
                 continue
-        
+
         return results
-        
+
     except Exception as e:
         print(f"Error processing log file {log_path}: {e}")
         return []
@@ -334,10 +375,10 @@ def main():
     )
 
     output_path = Path(args.output)
-    
+
     # Load existing programs for duplicate detection
     existing_hashes = _load_existing_programs_index(output_path)
-    
+
     # Find log files
     log_files = glob.glob(args.logs_pattern, recursive=True)
     if not log_files:
@@ -350,30 +391,38 @@ def main():
     total_new_programs = 0
     batch_programs = []
     files_processed = 0
-    
+
     # Don't copy the hash set for each worker - use shared reference
     # This reduces memory usage significantly
     args_list = [(log_file, existing_hashes) for log_file in log_files]
-    
+
     with multiprocessing.Pool(processes=max_workers) as pool:
         # Process files and save in batches
-        for i, result in enumerate(pool.imap(extract_and_process_programs_from_log, args_list)):
+        for i, result in enumerate(
+            pool.imap(extract_and_process_programs_from_log, args_list)
+        ):
             batch_programs.extend(result)
             files_processed += 1
-            
+
             # Simple progress reporting every 100 files
             if files_processed % 100 == 0:
-                print(f"  Processed {files_processed}/{len(log_files)} files, {len(batch_programs)} programs in current batch")
-            
+                print(
+                    f"  Processed {files_processed}/{len(log_files)} files, {len(batch_programs)} programs in current batch"
+                )
+
             # Save batch when it reaches the specified size
             if len(batch_programs) >= args.batch_size:
                 if batch_programs:  # Only save if we have programs
-                    append_mode = total_new_programs > 0  # Append if not the first batch
+                    append_mode = (
+                        total_new_programs > 0
+                    )  # Append if not the first batch
                     _save_programs_to_parquet(batch_programs, output_path, append_mode)
                     total_new_programs += len(batch_programs)
-                    print(f"  Saved batch of {len(batch_programs)} programs. Total saved: {total_new_programs}")
+                    print(
+                        f"  Saved batch of {len(batch_programs)} programs. Total saved: {total_new_programs}"
+                    )
                     batch_programs = []  # Clear the batch
-        
+
         # Save any remaining programs in the final batch
         if batch_programs:
             append_mode = total_new_programs > 0
@@ -381,7 +430,9 @@ def main():
             total_new_programs += len(batch_programs)
             print(f"  Saved final batch of {len(batch_programs)} programs")
 
-    print(f"Extracted and validated {total_new_programs} new programs from {len(log_files)} files")
+    print(
+        f"Extracted and validated {total_new_programs} new programs from {len(log_files)} files"
+    )
 
     # Print some basic stats on the new programs (read only final batch to avoid memory issues)
     if total_new_programs > 0:
@@ -392,16 +443,24 @@ def main():
             print(f"  Total programs in output file: {len(total_df)}")
             print(f"  Total unique tasks: {total_df['task_id'].nunique()}")
             print(f"  Total unique models: {total_df['model'].nunique()}")
-            
+
             # Calculate average accuracies from boolean lists (on full dataset)
-            train_accuracies = [sum(correct_list) / len(correct_list) if correct_list else 0.0 
-                               for correct_list in total_df['correct_train_input']]
-            test_accuracies = [sum(correct_list) / len(correct_list) if correct_list else 0.0 
-                              for correct_list in total_df['correct_test_input']]
-            
-            print(f"  Average training accuracy: {sum(train_accuracies) / len(train_accuracies):.3f}")
-            print(f"  Average test accuracy: {sum(test_accuracies) / len(test_accuracies):.3f}")
-            
+            train_accuracies = [
+                sum(correct_list) / len(correct_list) if correct_list else 0.0
+                for correct_list in total_df["correct_train_input"]
+            ]
+            test_accuracies = [
+                sum(correct_list) / len(correct_list) if correct_list else 0.0
+                for correct_list in total_df["correct_test_input"]
+            ]
+
+            print(
+                f"  Average training accuracy: {sum(train_accuracies) / len(train_accuracies):.3f}"
+            )
+            print(
+                f"  Average test accuracy: {sum(test_accuracies) / len(test_accuracies):.3f}"
+            )
+
         except Exception as e:
             print(f"Error reading final parquet file for stats: {e}")
 
