@@ -1284,7 +1284,10 @@ class ARCTaskRunnerSimple:
                 compact_attempts = []
                 for att in r.get('attempt_details', []):
                     if isinstance(att, dict):
-                        compact_att = {k: v for k, v in att.items() if k not in ('raw_response', 'program')}
+                        compact_att = {k: v for k, v in att.items() if k != 'raw_response'}
+                        # Keep 'program' field but ensure it's empty string for failed attempts (avoid KeyError)
+                        if 'program' not in compact_att:
+                            compact_att['program'] = ''
                         compact_attempts.append(compact_att)
                     else:
                         compact_attempts.append(att)

@@ -21,6 +21,84 @@ Training speed-ups:
 
 ---
 12 Aug 2025
+
+### Quick test of ARC-AGI-2 with 1 epoch blended
+
+We'll test with 8 attempts, 3 runs, using the script to start a pod and run the tasks:
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-agi-2 Trelis/arc-1-fake-ttt-blended-c402
+```
+which is just run with 8 attempts:
+📁 Scanning directory: llm_python/logs/20250812_163746
+📊 Found 120 task files, 2 summary files, 0 other files
+📋 Existing summary files: ['20250812_173808_retrospective_summary_arc-agi-2_all_evaluation.json', '20250812_164119_summary_arc-agi-2_all_evaluation_simple_run3.json']
+✅ Successfully loaded 120 task results
+📋 Dataset: arc-agi-2
+📋 Subset: all_evaluation
+📋 Model: Trelis/arc-1-fake-ttt-blended-c402
+
+📊 COMPLETENESS ANALYSIS:
+   Total tasks: 120
+   Max attempts per task: 8
+   Min attempts per task: 8
+   Average attempts per task: 8.0
+   Attempt distribution:
+     8 attempts: 120 tasks
+
+📊 CALCULATING METRICS for 120 tasks...
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 4.2%
+  Pass@2 (Train Majority):  4.2%
+  Oracle (Best Attempt):    4.2%
+  All Train Correct:        2.5%
+  Min 1 Train Correct:      8.3%
+  Min 1 Code Success:       75.8%
+  Max Length Responses:     10.1%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+💰 COST ANALYSIS:
+  Total tokens used: 6,901,853
+  Total cost: $1.153547
+
+💾 Summary saved to: llm_python/logs/20250812_163746/20250812_173817_retrospective_summary_arc-agi-2_all_evaluation.json
+
+can then use that same endpoint to run 64 attempts, 3 runs, task runner script:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 64 --model Trelis/arc-1-fake-ttt-blended-c402 --base-url http://107.152.109.27:11640/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
+📋 Dataset: arc-agi-2
+📋 Subset: all_evaluation
+📋 Model: Trelis/arc-1-fake-ttt-blended-c402
+
+📊 COMPLETENESS ANALYSIS:
+   Total tasks: 120
+   Max attempts per task: 64
+   Min attempts per task: 64
+   Average attempts per task: 64.0
+   Attempt distribution:
+     64 attempts: 120 tasks
+
+📊 CALCULATING METRICS for 120 tasks...
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 15.8%
+  Pass@2 (Train Majority):  15.0%
+  Oracle (Best Attempt):    17.5%
+  All Train Correct:        15.8%
+  Min 1 Train Correct:      34.2%
+  Min 1 Code Success:       90.8%
+  Max Length Responses:     2.9%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+💰 COST ANALYSIS:
+  Total tokens used: 55,669,584
+  Total cost: $9.501235
+
+
+
 ### Best filtered 250
 Start up a pod for this - Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-155856-c904:
 ```bash

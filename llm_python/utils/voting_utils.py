@@ -47,7 +47,7 @@ def filter_non_transductive_attempts(result: Dict) -> List[Dict]:
             is_cheat = att['is_transductive']
         else:
             # Fallback for backwards compatibility with older logs
-            is_cheat, _, _, _ = is_transduction_cheating(att['program'], result['task_data'])
+            is_cheat, _, _, _ = is_transduction_cheating(att.get('program', ''), result['task_data'])
         
         if not is_cheat:
             non_transductive.append(att)
@@ -77,7 +77,7 @@ def generic_voting(
     pattern_stats = defaultdict(lambda: {'total_weight': 0.0, 'attempts': []})
     
     for att in attempts:
-        key = serialize_prediction_for_voting(att['test_predicted'])
+        key = serialize_prediction_for_voting(att.get('test_predicted'))
         weight = weighting_func(att)
         pattern_stats[key]['total_weight'] += weight
         pattern_stats[key]['attempts'].append(att)
@@ -114,14 +114,14 @@ def compute_train_majority_voting(attempts: List[Dict], top_k: int = 2) -> List:
     
     # Find attempts with most train correct
     best_train_score = max(
-        sum(tr['correct'] for tr in att['train_results']) 
+        sum(tr.get('correct', False) for tr in att.get('train_results', [])) 
         for att in attempts
     )
     
     # Filter to best group and do simple majority voting
     best_group = [
         att for att in attempts 
-        if sum(tr['correct'] for tr in att['train_results']) == best_train_score
+        if sum(tr.get('correct', False) for tr in att.get('train_results', [])) == best_train_score
     ]
     
     def weight_func(att: Dict) -> float:

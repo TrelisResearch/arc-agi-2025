@@ -200,6 +200,7 @@ The following subset files are available:
 - **grid_size_distributed_30_training.txt**: 30 training tasks evenly distributed by grid size
 - **grid_size_distributed_30_evaluation.txt**: 30 evaluation tasks evenly distributed by grid size
 - **unique_training_tasks.txt**: 233 ARC-AGI-2 training tasks that are NOT present in ARC-AGI-1 (unique to ARC-AGI-2)
+- **remaining_tasks_no_512_attempts.txt**: 186 ARC-AGI-2 unique training tasks EXCLUDING the 47 tasks that already have 512 attempts of data collected (created because a run stopped midway when working on the unique_training_tasks subset)
 
 **For both datasets:**
 - **tasks_with_multiple_tests.json**: Tasks with more than one test example (JSON, not a subset for evaluation)

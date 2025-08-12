@@ -138,12 +138,12 @@ def calculate_task_metrics(
         # ---------- oracle train‑set metrics ----------
         any_all = any_min1 = False
         for att in non_trans:
-            trs = att["train_results"]
+            trs = att.get("train_results", [])
             if not trs:
                 continue
-            if all(tr["correct"] for tr in trs):
+            if all(tr.get("correct", False) for tr in trs):
                 any_all = True
-            if any(tr["correct"] for tr in trs):
+            if any(tr.get("correct", False) for tr in trs):
                 any_min1 = True
         if any_all:
             all_train_correct += 1
