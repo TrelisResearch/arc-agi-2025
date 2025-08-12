@@ -35,7 +35,7 @@ class ResultProcessor:
             size_mb = size_bytes / (1024 * 1024)
             
             # Define size limits
-            max_size_mb = 50  # 50MB limit per file
+            max_size_mb = 100  # 100MB limit per file
             warn_size_mb = 10  # Warn at 10MB
             
             if size_mb > max_size_mb:

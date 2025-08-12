@@ -691,7 +691,7 @@ Api Failure Responses:
 
 Ok, we're now going to generate 512 attempts worth of data from this same pod: http://38.80.152.249:30524/v1 by running on arc 2 unique training tasks, we'll use the task runner script:
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset unique_training_tasks --repeat-runs 1 --max_workers 32 --max_attempts 512 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171 --base-url http://38.80.152.249:30524/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset unique_training_tasks --repeat-runs 1 --max_workers 32 --max_attempts 512 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171 --base-url http://38.80.152.249:30524/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
 ```
 
 

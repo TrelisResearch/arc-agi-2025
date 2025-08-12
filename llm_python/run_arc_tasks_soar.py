@@ -455,11 +455,16 @@ class ARCTaskRunnerSimple:
                     "TimeoutError" in str(type(e).__name__) or
                     "concurrent.futures._base.TimeoutError" in str(type(e))
                 )
-                if retry_attempt < 2:
+                # Don't retry timeout errors - they indicate the request took too long
+                if is_timeout_error:
+                    timed_out = True
+                    break
+                # Only retry non-timeout errors (API errors, network issues, etc.)
+                elif retry_attempt < 2:
                     time.sleep(2)
                 else:
-                    # Only mark as timeout if it's actually a timeout error
-                    timed_out = is_timeout_error
+                    # Final non-timeout error
+                    timed_out = False
         
         # Extract sampling parameters for logging
         sampling_params = {}
