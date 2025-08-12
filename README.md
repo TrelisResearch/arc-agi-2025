@@ -72,7 +72,33 @@ For complete documentation, usage examples, and detailed configuration options, 
 
 ## Google Cloud Storage Operations
 
-### Sync logs to GCS
+### Sync logs to GCS (Preferred Method - Parquet)
+
+The preferred workflow is to first extract logs to parquet format, then upload to GCS for efficient processing in BigQuery:
+
+#### Step 1: Extract logs to parquet
+```bash
+# Extract logs to parquet format
+uv run python -m llm_python.datasets.extract_from_logs --output your_output_file.parquet --logs-pattern=logs/20250811*/*
+
+# Example for capturing a specific day's run:
+uv run python -m llm_python.datasets.extract_from_logs --output soar_log_programs_faking.parquet --logs-pattern=logs/20250811*/*
+```
+
+#### Step 2: Upload parquet files to GCS
+```bash
+# Upload parquet file to GCS datasets folder
+gsutil -m cp your_output_file.parquet gs://trelis-arc/datasets/your_output_file.parquet
+
+# Example:
+gsutil -m cp soar_log_programs_faking.parquet gs://trelis-arc/datasets/soar_log_programs_faking.parquet
+```
+
+Parquet files are stored in: https://console.cloud.google.com/storage/browser/trelis-arc/datasets
+
+Once uploaded, these files can be quickly merged in BigQuery for analysis.
+
+### Sync logs to GCS (Legacy Method - Direct sync)
 
 ```bash
 # Using gsutil (works on all platforms, requires Python 3.8-3.12)
