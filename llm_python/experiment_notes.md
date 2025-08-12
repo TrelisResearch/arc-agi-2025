@@ -20,8 +20,240 @@ Training speed-ups:
 - Use GPT OSS? (slower to fine-tune, but fast inference). Needs vLLM, not sglang, requiring some updates to the codebase.
 
 ---
+12 Aug 2025
+### Best filtered 250
+Start up a pod for this - Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-155856-c904:
+```bash
+uv run runpod/create_pod.py sglang -- --model-path Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-155856-c904
+```
+and for the next checkpoint- Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-155856-c1808:
+```bash
+uv run runpod/create_pod.py sglang -- --model-path Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-155856-c1808
+```
+and the next Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-155856-c2712
+```bash 
+uv run runpod/create_pod.py sglang -- --model-path Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-155856-c2712
+```
+and the last
+```bash 
+uv run runpod/create_pod.py sglang -- --model-path Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-155856-c3616
+```
+
+
+
+
 
 11 Aug 2025
+### Scaling of model performance for our best model so far.
+
+- 256 attempts gives:
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171
+Total tasks: 400
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 472,364,852
+Total cost: $88.209286
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 43.8%
+  Pass@2 (Train Majority):  42.0%
+  Oracle (Best Attempt):    50.0%
+  All Train Correct:        42.8%
+  Min 1 Train Correct:      70.0%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.5%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+Let's start up a pod for the third checkpoint of the 50-correct 200 partial model:
+```bash
+uv run runpod/create_pod.py sglang -- --model-path Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171
+```
+and then test it out on 64 attempts, just once to see how it goes:
+```bash 
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 1 --max_workers 32 --max_attempts 64 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171 --base-url http://107.152.109.26:11489/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+...
+and then with 1 attempts, three runs:
+```bash 
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 1 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171 --base-url http://107.152.109.26:11489/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171
+Number of runs: 3
+Valid runs: 3
+
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    400    6.0%       6.0%       6.0%     4.0%       10.0%       85.0%        1.5%    
+2    400    4.8%       4.8%       4.8%     2.8%       8.5%        84.2%        2.5%    
+3    400    4.5%       4.5%       4.5%     3.0%       9.5%        86.0%        2.2%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 5.1%
+  Std Dev: 0.8%
+  95% CI: [3.5%, 6.7%]
+
+Train Majority Pass2:
+  Mean: 5.1%
+  Std Dev: 0.8%
+  95% CI: [3.5%, 6.7%]
+
+All Test Correct:
+  Mean: 5.1%
+  Std Dev: 0.8%
+  95% CI: [3.5%, 6.7%]
+
+All Train Correct:
+  Mean: 3.2%
+  Std Dev: 0.7%
+  95% CI: [2.0%, 4.5%]
+
+Min1 Train Correct:
+  Mean: 9.3%
+  Std Dev: 0.8%
+  95% CI: [7.8%, 10.8%]
+
+Min1 Code Success:
+  Mean: 85.1%
+  Std Dev: 0.9%
+  95% CI: [83.4%, 86.8%]
+
+Max Length Responses:
+  Mean: 2.1%
+  Std Dev: 0.5%
+  95% CI: [1.1%, 3.1%]
+
+Timeout Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Api Failure Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+and the 8 attempt results are:
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171
+Number of runs: 3
+Valid runs: 3
+
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    400    15.0%      14.2%      15.8%    12.0%      31.2%       100.0%       2.7%    
+2    400    14.8%      14.8%      17.5%    14.0%      30.5%       99.8%        3.2%    
+3    400    15.5%      14.2%      16.5%    12.5%      31.8%       100.0%       2.6%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 15.1%
+  Std Dev: 0.4%
+  95% CI: [14.3%, 15.8%]
+
+Train Majority Pass2:
+  Mean: 14.4%
+  Std Dev: 0.3%
+  95% CI: [13.9%, 15.0%]
+
+All Test Correct:
+  Mean: 16.6%
+  Std Dev: 0.9%
+  95% CI: [14.9%, 18.3%]
+
+Also do a quick test with 8 attempts and 3 runs with max length of 2000:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 4 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171 --base-url http://107.152.109.26:11489/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
+...see how this does vs 15%.
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
+Dataset: arc-agi-1
+Subset: all_evaluation
+Model: Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171
+Number of runs: 3
+Valid runs: 3
+
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    400    20.2%      19.8%      21.5%    15.8%      35.5%       99.8%        0.5%    
+2    400    16.8%      15.8%      17.2%    13.2%      31.5%       100.0%       0.4%    
+3    400    15.8%      15.5%      17.0%    12.2%      30.5%       100.0%       0.7%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 17.6%
+  Std Dev: 2.4%
+  95% CI: [13.0%, 22.2%]
+
+Train Majority Pass2:
+  Mean: 17.0%
+  Std Dev: 2.4%
+  95% CI: [12.3%, 21.7%]
+
+All Test Correct:
+  Mean: 18.6%
+  Std Dev: 2.5%
+  95% CI: [13.6%, 23.5%]
+
+All Train Correct:
+  Mean: 13.8%
+  Std Dev: 1.8%
+  95% CI: [10.2%, 17.3%]
+
+Min1 Train Correct:
+  Mean: 32.5%
+  Std Dev: 2.6%
+  95% CI: [27.3%, 37.7%]
+
+Min1 Code Success:
+  Mean: 99.9%
+  Std Dev: 0.1%
+  95% CI: [99.6%, 100.0%]
+
+Max Length Responses:
+  Mean: 0.5%
+  Std Dev: 0.2%
+  95% CI: [0.2%, 0.9%]
+
+Timeout Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Api Failure Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Aggregate results saved to: logs/20250811_230841/20250812_014716_aggregate_summary_arc-agi-1_all_evaluation_all_attempts_3runs.json
+
+
+
 ### Running inference on OSS model - (157.66.255.60:11970), openai/gpt-oss-20b on all evaluation arc agi 1 for 8 attempts.
 
 ```bash
