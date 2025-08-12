@@ -133,13 +133,18 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --b
 - **Program execution**: 0.5s per train/test execution in the executor.
 
 Behavior when timeouts occur:
-- **API timeout**: Retries up to 3 times; on final timeout the attempt is recorded with `api_timeout=True`, `api_success=False` and logged.
+- **API timeout**: No retries on timeout; attempt recorded with `api_timeout=True`. Other errors (network, rate limits) retry up to 3 times.
 - **Global timeout**: Remaining futures are cancelled; partial results are saved and the summary includes `TIMEOUT_PARTIAL` with `timeout_occurred=True`.
 - **Execution timeout**: Per-example `timed_out=True`; included in health and summary metrics.
 
 ### Output Size Limits
 
-- Predicted grid outputs are validated after execution. If the serialized grid exceeds 10,000 characters, or the grid contains more than 1,800 cells (sum of row lengths), the output is rejected for that attempt with `error: "output_too_large(...)"` and no prediction is recorded. This prevents pathological outputs from inflating logs.
+- **Grid outputs**: Rejected if >10,000 chars or >1,800 cells to prevent pathological outputs.
+- **Log files**: Warning at 10MB, blocked at 100MB per file.
+- **Data trimming**: Failed attempts (execution errors, no code, API failures) automatically trimmed to reduce file size:
+  - Keeps: Essential metadata (tokens, cost, flags, error counts)
+  - Drops: raw_response, program, detailed results arrays
+  - Successful attempts keep all data for analysis
 
 ### Grids-Only Dataset Creation (`create_grids_only_dataset.py`)
 

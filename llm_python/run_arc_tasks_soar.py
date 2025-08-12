@@ -822,16 +822,27 @@ class ARCTaskRunnerSimple:
                             attempts = sorted(task_results[task_id]['attempts'], key=lambda x: x['attempt_number'])
                             valid_attempts = [attempt for attempt in attempts if isinstance(attempt, dict) and 'attempt_number' in attempt]
                             
+                            # Trim failed attempts to reduce file size
+                            trimmed_attempts = [self._trim_failed_attempt(attempt) for attempt in valid_attempts]
+                            
+                            # Only include raw_responses for non-trimmed attempts
+                            all_responses = []
+                            for i, attempt in enumerate(trimmed_attempts):
+                                if attempt.get('data_trimmed', False):
+                                    all_responses.append(None)  # No raw response for trimmed attempts
+                                else:
+                                    all_responses.append(valid_attempts[i].get('raw_response'))
+                            
                             task_result = {
                                 'task_id': task_id,
                                 'model': self.model,
                                 'api_type': 'chat_completions_all_attempts',
                                 'dataset': dataset,
                                 'subset': subset_name,
-                                'attempt_details': valid_attempts,
-                                'all_responses': [attempt.get('raw_response') for attempt in valid_attempts],
-                                'tokens_used': sum(attempt.get('input_tokens', 0) + attempt.get('output_tokens', 0) for attempt in valid_attempts),
-                                'request_cost': sum(attempt.get('attempt_cost', 0.0) for attempt in valid_attempts),
+                                'attempt_details': trimmed_attempts,
+                                'all_responses': all_responses,
+                                'tokens_used': sum(attempt.get('input_tokens', 0) + attempt.get('output_tokens', 0) for attempt in trimmed_attempts),
+                                'request_cost': sum(attempt.get('attempt_cost', 0.0) for attempt in trimmed_attempts),
                                 'max_attempts': self.max_attempts,
                                 'api_success': True,
                                 'task_data': task_data,
@@ -965,16 +976,27 @@ class ARCTaskRunnerSimple:
                         attempts = sorted(task_results[task_id]['attempts'], key=lambda x: x['attempt_number'])
                         valid_attempts = [attempt for attempt in attempts if isinstance(attempt, dict) and 'attempt_number' in attempt]
                         
+                        # Trim failed attempts to reduce file size
+                        trimmed_attempts = [self._trim_failed_attempt(attempt) for attempt in valid_attempts]
+                        
+                        # Only include raw_responses for non-trimmed attempts
+                        all_responses = []
+                        for i, attempt in enumerate(trimmed_attempts):
+                            if attempt.get('data_trimmed', False):
+                                all_responses.append(None)  # No raw response for trimmed attempts
+                            else:
+                                all_responses.append(valid_attempts[i].get('raw_response'))
+                        
                         partial_task_result = {
                             'task_id': task_id,
                             'model': self.model,
                             'api_type': 'chat_completions_partial_attempts',
                             'dataset': dataset,
                             'subset': subset_name,
-                            'attempt_details': valid_attempts,
-                            'all_responses': [attempt.get('raw_response') for attempt in valid_attempts],
-                            'tokens_used': sum(attempt.get('input_tokens', 0) + attempt.get('output_tokens', 0) for attempt in valid_attempts),
-                            'request_cost': sum(attempt.get('attempt_cost', 0.0) for attempt in valid_attempts),
+                            'attempt_details': trimmed_attempts,
+                            'all_responses': all_responses,
+                            'tokens_used': sum(attempt.get('input_tokens', 0) + attempt.get('output_tokens', 0) for attempt in trimmed_attempts),
+                            'request_cost': sum(attempt.get('attempt_cost', 0.0) for attempt in trimmed_attempts),
                             'max_attempts': self.max_attempts,
                             'actual_attempts': len(valid_attempts),
                             'timeout_occurred': True,
@@ -1006,15 +1028,26 @@ class ARCTaskRunnerSimple:
                 is_partial = len(valid_attempts) < self.max_attempts
                 api_type = 'chat_completions_partial_attempts' if is_partial else 'chat_completions_all_attempts'
                 
+                # Trim failed attempts to reduce file size for summary
+                trimmed_attempts = [self._trim_failed_attempt(attempt) for attempt in valid_attempts]
+                
+                # Only include raw_responses for non-trimmed attempts
+                all_responses = []
+                for i, attempt in enumerate(trimmed_attempts):
+                    if attempt.get('data_trimmed', False):
+                        all_responses.append(None)  # No raw response for trimmed attempts
+                    else:
+                        all_responses.append(valid_attempts[i].get('raw_response'))
+                
                 result = {
                     'task_id': task_id,
                     'model': self.model,
                     'api_type': api_type,
                     'dataset': dataset,
                     'subset': subset_name,
-                    'attempt_details': valid_attempts,
-                    'all_responses': [attempt.get('raw_response') for attempt in valid_attempts],
-                    'tokens_used': sum(attempt.get('input_tokens', 0) + attempt.get('output_tokens', 0) for attempt in valid_attempts),
+                    'attempt_details': trimmed_attempts,
+                    'all_responses': all_responses,
+                    'tokens_used': sum(attempt.get('input_tokens', 0) + attempt.get('output_tokens', 0) for attempt in trimmed_attempts),
                     'request_cost': sum(attempt.get('attempt_cost', 0.0) for attempt in valid_attempts),
                     'max_attempts': self.max_attempts,
                     'actual_attempts': len(valid_attempts),  # Track how many were actually completed
@@ -1105,6 +1138,72 @@ class ARCTaskRunnerSimple:
             summary += f" (best: {best_attempt.get('train_accuracy', 0.0):.1%} train, test-failed)"
         
         print(summary)
+    
+    def _trim_failed_attempt(self, attempt: Dict) -> Dict:
+        """Trim data from attempts that failed to execute (exec errors, no code, API failures)
+        
+        Keep only essential metadata for failed attempts to reduce file size.
+        """
+        # Check if this attempt should be trimmed (execution failures)
+        should_trim = (
+            # Execution errors
+            attempt.get('train_exec_errors', 0) > 0 or
+            attempt.get('test_exec_error', False) or
+            # No code extracted
+            not attempt.get('program_extracted', False) or
+            # API failures
+            attempt.get('api_timeout', False) or
+            not attempt.get('api_success', True) or
+            attempt.get('empty_response', False)
+        )
+        
+        if not should_trim:
+            # Keep everything for attempts that ran successfully
+            return attempt
+        
+        # Create trimmed version for failed attempts
+        trimmed = {
+            # Essential metadata
+            'attempt_number': attempt.get('attempt_number'),
+            'timestamp': attempt.get('timestamp'),
+            'input_tokens': attempt.get('input_tokens', 0),
+            'output_tokens': attempt.get('output_tokens', 0),
+            'attempt_cost': attempt.get('attempt_cost', 0.0),
+            
+            # Key flags
+            'program_extracted': attempt.get('program_extracted', False),
+            'api_success': attempt.get('api_success', True),
+            'api_timeout': attempt.get('api_timeout', False),
+            'empty_response': attempt.get('empty_response', False),
+            'hit_max_tokens': attempt.get('hit_max_tokens', False),
+            
+            # Transduction flags
+            'is_train_transductive': attempt.get('is_train_transductive', False),
+            'is_test_transductive': attempt.get('is_test_transductive', False),
+            
+            # Error counts instead of full arrays
+            'train_exec_errors': attempt.get('train_exec_errors', 0),
+            'train_exec_timeouts': attempt.get('train_exec_timeouts', 0),
+            'test_exec_error': attempt.get('test_exec_error', False),
+            'test_exec_timeout': attempt.get('test_exec_timeout', False),
+            
+            # Accuracy metrics (zeros for failed attempts)
+            'train_accuracy': attempt.get('train_accuracy', 0.0),
+            'test_correct': attempt.get('test_correct', False),
+            'test_correct_count': attempt.get('test_correct_count', 0),
+            
+            # Truncated error message if present
+            'error_summary': str(attempt.get('error', ''))[:200] if attempt.get('error') else None,
+            
+            # Mark as trimmed for transparency
+            'data_trimmed': True,
+            'trim_reason': 'execution_failure'
+        }
+        
+        # Drop: raw_response, program, train_results, test_results, test_predicted, sampling_params
+        # These are the main space consumers for failed attempts
+        
+        return trimmed
     
     def save_result(self, result: Dict):
         """Save individual task result"""
