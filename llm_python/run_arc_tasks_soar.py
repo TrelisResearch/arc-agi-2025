@@ -11,8 +11,7 @@ from typing import Dict, List, Optional
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor
 
-from llm_python.utils.task_loader import TaskLoader
-from llm_python.utils.scoring import GridScorer
+from llm_python.utils.task_loader import TaskData, TaskLoader
 from llm_python.utils.arc_tester import ArcTester
 from llm_python.utils.prompt_utils import create_arc_prompt, extract_python_code
 from llm_python.utils.metrics_utils import calculate_task_metrics, metrics_to_percentages
@@ -77,7 +76,6 @@ class ARCTaskRunnerSimple:
         
         # Initialize remaining components
         self.task_loader = TaskLoader()
-        self.scorer = GridScorer()
         self.executor = ArcTester(
             timeout=0.5,
             executor_type=executor_type,
@@ -422,7 +420,7 @@ class ARCTaskRunnerSimple:
         
         return extract_python_code(full_text, self.debug)
     
-    def run_single_attempt(self, task_id: str, task_data: Dict, attempt_num: int, 
+    def run_single_attempt(self, task_id: str, task_data: TaskData, attempt_num: int, 
                           dataset: str = None, subset: str = None, full_prompt: Dict = None) -> Dict:
         """Run a single attempt for an ARC task"""
         system_content = full_prompt['system']
