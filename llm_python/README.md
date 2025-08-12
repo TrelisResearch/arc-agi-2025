@@ -143,7 +143,8 @@ Behavior when timeouts occur:
 - **Log files**: Warning at 10MB, blocked at 100MB per file.
 - **Data trimming**: Failed attempts (execution errors, no code, API failures) automatically trimmed to reduce file size:
   - Keeps: Essential metadata (tokens, cost, flags, error counts)
-  - Drops: raw_response, program, detailed results arrays
+  - Empties: raw_response→None, program→'', results→[] (maintains compatibility)
+  - Marks: data_trimmed=True for transparency
   - Successful attempts keep all data for analysis
 
 ### Grids-Only Dataset Creation (`create_grids_only_dataset.py`)

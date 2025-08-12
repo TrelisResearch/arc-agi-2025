@@ -51,9 +51,9 @@ class ARCTaskRunnerSimple:
         self.debug = debug
         self.prompt_version = prompt_version
         
-        # Calculate timeouts based on model configuration
-        api_timeout = 120 if qwen_no_think else 2400
-        self.worker_timeout = 7200  # 2 hours per run
+        # Calculate timeouts based on model configuration - SHORTENED FOR TESTING
+        api_timeout = 10 if qwen_no_think else 30  # Much shorter for testing
+        self.worker_timeout = 300  # 5 minutes per run for testing
         
         # Warn about safety settings
         executor_type = "unrestricted" if unsafe_executor else "docker"
@@ -105,7 +105,7 @@ class ARCTaskRunnerSimple:
             'report_interval': 100
         }
         
-        print(f"⏰ Timeouts: API={api_timeout}s, Worker={self.worker_timeout}s ({self.worker_timeout//60}min per run)")
+        print(f"🧪 TEST MODE - Short Timeouts: API={api_timeout}s, Worker={self.worker_timeout}s ({self.worker_timeout//60}min per run)")
         print(f"📁 Logs will be saved to: {self.result_processor.logs_dir}")
     
     @property
@@ -443,7 +443,11 @@ class ARCTaskRunnerSimple:
         
         for retry_attempt in range(3):
             try:
+                print(f"🧪 DEBUG: Attempt {attempt_num + 1} - Starting API call with {self.api_timeout}s timeout")
+                call_start_time = time.time()
                 result = execute_with_timeout(self.call_chat_completions_api, conversation_history, timeout=self.api_timeout)
+                call_elapsed = time.time() - call_start_time
+                print(f"🧪 DEBUG: Attempt {attempt_num + 1} - API call completed in {call_elapsed:.2f}s")
                 response, api_kwargs = result
                 api_call_successful = True
                 break
@@ -457,13 +461,16 @@ class ARCTaskRunnerSimple:
                 )
                 # Don't retry timeout errors - they indicate the request took too long
                 if is_timeout_error:
+                    print(f"🧪 DEBUG: Timeout detected: {error}")
                     timed_out = True
                     break
                 # Only retry non-timeout errors (API errors, network issues, etc.)
                 elif retry_attempt < 2:
+                    print(f"🧪 DEBUG: Non-timeout error, retrying: {error}")
                     time.sleep(2)
                 else:
                     # Final non-timeout error
+                    print(f"🧪 DEBUG: Final non-timeout error: {error}")
                     timed_out = False
         
         # Extract sampling parameters for logging
