@@ -38,6 +38,23 @@ and the last
 ```bash 
 uv run runpod/create_pod.py sglang -- --model-path Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-155856-c3616
 ```
+And now run those all three attempts with 8 max attempts:
+```bash 
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-155856-c904 --base-url http://38.80.152.249:30848/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+and then with three runs, with 8 max attempts, second checkpoint:
+```bash 
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-155856-c1808 --base-url http://38.80.152.249:30848/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+and third checkpoint:
+```bash 
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-155856-c2712 --base-url http://107.152.109.27:11872/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+and the fourth checkpoint, where I'll use the new script to do everything:
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-agi-1 Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-155856-c3616
+```
+
 
 
 
