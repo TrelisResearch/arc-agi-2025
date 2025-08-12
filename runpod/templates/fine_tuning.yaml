@@ -1,0 +1,58 @@
+name: "fine-tuning"
+cloudType: "SECURE"
+computeType: "GPU"
+imageName: "runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04"
+gpuCount: 1
+gpuTypeIds: ["NVIDIA H200"]
+containerDiskInGb: 100
+volumeInGb: 500
+volumeMountPath: "/root/.cache/huggingface"
+ports: ["8888/http", "6006/http", "22/tcp"]
+# Try specific data centers if having network issues
+# dataCenterIds: ["US-IL-1", "US-TX-1", "US-GA-1"]
+
+env:
+  HUGGING_FACE_HUB_TOKEN: "{{ RUNPOD_SECRET_HUGGING_FACE_HUB_TOKEN }}"
+  HF_TOKEN: "{{ RUNPOD_SECRET_HUGGING_FACE_HUB_TOKEN }}"
+  HF_HOME: "/root/.cache/huggingface"
+  HF_HUB_ENABLE_HF_TRANSFER: "1"
+  JUPYTER_PASSWORD: "prei8bjcunmwpcyw2j1u"
+  GITHUB_PAT: "{{ RUNPOD_SECRET_GITHUB_PAT }}"
+  GIT_USER_NAME: "{{ RUNPOD_SECRET_GIT_USER_NAME }}"
+  GIT_USER_EMAIL: "{{ RUNPOD_SECRET_GIT_USER_EMAIL }}"
+
+dockerStartCmd:
+  - "bash"
+  - "-lc"
+  - |
+    set -euo pipefail
+    export HF_HUB_ENABLE_HF_TRANSFER=1        # faster model pulls
+    export PIP_ROOT_USER_ACTION=ignore        # silence "pip as root" warning
+
+    # ── 1 · Update system packages and install nano ─────────────────────────────
+    apt-get update && apt-get install -y nano git
+
+    # ── 2 · Configure git with environment variables ────────────────────────────
+    [ -n "${GIT_USER_NAME:-}"  ]  && git config --global user.name  "$GIT_USER_NAME"
+    [ -n "${GIT_USER_EMAIL:-}" ]  && git config --global user.email "$GIT_USER_EMAIL"
+
+    # ── 3 · Bring your project up-to-date ───────────────────────────────────────
+    cd /workspace
+    if [ -d arc-agi-2025/.git ]; then
+        git -C arc-agi-2025 pull --ff-only
+    else
+        git clone https://$GITHUB_PAT@github.com/TrelisResearch/arc-agi-2025.git arc-agi-2025
+    fi
+    cd arc-agi-2025
+
+    # ── 4 · Install deps from pyproject.toml using uv ───────────────────────────
+    python -m pip install --upgrade --no-cache-dir uv
+    uv pip install --system --upgrade --no-cache-dir .
+
+    # ── 5 · Register a custom kernel in the CURRENT Python env ──────────────────
+    python -m ipykernel install --name arc-agi-2025 \
+                                --display-name "arc-agi-2025" --sys-prefix
+
+    # ── 6 · Hand off to RunPod's standard entrypoint ────────────────────────────
+    exec /start.sh
+
