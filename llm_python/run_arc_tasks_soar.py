@@ -51,9 +51,8 @@ class ARCTaskRunnerSimple:
         self.debug = debug
         self.prompt_version = prompt_version
         
-        # Calculate timeouts based on model configuration
-        api_timeout = 120 if qwen_no_think else 2400
-        self.worker_timeout = 7200  # 2 hours per run
+        # Standard API timeout for network safety, no infrastructure timeouts
+        api_timeout = 1800  # 30 minutes for network safety only
         
         # Warn about safety settings
         executor_type = "unrestricted" if unsafe_executor else "docker"
@@ -68,7 +67,7 @@ class ARCTaskRunnerSimple:
             model=model, base_url=base_url, max_tokens=max_tokens, 
             temperature=temperature, reasoning_effort=reasoning_effort,
             qwen_no_think=qwen_no_think, lora_adapter=lora_adapter,
-            api_timeout=api_timeout
+            api_timeout=api_timeout  # Standard timeout for network safety
         )
         
         self.result_processor = ResultProcessor(
@@ -105,7 +104,7 @@ class ARCTaskRunnerSimple:
             'report_interval': 100
         }
         
-        print(f"⏰ Timeouts: API={api_timeout}s, Worker={self.worker_timeout}s ({self.worker_timeout//60}min per run)")
+        print(f"⏰ API timeout: {api_timeout}s (network safety only, no infrastructure timeouts)")
         print(f"📁 Logs will be saved to: {self.result_processor.logs_dir}")
     
     @property
@@ -443,8 +442,7 @@ class ARCTaskRunnerSimple:
         
         for retry_attempt in range(3):
             try:
-                result = execute_with_timeout(self.call_chat_completions_api, conversation_history, timeout=self.api_timeout)
-                response, api_kwargs = result
+                response, api_kwargs = self.call_chat_completions_api(conversation_history)
                 api_call_successful = True
                 break
             except Exception as e:
@@ -704,13 +702,9 @@ class ARCTaskRunnerSimple:
         else:
             print("Parallelization: DISABLED (sequential execution)")
         
-        # PROMINENTLY display the per-run timeout
-        timeout_minutes = self.worker_timeout // 60
+        # No infrastructure timeouts to avoid GPU overload
         print("")
-        print("🚨" * 20)
-        print(f"⏰ GLOBAL TIMEOUT WARNING: {timeout_minutes} MINUTES PER RUN")
-        print(f"   Each run will be forcibly stopped after {self.worker_timeout} seconds")
-        print("🚨" * 20)
+        print("✅ No infrastructure timeouts - requests complete naturally to avoid GPU overload")
         print("")
         
         # Display sampling parameters
@@ -766,66 +760,18 @@ class ARCTaskRunnerSimple:
             try:
                 # Get the pre-created prompt for this task
                 full_prompt = task_results[task_id]['full_prompt']
-                # Hard wall-time for an entire attempt to avoid rare hangs beyond API timeout
-                # Provide a small buffer above API timeout for local processing
-                attempt_wall_time = (self.api_timeout or 0) + 20
-                try:
-                    result = execute_with_timeout(
-                        self.run_single_attempt,
-                        task_id,
-                        task_data,
-                        attempt_num,
-                        dataset,
-                        subset_name,
-                        full_prompt,
-                        timeout=attempt_wall_time,
-                    )
-                except TimeoutError:
-                    # Synthesize a timeout attempt detail so progress continues
-                    attempt_detail = {
-                        'attempt_number': attempt_num + 1,
-                        'timestamp': datetime.datetime.now().isoformat(),
-                        'input_tokens': 0,
-                        'output_tokens': 0,
-                        'attempt_cost': 0.0,
-                        'program_extracted': False,
-                        'program': '',
-                        'is_train_transductive': False,
-                        'train_transduction_reason': '',
-                        'is_test_transductive': False,
-                        'test_transduction_reason': '',
-                        'train_results': [],
-                        'train_accuracy': 0.0,
-                        'train_exec_errors': 0,
-                        'train_exec_timeouts': 0,
-                        'test_predicted': None,
-                        'test_results': [],
-                        'test_correct': False,
-                        'test_correct_count': 0,
-                        'test_exec_error': False,
-                        'test_exec_timeout': False,
-                        'raw_response': None,
-                        'sampling_params': {},
-                        'api_success': False,
-                        'api_timeout': True,
-                        'empty_response': True,
-                        'hit_max_tokens': False,
-                        'error': f'attempt_wall_timeout_{attempt_wall_time}s',
-                        'all_test_correct': False,
-                        'code_ran': False,
-                    }
-                    result = {
-                        'task_id': task_id,
-                        'attempt_num': attempt_num,
-                        'attempt_detail': attempt_detail,
-                        'task_data': task_data,
-                        'dataset': dataset,
-                        'subset': subset_name,
-                        'full_prompt': full_prompt,
-                    }
+                # No infrastructure timeout - let requests complete to avoid GPU overload
+                result = self.run_single_attempt(
+                    task_id,
+                    task_data,
+                    attempt_num,
+                    dataset,
+                    subset_name,
+                    full_prompt
+                )
                 attempt_duration = time.time() - attempt_start
                 if attempt_duration > 60:  # Log slow attempts
-                    print(f"🐌 Slow attempt: {task_id} attempt {attempt_num + 1} took {attempt_duration:.1f}s (timeout: {self.api_timeout}s)")
+                    print(f"🐌 Slow attempt: {task_id} attempt {attempt_num + 1} took {attempt_duration:.1f}s")
                 
                 with count_lock:
                     # Store attempt result - use thread-safe access
@@ -890,7 +836,6 @@ class ARCTaskRunnerSimple:
             
             # Wait for all attempts to complete, reporting progress periodically
             start_time = time.time()
-            timeout_occurred = False  # Track if we hit the global timeout
             
             from concurrent.futures import as_completed
             completed_count = 0
@@ -899,19 +844,9 @@ class ARCTaskRunnerSimple:
             
             while remaining:
                 time_elapsed = time.time() - start_time
-                time_left = self.worker_timeout - time_elapsed
-                if time_left <= 0:
-                    print(f"⏰ Global timeout reached after {time_elapsed:.1f}s")
-                    print(f"⚠️ Only {completed_count}/{total_attempts} attempts completed")
-                    print("🛑 Cancelling all remaining futures")
-                    for future in list(remaining):
-                        if not future.done():
-                            future.cancel()
-                    timeout_occurred = True
-                    break
                 try:
                     # Use a short timeout so we can log periodic progress
-                    for future in as_completed(list(remaining), timeout=min(progress_interval, time_left)):
+                    for future in as_completed(list(remaining), timeout=progress_interval):
                         remaining.discard(future)
                         completed_count += 1
                         try:
@@ -927,8 +862,7 @@ class ARCTaskRunnerSimple:
                     print(f"⏳ No completions in last {progress_interval:.0f}s — {done_now}/{total_attempts} done; {len(remaining)} remaining")
                     continue
             
-            if not timeout_occurred and completed_count == total_attempts:
-                print(f"✅ All {total_attempts} attempts completed")
+            print(f"✅ All {total_attempts} attempts completed")
             
             # Check final status - handle cancelled futures properly
             successful_attempts = 0
@@ -959,74 +893,7 @@ class ARCTaskRunnerSimple:
             
             print(f"📊 Final status: {successful_attempts} successful, {failed_attempts} failed, {cancelled_attempts} cancelled")
         
-        # Handle timeout case - save partial results
-        if timeout_occurred:
-            print("")
-            print("🚨" * 25)
-            print("⏰ TIMEOUT OCCURRED - SAVING PARTIAL RESULTS")
-            print("🚨" * 25)
-            
-            # Count tasks with partial attempts
-            tasks_with_partial_attempts = 0
-            tasks_with_full_attempts = 0
-            tasks_with_no_attempts = 0
-            
-            for task_id, task_data in tasks:
-                if task_id in task_results:
-                    attempt_count = len(task_results[task_id]['attempts'])
-                    if attempt_count == 0:
-                        tasks_with_no_attempts += 1
-                    elif attempt_count < self.max_attempts:
-                        tasks_with_partial_attempts += 1
-                    else:
-                        tasks_with_full_attempts += 1
-                else:
-                    tasks_with_no_attempts += 1
-            
-            print(f"📊 Tasks with full attempts ({self.max_attempts}): {tasks_with_full_attempts}")
-            print(f"📊 Tasks with partial attempts: {tasks_with_partial_attempts}")
-            print(f"📊 Tasks with no attempts: {tasks_with_no_attempts}")
-            print("💾 Saving all available data...")
-            
-            # Save individual partial task results for debugging
-            if tasks_with_partial_attempts > 0:
-                print(f"💾 Saving {tasks_with_partial_attempts} partial task results...")
-                for task_id, task_data in tasks:
-                    if (task_id in task_results and 
-                        0 < len(task_results[task_id]['attempts']) < self.max_attempts):
-                        
-                        attempts = sorted(task_results[task_id]['attempts'], key=lambda x: x['attempt_number'])
-                        valid_attempts = [attempt for attempt in attempts if isinstance(attempt, dict) and 'attempt_number' in attempt]
-                        
-                        # Trim failed attempts to reduce file size
-                        trimmed_attempts = [self._trim_failed_attempt(attempt) for attempt in valid_attempts]
-                        
-                        # Only include raw_responses for non-trimmed attempts
-                        all_responses = []
-                        for i, attempt in enumerate(trimmed_attempts):
-                            if attempt.get('data_trimmed', False):
-                                all_responses.append(None)  # No raw response for trimmed attempts
-                            else:
-                                all_responses.append(valid_attempts[i].get('raw_response'))
-                        
-                        partial_task_result = {
-                            'task_id': task_id,
-                            'model': self.model,
-                            'api_type': 'chat_completions_partial_attempts',
-                            'dataset': dataset,
-                            'subset': subset_name,
-                            'attempt_details': trimmed_attempts,
-                            'all_responses': all_responses,
-                            'tokens_used': sum(attempt.get('input_tokens', 0) + attempt.get('output_tokens', 0) for attempt in trimmed_attempts),
-                            'request_cost': sum(attempt.get('attempt_cost', 0.0) for attempt in trimmed_attempts),
-                            'max_attempts': self.max_attempts,
-                            'actual_attempts': len(valid_attempts),
-                            'timeout_occurred': True,
-                            'api_success': True,
-                            'task_data': task_data
-                        }
-                        self.save_result(partial_task_result)
-            print("")
+        # All attempts should complete now without infrastructure timeouts
         
         # Convert task_results to the expected format for summary (including partial tasks)
         results = []
@@ -1046,9 +913,8 @@ class ARCTaskRunnerSimple:
                 if len(valid_attempts) != len(attempts):
                     print(f"⚠️ Task {task_id}: {len(attempts) - len(valid_attempts)} invalid attempts filtered out")
                 
-                # Mark if this task has partial attempts due to timeout
-                is_partial = len(valid_attempts) < self.max_attempts
-                api_type = 'chat_completions_partial_attempts' if is_partial else 'chat_completions_all_attempts'
+                # All tasks should have complete attempts now
+                api_type = 'chat_completions_all_attempts'
                 
                 # Trim failed attempts to reduce file size for summary
                 trimmed_attempts = [self._trim_failed_attempt(attempt) for attempt in valid_attempts]
@@ -1073,20 +939,15 @@ class ARCTaskRunnerSimple:
                     'request_cost': sum(attempt.get('attempt_cost', 0.0) for attempt in valid_attempts),
                     'max_attempts': self.max_attempts,
                     'actual_attempts': len(valid_attempts),  # Track how many were actually completed
-                    'is_partial': is_partial,
-                    'timeout_occurred': timeout_occurred,
                     'api_success': True,
                     'task_data': task_data
                 }
                 results.append(result)
                 # Note: save_result() is now called when each task completes, not here
             else:
-                if timeout_occurred:
-                    print(f"⚠️ Task {task_id} has no attempts due to timeout - skipping")
-                else:
-                    print(f"⚠️ Task {task_id} has no valid attempts - skipping")
+                print(f"⚠️ Task {task_id} has no valid attempts - skipping")
         
-        summary_filepath = self.save_summary(results, subset_name, dataset, timeout_occurred=timeout_occurred)
+        summary_filepath = self.save_summary(results, subset_name, dataset)
         
         # Report any large file errors at the end of the run
         self._report_large_file_errors()
@@ -1239,7 +1100,7 @@ class ARCTaskRunnerSimple:
         """Save individual task result"""
         self.result_processor.save_result(result)
     
-    def save_summary(self, results: List[Dict], subset_name: str, dataset: str, timeout_occurred: bool = False):
+    def save_summary(self, results: List[Dict], subset_name: str, dataset: str):
         """Save summary of all results"""
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         
@@ -1266,15 +1127,9 @@ class ARCTaskRunnerSimple:
                 'api_failure_responses': 0.0,
             }
         
-        # Determine summary type and calculate additional timeout stats
-        if timeout_occurred:
-            api_type_summary = 'chat_completions_timeout_partial'
-            partial_tasks = sum(1 for r in results if r.get('is_partial', False))
-            complete_tasks = total_tasks - partial_tasks
-        else:
-            api_type_summary = 'chat_completions_all_attempts'
-            partial_tasks = 0
-            complete_tasks = total_tasks
+        # All tasks should complete now
+        api_type_summary = 'chat_completions_all_attempts'
+        complete_tasks = total_tasks
         
         # Build compact results for summary (strip heavy fields like raw_response/program/all_responses)
         results_for_summary = []
@@ -1307,8 +1162,6 @@ class ARCTaskRunnerSimple:
             'run_number': self.run_number,
             'total_tasks': total_tasks,
             'complete_tasks': complete_tasks,
-            'partial_tasks': partial_tasks,
-            'timeout_occurred': timeout_occurred,
             'successful_api_calls': successful_api_calls,
             'total_tokens': self.total_tokens,
             'total_cost': self.total_cost,
@@ -1317,12 +1170,11 @@ class ARCTaskRunnerSimple:
             'task_ids': [result['task_id'] for result in results]  # Also include task IDs for convenience
         }
         
-        # Include timeout indicator in filename
-        timeout_suffix = "_TIMEOUT_PARTIAL" if timeout_occurred else ""
+        # Simple filename without timeout indicator
         if self.run_number > 0:
-            filename = f"{timestamp}_summary_{dataset}_{subset_name}_simple_run{self.run_number}{timeout_suffix}.json"
+            filename = f"{timestamp}_summary_{dataset}_{subset_name}_simple_run{self.run_number}.json"
         else:
-            filename = f"{timestamp}_summary_{dataset}_{subset_name}_simple{timeout_suffix}.json"
+            filename = f"{timestamp}_summary_{dataset}_{subset_name}_simple.json"
         
         filepath = self.logs_dir / filename
         
@@ -1345,21 +1197,14 @@ class ARCTaskRunnerSimple:
         
         # Print summary
         run_info = f" (Run {self.run_number})" if self.run_number > 0 else ""
-        timeout_info = " - ⏰ TIMEOUT PARTIAL RUN" if timeout_occurred else ""
         print("\n" + "="*50)
-        print(f"SUMMARY{run_info}{timeout_info}")
+        print(f"SUMMARY{run_info}")
         print("="*50)
         print(f"Dataset: {dataset}")
         print(f"Subset: {subset_name}")
         print(f"Model: {self.model}")
         
-        if timeout_occurred:
-            print(f"⚠️ GLOBAL TIMEOUT OCCURRED - PARTIAL RESULTS ONLY")
-            print(f"Total tasks attempted: {total_tasks}")
-            print(f"Tasks with complete attempts: {complete_tasks}")
-            print(f"Tasks with partial attempts: {partial_tasks}")
-        else:
-            print(f"Total tasks: {total_tasks}")
+        print(f"Total tasks: {total_tasks}")
             
         print(f"Successful API calls: {successful_api_calls}/{total_tasks} ({successful_api_calls/total_tasks:.1%})")
         print(f"Total tokens used: {self.total_tokens:,}")
@@ -1367,8 +1212,7 @@ class ARCTaskRunnerSimple:
         
         # Print core metrics
         if results:
-            metrics_warning = " (⚠️ PARTIAL DATA - SOME TASKS INCOMPLETE)" if timeout_occurred else ""
-            print(f"\n📊 CORE METRICS{metrics_warning}:")
+            print(f"\n📊 CORE METRICS:")
             print(f"  Pass@2 (Weighted Voting): {percentage_metrics['weighted_voting_pass2']:.1%}")
             print(f"  Pass@2 (Train Majority):  {percentage_metrics['train_majority_pass2']:.1%}")
             print(f"  Oracle (Best Attempt):    {percentage_metrics['all_test_correct']:.1%}")
@@ -1381,8 +1225,7 @@ class ARCTaskRunnerSimple:
         
         # Update final message based on whether file was actually saved
         if should_save:
-            final_message = "⚠️ PARTIAL results saved to:" if timeout_occurred else "Results saved to:"
-            print(f"\n{final_message} {filepath}")
+            print(f"\nResults saved to: {filepath}")
             return filepath
         else:
             final_message = "⚠️ Results NOT SAVED due to size limit - see errors above"
@@ -1396,13 +1239,9 @@ class ARCTaskRunnerSimple:
         print(f"{self.max_attempts} attempts")
         print("="*70)
         
-        # Prominent timeout warning for repeat runs
-        timeout_minutes = self.worker_timeout // 60
+        # No infrastructure timeouts to avoid GPU overload
         print("")
-        print("⚠️" * 30)
-        print(f"⏰ REPEAT RUNS TIMEOUT: {timeout_minutes} MINUTES PER INDIVIDUAL RUN")
-        print(f"   Each of {repeat_runs} runs gets {timeout_minutes} minutes before forced termination")
-        print("⚠️" * 30)
+        print("✅ No infrastructure timeouts - requests complete naturally to avoid GPU overload")
         print("")
         
         # Store run results independently - no shared state

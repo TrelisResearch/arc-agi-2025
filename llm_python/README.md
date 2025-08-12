@@ -102,7 +102,7 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --b
 - **Intelligent Task Scheduling**: Prioritizes task completion for optimal GPU prefix caching while maintaining parallel efficiency
 - **Real-time Task Summaries**: Displays brief statistics for each task as it completes (test-correct, train-perfect, train-partial counts)
 - **Real-time Logging**: Individual task logs are saved immediately when each task completes, not at the end of the run
-- **Health Monitoring**: Health reports every 100 attempts showing execution success rates, timeout rates, and average execution times
+- **Health Monitoring**: Health reports every 100 attempts showing execution success rates and average execution times
 - **Secure Docker Execution**: All generated code runs in isolated Docker containers for security (can be disabled with `--unsafe-executor` flag for testing)
 - **Voting Algorithms (Pass@2)**: 
   - **Weighted majority voting**: Uses pattern frequency + 1000×train_accuracy, returns top 2 patterns
@@ -129,11 +129,10 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --b
 
 ### Timeouts and Scheduling
 
-**Multi-Level Timeout System:**
-- **API (per attempt)**: 120s with `--qwen-no-think`; otherwise 2400s. Client timeout = API timeout + 15s.
-- **Attempt wall-time**: API timeout + 20s buffer for local processing per attempt.
-- **Global run**: 7200s per run (cancels remaining attempts if exceeded).
-- **Program execution**: 0.5s per train/test execution in the executor.
+**Simplified Timeout System:**
+- **API timeout**: 1800s (30 minutes) for network safety only - prevents hanging on dropped connections
+- **Program execution**: 0.5s per train/test execution in the executor (prevents runaway generated code)
+- **No infrastructure timeouts**: Requests complete naturally to avoid GPU overload from abandoned requests
 
 **GPU-Optimized Task Scheduling:**
 - **Task-by-task batching**: Groups tasks to maximize GPU prefix caching benefits
@@ -144,12 +143,11 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --b
   - 32 workers, 8 attempts → 4 tasks at a time (much better than wide spreading)
 - **Resource efficiency**: Reduces GPU memory fragmentation and context switching
 
-**Timeout Behavior:**
-- **API timeout**: No retries on timeout; attempt recorded with `api_timeout=True`. Other errors (network, rate limits) retry up to 3 times.
-- **Global timeout**: Remaining futures are cancelled; partial results are saved and the summary includes `TIMEOUT_PARTIAL` with `timeout_occurred=True`.
-- **Execution timeout**: Per-example `timed_out=True`; included in health and summary metrics.
-
-**Important**: Timeouts use soft cancellation (not process killing) to prevent GPU resource leaks. Long-running attempts may exceed configured timeouts but will eventually complete when the underlying operations finish, preserving system stability.
+**Why No Infrastructure Timeouts?**
+- When we timeout an API request, we can't actually cancel it on the GPU server
+- The abandoned request continues processing, consuming GPU memory/compute
+- Multiple abandoned requests lead to GPU overload and system instability
+- By letting requests complete naturally, we avoid resource exhaustion
 
 ### Output Size Limits
 
@@ -316,7 +314,7 @@ uv run python -m llm_python.generate_retrospective_summary llm_python/logs/20250
 - **Corruption Handling**: Gracefully handles corrupted or malformed result files
 
 **Use Cases:**
-- Analyzing interrupted runs that stopped due to timeouts or resource limits
+- Analyzing interrupted runs that stopped due to errors or resource limits
 - Generating proper summaries for runs that completed without creating summary files
 - Comparing partial results across multiple experiment runs
 - Retrospective analysis of completed experiments
@@ -326,12 +324,11 @@ uv run python -m llm_python.generate_retrospective_summary llm_python/logs/20250
 The tool automatically monitors execution health during long runs and displays periodic reports:
 
 ```bash
-🏥 Health [100 attempts]: Success 78% | Timeout 5% | ExecErr 17% | AvgTime 0.31s
+🏥 Health [100 attempts]: Success 78% | ExecErr 22% | AvgTime 0.31s
 ```
 
 **Health Metrics Explained:**
 - **Success %**: Programs that execute without timeout/error
-- **Timeout %**: Programs that exceed the 0.5s execution limit  
 - **ExecErr %**: Programs with runtime errors
 - **AvgTime**: Average total time per attempt (API + execution + processing)
 
@@ -375,7 +372,7 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_traini
 # OpenRouter Gemini models - use reasoning_effort parameter
 uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1 --reasoning_effort medium
 
-# RunPod: Use direct TCP to avoid Cloudflare 524 timeouts
+# RunPod: Use direct TCP to avoid Cloudflare 524 errors
 uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10 --model Qwen/Qwen3-4B --base-url http://157.66.254.42:15712/v1
 
 # Run tasks in parallel with high worker count for faster execution
@@ -528,10 +525,10 @@ llm_python/
 ├── utils/                       # Utility modules
 │   ├── __init__.py
 │   ├── task_loader.py          # Load ARC tasks and subsets
-│   ├── scoring.py              # Grid scoring and program execution (0.5s timeout)
+│   ├── scoring.py              # Grid scoring and program execution (0.5s limit)
 │   ├── prompt_utils.py         # Prompt creation and code extraction
 │   ├── prompt_loader.py        # Load and manage prompt templates
-│   ├── timeout_utils.py        # Timeout handling utilities
+│   ├── timeout_utils.py        # Network timeout utilities (for API safety)
 │   ├── voting_utils.py         # Voting algorithms and prediction processing
 │   ├── metrics_utils.py        # Metrics calculation and formatting
 │   ├── transduction.py         # Transductive cheating detection
