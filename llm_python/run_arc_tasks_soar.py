@@ -692,6 +692,15 @@ class ARCTaskRunnerSimple:
         
         if self.max_workers > 1:
             print(f"Parallelization: ENABLED ({self.max_workers} workers)")
+            # Show the new scheduling strategy
+            concurrent_tasks = max(1, self.max_workers // self.max_attempts)
+            if concurrent_tasks == 1:
+                print(f"Scheduling: Task-by-task (1 task × {self.max_attempts} attempts = {self.max_attempts} workers used)")
+            else:
+                print(f"Scheduling: Batched ({concurrent_tasks} tasks × {self.max_attempts} attempts = {concurrent_tasks * self.max_attempts} workers used)")
+                if self.max_workers > concurrent_tasks * self.max_attempts:
+                    unused_workers = self.max_workers - (concurrent_tasks * self.max_attempts)
+                    print(f"Note: {unused_workers} workers will be idle due to batching strategy")
         else:
             print("Parallelization: DISABLED (sequential execution)")
         
@@ -718,11 +727,24 @@ class ARCTaskRunnerSimple:
         
         print("-" * 50)
         
-        # Create all attempt jobs
+        # Create attempt jobs with task-by-task prioritization for better GPU caching
+        # This approach prioritizes completing tasks while still utilizing all workers
         attempt_jobs = []
-        for task_idx, (task_id, task_data) in enumerate(tasks):
+        
+        # Calculate how many tasks can have all attempts running simultaneously
+        concurrent_tasks = max(1, self.max_workers // self.max_attempts)
+        
+        # Group tasks into batches that can run concurrently
+        for batch_start in range(0, len(tasks), concurrent_tasks):
+            batch_end = min(batch_start + concurrent_tasks, len(tasks))
+            batch_tasks = tasks[batch_start:batch_end]
+            
+            # For this batch, interleave attempts to maximize prefix caching
+            # while still allowing parallelization across tasks in the batch
             for attempt_num in range(self.max_attempts):
-                attempt_jobs.append((task_idx, task_id, task_data, attempt_num))
+                for task_idx_in_batch, (task_id, task_data) in enumerate(batch_tasks):
+                    task_idx = batch_start + task_idx_in_batch
+                    attempt_jobs.append((task_idx, task_id, task_data, attempt_num))
         
         # Track results by task - use thread-safe defaultdict to prevent race conditions
         from collections import defaultdict

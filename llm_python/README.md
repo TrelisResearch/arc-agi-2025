@@ -99,7 +99,7 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --b
 
 **Key Features:**
 - **Direct Prompting**: Each attempt uses the same initial prompt (no feedback between attempts)
-- **True Parallelization**: All attempts across all tasks run simultaneously for maximum efficiency
+- **Intelligent Task Scheduling**: Prioritizes task completion for optimal GPU prefix caching while maintaining parallel efficiency
 - **Real-time Task Summaries**: Displays brief statistics for each task as it completes (test-correct, train-perfect, train-partial counts)
 - **Real-time Logging**: Individual task logs are saved immediately when each task completes, not at the end of the run
 - **Health Monitoring**: Health reports every 100 attempts showing execution success rates, timeout rates, and average execution times
@@ -117,7 +117,8 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --b
 - **Optimized File I/O**: 30-second timeout for file operations with detailed error logging for debugging
 - **Independent Multiple Runs**: Each repeated run is completely isolated with no shared state - results loaded from files for aggregation
 - **Robust State Management**: Explicit garbage collection and thread-safe cleanup between runs prevents state spillover and race conditions
- - **Output Size Guards**: Predicted grids exceeding size limits are dropped to prevent runaway logs (default ≤10,000 chars and ≤1,800 cells)
+- **Output Size Guards**: Predicted grids exceeding size limits are dropped to prevent runaway logs (default ≤10,000 chars and ≤1,800 cells)
+- **GPU-Optimized Scheduling**: Batched execution pattern reduces context switching and improves prefix caching efficiency
 
 **When to use:**
 - For comprehensive evaluation with statistical rigor
@@ -126,16 +127,29 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --b
 - For systematic comparison of multiple attempts per task
 - When you need real-time progress updates as tasks complete
 
-### Timeouts
+### Timeouts and Scheduling
 
+**Multi-Level Timeout System:**
 - **API (per attempt)**: 120s with `--qwen-no-think`; otherwise 2400s. Client timeout = API timeout + 15s.
+- **Attempt wall-time**: API timeout + 20s buffer for local processing per attempt.
 - **Global run**: 7200s per run (cancels remaining attempts if exceeded).
 - **Program execution**: 0.5s per train/test execution in the executor.
 
-Behavior when timeouts occur:
+**GPU-Optimized Task Scheduling:**
+- **Task-by-task batching**: Groups tasks to maximize GPU prefix caching benefits
+- **Intelligent worker allocation**: Calculates optimal concurrent tasks based on `max_workers ÷ max_attempts`
+- **Examples**:
+  - 8 workers, 8 attempts → 1 task at a time (perfect caching)
+  - 16 workers, 8 attempts → 2 tasks at a time (good balance)  
+  - 32 workers, 8 attempts → 4 tasks at a time (much better than wide spreading)
+- **Resource efficiency**: Reduces GPU memory fragmentation and context switching
+
+**Timeout Behavior:**
 - **API timeout**: No retries on timeout; attempt recorded with `api_timeout=True`. Other errors (network, rate limits) retry up to 3 times.
 - **Global timeout**: Remaining futures are cancelled; partial results are saved and the summary includes `TIMEOUT_PARTIAL` with `timeout_occurred=True`.
 - **Execution timeout**: Per-example `timed_out=True`; included in health and summary metrics.
+
+**Important**: Timeouts use soft cancellation (not process killing) to prevent GPU resource leaks. Long-running attempts may exceed configured timeouts but will eventually complete when the underlying operations finish, preserving system stability.
 
 ### Output Size Limits
 

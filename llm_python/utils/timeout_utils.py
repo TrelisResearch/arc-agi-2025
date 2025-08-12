@@ -1,5 +1,21 @@
 """
 Timeout utilities for ARC-AGI task processing.
+
+IMPORTANT: This implementation uses soft cancellation (future.cancel()) rather than 
+hard process termination for timeout enforcement. This is intentional to prevent 
+GPU resource leaks when working with LLM APIs:
+
+- Hard kills can leave HTTP connections open on the GPU server
+- Abandoned requests continue consuming GPU memory/VRAM  
+- Connection pools become exhausted over time
+- GPU servers can become unresponsive due to resource leaks
+
+The trade-off is that timeouts are not strictly enforced - background threads may
+continue running beyond the timeout. However, this prevents GPU resource exhaustion
+and maintains system stability during long-running parallel workloads.
+
+For strict timeout enforcement, consider server-side timeouts or connection-level
+timeouts in the HTTP client rather than process-level killing.
 """
 
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
