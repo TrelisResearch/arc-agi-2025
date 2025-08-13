@@ -21,6 +21,7 @@ from llm_python.utils.serialization import ResponseSerializer
 from llm_python.utils.api_client import ARCAPIClient
 from llm_python.utils.result_processor import ResultProcessor
 from llm_python.utils.validator import ARCTaskValidator
+from llm_python.programsdb import maybe_log_program, ProgramSample
 
 load_dotenv()
 
@@ -40,13 +41,14 @@ class ARCTaskRunnerSimple:
                  max_attempts: int = 8, run_number: int = 0, base_url: str = None, debug: bool = False, 
                  max_tokens: int = None, temperature: float = None, reasoning_effort: str = "low", 
                  qwen_no_think: bool = False, prompt_version: str = "soar", unsafe_executor: bool = False, 
-                 lora_adapter: str = None):
+                 lora_adapter: str = None, log_to_db: bool = True):
         # Core configuration
         self.max_workers = max_workers
         self.rate_limit_delay = rate_limit_delay
         self.max_attempts = max_attempts
         self.run_number = run_number
         self.debug = debug
+        self.log_to_db = log_to_db
         self.prompt_version = prompt_version
         
         # Standard API timeout for network safety, no infrastructure timeouts
@@ -103,6 +105,7 @@ class ARCTaskRunnerSimple:
         
         print(f"⏰ API timeout: {api_timeout}s (network safety only, no infrastructure timeouts)")
         print(f"📁 Logs will be saved to: {self.result_processor.logs_dir}")
+        print(f"🗄️ Database logging: {'enabled' if self.log_to_db else 'disabled'}")
     
     @property
     def model(self):
@@ -347,7 +350,7 @@ class ARCTaskRunnerSimple:
         """Print compact health report"""
         metrics = self.health_metrics
         total = metrics['total_attempts']
-        
+
         if total == 0:
             return
             
@@ -384,6 +387,78 @@ class ARCTaskRunnerSimple:
               f"Timeout {timeout_rate:.0f}% | "
               f"ExecErr {error_rate:.0f}% | "
               f"AvgTime {recent_avg_time:.2f}s")
+    
+    def _maybe_log_program_to_database(self, task_id: str, attempt_detail: Dict):
+        """Log successful programs to the local database"""
+        if not self.log_to_db:
+            return  # Database logging disabled
+            
+        try:
+            # Only log programs that extracted successfully and have some correctness
+            if not attempt_detail.get('program_extracted', False):
+                return
+            
+            program = attempt_detail.get('program', '').strip()
+            if not program:
+                return
+            
+            # Check if program has at least one correct answer (train or test)
+            train_correct = sum(attempt_detail.get('train_results', []))
+            test_correct = attempt_detail.get('test_correct_count', 0)
+            
+            if train_correct == 0 and test_correct == 0:
+                return  # No correct answers, skip logging
+            
+            # Extract correctness arrays
+            train_results = attempt_detail.get('train_results', [])
+            test_results = attempt_detail.get('test_results', [])
+            
+            correct_train_input = [result.get('correct', False) for result in train_results]
+            correct_test_input = [result.get('correct', False) for result in test_results]
+            
+            # Extract predicted outputs (convert to lists if they're numpy arrays)
+            predicted_train_output = []
+            for result in train_results:
+                pred = result.get('predicted', [])
+                if pred is not None and hasattr(pred, 'tolist'):
+                    pred = pred.tolist()
+                predicted_train_output.append(pred if pred is not None else [])
+            
+            predicted_test_output = []
+            for result in test_results:
+                pred = result.get('predicted', [])
+                if pred is not None and hasattr(pred, 'tolist'):
+                    pred = pred.tolist()
+                predicted_test_output.append(pred if pred is not None else [])
+            
+            # Extract reasoning from raw response if available
+            reasoning = ""
+            raw_response = attempt_detail.get('raw_response', {})
+            if isinstance(raw_response, dict) and 'choices' in raw_response:
+                choices = raw_response.get('choices', [])
+                if choices and isinstance(choices[0], dict):
+                    message = choices[0].get('message', {})
+                    reasoning = message.get('reasoning', '') or message.get('content', '')
+            
+            # Create ProgramSample
+            program_sample = ProgramSample(
+                task_id=task_id,
+                reasoning=reasoning,
+                code=program,
+                correct_train_input=correct_train_input,
+                correct_test_input=correct_test_input,
+                predicted_train_output=predicted_train_output,
+                predicted_test_output=predicted_test_output,
+                model=self.model
+            )
+            
+            # Log to database (maybe_log_program handles deduplication and validation)
+            maybe_log_program(program_sample)
+            
+        except Exception as e:
+            # Don't let database logging errors crash the main execution
+            if self.debug:
+                print(f"Warning: Failed to log program to database: {e}")
     
     
     def create_prompt(self, task_data: Dict) -> tuple[str, str]:
@@ -640,6 +715,9 @@ class ARCTaskRunnerSimple:
         # Periodic health reports (every N attempts)
         if self.health_metrics['total_attempts'] % self.health_metrics['report_interval'] == 0:
             self._print_health_report()
+        
+        # Log successful programs to database
+        self._maybe_log_program_to_database(task_id, attempt_detail)
         
         return {
             'task_id': task_id,
@@ -1267,7 +1345,8 @@ class ARCTaskRunnerSimple:
                 qwen_no_think=self.qwen_no_think,
                 prompt_version=self.prompt_version,
                 unsafe_executor=(self.executor_type == "unrestricted"),
-                lora_adapter=self.lora_adapter
+                lora_adapter=self.lora_adapter,
+                log_to_db=self.log_to_db
             )
             
             try:
@@ -1500,6 +1579,8 @@ def main():
     parser.add_argument("--max_attempts", type=int, default=8, help="Maximum number of attempts per task")
     parser.add_argument("--repeat-runs", type=int, default=1, help="Number of times to repeat the entire test")
     parser.add_argument("--debug", action="store_true", help="Enable debug output")
+    parser.add_argument("--log-to-db", action="store_true", default=True, help="Log successful programs to local database (default: True)")
+    parser.add_argument("--no-log-to-db", dest="log_to_db", action="store_false", help="Disable logging programs to local database")
     parser.add_argument("--max-tokens", type=int, help="Maximum tokens for model responses")
     parser.add_argument("--temperature", type=float, help="Temperature for model responses")
     parser.add_argument("--reasoning_effort", type=str, default="low", help="Reasoning effort for OpenAI models")
@@ -1534,7 +1615,8 @@ def main():
         qwen_no_think=args.qwen_no_think,
         prompt_version=args.prompt_version,
         unsafe_executor=args.unsafe_executor,
-        lora_adapter=args.lora_adapter
+        lora_adapter=args.lora_adapter,
+        log_to_db=args.log_to_db
     )
     
     try:
