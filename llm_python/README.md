@@ -299,24 +299,40 @@ Generate summaries from raw results directories, useful for incomplete runs or p
 # Generate summary for a single results directory
 uv run python -m llm_python.generate_retrospective_summary llm_python/logs/20250730_205911 --max-tokens 1000
 
-# Process multiple directories and aggregate statistics
-uv run python -m llm_python.generate_retrospective_summary llm_python/logs/20250730_* --aggregate --max-tokens 1000
+# Process multiple directories with automatic deduplication
+uv run python -m llm_python.generate_retrospective_summary llm_python/logs/20250812_132057 llm_python/logs/20250812_160318 llm_python/logs/20250812_221106
+
+# Process repeated runs of the same experiment (calculates mean ± std)
+uv run python -m llm_python.generate_retrospective_summary llm_python/logs/run1_* llm_python/logs/run2_* llm_python/logs/run3_* --aggregate
 
 # Save summaries to a specific output directory
 uv run python -m llm_python.generate_retrospective_summary llm_python/logs/20250730_205911 --output-dir ./analysis
 ```
 
 **Features:**
+- **Automatic Deduplication**: When processing multiple directories, automatically deduplicates tasks by ID, keeping the version with most attempts
+- **Run Grouping**: Groups results by run number (e.g., `_run1`, `_run2`) for proper aggregation
+- **Smart Aggregation**: Automatically detects whether directories contain:
+  - **Partial/resumed runs**: Combines into single dataset with deduplication
+  - **Repeated experiments**: Calculates mean ± std across runs (requires identical task sets)
 - **Completeness Analysis**: Shows attempt distribution and identifies partial/incomplete runs
 - **Metrics Calculation**: Uses same metrics as original runs (Pass@2, Oracle, etc.)
 - **Cost Analysis**: Calculates total tokens and costs from all attempts
-- **Multi-Directory Support**: Process multiple result directories with aggregate statistics
-- **Corruption Handling**: Gracefully handles corrupted or malformed result files
+- **Error Detection**: Validates that repeated runs have identical task sets before aggregation
+
+**Deduplication Logic:**
+- Groups all results by run number first
+- Within each run, deduplicates by task_id
+- Keeps the version with more attempts (or newer timestamp if tied)
+- After deduplication, verifies all runs have identical task sets
+- If identical: Calculates mean ± std across runs
+- If different: Combines into single dataset (reports union of unique tasks)
 
 **Use Cases:**
-- Analyzing interrupted runs that stopped due to errors or resource limits
+- Combining partial runs that were interrupted and resumed
+- Analyzing results from multiple directories containing overlapping tasks  
+- Calculating confidence intervals from repeated experiments
 - Generating proper summaries for runs that completed without creating summary files
-- Comparing partial results across multiple experiment runs
 - Retrospective analysis of completed experiments
 
 ### Health Monitoring

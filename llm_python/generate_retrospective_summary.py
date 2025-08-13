@@ -300,32 +300,232 @@ def generate_retrospective_summary(results_dir: Path, output_dir: Path = None, m
     
     return summary
 
-def process_multiple_directories(directories: List[Path], output_dir: Path = None, max_tokens: int = None) -> List[Dict]:
-    """Process multiple results directories and generate individual summaries"""
+def deduplicate_task_results_by_run(directories: List[Path]) -> Dict[str, List[Dict]]:
+    """
+    Load and deduplicate task results across multiple directories, grouped by run number.
     
-    summaries = []
+    Returns a dict mapping run_number -> list of deduplicated task results
+    """
+    # Group all task results by run number
+    runs_data = defaultdict(lambda: defaultdict(dict))  # run_number -> task_id -> task_data
     
     for directory in directories:
-        if not directory.exists():
-            print(f"❌ Directory not found: {directory}")
+        if not directory.exists() or not directory.is_dir():
             continue
             
-        if not directory.is_dir():
-            print(f"❌ Not a directory: {directory}")
-            continue
+        for file_path in directory.glob("*.json"):
+            if "summary" in file_path.name:
+                continue
+                
+            parsed = parse_task_filename(file_path.name)
+            if not parsed:
+                continue
+                
+            try:
+                with open(file_path, 'r') as f:
+                    task_data = json.load(f)
+                    
+                run_number = parsed['run_number']
+                task_id = task_data.get('task_id')
+                
+                if not task_id:
+                    continue
+                    
+                # Keep the version with more attempts (or newer if same attempts)
+                existing = runs_data[run_number].get(task_id)
+                if existing:
+                    existing_attempts = len(existing.get('attempt_details', []))
+                    new_attempts = len(task_data.get('attempt_details', []))
+                    
+                    if new_attempts > existing_attempts:
+                        runs_data[run_number][task_id] = task_data
+                        print(f"  📝 Replaced task {task_id} in run {run_number} ({existing_attempts} → {new_attempts} attempts)")
+                    elif new_attempts == existing_attempts:
+                        # Use timestamp as tiebreaker
+                        if parsed['timestamp'] > existing.get('_timestamp', ''):
+                            runs_data[run_number][task_id] = task_data
+                            task_data['_timestamp'] = parsed['timestamp']
+                else:
+                    task_data['_timestamp'] = parsed['timestamp']
+                    runs_data[run_number][task_id] = task_data
+                    
+            except Exception as e:
+                print(f"  ⚠️ Failed to load {file_path.name}: {e}")
+    
+    # Convert to list format and verify consistency across runs
+    runs_list = {}
+    for run_number, tasks_dict in runs_data.items():
+        runs_list[run_number] = list(tasks_dict.values())
+        print(f"📊 Run {run_number}: {len(tasks_dict)} unique tasks")
+    
+    return runs_list
+
+def process_multiple_directories(directories: List[Path], output_dir: Path = None, max_tokens: int = None) -> List[Dict]:
+    """Process multiple results directories with deduplication and run grouping"""
+    
+    print(f"🔄 Processing {len(directories)} directories with deduplication...")
+    
+    # Load and deduplicate all task results grouped by run
+    runs_data = deduplicate_task_results_by_run(directories)
+    
+    if not runs_data:
+        print("❌ No valid task results found")
+        return []
+    
+    # Check if all runs have the same task IDs (for aggregation)
+    run_numbers = sorted(runs_data.keys())
+    if len(run_numbers) > 1:
+        # Get task IDs for each run
+        task_ids_per_run = {}
+        for run_num in run_numbers:
+            task_ids = set(task['task_id'] for task in runs_data[run_num] if 'task_id' in task)
+            task_ids_per_run[run_num] = task_ids
+            
+        # Check if all runs have identical task sets
+        first_run_ids = task_ids_per_run[run_numbers[0]]
+        all_identical = all(task_ids_per_run[run] == first_run_ids for run in run_numbers[1:])
+        
+        if all_identical:
+            print(f"✅ All {len(run_numbers)} runs have identical task sets ({len(first_run_ids)} tasks)")
+            print("   → Will calculate mean ± std across runs")
+        else:
+            # Report differences
+            print(f"⚠️ Runs have different task sets:")
+            for run in run_numbers:
+                print(f"   Run {run}: {len(task_ids_per_run[run])} tasks")
+            
+            # Find union and intersection
+            all_tasks = set.union(*task_ids_per_run.values())
+            common_tasks = set.intersection(*task_ids_per_run.values()) if len(task_ids_per_run) > 1 else all_tasks
+            
+            print(f"   Union: {len(all_tasks)} unique tasks total")
+            print(f"   Intersection: {len(common_tasks)} common tasks")
+            
+            if len(run_numbers) > 1 and len(common_tasks) < len(all_tasks):
+                print("❌ Cannot calculate meaningful statistics across runs with different task sets")
+                print("   Treating as single combined dataset instead")
+                
+                # Combine all runs into a single dataset
+                all_results = []
+                seen_tasks = set()
+                for run_num in run_numbers:
+                    for task in runs_data[run_num]:
+                        task_id = task.get('task_id')
+                        if task_id and task_id not in seen_tasks:
+                            all_results.append(task)
+                            seen_tasks.add(task_id)
+                
+                runs_data = {'combined': all_results}
+                print(f"📊 Combined into single dataset: {len(all_results)} unique tasks")
+    
+    # Process each run
+    summaries = []
+    for run_number in sorted(runs_data.keys()):
+        task_results = runs_data[run_number]
         
         print(f"\n{'='*80}")
-        print(f"Processing: {directory}")
+        print(f"Processing Run {run_number}: {len(task_results)} tasks")
         print(f"{'='*80}")
         
-        try:
-            summary = generate_retrospective_summary(directory, output_dir, max_tokens)
-            if summary:
-                summaries.append(summary)
-        except Exception as e:
-            print(f"❌ Error processing {directory}: {e}")
+        if not task_results:
+            continue
+            
+        # Generate summary for this run
+        summary = generate_summary_from_results(task_results, run_number, output_dir, max_tokens)
+        if summary:
+            summaries.append(summary)
     
     return summaries
+
+def generate_summary_from_results(task_results: List[Dict], run_identifier: str, output_dir: Path, max_tokens: int = None) -> Dict:
+    """Generate a summary from a list of deduplicated task results"""
+    
+    # Extract metadata
+    metadata = extract_metadata_from_results(task_results)
+    print(f"📋 Dataset: {metadata.get('dataset')}")
+    print(f"📋 Subset: {metadata.get('subset')}")
+    print(f"📋 Model: {metadata.get('model')}")
+    
+    # Analyze completeness
+    completeness = analyze_run_completeness(task_results)
+    print(f"\n📊 COMPLETENESS ANALYSIS:")
+    print(f"   Total tasks: {completeness['total_tasks']}")
+    print(f"   Max attempts per task: {completeness['max_attempts']}")
+    print(f"   Min attempts per task: {completeness['min_attempts']}")
+    print(f"   Average attempts per task: {completeness['avg_attempts']:.1f}")
+    
+    # Convert to format expected by metrics calculation
+    results_for_metrics = convert_to_results_format(task_results)
+    
+    if not results_for_metrics:
+        print("❌ No valid results for metrics calculation")
+        return {}
+    
+    print(f"\n📊 CALCULATING METRICS for {len(results_for_metrics)} tasks...")
+    
+    # Calculate metrics
+    try:
+        metrics = calculate_task_metrics(results_for_metrics, max_tokens=max_tokens)
+        percentage_metrics = metrics_to_percentages(metrics)
+    except Exception as e:
+        print(f"❌ Error calculating metrics: {e}")
+        return {}
+    
+    # Calculate costs
+    total_cost = sum(
+        sum(attempt.get('attempt_cost', 0.0) for attempt in result.get('attempt_details', []))
+        for result in results_for_metrics
+    )
+    
+    total_tokens = sum(
+        sum(attempt.get('input_tokens', 0) + attempt.get('output_tokens', 0) 
+            for attempt in result.get('attempt_details', []))
+        for result in results_for_metrics
+    )
+    
+    # Create summary
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    summary = {
+        'timestamp': timestamp,
+        'run_identifier': run_identifier,
+        'retrospective_analysis': True,
+        'dataset': metadata.get('dataset'),
+        'subset': metadata.get('subset'),
+        'model': metadata.get('model'),
+        'api_type': metadata.get('api_type'),
+        'total_tasks': len(results_for_metrics),
+        'completeness_analysis': completeness,
+        'total_tokens': total_tokens,
+        'total_cost': total_cost,
+        'metrics': percentage_metrics,
+        'results': results_for_metrics,
+        'task_ids': sorted([result['task_id'] for result in results_for_metrics])
+    }
+    
+    # Save summary
+    summary_filename = f"{timestamp}_retrospective_summary_run_{run_identifier}_{metadata.get('dataset', 'unknown')}_{metadata.get('subset', 'unknown')}.json"
+    summary_path = output_dir / summary_filename
+    
+    with open(summary_path, 'w') as f:
+        json.dump(summary, f, indent=2)
+    
+    # Print metrics
+    print(f"\n📊 CORE METRICS:")
+    print(f"  Pass@2 (Weighted Voting): {percentage_metrics['weighted_voting_pass2']:.1%}")
+    print(f"  Pass@2 (Train Majority):  {percentage_metrics['train_majority_pass2']:.1%}")
+    print(f"  Oracle (Best Attempt):    {percentage_metrics['all_test_correct']:.1%}")
+    print(f"  All Train Correct:        {percentage_metrics['all_train_correct']:.1%}")
+    print(f"  Min 1 Train Correct:      {percentage_metrics['min1_train_correct']:.1%}")
+    print(f"  Min 1 Code Success:       {percentage_metrics['min1_code_success']:.1%}")
+    
+    print(f"\n💰 COST ANALYSIS:")
+    print(f"  Total tokens used: {total_tokens:,}")
+    print(f"  Total cost: ${total_cost:.6f}")
+    
+    print(f"\n💾 Summary saved to: {summary_path}")
+    
+    return summary
 
 def aggregate_multiple_summaries(summaries: List[Dict], output_dir: Path) -> Optional[Dict]:
     """Aggregate multiple summaries into a combined analysis"""
@@ -336,12 +536,31 @@ def aggregate_multiple_summaries(summaries: List[Dict], output_dir: Path) -> Opt
     
     print(f"\n📊 AGGREGATING {len(summaries)} SUMMARIES...")
     
+    # Check if all summaries have the same task_ids (for valid aggregation)
+    task_id_sets = []
+    for summary in summaries:
+        if 'task_ids' in summary:
+            task_id_sets.append(set(summary['task_ids']))
+    
+    if len(task_id_sets) > 1:
+        first_set = task_id_sets[0]
+        all_identical = all(task_set == first_set for task_set in task_id_sets[1:])
+        
+        if not all_identical:
+            print("❌ ERROR: Summaries have different task sets - cannot aggregate")
+            for i, summary in enumerate(summaries):
+                run_id = summary.get('run_identifier', f'summary_{i}')
+                task_count = len(summary.get('task_ids', []))
+                print(f"   {run_id}: {task_count} tasks")
+            print("   These appear to be different experiments, not repeated runs")
+            return None
+    
     # Extract metrics from each summary
     all_metrics = []
     for summary in summaries:
         if 'metrics' in summary:
             metrics = summary['metrics'].copy()
-            metrics['source_dir'] = summary.get('source_directory', 'unknown')
+            metrics['run_identifier'] = summary.get('run_identifier', 'unknown')
             all_metrics.append(metrics)
     
     if not all_metrics:
@@ -375,7 +594,7 @@ def aggregate_multiple_summaries(summaries: List[Dict], output_dir: Path) -> Opt
         'num_summaries': len(summaries),
         'individual_metrics': all_metrics,
         'aggregate_statistics': aggregate_stats,
-        'source_summaries': [s.get('source_directory') for s in summaries]
+        'run_identifiers': [s.get('run_identifier') for s in summaries]
     }
     
     # Save aggregate summary

@@ -776,7 +776,17 @@ Had to stop so restarting now using a smaller subset of 'remaining_tasks_no_512_
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset remaining_tasks_no_512_attempts --repeat-runs 1 --max_workers 64 --max_attempts 512 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171 --base-url http://38.80.152.249:30524/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
 ```
 
+Total results are:
 
+⏺ Scores for 233 unique ARC-AGI-2 tasks at 512 attempts:
+
+  Combined Results (after deduplication):
+  - Pass@2 (Weighted Voting): 37.3%
+  - Pass@2 (Train Majority): 39.1%
+  - Oracle (Best Attempt): 48.5%
+  - All Train Correct: 39.5%
+  - Min 1 Train Correct: 75.1%
+  - Code Execution Success: 100%
 
 11 Aug 2025
 ### Scaling of model performance for our best model so far.
