@@ -8,6 +8,44 @@ from .localdb import get_localdb
 from .schema import ProgramSample
 
 
+def should_log_program(task_id: str, code: str, db_path: Optional[str] = None) -> bool:
+    """
+    Quick check to determine if a program should be processed.
+    
+    This function normalizes the code and checks if the (task_id, normalized_code) 
+    pair already exists in the database.
+    
+    Args:
+        task_id: The task identifier
+        code: The program code (will be normalized)
+        db_path: Optional path to database file
+        
+    Returns:
+        True if the program should be processed, False if it already exists
+    """
+    try:
+        # Normalize the code first
+        normalized_code = normalize_code(code)
+        
+        # Get database instance
+        db = get_localdb(db_path)
+        
+        # Generate the same key that would be used for storage
+        key = db.generate_key(task_id, normalized_code)
+        
+        # Check if this key already exists in the database
+        result = db.connection.execute(
+            "SELECT 1 FROM programs WHERE key = ? LIMIT 1", 
+            [key]
+        ).fetchone()
+        
+        return result is None  # Should process if not found
+        
+    except Exception:
+        # If there's any error, default to processing the program
+        return True
+
+
 def _has_invalid_grids(outputs: List[List[List[int]]], max_size: int = 40) -> bool:
     """Check if any output grid is invalid (oversized or not properly 2D)."""
     for output in outputs:
@@ -72,4 +110,4 @@ def maybe_log_program(program: ProgramSample, db_path: Optional[str] = None) -> 
     db.add_program(program)
 
 
-__all__ = ['get_localdb', 'ProgramSample', 'maybe_log_program']
+__all__ = ['get_localdb', 'ProgramSample', 'maybe_log_program', 'should_log_program']

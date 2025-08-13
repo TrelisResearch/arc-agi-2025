@@ -203,7 +203,7 @@ class LocalProgramsDB:
             if not isinstance(program['reasoning'], str):
                 raise ValueError("reasoning must be a string if provided")
     
-    def _generate_key(self, task_id: str, code: str) -> str:
+    def generate_key(self, task_id: str, code: str) -> str:
         """
         Generate a unique key for a program based on task_id and code.
         
@@ -216,6 +216,10 @@ class LocalProgramsDB:
         """
         combined = f"{task_id}:{code}"
         return hashlib.sha256(combined.encode('utf-8')).hexdigest()
+    
+    def _generate_key(self, task_id: str, code: str) -> str:
+        """Legacy private method - use generate_key instead."""
+        return self.generate_key(task_id, code)
     
     def add_program(self, program: Union[ProgramSample, Dict[str, Any]]) -> None:
         """
@@ -234,7 +238,7 @@ class LocalProgramsDB:
         self._validate_program(program_dict)
         
         # Generate unique key from task_id and code
-        key = self._generate_key(program_dict['task_id'], program_dict['code'])
+        key = self.generate_key(program_dict['task_id'], program_dict['code'])
         
         # Insert into database (ON CONFLICT IGNORE to avoid duplicates)
         insert_sql = """
