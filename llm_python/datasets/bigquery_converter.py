@@ -9,7 +9,7 @@ import pyarrow.parquet as pq
 from typing import List, Dict, Any, Tuple
 from tqdm import tqdm
 
-from .schema import PARQUET_SCHEMA
+from ..programsdb.schema import PARQUET_SCHEMA
 
 
 def convert_bq_nested_structure(bq_data) -> List:

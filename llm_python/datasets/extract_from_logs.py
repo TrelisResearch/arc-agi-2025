@@ -8,7 +8,6 @@ import multiprocessing
 from tokenize import TokenError
 import hashlib
 
-from .schema import SoarProgramExample
 from ..utils.code import strip_comments
 from ..utils.arc_tester import ArcTester
 from ..utils.task_loader import TaskLoader
@@ -142,7 +141,7 @@ def _has_oversized_grids(outputs: List[List[List[int]]], max_size: int = 40) -> 
 
 def process_program(
     log_data: LogData, db_path: Optional[str] = None
-) -> Optional[SoarProgramExample]:
+) -> Optional[ProgramSample]:
     """Process a single program entry with task data and compute correctness."""
 
     try:
@@ -182,10 +181,8 @@ def process_program(
     ):
         return None
 
-    # For generation, we'll default to 0 since it's not available in current logs
-    generation = 0
-
-    training_example = SoarProgramExample(
+    # Create ProgramSample directly for database storage
+    program_sample = ProgramSample(
         task_id=log_data["task_id"],
         reasoning=log_data["reasoning"],
         code=program_to_execute,  # Store the version we actually executed
@@ -197,13 +194,10 @@ def process_program(
         predicted_test_output=[
             output if output is not None else [] for output in test_result.test_outputs
         ],
-        train_input=test_result.train_inputs,
-        test_input=test_result.test_inputs,
-        model=log_data["model"],
-        generation=generation,
+        model=log_data["model"]
     )
 
-    return training_example
+    return program_sample
 
 
 def extract_and_process_programs_from_log(args_tuple) -> List[ProgramSample]:
@@ -219,18 +213,7 @@ def extract_and_process_programs_from_log(args_tuple) -> List[ProgramSample]:
             try:
                 result = process_program(log_data, db_path)
                 if result is not None:
-                    # Convert SoarProgramExample to ProgramSample for database storage
-                    program_sample = ProgramSample(
-                        task_id=result["task_id"],
-                        reasoning=result["reasoning"],
-                        code=result["code"],
-                        correct_train_input=result["correct_train_input"],
-                        correct_test_input=result["correct_test_input"],
-                        predicted_train_output=result["predicted_train_output"],
-                        predicted_test_output=result["predicted_test_output"],
-                        model=result["model"]
-                    )
-                    results.append(program_sample)
+                    results.append(result)
             except Exception as e:
                 # Skip programs that fail to process, but log the error for debugging
                 print(f"Error processing program in {log_path}: {e}")
