@@ -58,3 +58,30 @@ def strip_comments(source):
         last_col = end_col
         last_lineno = end_line
     return out
+
+
+def normalize_code(code: str) -> str:
+    """
+    Normalize code by stripping comments and normalizing newlines.
+    
+    This function:
+    1. Strips comments and docstrings from the code
+    2. Normalizes consecutive newlines to at most one empty line
+    
+    Args:
+        code: Raw code string
+        
+    Returns:
+        Normalized code string
+    """
+    # First strip comments and docstrings
+    stripped = strip_comments(code)
+    
+    # Normalize newlines - replace multiple consecutive newlines with at most one empty line
+    import re
+    normalized = re.sub(r'\n(\s*\n)+', '\n\n', stripped)
+    
+    # Remove leading/trailing whitespace
+    normalized = normalized.strip()
+    
+    return normalized

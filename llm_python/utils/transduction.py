@@ -1,7 +1,8 @@
-import re
-from typing import Dict, Tuple
+from typing import Tuple
 
-def is_transduction_cheating(program: str, task_data: Dict, debug: bool = False) -> Tuple[bool, str, bool, str]:
+from llm_python.utils.task_loader import TaskData
+
+def is_transduction_cheating(program: str, task_data: TaskData, debug: bool = False) -> Tuple[bool, str, bool, str]:
     """
     Detect if a program is cheating by hardcoding outputs (transduction).
     Returns (is_train_transductive, train_reason, is_test_transductive, test_reason).

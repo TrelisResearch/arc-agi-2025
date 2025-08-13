@@ -15,7 +15,6 @@ from llm_python.utils.task_loader import TaskData, TaskLoader
 from llm_python.utils.arc_tester import ArcTester
 from llm_python.utils.prompt_utils import create_arc_prompt, extract_python_code
 from llm_python.utils.metrics_utils import calculate_task_metrics, metrics_to_percentages
-from llm_python.utils.timeout_utils import execute_with_timeout
 from llm_python.utils.transduction import is_transduction_cheating
 from llm_python.utils.prompt_loader import PromptLoader
 from llm_python.utils.serialization import ResponseSerializer
