@@ -87,6 +87,7 @@ Examples:
   %(prog)s arc-agi-1 Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-155856-c904
   %(prog)s arc-agi-2 Trelis/Qwen3-4B_dsarc-agi-2-custom-model --subset shortest_1
   %(prog)s arc-agi-1 Trelis/Qwen3-4B_model --subset all_evaluation
+  %(prog)s arc-agi-2 Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic --subset all_evaluation --kv-cache-dtype fp8_e5m2
 
 This script will:
 1. Create a RunPod pod with the specified model
@@ -113,6 +114,9 @@ This script will:
     parser.add_argument('--subset',
                        default='all_evaluation',
                        help='Dataset subset to run (default: all_evaluation)')
+    parser.add_argument('--kv-cache-dtype',
+                       type=str,
+                       help='KV cache data type for sglang servers (e.g., fp8_e5m2)')
     
     args = parser.parse_args()
     
@@ -134,6 +138,10 @@ This script will:
         "--",
         "--model-path", args.model_path
     ]
+    
+    # Add kv-cache-dtype parameter if provided
+    if args.kv_cache_dtype:
+        create_cmd.extend(["--kv-cache-dtype", args.kv_cache_dtype])
     
     if args.no_health_check:
         create_cmd.insert(5, "--no-health-check")  # Insert after "create_pod.py"

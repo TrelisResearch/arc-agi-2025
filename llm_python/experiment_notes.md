@@ -91,11 +91,65 @@ and then test out the fp8 model - Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic
 ```bash
 uv run runpod/create_pod_and_run_tasks.py arc-agi-2 "Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic" --subset all_evaluation
 ```
-and then test out with kv_cache of fp8 with `--kv-cache-dtype fp8_e5m2`, which will require using the task runner with http://38.80.152.249:30573/v1 :
-```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic --base-url http://38.80.152.249:30573/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think --kv-cache-dtype fp8_e5m2
-```
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    120    10.0%      10.0%      10.8%    7.5%       25.8%       100.0%       7.5%    
+2    120    10.0%      10.0%      10.8%    11.7%      26.7%       100.0%       7.8%    
+3    120    5.8%       6.7%       6.7%     6.7%       24.2%       100.0%       8.9%    
 
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 8.6%
+  Std Dev: 2.4%
+  95% CI: [3.9%, 13.3%]
+
+Train Majority Pass2:
+  Mean: 8.9%
+  Std Dev: 1.9%
+  95% CI: [5.1%, 12.7%]
+
+All Test Correct:
+  Mean: 9.4%
+  Std Dev: 2.4%
+  95% CI: [4.7%, 14.2%]
+
+All Train Correct:
+  Mean: 8.6%
+  Std Dev: 2.7%
+  95% CI: [3.4%, 13.9%]
+
+Min1 Train Correct:
+  Mean: 25.6%
+  Std Dev: 1.3%
+  95% CI: [23.1%, 28.1%]
+
+Min1 Code Success:
+  Mean: 100.0%
+  Std Dev: 0.0%
+  95% CI: [100.0%, 100.0%]
+
+Max Length Responses:
+  Mean: 8.1%
+  Std Dev: 0.7%
+  95% CI: [6.7%, 9.4%]
+
+Timeout Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Api Failure Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+and then test out with kv_cache of fp8 with `--kv-cache-dtype fp8_e5m2`, we'll need to set up a new pod:
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-agi-2 "Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic" --subset all_evaluation --kv-cache-dtype fp8_e5m2
+```
 
 ### Test out the task runner within Kaggle
 Use the task runner directly and hit a 127.0.0.1:8080 endpoint locally:
