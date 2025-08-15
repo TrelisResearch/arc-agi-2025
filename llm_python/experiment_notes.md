@@ -22,7 +22,23 @@ Training speed-ups:
 ---
 15 Aug 2025
 
-### Test out duckdb with the task runner
+### Key learnings:
+
+- Better to use `fp8_e4m3` for inference, it's more precise AND supported by FA3 on Hopper. Flash infer is used on L4, and should be able to use fp8_e4m3 too.
+- Data parallel is not yet working in Kaggle, at least with vLLM. Tensor parallel is working.
+- Getting the task runner going in Kaggle isn't quite working yet. Will be good to go through with you, perhaps at the same time as I walk you through utility scripts.
+- SGLang is not yet working in Kaggle.
+
+### Testing in Kaggle
+
+T4s are not starting up, at least not quickly. Need to test a bit more...
+
+### Test out duckdb with the task runner and test quantizations
+
+CAVEAT: unfortuntately the fp8 model below, while it’s in fp8 and the quality is good, it’s not being inferenced in fp8. I need to dig in more to why this is the case.
+
+So, basically quantization seems not to be hurting quality BUT we’re not getting the full speed up right now. I need to test more on L4.
+
 ```bash
 uv run runpod/create_pod_and_run_tasks.py arc-agi-2 "Trelis/arc-1-fake-ttt-blended-c802" --subset all_evaluation
 ```
@@ -146,10 +162,69 @@ Api Failure Responses:
   Std Dev: 0.0%
   95% CI: [0.0%, 0.0%]
 
-and then test out with kv_cache of fp8 with `--kv-cache-dtype fp8_e5m2`, we'll need to set up a new pod:
+and then test out the fp8 model with kv_cache of fp8 with `--kv-cache-dtype fp8_e5m2`, we'll need to set up a new pod:
 ```bash
 uv run runpod/create_pod_and_run_tasks.py arc-agi-2 "Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic" --subset all_evaluation --kv-cache-dtype fp8_e5m2
 ```
+Dataset: arc-agi-2
+Subset: all_evaluation
+Model: Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic
+Number of runs: 3
+Valid runs: 3
+
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    120    10.0%      10.0%      10.8%    10.8%      26.7%       99.2%        8.5%    
+2    120    8.3%       8.3%       8.3%     11.7%      26.7%       100.0%       6.9%    
+3    120    10.0%      9.2%       10.8%    10.0%      21.7%       100.0%       6.9%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 9.4%
+  Std Dev: 1.0%
+  95% CI: [7.6%, 11.3%]
+
+Train Majority Pass2:
+  Mean: 9.2%
+  Std Dev: 0.8%
+  95% CI: [7.5%, 10.8%]
+
+All Test Correct:
+  Mean: 10.0%
+  Std Dev: 1.4%
+  95% CI: [7.2%, 12.8%]
+
+All Train Correct:
+  Mean: 10.8%
+  Std Dev: 0.8%
+  95% CI: [9.2%, 12.5%]
+
+Min1 Train Correct:
+  Mean: 25.0%
+  Std Dev: 2.9%
+  95% CI: [19.3%, 30.7%]
+
+Min1 Code Success:
+  Mean: 99.7%
+  Std Dev: 0.5%
+  95% CI: [98.8%, 100.0%]
+
+Max Length Responses:
+  Mean: 7.4%
+  Std Dev: 1.0%
+  95% CI: [5.5%, 9.3%]
+
+Timeout Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Api Failure Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
 
 ### Test out the task runner within Kaggle
 Use the task runner directly and hit a 127.0.0.1:8080 endpoint locally:
