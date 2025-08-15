@@ -157,6 +157,7 @@ class ARCTaskRunnerSimple:
         unsafe_executor: bool = False,
         lora_adapter: Optional[str] = None,
         log_to_db: bool = True,
+        db_path: Optional[str] = None,
     ):
         # Core configuration
         self.max_workers = max_workers
@@ -165,6 +166,7 @@ class ARCTaskRunnerSimple:
         self.run_number = run_number
         self.debug = debug
         self.log_to_db = log_to_db
+        self.db_path = db_path
         self.prompt_version = prompt_version
 
         # Standard API timeout for network safety, no infrastructure timeouts
@@ -627,7 +629,7 @@ class ARCTaskRunnerSimple:
             )
 
             # Log to database (maybe_log_program handles deduplication and validation)
-            maybe_log_program(program_sample)
+            maybe_log_program(program_sample, self.db_path)
 
         except Exception:
             # Don't let database logging errors crash the main execution
@@ -2083,6 +2085,11 @@ def main():
         type=str,
         help="LORA adapter name to load on sglang server (e.g., 'ckpt-1057')",
     )
+    parser.add_argument(
+        "--db-path",
+        type=str,
+        help="Path to the local database file for storing programs",
+    )
 
     args = parser.parse_args()
 
@@ -2111,6 +2118,7 @@ def main():
         unsafe_executor=args.unsafe_executor,
         lora_adapter=args.lora_adapter,
         log_to_db=args.log_to_db,
+        db_path=args.db_path,
     )
 
     try:
