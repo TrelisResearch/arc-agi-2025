@@ -61,7 +61,7 @@ def run_arc_tasks(dataset, model_path, base_url, subset="all_evaluation"):
         "--model", model_path,
         "--base-url", base_url,
         "--unsafe-executor",
-        "--max-tokens", "1000",
+        "--max-tokens", "2000",
         "--qwen-no-think"
     ]
     

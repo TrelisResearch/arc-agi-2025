@@ -20,6 +20,90 @@ Training speed-ups:
 - Use GPT OSS? (slower to fine-tune, but fast inference). Needs vLLM, not sglang, requiring some updates to the codebase.
 
 ---
+15 Aug 2025
+
+### Test out duckdb with the task runner
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-agi-2 "Trelis/arc-1-fake-ttt-blended-c802" --subset all_evaluation
+```
+Dataset: arc-agi-2
+Subset: all_evaluation
+Model: Trelis/arc-1-fake-ttt-blended-c802
+Number of runs: 3
+Valid runs: 3
+
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    120    9.2%       9.2%       10.0%    9.2%       20.8%       99.2%        9.4%    
+2    120    9.2%       9.2%       10.0%    12.5%      25.0%       100.0%       7.2%    
+3    120    8.3%       7.5%       8.3%     12.5%      27.5%       100.0%       8.4%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 8.9%
+  Std Dev: 0.5%
+  95% CI: [7.9%, 9.8%]
+
+Train Majority Pass2:
+  Mean: 8.6%
+  Std Dev: 1.0%
+  95% CI: [6.7%, 10.5%]
+
+All Test Correct:
+  Mean: 9.4%
+  Std Dev: 1.0%
+  95% CI: [7.6%, 11.3%]
+
+All Train Correct:
+  Mean: 11.4%
+  Std Dev: 1.9%
+  95% CI: [7.6%, 15.2%]
+
+Min1 Train Correct:
+  Mean: 24.4%
+  Std Dev: 3.4%
+  95% CI: [17.8%, 31.0%]
+
+Min1 Code Success:
+  Mean: 99.7%
+  Std Dev: 0.5%
+  95% CI: [98.8%, 100.0%]
+
+Max Length Responses:
+  Mean: 8.3%
+  Std Dev: 1.1%
+  95% CI: [6.2%, 10.5%]
+
+Timeout Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Api Failure Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+and then test out the fp8 model - Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic:
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-agi-2 "Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic" --subset all_evaluation
+```
+and then test out with kv_cache of fp8 with `--kv-cache-dtype fp8_e5m2`, which will require using the task runner with http://38.80.152.249:30573/v1 :
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic --base-url http://38.80.152.249:30573/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think --kv-cache-dtype fp8_e5m2
+```
+
+
+### Test out the task runner within Kaggle
+Use the task runner directly and hit a 127.0.0.1:8080 endpoint locally:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset all_evaluation --repeat-runs 1 --max_workers 8 --max_attempts 32 --model Trelis/arc-1-fake-ttt-blended-c802 --base-url http://127.0.0.1:8080/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think --limit 1 
+```
+
+
 12 Aug 2025
 
 ### Quick test of ARC-AGI-2 with 1 epoch blended
