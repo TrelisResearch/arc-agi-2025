@@ -1,7 +1,3 @@
-import sys
-import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-
 from llm_python.utils.scoring import GridScorer
 from llm_python.utils.arc_tester import ArcTester
 
