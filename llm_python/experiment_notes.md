@@ -20,14 +20,25 @@ Training speed-ups:
 - Use GPT OSS? (slower to fine-tune, but fast inference). Needs vLLM, not sglang, requiring some updates to the codebase.
 
 ---
+16 Aug 2025
+[ ] Decide what is the fastest path here to getting something working.
+[ ] Get SGLang working in Kaggle.
+  [ ] Get tp working with SGLang in Kaggle.
+  [ ] Get tp working in an importing notebook that is offline.
+  [ ] Get dp working with SGLang in Kaggle.
+  [ ] Add `fp8_e4m3` to the server start if using SGLang.
+[ ] Import the fp8 model to kaggle.
+[ ] LATER - Work with Lewis to get the task runner going.
+
+[x] Consider a minimal dp notebook to send to Greg. Not doing this as we know v0 won't work.
+
 15 Aug 2025
 
 ### Key learnings:
-
-- Better to use `fp8_e4m3` for inference, it's more precise AND supported by FA3 on Hopper. Flash infer is used on L4, and should be able to use fp8_e4m3 too.
-- Data parallel is not yet working in Kaggle, at least with vLLM. Tensor parallel is working.
-- Getting the task runner going in Kaggle isn't quite working yet. Will be good to go through with you, perhaps at the same time as I walk you through utility scripts.
 - SGLang is not yet working in Kaggle.
+- Better to use `fp8_e4m3` for inference, it's more precise AND supported by FA3 on Hopper. Flash infer is used on L4, and should be able to use fp8_e4m3 too.
+- Data parallel is not yet working in Kaggle, at least with vLLM. Tensor parallel is working. DP won't work with vLLM on T4s. Unknown if it will work with SGLang.
+- Getting the task runner going in Kaggle isn't quite working yet. Will be good to go through with you, perhaps at the same time as I walk you through utility scripts.
 
 ### Testing in Kaggle
 
