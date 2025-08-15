@@ -20,14 +20,16 @@ Training speed-ups:
 - Use GPT OSS? (slower to fine-tune, but fast inference). Needs vLLM, not sglang, requiring some updates to the codebase.
 
 ---
-16 Aug 2025
-[ ] Decide what is the fastest path here to getting something working.
-[ ] Get SGLang working in Kaggle.
+16 Aug 2025:
+[ ] Re-build the aux script for arc-agi-2025.
+[ ] Import the fp8 model to kaggle. Should be easy.
+[ ] Quickly test out dp with vLLM in the L4 notebook.
+[ ] Try to run modules from our arc runner, writing to a local db.
+[ ] Get SGLang working in Kaggle. Limit to max 60 mins.
   [ ] Get tp working with SGLang in Kaggle.
   [ ] Get tp working in an importing notebook that is offline.
   [ ] Get dp working with SGLang in Kaggle.
   [ ] Add `fp8_e4m3` to the server start if using SGLang.
-[ ] Import the fp8 model to kaggle.
 [ ] LATER - Work with Lewis to get the task runner going.
 
 [x] Consider a minimal dp notebook to send to Greg. Not doing this as we know v0 won't work.
