@@ -66,6 +66,7 @@ and now do a bigger run, just to get some data:
 ```bash
 export SUBMIT="true"
 export SUBMIT_DIR="./"
+export GLOBAL_TIMEOUT="60"
 export ARC_PROGRAMS_DB=/Users/ronanmcgovern/TR/arc-agi-2025/llm_python/programsdb/local.db
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 8 --model Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic --base-url http://38.80.152.249:30814/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
 ```

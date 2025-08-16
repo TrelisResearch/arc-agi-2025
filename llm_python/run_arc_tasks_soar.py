@@ -173,6 +173,17 @@ class ARCTaskRunnerSimple:
 
         # Standard API timeout for network safety, no infrastructure timeouts
         api_timeout = 1800  # 30 minutes for network safety only
+        
+        # Optional global timeout from environment variable
+        global_timeout = None
+        if "GLOBAL_TIMEOUT" in os.environ:
+            try:
+                global_timeout = int(os.environ["GLOBAL_TIMEOUT"])
+                print(f"⏰ Global timeout set to {global_timeout}s via GLOBAL_TIMEOUT environment variable")
+            except ValueError:
+                print("⚠️ Invalid GLOBAL_TIMEOUT value - must be integer seconds. Ignoring.")
+        
+        self.global_timeout = global_timeout
 
         # Warn about safety settings
         executor_type = "unrestricted" if unsafe_executor else "docker"
@@ -1090,6 +1101,20 @@ class ARCTaskRunnerSimple:
 
             while remaining:
                 time_elapsed = time.time() - start_time
+                
+                # Check global timeout
+                if self.global_timeout and time_elapsed > self.global_timeout:
+                    print(f"⏰ Global timeout reached ({self.global_timeout}s). Cancelling remaining attempts...")
+                    # Cancel remaining futures
+                    cancelled_count = 0
+                    for future in remaining:
+                        if future.cancel():
+                            cancelled_count += 1
+                    
+                    completed_naturally = total_attempts - len(remaining)
+                    print(f"⏰ Timeout: {completed_naturally} attempts completed, {cancelled_count} cancelled, {len(remaining) - cancelled_count} already running")
+                    break
+                
                 try:
                     # Use a short timeout so we can log periodic progress
                     for future in as_completed(
@@ -1103,19 +1128,24 @@ class ARCTaskRunnerSimple:
                             print(f"🚨 Future #{completed_count} error: {future_e}")
                     # Periodic progress log
                     done_now = total_attempts - len(remaining)
+                    timeout_info = f" (timeout in {self.global_timeout - time_elapsed:.0f}s)" if self.global_timeout else ""
                     print(
-                        f"⏳ Progress: {done_now}/{total_attempts} attempts done; {len(remaining)} remaining"
+                        f"⏳ Progress: {done_now}/{total_attempts} attempts done; {len(remaining)} remaining{timeout_info}"
                     )
                 except Exception:
                     # No futures completed in this window; print a heartbeat
                     done_now = total_attempts - len(remaining)
+                    timeout_info = f" (timeout in {self.global_timeout - time_elapsed:.0f}s)" if self.global_timeout else ""
                     print(
-                        f"⏳ No completions in last {progress_interval:.0f}s — {done_now}/{total_attempts} done; {len(remaining)} remaining"
+                        f"⏳ No completions in last {progress_interval:.0f}s — {done_now}/{total_attempts} done; {len(remaining)} remaining{timeout_info}"
                     )
                     continue
 
             elapsed_time = time.time() - start_time
-            print(f"✅ All {total_attempts} attempts completed in {elapsed_time:.1f}s")
+            if self.global_timeout and elapsed_time > self.global_timeout:
+                print(f"⏰ Execution stopped after {elapsed_time:.1f}s due to global timeout")
+            else:
+                print(f"✅ All {total_attempts} attempts completed in {elapsed_time:.1f}s")
 
             # Check final status - handle cancelled futures properly
             successful_attempts = 0

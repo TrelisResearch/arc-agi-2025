@@ -426,6 +426,10 @@ export SUBMIT_DIR="/kaggle/working"  # Optional, defaults to /kaggle/working
 
 # Run evaluation and create submission file
 uv run python run_arc_tasks_soar.py --dataset arc-prize-2025 --subset evaluation --model gpt-4.1-mini
+
+# With global timeout (stops cleanly after 2 hours and creates submission with completed attempts)
+export GLOBAL_TIMEOUT="7200"  # 2 hours in seconds
+uv run python run_arc_tasks_soar.py --dataset arc-prize-2025 --subset evaluation --model gpt-4.1-mini
 ```
 
 **SUBMIT Mode Features:**
@@ -436,12 +440,14 @@ uv run python run_arc_tasks_soar.py --dataset arc-prize-2025 --subset evaluation
   - If only 1 prediction available: Duplicates it as both attempts (logs to console)
   - If no valid predictions: Uses empty `[[0, 0], [0, 0]]` grids as fallback
 - **Train-Transductive Filtering**: Automatically filters out programs that cheat on training data (test transduction checking skipped when test outputs unavailable)
+- **Global Timeout**: Optional timeout that cleanly cancels remaining attempts and processes completed ones (continues to submission/scoring)
 - **Official Format**: Creates `submission.json` as required by competition guidelines, plus timestamped backup for tracking
 - **Complete Coverage**: Includes ALL task IDs from the evaluation set (required per guidelines)
 
 **Environment Variables:**
 - `SUBMIT`: Set to "true" to enable submission file creation
 - `SUBMIT_DIR`: Directory to save submission files (default: `/kaggle/working`)
+- `GLOBAL_TIMEOUT`: Optional global timeout in seconds - cleanly stops execution and processes completed attempts
 
 **Example Output:**
 ```
