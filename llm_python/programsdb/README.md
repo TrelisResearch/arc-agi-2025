@@ -6,6 +6,8 @@ Local DuckDB for storing ARC program instances with auto-deduplication and cloud
 
 Automatically captures successful programs from arc runs from `run_arc_tasks.py` in a local duckdb, prevents duplicates using normalized code comparison, and provides a cli to sync to GCS. Schema details in [`schema.py`](schema.py).
 
+⚠️ **WARNING**: Currently, programs that are test-transductive (cheating on test data) are still saved to the database WITHOUT any flag indicating they are transductive. This needs to be fixed by adding transduction flags to the database schema. Train-transductive programs are now filtered out and not saved.
+
 ## CLI Commands
 
 ```bash

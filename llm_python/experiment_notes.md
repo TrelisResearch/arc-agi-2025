@@ -1,7 +1,7 @@
 # Experiment Notes
 
 Lewis Reminders:
-- test transduction is now metadata
+- test transduction is now metadata. THESE PROGRAMS ARE BEING SAVED TO THE DB, BEWARE.
 - can we remove all_responses? it's duplicating everything.
 - note that currently, there are incorrect programs that generate massive grids.
 - Discuss logs going into folders vs not going into folders.

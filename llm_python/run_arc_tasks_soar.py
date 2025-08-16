@@ -572,6 +572,10 @@ class ARCTaskRunnerSimple:
             if not program:
                 return
 
+            # Skip if program is train transductive (cheating on training data)
+            if attempt_detail.get("is_train_transductive", False):
+                return  # Don't save programs that cheat on training data
+            
             # Check if program has at least one correct answer (train or test)
             train_correct = sum(map(lambda x: x.get("correct", False), attempt_detail.get("train_results", [])))
             test_correct = attempt_detail.get("test_correct_count", 0)
