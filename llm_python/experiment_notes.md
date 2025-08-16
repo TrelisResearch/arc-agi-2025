@@ -27,7 +27,7 @@ Training speed-ups:
 [ ] Re-build the aux script for arc-agi-2025.
 [x] Import the fp8 model to kaggle. Should be easy.
   [x] Add to the L4 script, on T4s. 
-[ ] Get SGLang working in Kaggle. Limit to max 60 mins.
+[ ] Get SGLang working in Kaggle.
   [x] Get tp working with SGLang in Kaggle.
   [x] Get tp working in an importing notebook that is offline.
   [x] Get dp working with SGLang in Kaggle T4s. Incl. w/ kv cache quantization.
@@ -35,12 +35,21 @@ Training speed-ups:
   [x] Get sglang utility script import working.
   [ ] See if I can run the task runner on T4s.
   [ ] Test sglang out in L4s on Kaggle.
+[ ] Test data loading
+  [ ] See if I can add the competition dataset.
+  [ ] Test locally how to use the 2024 or 2025 datasets.
 [ ] Create submission file in submission mode.
 [ ] Create a scorer that can process the file.
 [ ] SUBMIT!
 
 [-] Quickly test out dp with vLLM in the L4 notebook. Deferred if sglang can work.
 [-] Consider a minimal dp notebook to send to Greg. Not doing this as we know v0 won't work.
+
+### Testing out the arc task runner in Kaggle
+We'll just  use the soar task runner, and test with --limit 1 and --attempts 2, and use the 127 localhost endpoint, on the bf16 model:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset all_evaluation --repeat-runs 1 --max_workers 1 --max_attempts 2 --model Trelis/arc-1-fake-ttt-blended-c802 --base-url http://127.0.0.1:8080/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think --limit 1
+```
 
 ### Cleaning up to stop json logs and multiple runs.
 
