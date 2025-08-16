@@ -45,6 +45,15 @@ Training speed-ups:
 [-] Quickly test out dp with vLLM in the L4 notebook. Deferred if sglang can work.
 [-] Consider a minimal dp notebook to send to Greg. Not doing this as we know v0 won't work.
 
+### Load test files
+```bash
+export SUBMIT="true"
+export SUBMIT_DIR="./"
+export ARC_PROGRAMS_DB=/tmp/submission2.db
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset test --max_workers 32 --max_attempts 1 --model Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic --base-url http://38.80.152.249:30814/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
+
+
 ### Testing out making submissions
 
 Hit the endpoint with the standard arc agi 2 command but with 64 attempts and 1000 context:

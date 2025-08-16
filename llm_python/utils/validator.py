@@ -81,7 +81,7 @@ class ARCTaskValidator:
             if not ARCTaskValidator._validate_grid(example['input'], f"{task_id} {example_type}[{i}] input"):
                 return False
             
-            if 'output' in example:
+            if 'output' in example and example['output'] is not None:
                 if not ARCTaskValidator._validate_grid(example['output'], f"{task_id} {example_type}[{i}] output"):
                     return False
         
