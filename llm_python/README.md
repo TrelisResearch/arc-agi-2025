@@ -90,6 +90,11 @@ Run the shortest training tasks from ARC-AGI-1:
 uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10
 ```
 
+Run ARC-Prize-2025 evaluation tasks:
+```bash
+uv run python run_arc_tasks_soar.py --dataset arc-prize-2025 --subset evaluation
+```
+
 Create a grids-only dataset for evaluation tasks:
 ```bash
 uv run python create_grids_only_dataset.py arc-agi-1 all_evaluation --save-local

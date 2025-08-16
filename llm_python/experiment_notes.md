@@ -33,10 +33,10 @@ Training speed-ups:
   [x] Get dp working with SGLang in Kaggle T4s. Incl. w/ kv cache quantization.
   [x] Get sglang utility script export working.
   [x] Get sglang utility script import working.
-  [ ] See if I can run the task runner on T4s.
-[ ] Test data loading
-  [ ] See if I can add the competition dataset.
-  [ ] Test locally how to use the 2024 or 2025 datasets.
+[x] Test data loading
+  [x] See if I can add the competition dataset.
+  [x] Test locally how to use the 2024 or 2025 datasets.
+[ ] See if I can run the task runner on T4s.
 [ ] Create submission file in submission mode.
 [ ] Create a scorer that can process the file.
 [ ] Test sglang out in L4s on Kaggle.
@@ -52,8 +52,28 @@ uv run runpod/create_pod.py sglang -- --model-path Trelis/arc-1-fake-ttt-blended
 ```
 and then hit the endpoint http://38.80.152.249:30586/v1 with the standard arc agi 2 command but with 64 attempts and 1000 context:
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 1 --model Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic --base-url http://38.80.152.249:30586/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 1 --model Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic --base-url http://38.80.152.249:30814/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
 ```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic
+Total tasks: 120
+Total time: 60.3s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 913,370
+Total cost: $0.171191
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 3.3%
+  Pass@2 (Train Majority):  3.3%
+  Oracle (Best Attempt):    4.2%
+  All Train Correct:        3.3%
+  Min 1 Train Correct:      9.2%
+  Min 1 Code Success:       83.3%
+  Max Length Responses:     5.8%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
 and try the same in kaggle, passing in the `model_name` variable, which I'll have set earlier in the notebook, we'll hit the 127 localhost endpoint:
 ```bash
 !uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 1 --model {model_name} --base-url http://127.0.0.1:8080/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think

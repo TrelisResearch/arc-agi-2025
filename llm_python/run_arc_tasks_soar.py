@@ -7,6 +7,7 @@ import time
 import threading
 import traceback
 import numpy as np
+import os
 from pathlib import Path
 from typing import Dict, List, NotRequired, Optional, TypedDict, Union, Tuple, Any
 from dotenv import load_dotenv
@@ -1475,7 +1476,7 @@ def main():
     parser.add_argument(
         "--dataset",
         default="arc-agi-1",
-        choices=["arc-agi-1", "arc-agi-1r", "arc-agi-2"],
+        choices=["arc-agi-1", "arc-agi-1r", "arc-agi-2", "arc-prize-2024", "arc-prize-2025"],
         help="Dataset to use",
     )
     parser.add_argument("--subset", default="shortest_1", help="Subset name")
