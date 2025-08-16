@@ -56,21 +56,76 @@ uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset all_
  export ARC_PROGRAMS_DB=/Users/ronanmcgovern/TR/arc-agi-2025/llm_python/programsdb/local.db
 uv run runpod/create_pod_and_run_tasks.py arc-agi-2 "Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic" --subset all_evaluation
 ```
-and then hit that tcp endpoint http://38.80.152.249:30586/v1 with the standard arcc agi 2 command but with 64 attempts and 1000 context:
+Dataset: arc-agi-2
+Subset: all_evaluation
+Model: Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic
+Total tasks: 120
+Total time: 2970.5s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 58,856,320
+Total cost: $11.196586
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 13.3%
+  Pass@2 (Train Majority):  12.5%
+  Oracle (Best Attempt):    16.7%
+  All Train Correct:        16.7%
+  Min 1 Train Correct:      47.5%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     8.3%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ ARC tasks completed successfully for arc-agi-2!
+
+and then hit that tcp endpoint http://38.80.152.249:30586/v1 with the standard arc agi 2 command but with 64 attempts and 1000 context:
 ```bash
 export ARC_PROGRAMS_DB=/Users/ronanmcgovern/TR/arc-agi-2025/llm_python/programsdb/local-1k-fp8.db
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset all_evaluation --max_workers 16 --max_attempts 64 --model Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic --base-url http://38.80.152.249:30586/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
 ```
-...
-and also start up a new pod to test out performance with bf16 model:
+Dataset: arc-agi-2
+Subset: all_evaluation
+Model: Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic
+Total tasks: 120
+Total time: 3747.6s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 57,878,000
+Total cost: $10.609594
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 6.7%
+  Pass@2 (Train Majority):  6.7%
+  Oracle (Best Attempt):    6.7%
+  All Train Correct:        5.8%
+  Min 1 Train Correct:      29.2%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     21.3%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+and also start up a new pod to test out performance with bf16 model, this one with 2k context, default:
 ```bash
 export ARC_PROGRAMS_DB=/Users/ronanmcgovern/TR/arc-agi-2025/llm_python/programsdb/local-2k-bf16.db
 uv run runpod/create_pod_and_run_tasks.py arc-agi-2 "Trelis/arc-1-fake-ttt-blended-c802" --subset all_evaluation
 ```
-...
+Dataset: arc-agi-2
+Subset: all_evaluation
+Model: Trelis/arc-1-fake-ttt-blended-c802
+Total tasks: 120
+Total time: 2736.2s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 58,931,560
+Total cost: $11.241730
 
-
-
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 10.8%
+  Pass@2 (Train Majority):  11.7%
+  Oracle (Best Attempt):    15.0%
+  All Train Correct:        15.8%
+  Min 1 Train Correct:      42.5%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     8.5%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
 ### Cleaning up to stop json logs and multiple runs.
 

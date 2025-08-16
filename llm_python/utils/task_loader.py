@@ -34,19 +34,22 @@ class TaskLoader:
 
     def __init__(self, data_root: Optional[str] = None):
         if data_root is None:
-            # Find the data directory by searching up the directory tree
-            current_path = Path(__file__).resolve()
-            while current_path.parent != current_path:  # Stop at filesystem root
-                data_path = current_path / "data"
-                if data_path.exists() and data_path.is_dir():
-                    data_root = data_path.as_posix()
-                    break
-                current_path = current_path.parent
-            else:
-                # Fallback to the original calculation
-                data_root = (
-                    (Path(__file__).parent.parent.parent / "data").resolve().as_posix()
-                )
+            # Check environment variable first
+            data_root = os.getenv('ARC_DATA_ROOT')
+            if data_root is None:
+                # Find the data directory by searching up the directory tree
+                current_path = Path(__file__).resolve()
+                while current_path.parent != current_path:  # Stop at filesystem root
+                    data_path = current_path / "data"
+                    if data_path.exists() and data_path.is_dir():
+                        data_root = data_path.as_posix()
+                        break
+                    current_path = current_path.parent
+                else:
+                    # Fallback to the original calculation
+                    data_root = (
+                        (Path(__file__).parent.parent.parent / "data").resolve().as_posix()
+                    )
         self.data_root = Path(data_root)
         if not self.data_root.exists():
             raise ValueError(f"Data root directory not found: {data_root}")
