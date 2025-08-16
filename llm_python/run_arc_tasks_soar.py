@@ -24,8 +24,8 @@ from llm_python.utils.voting_utils import (
     filter_non_transductive_attempts,
     compute_weighted_majority_voting,
 )
-from llm_python.utils.submission_validator import validate_submission_file
-from llm_python.utils.transduction import is_transduction_cheating
+from llm_python.utils.submission_validator import validate_submission_file, ensure_2d_grid
+from llm_python.utils.transduction import detect_transduction
 from llm_python.utils.prompt_loader import PromptLoader
 from llm_python.utils.serialization import ResponseSerializer
 from llm_python.utils.api_client import ARCAPIClient
@@ -74,14 +74,11 @@ class AttemptDetail(TypedDict):
     program: str  # Extracted Python code
 
     # Transduction detection
-    is_train_transductive: bool  # Whether program cheats on training data
+    is_train_transductive: bool  # Whether program hardcodes training outputs
     train_transduction_reason: str  # Why it's considered transductive
-    is_test_transductive: bool  # Whether program cheats on test data
+    is_test_transductive: bool  # Whether program hardcodes test outputs
     test_transduction_reason: str  # Why it's considered transductive
 
-    # Legacy transduction fields (backwards compatibility)
-    is_transductive: bool  # Alias for is_train_transductive
-    transduction_reason: str  # Alias for train_transduction_reason
 
     # Training results
     train_results: List[TrainResult]  # Results for each training example
@@ -426,9 +423,9 @@ class ARCTaskRunnerSimple:
             if not program:
                 return
 
-            # Skip if program is train transductive (cheating on training data)
+            # Skip if program is train transductive (hardcodes training outputs)
             if attempt_detail.get("is_train_transductive", False):
-                return  # Don't save programs that cheat on training data
+                return  # Don't save programs that hardcode training outputs
             
             # Check if program has at least one correct answer (train or test)
             train_correct = sum(map(lambda x: x.get("correct", False), attempt_detail.get("train_results", [])))
@@ -484,6 +481,7 @@ class ARCTaskRunnerSimple:
                 predicted_train_output=predicted_train_output,
                 predicted_test_output=predicted_test_output,
                 model=self.model,
+                is_test_transductive=attempt_detail.get("is_test_transductive", False),
             )
 
             # Log to database (maybe_log_program handles deduplication and validation)
@@ -645,7 +643,7 @@ class ARCTaskRunnerSimple:
         program = self.extract_code_from_response(response) if response else ""
         program_extracted = bool(program and program.strip())
 
-        # Check for transductive/cheating behavior
+        # Check for transductive behavior (hardcoded outputs)
         is_train_transductive = False
         train_transduction_reason = ""
         is_test_transductive = False
@@ -656,7 +654,7 @@ class ARCTaskRunnerSimple:
                 train_transduction_reason,
                 is_test_transductive,
                 test_transduction_reason,
-            ) = is_transduction_cheating(program, task_data)
+            ) = detect_transduction(program, task_data)
 
         # Evaluate on training examples (skip if transductive)
         train_results: List[TrainResult] = []
@@ -715,7 +713,15 @@ class ARCTaskRunnerSimple:
 
         for test_idx, test_example in enumerate(task_data["test"]):
             test_input = test_example["input"]
-            test_expected = test_example["output"]
+            
+            # Check if we're in SUBMIT mode - test outputs may not be available
+            submit_mode = os.getenv("SUBMIT", "").lower() == "true"
+            
+            # Only access test_expected if not in SUBMIT mode
+            if submit_mode:
+                test_expected = None  # No ground truth available in SUBMIT mode
+            else:
+                test_expected = test_example["output"]
 
             if not program_extracted:
                 test_pred, test_err, test_tout = None, "no program", False
@@ -735,14 +741,16 @@ class ARCTaskRunnerSimple:
                 if test_tout:
                     any_test_exec_timeout = True
 
-            # Mark as correct/incorrect normally (test transduction doesn't block execution)
+            # Mark as correct/incorrect only when we have ground truth (not in SUBMIT mode)
             is_correct = (
                 (test_pred == test_expected)
                 if (
                     test_pred is not None
+                    and test_expected is not None  # Only score if we have ground truth
                     and not test_err
                     and not test_tout
                     and not is_train_transductive
+                    and not submit_mode  # Never score in SUBMIT mode
                 )
                 else False
             )
@@ -754,8 +762,8 @@ class ARCTaskRunnerSimple:
                 {
                     "test_idx": test_idx,
                     "predicted": test_pred,
-                    "expected": test_expected,
-                    "correct": is_correct,
+                    "expected": test_expected,  # Will be None in SUBMIT mode
+                    "correct": is_correct,  # Will be False in SUBMIT mode
                     "error": test_err,
                     "timed_out": test_tout,
                 }
@@ -763,9 +771,11 @@ class ARCTaskRunnerSimple:
             test_predictions.append(test_pred)
 
         # Overall test correctness (all test cases must be correct)
+        # In SUBMIT mode, we cannot determine correctness without ground truth
+        submit_mode = os.getenv("SUBMIT", "").lower() == "true"
         test_correct = (
             (test_correct_count == len(task_data["test"]))
-            if len(task_data["test"]) > 0
+            if len(task_data["test"]) > 0 and not submit_mode
             else False
         )
 
@@ -783,9 +793,6 @@ class ARCTaskRunnerSimple:
             train_transduction_reason=train_transduction_reason,
             is_test_transductive=is_test_transductive,
             test_transduction_reason=test_transduction_reason,
-            # Legacy field for backwards compatibility
-            is_transductive=is_train_transductive,
-            transduction_reason=train_transduction_reason,
             train_results=train_results,
             train_accuracy=train_accuracy,
             train_exec_errors=train_exec_errors,
@@ -1234,23 +1241,29 @@ class ARCTaskRunnerSimple:
         # Check if we're in SUBMIT mode
         submit_mode = os.getenv("SUBMIT", "").lower() == "true"
 
-        # Calculate key stats
+        # Filter out train-transductive attempts first (like voting does)
+        non_transductive_attempts = [
+            attempt for attempt in attempts 
+            if not attempt.get("is_train_transductive", False)
+        ]
+
+        # Calculate key stats using only non-transductive attempts
         if not submit_mode:
             test_correct_attempts = sum(
-                1 for attempt in attempts if attempt.get("test_correct", False)
+                1 for attempt in non_transductive_attempts if attempt.get("test_correct", False)
             )
         else:
             test_correct_attempts = 0  # Not computed in SUBMIT mode
             
         train_perfect_attempts = sum(
-            1 for attempt in attempts if attempt.get("train_accuracy", 0.0) == 1.0
+            1 for attempt in non_transductive_attempts if attempt.get("train_accuracy", 0.0) == 1.0
         )
         # Align with Min 1 Train logic: task-level, has partial but not perfect training
         has_perfect_train = any(
-            attempt.get("train_accuracy", 0.0) == 1.0 for attempt in attempts
+            attempt.get("train_accuracy", 0.0) == 1.0 for attempt in non_transductive_attempts
         )
         has_partial_train = any(
-            0 < attempt.get("train_accuracy", 0.0) < 1.0 for attempt in attempts
+            0 < attempt.get("train_accuracy", 0.0) < 1.0 for attempt in non_transductive_attempts
         )
         task_has_partial_train = has_partial_train and not has_perfect_train
 
@@ -1289,9 +1302,9 @@ class ARCTaskRunnerSimple:
             1 for attempt in attempts if attempt.get("test_exec_timeout", False)
         )
 
-        # Find best attempt
+        # Find best attempt (from non-transductive attempts)
         best_attempt = max(
-            attempts,
+            non_transductive_attempts if non_transductive_attempts else attempts,
             key=lambda x: (x.get("test_correct", False), x.get("train_accuracy", 0.0)),
         )
 
@@ -1301,8 +1314,8 @@ class ARCTaskRunnerSimple:
             # SUBMIT mode: only show train metrics
             summary = f"✅ {task_id}: {train_perfect_attempts} train-perfect, {partial_indicator} (SUBMIT mode)"
         else:
-            # Normal mode: show both test and train metrics
-            summary = f"✅ {task_id}: {test_correct_attempts}/{len(attempts)} test-correct, {train_perfect_attempts} train-perfect, {partial_indicator}"
+            # Normal mode: show both test and train metrics (using non-transductive counts)
+            summary = f"✅ {task_id}: {test_correct_attempts}/{len(non_transductive_attempts)} test-correct, {train_perfect_attempts} train-perfect, {partial_indicator}"
 
         # Add issues in timeline order if any occurred
         issues = []
@@ -1384,8 +1397,6 @@ class ARCTaskRunnerSimple:
             train_transduction_reason=attempt.get("train_transduction_reason", ""),
             is_test_transductive=attempt.get("is_test_transductive", False),
             test_transduction_reason=attempt.get("test_transduction_reason", ""),
-            is_transductive=attempt.get("is_transductive", False),
-            transduction_reason=attempt.get("transduction_reason", ""),
             train_results=[],  # Always empty for trimmed
             train_accuracy=attempt.get("train_accuracy", 0.0),
             train_exec_errors=attempt.get("train_exec_errors", 0),
@@ -1524,13 +1535,18 @@ class ARCTaskRunnerSimple:
         )
         
         # Calculate train accuracy metrics (possible since we have train outputs)
+        # Filter out train-transductive attempts first
         all_train_correct = sum(
             1 for result in results 
-            if any(att.get("train_accuracy", 0.0) == 1.0 for att in result.get("attempt_details", []))
+            if any(att.get("train_accuracy", 0.0) == 1.0 
+                   for att in result.get("attempt_details", [])
+                   if not att.get("is_train_transductive", False))
         )
         min1_train_correct = sum(
             1 for result in results 
-            if any(att.get("train_accuracy", 0.0) > 0.0 for att in result.get("attempt_details", []))
+            if any(att.get("train_accuracy", 0.0) > 0.0 
+                   for att in result.get("attempt_details", [])
+                   if not att.get("is_train_transductive", False))
         )
 
         # Print summary
@@ -1701,6 +1717,10 @@ class ARCTaskRunnerSimple:
                     attempt_2_grid = attempt_1_grid
                     if test_idx == 0:  # Only log once per task
                         tasks_with_duplicated_attempts += 1
+                
+                # Validate and fix grid format using utility function
+                attempt_1_grid = ensure_2d_grid(attempt_1_grid, task_id, "attempt_1")
+                attempt_2_grid = ensure_2d_grid(attempt_2_grid, task_id, "attempt_2")
                 
                 submission[task_id].append({
                     "attempt_1": attempt_1_grid,

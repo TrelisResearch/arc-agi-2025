@@ -3,7 +3,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 import pytest
-from utils.transduction import is_transduction_cheating
+from utils.transduction import detect_transduction
 
 
 class TestTransductionDetection:
@@ -36,7 +36,7 @@ class TestTransductionDetection:
             ]
         }
         
-        is_cheat, reason, _, _ = is_transduction_cheating(legitimate_program, task_data)
+        is_cheat, reason, _, _ = detect_transduction(legitimate_program, task_data)
         
         # Should NOT be detected as cheating
         assert is_cheat is False, f"Legitimate program incorrectly detected as cheating: {reason}"
@@ -73,7 +73,7 @@ class TestTransductionDetection:
             ]
         }
         
-        is_cheat, reason, _, _ = is_transduction_cheating(transductive_program, task_data)
+        is_cheat, reason, _, _ = detect_transduction(transductive_program, task_data)
         
         # Should be detected as cheating
         assert is_cheat is True, "Transductive program with hardcoded outputs should be detected as cheating"
@@ -102,7 +102,7 @@ class TestTransductionDetection:
             ]
         }
         
-        is_cheat, reason, _, _ = is_transduction_cheating(transductive_program, task_data)
+        is_cheat, reason, _, _ = detect_transduction(transductive_program, task_data)
         
         # Should be detected as cheating due to long line
         assert is_cheat is True, "Transductive program with long line should be detected as cheating"
@@ -138,7 +138,7 @@ class TestTransductionDetection:
             ]
         }
         
-        is_cheat, reason, _, _ = is_transduction_cheating(legitimate_program2, task_data)
+        is_cheat, reason, _, _ = detect_transduction(legitimate_program2, task_data)
         
         # Should NOT be detected as cheating
         assert is_cheat is False, f"Legitimate program 2 incorrectly detected as cheating: {reason}"
@@ -149,7 +149,7 @@ class TestTransductionDetection:
         program = "def transform(grid): return grid"
         empty_task_data = {"train": [], "test": []}
         
-        is_cheat, reason, _, _ = is_transduction_cheating(program, empty_task_data)
+        is_cheat, reason, _, _ = detect_transduction(program, empty_task_data)
         
         # Should not be detected as cheating when no outputs to check against
         assert is_cheat is False, "Empty task data should not trigger cheating detection"

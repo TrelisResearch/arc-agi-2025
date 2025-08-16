@@ -2,12 +2,13 @@ from typing import Tuple
 
 from llm_python.utils.task_loader import TaskData
 
-def is_transduction_cheating(program: str, task_data: TaskData, debug: bool = False) -> Tuple[bool, str, bool, str]:
+def detect_transduction(program: str, task_data: TaskData, debug: bool = False) -> Tuple[bool, str, bool, str]:
     """
-    Detect if a program is cheating by hardcoding outputs (transduction).
+    Detect if a program hardcodes training or test outputs (transduction).
     Returns (is_train_transductive, train_reason, is_test_transductive, test_reason).
     
-    Only train transduction blocks execution - test transduction is logged as metadata.
+    Train transduction: Program hardcodes training outputs - excluded from voting
+    Test transduction: Program hardcodes test outputs - tagged for analysis
     """
     # Check 1: Very long lines (likely hardcoded values) - counts as train transduction
     lines = program.split('\n')

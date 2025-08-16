@@ -29,7 +29,8 @@ from .timeout_utils import (
 )
 
 from .submission_validator import (
-    validate_submission_file
+    validate_submission_file,
+    ensure_2d_grid
 )
 
 __all__ = [
@@ -47,5 +48,6 @@ __all__ = [
     'format_metrics_display',
     'metrics_to_percentages',
     'execute_with_timeout',
-    'validate_submission_file'
+    'validate_submission_file',
+    'ensure_2d_grid'
 ]

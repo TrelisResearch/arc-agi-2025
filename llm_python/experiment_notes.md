@@ -24,7 +24,6 @@ Training speed-ups:
     [x] Test out runpod L4s.
     [x] Try to run modules from our arc runner, writing to a local db.
     [x] Try running and writing to a different db.
-[ ] Re-build the aux script for arc-agi-2025.
 [x] Import the fp8 model to kaggle. Should be easy.
   [x] Add to the L4 script, on T4s. 
 [ ] Get SGLang working in Kaggle.
@@ -36,9 +35,10 @@ Training speed-ups:
 [x] Test data loading
   [x] See if I can add the competition dataset.
   [x] Test locally how to use the 2024 or 2025 datasets.
+[x] Create submission file in submission mode.
+[x] Create a scorer that can process the file.
+[ ] Re-build the aux script for arc-agi-2025.
 [ ] See if I can run the task runner on T4s.
-[ ] Create submission file in submission mode.
-[ ] Create a scorer that can process the file.
 [ ] Test sglang out in L4s on Kaggle.
 [ ] SUBMIT!
 
@@ -61,6 +61,17 @@ export SUBMIT="false"
 export SUBMIT_DIR="./"
 export ARC_PROGRAMS_DB=/tmp/submission3.db
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 1 --model Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic --base-url http://38.80.152.249:30814/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think --limit 3
+```
+and now do a bigger run, just to get some data:
+```bash
+export SUBMIT="true"
+export SUBMIT_DIR="./"
+export ARC_PROGRAMS_DB=/Users/ronanmcgovern/TR/arc-agi-2025/llm_python/programsdb/local.db
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 8 --model Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic --base-url http://38.80.152.249:30814/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
+and then run scoring on it:
+```bash
+uv run python -m llm_python.score_submission
 ```
 
 and try the same in kaggle, passing in the `model_name` variable, which I'll have set earlier in the notebook, we'll hit the 127 localhost endpoint:

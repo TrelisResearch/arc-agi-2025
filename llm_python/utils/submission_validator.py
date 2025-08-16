@@ -4,7 +4,51 @@ Validates submission.json files against competition guidelines.
 """
 
 import json
-from typing import List
+import math
+from typing import List, Union
+
+
+def ensure_2d_grid(grid: Union[List, None], task_id: str = "", attempt_name: str = "") -> List[List[int]]:
+    """
+    Ensure grid is a proper 2D list, fix if needed.
+    
+    Args:
+        grid: Input grid that may be None, 1D flat list, or proper 2D list
+        task_id: Task identifier for logging
+        attempt_name: Attempt name for logging
+        
+    Returns:
+        Valid 2D grid as list of lists
+    """
+    if grid is None:
+        return [[0, 0], [0, 0]]
+    
+    # If it's a flat list, try to reshape it
+    if isinstance(grid, list) and len(grid) > 0 and not isinstance(grid[0], list):
+        if task_id and attempt_name:
+            print(f"⚠️  {task_id} {attempt_name}: Found flattened grid with {len(grid)} elements, attempting to reshape")
+        
+        # Try common square shapes first
+        sqrt_len = int(math.sqrt(len(grid)))
+        if sqrt_len * sqrt_len == len(grid):
+            # Perfect square, reshape to square grid
+            reshaped = []
+            for i in range(sqrt_len):
+                reshaped.append(grid[i*sqrt_len:(i+1)*sqrt_len])
+            if task_id and attempt_name:
+                print(f"   Reshaped to {sqrt_len}x{sqrt_len} grid")
+            return reshaped
+        else:
+            if task_id and attempt_name:
+                print(f"   Cannot reshape {len(grid)} elements to square grid, using fallback")
+            return [[0, 0], [0, 0]]
+    
+    # If it's already 2D, validate it
+    if isinstance(grid, list) and len(grid) > 0 and isinstance(grid[0], list):
+        return grid
+    
+    # Fallback for any other case
+    return [[0, 0], [0, 0]]
 
 
 def validate_submission_file(submission_path: str, expected_task_ids: List[str]) -> None:

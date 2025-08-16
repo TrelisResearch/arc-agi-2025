@@ -96,13 +96,41 @@ class LocalProgramsDB:
             correct_test_input BOOLEAN[] NOT NULL,
             predicted_train_output INTEGER[][][] NOT NULL,
             predicted_test_output INTEGER[][][] NOT NULL,
-            model VARCHAR NOT NULL
+            model VARCHAR NOT NULL,
+            is_test_transductive BOOLEAN NOT NULL DEFAULT FALSE
         )
         """
         self.connection.execute(create_table_sql)
         
+        # Migrate existing databases to add new columns if needed
+        self._migrate_schema()
+        
         # Ensure database has a unique ID
         self._ensure_database_id()
+    
+    def _migrate_schema(self) -> None:
+        """Migrate existing database schema to add new columns if needed."""
+        try:
+            # Try to query the new column to see if it exists
+            self.connection.execute("SELECT is_test_transductive FROM programs LIMIT 1").fetchone()
+            # If we get here, column exists - no migration needed
+        except Exception:
+            # Column doesn't exist or table doesn't exist, try to add it
+            try:
+                print("🔄 Migrating database: Adding is_test_transductive column")
+                # DuckDB doesn't support constraints in ALTER TABLE, add column without constraint
+                self.connection.execute(
+                    "ALTER TABLE programs ADD COLUMN is_test_transductive BOOLEAN"
+                )
+                # Set default value for existing rows
+                self.connection.execute(
+                    "UPDATE programs SET is_test_transductive = FALSE WHERE is_test_transductive IS NULL"
+                )
+                print("✅ Database migration completed")
+            except Exception as e:
+                # Migration failed - might be first run or column already exists
+                # This is not critical, the column will be created with the table
+                pass
     
     def _ensure_database_id(self) -> None:
         """Ensure the database has a unique ID, creating one if it doesn't exist."""
@@ -250,8 +278,8 @@ class LocalProgramsDB:
         insert_sql = """
         INSERT OR IGNORE INTO programs 
         (key, task_id, reasoning, code, correct_train_input, correct_test_input,
-         predicted_train_output, predicted_test_output, model)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         predicted_train_output, predicted_test_output, model, is_test_transductive)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         
         self.connection.execute(insert_sql, [
@@ -263,7 +291,8 @@ class LocalProgramsDB:
             program_dict['correct_test_input'],
             program_dict['predicted_train_output'],
             program_dict['predicted_test_output'],
-            program_dict['model']
+            program_dict['model'],
+            program_dict.get('is_test_transductive', False) if 'is_test_transductive' in program_dict else False
         ])
     
     def get_programs_by_task(self, task_id: str) -> List[Dict[str, Any]]:

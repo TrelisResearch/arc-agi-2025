@@ -6,7 +6,7 @@ import json
 import numpy as np
 from typing import Dict, List, Optional, Callable
 from collections import defaultdict, Counter
-from .transduction import is_transduction_cheating
+from .transduction import detect_transduction
 
 
 def serialize_prediction_for_voting(test_pred) -> str:
@@ -39,17 +39,17 @@ def deserialize_prediction_from_voting(key: str):
 
 
 def filter_non_transductive_attempts(result: Dict) -> List[Dict]:
-    """Filter out transductive attempts from a result's attempt_details"""
+    """Filter out train-transductive attempts from a result's attempt_details"""
     non_transductive = []
     for att in result['attempt_details']:
-        # Use stored flag if available (performance optimization), otherwise re-calculate
-        if 'is_transductive' in att:
-            is_cheat = att['is_transductive']
+        # Use stored flag if available, otherwise re-calculate
+        if 'is_train_transductive' in att:
+            is_train_transductive = att['is_train_transductive']
         else:
-            # Fallback for backwards compatibility with older logs
-            is_cheat, _, _, _ = is_transduction_cheating(att.get('program', ''), result['task_data'])
+            # Re-calculate if not stored (for older data)
+            is_train_transductive, _, _, _ = detect_transduction(att.get('program', ''), result['task_data'])
         
-        if not is_cheat:
+        if not is_train_transductive:
             non_transductive.append(att)
     return non_transductive
 

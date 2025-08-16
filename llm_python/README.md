@@ -2,6 +2,10 @@
 
 A streamlined tool for testing OpenAI-compatible language models on ARC-AGI tasks using the Chat Completions API. Supports reasoning models (o3, Gemini Flash, Qwen) with all-attempts evaluation, parallel processing, and voting-based selection. Results are stored in a local database for analysis.
 
+## ⚠️ Database Migration Notice
+
+**Important**: Recent updates added new database schema fields for transduction detection. If you have an existing programs database, it will be automatically migrated on first run. This is a one-time operation and should complete without issues. The migration adds the `is_test_transductive` column to track programs that hardcode test outputs for analysis purposes.
+
 ## Key Folders and Files:
 
 **Main Scripts:**
@@ -450,6 +454,48 @@ uv run python run_arc_tasks_soar.py --dataset arc-prize-2025 --subset evaluation
   Tasks with empty fallback: 36
   Official file: /kaggle/working/submission.json
   Backup file: /kaggle/working/submission_arc-prize-2025_evaluation_gpt-4.1-mini_20250816_143022.json
+```
+
+**⚠️ IMPORTANT: Voting Process**
+SUBMIT mode uses **in-memory results from the current run** for weighted voting, NOT data from the database. The voting happens on live predictions generated during execution:
+1. Run tasks with multiple attempts
+2. Filter out train-transductive attempts 
+3. Apply weighted voting (pattern frequency + 1000×train_accuracy)
+4. Select top 2 predictions as attempt_1 and attempt_2
+5. Create submission file
+
+The database is only used for optional storage/analysis, never for submission creation.
+
+#### Submission Scoring - Evaluate Submission Files
+
+Score any submission file against reference datasets:
+
+```bash
+# Score submission against arc-prize-2025 evaluation set
+uv run python -m llm_python.score_submission submission.json --dataset arc-prize-2025 --subset evaluation
+
+# Score with detailed per-task results
+uv run python -m llm_python.score_submission submission.json --dataset arc-agi-2 --subset evaluation --verbose
+
+# Save results to JSON file, btw default is submission.json
+uv run python -m llm_python.score_submission --output results.json
+```
+
+**Scoring Features:**
+- **Pass@1 & Pass@2 Metrics**: Individual prediction and complete task accuracy
+- **Full Validation**: Ensures all required tasks are present in submission
+- **Detailed Analysis**: Per-task breakdown with verbose mode
+- **Multiple Datasets**: Supports all ARC datasets (arc-agi-1, arc-agi-2, arc-prize-2025, etc.)
+
+**Example Output:**
+```
+📊 PREDICTION-LEVEL METRICS:
+  Pass@1 (first attempt): 15/344 (4.4%)
+  Pass@2 (either attempt): 23/344 (6.7%)
+
+📊 TASK-LEVEL METRICS:
+  Tasks Pass@1 (all outputs correct on first attempt): 12/120 (10.0%)
+  Tasks Pass@2 (all outputs correct on either attempt): 18/120 (15.0%)
 ```
 
 #### Other Advanced Options
