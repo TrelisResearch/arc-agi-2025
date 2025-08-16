@@ -20,22 +20,22 @@ Training speed-ups:
 - Use GPT OSS? (slower to fine-tune, but fast inference). Needs vLLM, not sglang, requiring some updates to the codebase.
 ---
 16 Aug 2025:
-[ ] Test out running the with duckdb.
+[x] Test out running the with duckdb.
     [x] Test out runpod L4s.
     [x] Try to run modules from our arc runner, writing to a local db.
-    [ ] Try running and writing to a different db.
+    [x] Try running and writing to a different db.
 [ ] Re-build the aux script for arc-agi-2025.
-[ ] Import the fp8 model to kaggle. Should be easy.
-  [ ] Add to the L4 script, on T4s.
-[ ] Quickly test out dp with vLLM in the L4 notebook.
+[x] Import the fp8 model to kaggle. Should be easy.
+  [x] Add to the L4 script, on T4s. 
 [ ] Get SGLang working in Kaggle. Limit to max 60 mins.
-  [ ] Get tp working with SGLang in Kaggle.
-  [ ] Get tp working in an importing notebook that is offline.
-  [ ] Get dp working with SGLang in Kaggle.
-  [ ] Add `fp8_e4m3` to the server start if using SGLang.
+  [x] Get tp working with SGLang in Kaggle.
+  [x] Get tp working in an importing notebook that is offline.
+  [ ] Get dp working with SGLang in Kaggle T4s. Do turn on 
+  [ ] Test it out in L4s.
 [ ] LATER - Work with Lewis to get the task runner going.
 
-[x] Consider a minimal dp notebook to send to Greg. Not doing this as we know v0 won't work.
+[-] Quickly test out dp with vLLM in the L4 notebook. Deferred if sglang can work.
+[-] Consider a minimal dp notebook to send to Greg. Not doing this as we know v0 won't work.
 
 ## Test out running the with duckdb with 4xL4s on Runpod
 
@@ -49,7 +49,88 @@ Now, given the TCP - 157.157.221.29:29715, we can run - AND it's working very we
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic --base-url http://157.157.221.29:29715/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
 ```
-...
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
+Dataset: arc-agi-2
+Subset: all_evaluation
+Model: Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic
+Number of runs: 3
+Valid runs: 3
+
+INDIVIDUAL RUN RESULTS:
+--------------------------------------------------------------------------------------------------
+Run  Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+--------------------------------------------------------------------------------------------------
+1    120    7.5%       8.3%       8.3%     8.3%       24.2%       100.0%       8.5%    
+2    120    7.5%       6.7%       8.3%     9.2%       29.2%       99.2%        8.1%    
+3    120    8.3%       9.2%       9.2%     8.3%       25.0%       99.2%        9.2%    
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 7.8%
+  Std Dev: 0.5%
+  95% CI: [6.8%, 8.7%]
+
+Train Majority Pass2:
+  Mean: 8.1%
+  Std Dev: 1.3%
+  95% CI: [5.6%, 10.6%]
+
+All Test Correct:
+  Mean: 8.6%
+  Std Dev: 0.5%
+  95% CI: [7.7%, 9.6%]
+
+All Train Correct:
+  Mean: 8.6%
+  Std Dev: 0.5%
+  95% CI: [7.7%, 9.6%]
+
+Min1 Train Correct:
+  Mean: 26.1%
+  Std Dev: 2.7%
+  95% CI: [20.9%, 31.4%]
+
+Min1 Code Success:
+  Mean: 99.4%
+  Std Dev: 0.5%
+  95% CI: [98.5%, 100.0%]
+
+Max Length Responses:
+  Mean: 8.6%
+  Std Dev: 0.5%
+  95% CI: [7.6%, 9.6%]
+
+Timeout Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Api Failure Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Aggregate results saved to: llm_python/logs/20250816_093634/20250816_102120_aggregate_summary_arc-agi-2_all_evaluation_all_attempts_3runs.json
+
+and then re-run without the fp8 cache on tcp address 157.157.221.29:29621:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic --base-url http://157.157.221.29:29621/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
+WOW THIS IS A LOT SLOWER... 30 toks... not sustainable, will try with e5m2 fp8 cache instead [--kv-cache-dtype fp8_e5m2]... on tcp 157.157.221.29:29778:
+```bash
+export ARC_PROGRAMS_DB=/Users/ronanmcgovern/TR/arc-agi-2025/llm_python/programsdb/local.db
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic --base-url http://157.157.221.29:29778/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
+...  
+
+probably try to run with fp8 cache e4m3 (set in server) but with the bf16 model: 
+```bash
+export ARC_PROGRAMS_DB=/tmp/arc-agi-2-all-evaluation-fp8-dynamic-bf16.db
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/arc-1-fake-ttt-blended-c802 --base-url http://157.157.221.29:43488/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
 
 Try running and writing to a different db.
 ```bash
@@ -59,9 +140,7 @@ and then check that db:
 ```bash
 uv run python -m llm_python.programsdb.cli stats --db-path /tmp/arc-agi-2-all-evaluation-fp8-dynamic.db
 ```
-
-
-
+this is fine it worked.
 
 
 15 Aug 2025

@@ -1254,7 +1254,8 @@ class ARCTaskRunnerSimple:
                     )
                     continue
 
-            print(f"✅ All {total_attempts} attempts completed")
+            elapsed_time = time.time() - start_time
+            print(f"✅ All {total_attempts} attempts completed in {elapsed_time:.1f}s")
 
             # Check final status - handle cancelled futures properly
             successful_attempts = 0
@@ -1360,7 +1361,7 @@ class ARCTaskRunnerSimple:
             else:
                 print(f"⚠️ Task {task_id} has no valid attempts - skipping")
 
-        summary_filepath = self.save_summary(results, subset_name, dataset)
+        summary_filepath = self.save_summary(results, subset_name, dataset, elapsed_time)
 
         # Report any large file errors at the end of the run
         self._report_large_file_errors()
@@ -1548,7 +1549,7 @@ class ARCTaskRunnerSimple:
         """Save individual task result"""
         self.result_processor.save_result(result)
 
-    def save_summary(self, results: List[Dict], subset_name: str, dataset: str):
+    def save_summary(self, results: List[Dict], subset_name: str, dataset: str, elapsed_time: Optional[float] = None):
         """Save summary of all results"""
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -1659,6 +1660,8 @@ class ARCTaskRunnerSimple:
         print(f"Model: {self.model}")
 
         print(f"Total tasks: {total_tasks}")
+        if elapsed_time:
+            print(f"Total time: {elapsed_time:.1f}s")
 
         print(
             f"Successful API calls: {successful_api_calls}/{total_tasks} ({successful_api_calls / total_tasks:.1%})"
@@ -1728,10 +1731,12 @@ class ARCTaskRunnerSimple:
 
         # Store run results independently - no shared state
         run_files = []
+        run_times = []  # Track time for each run
 
         for run_num in range(1, repeat_runs + 1):
             print(f"\n🚀 STARTING RUN {run_num}/{repeat_runs}")
             print("-" * 50)
+            run_start_time = time.time()  # Start timing the run
 
             # Force garbage collection between runs to clear any shared state
             import gc
@@ -1763,13 +1768,17 @@ class ARCTaskRunnerSimple:
                 results, summary_filepath = runner.run_subset(
                     subset_name, dataset, limit
                 )
-                print(f"\n✅ COMPLETED RUN {run_num}/{repeat_runs}")
+                run_duration = time.time() - run_start_time
+                run_times.append(run_duration)
+                print(f"\n✅ COMPLETED RUN {run_num}/{repeat_runs} in {run_duration:.1f}s")
 
                 # Store the actual summary file path that was created
                 run_files.append(summary_filepath)
 
             except Exception as e:
-                print(f"\n❌ RUN {run_num} FAILED: {e}")
+                run_duration = time.time() - run_start_time
+                run_times.append(run_duration)
+                print(f"\n❌ RUN {run_num} FAILED after {run_duration:.1f}s: {e}")
                 try:
                     import traceback as _tb
 
@@ -1793,7 +1802,7 @@ class ARCTaskRunnerSimple:
 
         # Load results from files and calculate aggregate statistics
         all_run_results = self._load_and_aggregate_results(
-            run_files, subset_name, dataset, repeat_runs
+            run_files, subset_name, dataset, repeat_runs, run_times
         )
 
         # Report any large file errors that occurred across all runs
@@ -1808,6 +1817,7 @@ class ARCTaskRunnerSimple:
         subset_name: str,
         dataset: str,
         repeat_runs: int,
+        run_times: Optional[List[float]] = None,
     ) -> List[List[Dict]]:
         """Load results from individual run files and aggregate statistics"""
         print(f"\n📊 Loading results from {len(run_files)} run files...")
@@ -1849,7 +1859,7 @@ class ARCTaskRunnerSimple:
 
         # Calculate and display aggregate statistics
         self._calculate_and_display_aggregate_stats(
-            all_run_results, subset_name, dataset, repeat_runs
+            all_run_results, subset_name, dataset, repeat_runs, run_times
         )
 
         return all_run_results
@@ -1860,6 +1870,7 @@ class ARCTaskRunnerSimple:
         subset_name: str,
         dataset: str,
         repeat_runs: int,
+        run_times: Optional[List[float]] = None,
     ):
         """Calculate and display mean and standard deviation across multiple runs"""
 
@@ -1968,16 +1979,17 @@ class ARCTaskRunnerSimple:
 
             # Individual run results
             print("INDIVIDUAL RUN RESULTS:")
-            print("-" * 98)
+            print("-" * 108)
             print(
-                f"{'Run':<4} {'Tasks':<6} {'Weighted':<10} {'Train-Maj':<10} {'Oracle':<8} {'All-Train':<10} {'Min1-Train':<11} {'Code-Success':<12} {'Max-Len':<8}"
+                f"{'Run':<4} {'Time':<8} {'Tasks':<6} {'Weighted':<10} {'Train-Maj':<10} {'Oracle':<8} {'All-Train':<10} {'Min1-Train':<11} {'Code-Success':<12} {'Max-Len':<8}"
             )
-            print("-" * 98)
+            print("-" * 108)
 
-            for stats_run in run_stats:
+            for i, stats_run in enumerate(run_stats):
                 if stats_run["total_tasks"] > 0:
+                    time_str = f"{run_times[i]:.1f}s" if run_times and i < len(run_times) else "N/A"
                     print(
-                        f"{stats_run['run_number']:<4} {stats_run['total_tasks']:<6} "
+                        f"{stats_run['run_number']:<4} {time_str:<8} {stats_run['total_tasks']:<6} "
                         f"{stats_run['weighted_voting_pass2']:<10.1%} {stats_run['train_majority_pass2']:<10.1%} "
                         f"{stats_run['all_test_correct']:<8.1%} {stats_run['all_train_correct']:<10.1%} "
                         f"{stats_run['min1_train_correct']:<11.1%} "
@@ -1985,6 +1997,24 @@ class ARCTaskRunnerSimple:
                     )
 
             print("")
+            
+            # Add time statistics if available
+            if run_times:
+                print("TIME STATISTICS:")
+                print("-" * 82)
+                total_time = sum(run_times)
+                mean_time = np.mean(run_times)
+                std_time = np.std(run_times, ddof=1) if len(run_times) > 1 else 0.0
+                min_time = min(run_times)
+                max_time = max(run_times)
+                
+                print(f"Total time: {total_time:.1f}s")
+                print(f"Mean time per run: {mean_time:.1f}s")
+                if len(run_times) > 1:
+                    print(f"Std Dev: {std_time:.1f}s")
+                    print(f"Min/Max: {min_time:.1f}s / {max_time:.1f}s")
+                print("")
+            
             print("AGGREGATE STATISTICS:")
             print("-" * 82)
             for metric_name, stat_data in stats.items():
