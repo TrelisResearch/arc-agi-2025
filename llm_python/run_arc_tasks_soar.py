@@ -168,6 +168,10 @@ class ARCTaskRunnerSimple:
         self.log_to_db = log_to_db
         self.db_path = db_path
         self.prompt_version = prompt_version
+        
+        # JSON logging is opt-in via environment variable
+        import os
+        self.log_to_files = bool(os.getenv('ARC_LOG_TO_FILES', '').lower() in ('true', '1', 'yes'))
 
         # Standard API timeout for network safety, no infrastructure timeouts
         api_timeout = 1800  # 30 minutes for network safety only
@@ -230,7 +234,10 @@ class ARCTaskRunnerSimple:
         print(
             f"⏰ API timeout: {api_timeout}s (network safety only, no infrastructure timeouts)"
         )
-        print(f"📁 Logs will be saved to: {self.result_processor.logs_dir}")
+        if self.log_to_files:
+            print(f"📁 JSON logs will be saved to: {self.result_processor.logs_dir}")
+        else:
+            print(f"📁 JSON logging: disabled (set ARC_LOG_TO_FILES=true to enable)")
         print(f"🗄️ Database logging: {'enabled' if self.log_to_db else 'disabled'}")
 
     @property
@@ -1191,7 +1198,8 @@ class ARCTaskRunnerSimple:
                                     "full_prompt"
                                 ),  # Store prompt once per task
                             }
-                            self.save_result(task_result)
+                            if self.log_to_files:
+                                self.save_result(task_result)
                             # print(f"💾 Saved log for task {task_id}")
                     else:
                         print(
@@ -1361,7 +1369,9 @@ class ARCTaskRunnerSimple:
             else:
                 print(f"⚠️ Task {task_id} has no valid attempts - skipping")
 
-        summary_filepath = self.save_summary(results, subset_name, dataset, elapsed_time)
+        summary_filepath = None
+        if self.log_to_files:
+            summary_filepath = self.save_summary(results, subset_name, dataset, elapsed_time)
 
         # Report any large file errors at the end of the run
         self._report_large_file_errors()
@@ -1800,10 +1810,15 @@ class ARCTaskRunnerSimple:
                 del runner
                 gc.collect()
 
-        # Load results from files and calculate aggregate statistics
-        all_run_results = self._load_and_aggregate_results(
-            run_files, subset_name, dataset, repeat_runs, run_times
-        )
+        # Load results from files and calculate aggregate statistics (only if JSON logging enabled)
+        if self.log_to_files:
+            all_run_results = self._load_and_aggregate_results(
+                run_files, subset_name, dataset, repeat_runs, run_times
+            )
+        else:
+            print(f"\n📊 Skipping aggregate statistics (JSON logging disabled)")
+            print(f"Individual run summaries were displayed above")
+            all_run_results = []
 
         # Report any large file errors that occurred across all runs
         # Note: Each individual run reports its own errors, but this provides a summary
@@ -1932,39 +1947,41 @@ class ARCTaskRunnerSimple:
                 else:
                     stats[metric_name] = {"mean": 0.0, "std": 0.0}
 
-            # Save aggregate summary
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            aggregate_summary = {
-                "timestamp": timestamp,
-                "dataset": dataset,
-                "subset": subset_name,
-                "model": self.model,
-                "api_type": "chat_completions_all_attempts",
-                "repeat_runs": repeat_runs,
-                "run_statistics": run_stats,
-                "aggregate_statistics": stats,
-            }
+            # Save aggregate summary (only if JSON logging is enabled)
+            filepath = None
+            if self.log_to_files:
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                aggregate_summary = {
+                    "timestamp": timestamp,
+                    "dataset": dataset,
+                    "subset": subset_name,
+                    "model": self.model,
+                    "api_type": "chat_completions_all_attempts",
+                    "repeat_runs": repeat_runs,
+                    "run_statistics": run_stats,
+                    "aggregate_statistics": stats,
+                }
 
-            filename = f"{timestamp}_aggregate_summary_{dataset}_{subset_name}_all_attempts_{repeat_runs}runs.json"
-            filepath = self.logs_dir / filename
+                filename = f"{timestamp}_aggregate_summary_{dataset}_{subset_name}_all_attempts_{repeat_runs}runs.json"
+                filepath = self.logs_dir / filename
 
-            # Check file size before saving aggregate summary
-            should_save, size_error = self._check_file_size_before_save(
-                aggregate_summary, filename
-            )
+                # Check file size before saving aggregate summary
+                should_save, size_error = self._check_file_size_before_save(
+                    aggregate_summary, filename
+                )
 
-            if not should_save:
-                print(f"🚨 LARGE AGGREGATE SUMMARY ERROR: {size_error}")
-                print(f"   Aggregate summary will not be saved to prevent disk issues")
-                print(f"   Consider reducing data collection or increasing size limit")
-                filepath = None  # Mark as unsaved
-            else:
-                try:
-                    with open(filepath, "w") as f:
-                        json.dump(aggregate_summary, f, indent=2)
-                except Exception as e:
-                    print(f"🚨 AGGREGATE SUMMARY FILE I/O ERROR: {e}")
+                if not should_save:
+                    print(f"🚨 LARGE AGGREGATE SUMMARY ERROR: {size_error}")
+                    print(f"   Aggregate summary will not be saved to prevent disk issues")
+                    print(f"   Consider reducing data collection or increasing size limit")
                     filepath = None  # Mark as unsaved
+                else:
+                    try:
+                        with open(filepath, "w") as f:
+                            json.dump(aggregate_summary, f, indent=2)
+                    except Exception as e:
+                        print(f"🚨 AGGREGATE SUMMARY FILE I/O ERROR: {e}")
+                        filepath = None  # Mark as unsaved
 
             # Display results
             print("\n" + "=" * 70)
@@ -2030,12 +2047,15 @@ class ARCTaskRunnerSimple:
                     print(f"  95% CI: [{ci_lower:.1%}, {ci_upper:.1%}]")
                 print("")
 
-            if filepath:
-                print(f"Aggregate results saved to: {filepath}")
+            if self.log_to_files:
+                if filepath:
+                    print(f"Aggregate results saved to: {filepath}")
+                else:
+                    print(
+                        "⚠️ Aggregate results NOT SAVED due to size limit - see errors above"
+                    )
             else:
-                print(
-                    "⚠️ Aggregate results NOT SAVED due to size limit - see errors above"
-                )
+                print("📊 Aggregate results not saved (JSON logging disabled)")
         else:
             print("\n❌ No valid run statistics to aggregate")
 

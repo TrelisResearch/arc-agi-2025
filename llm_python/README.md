@@ -55,6 +55,16 @@ uv run python run_arc_tasks_soar.py --db-path /path/to/your/programs.db
 ```
 By default, programs are stored in `llm_python/programsdb/local.db`
 
+4. (Optional) Enable JSON file logging:
+```bash
+# Enable detailed JSON logs (disabled by default to save disk space)
+export ARC_LOG_TO_FILES=true
+
+# Or add to .env file
+ARC_LOG_TO_FILES=true
+```
+By default, JSON logging is **disabled**. When enabled, logs are saved to `llm_python/logs/<timestamp>/`
+
 ### UV Project Discovery Note
 
 **Important**: When running `uv` commands from this `llm_python/` subdirectory, `uv` automatically searches upward and discovers the root `pyproject.toml` file in the repository root.

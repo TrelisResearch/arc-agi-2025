@@ -124,13 +124,161 @@ WOW THIS IS A LOT SLOWER... 30 toks... not sustainable, will try with e5m2 fp8 c
 export ARC_PROGRAMS_DB=/Users/ronanmcgovern/TR/arc-agi-2025/llm_python/programsdb/local.db
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic --base-url http://157.157.221.29:29778/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
 ```
-...  
+======================================================================
+AGGREGATE STATISTICS ACROSS MULTIPLE RUNS
+======================================================================
+Dataset: arc-agi-2
+Subset: all_evaluation
+Model: Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic
+Number of runs: 3
+Valid runs: 3
+
+INDIVIDUAL RUN RESULTS:
+------------------------------------------------------------------------------------------------------------
+Run  Time     Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+------------------------------------------------------------------------------------------------------------
+1    864.5s   120    7.5%       6.7%       8.3%     9.2%       26.7%       100.0%       8.8%    
+2    864.7s   120    7.5%       7.5%       10.0%    10.0%      24.2%       99.2%        8.0%    
+3    868.7s   120    7.5%       7.5%       8.3%     9.2%       27.5%       100.0%       8.1%    
+
+TIME STATISTICS:
+----------------------------------------------------------------------------------
+Total time: 2597.9s
+Mean time per run: 866.0s
+Std Dev: 2.4s
+Min/Max: 864.5s / 868.7s
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 7.5%
+  Std Dev: 0.0%
+  95% CI: [7.5%, 7.5%]
+
+Train Majority Pass2:
+  Mean: 7.2%
+  Std Dev: 0.5%
+  95% CI: [6.3%, 8.2%]
+
+All Test Correct:
+  Mean: 8.9%
+  Std Dev: 1.0%
+  95% CI: [7.0%, 10.8%]
+
+All Train Correct:
+  Mean: 9.4%
+  Std Dev: 0.5%
+  95% CI: [8.5%, 10.4%]
+
+Min1 Train Correct:
+  Mean: 26.1%
+  Std Dev: 1.7%
+  95% CI: [22.7%, 29.5%]
+
+Min1 Code Success:
+  Mean: 99.7%
+  Std Dev: 0.5%
+  95% CI: [98.8%, 100.0%]
+
+Max Length Responses:
+  Mean: 8.3%
+  Std Dev: 0.4%
+  95% CI: [7.5%, 9.1%]
+
+Timeout Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Api Failure Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Aggregate results saved to: llm_python/logs/20250816_104746/20250816_113105_aggregate_summary_arc-agi-2_all_evaluation_all_attempts_3runs.json
 
 probably try to run with fp8 cache e4m3 (set in server) but with the bf16 model: 
 ```bash
 export ARC_PROGRAMS_DB=/tmp/arc-agi-2-all-evaluation-fp8-dynamic-bf16.db
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/arc-1-fake-ttt-blended-c802 --base-url http://157.157.221.29:43488/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
 ```
+Dataset: arc-agi-2
+Subset: all_evaluation
+Model: Trelis/arc-1-fake-ttt-blended-c802
+Number of runs: 3
+Valid runs: 3
+
+INDIVIDUAL RUN RESULTS:
+------------------------------------------------------------------------------------------------------------
+Run  Time     Tasks  Weighted   Train-Maj  Oracle   All-Train  Min1-Train  Code-Success Max-Len 
+------------------------------------------------------------------------------------------------------------
+1    1213.3s  120    10.0%      10.8%      11.7%    12.5%      25.8%       100.0%       8.2%    
+2    1166.2s  120    7.5%       7.5%       7.5%     9.2%       25.8%       100.0%       6.8%    
+3    1181.5s  120    10.0%      10.0%      10.8%    9.2%       27.5%       100.0%       6.7%    
+
+TIME STATISTICS:
+----------------------------------------------------------------------------------
+Total time: 3561.0s
+Mean time per run: 1187.0s
+Std Dev: 24.0s
+Min/Max: 1166.2s / 1213.3s
+
+AGGREGATE STATISTICS:
+----------------------------------------------------------------------------------
+Weighted Voting Pass2:
+  Mean: 9.2%
+  Std Dev: 1.4%
+  95% CI: [6.3%, 12.0%]
+
+Train Majority Pass2:
+  Mean: 9.4%
+  Std Dev: 1.7%
+  95% CI: [6.0%, 12.8%]
+
+All Test Correct:
+  Mean: 10.0%
+  Std Dev: 2.2%
+  95% CI: [5.7%, 14.3%]
+
+All Train Correct:
+  Mean: 10.3%
+  Std Dev: 1.9%
+  95% CI: [6.5%, 14.0%]
+
+Min1 Train Correct:
+  Mean: 26.4%
+  Std Dev: 1.0%
+  95% CI: [24.5%, 28.3%]
+
+Min1 Code Success:
+  Mean: 100.0%
+  Std Dev: 0.0%
+  95% CI: [100.0%, 100.0%]
+
+Max Length Responses:
+  Mean: 7.2%
+  Std Dev: 0.9%
+  95% CI: [5.5%, 8.9%]
+
+Timeout Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Api Failure Responses:
+  Mean: 0.0%
+  Std Dev: 0.0%
+  95% CI: [0.0%, 0.0%]
+
+Aggregate results saved to: llm_python/logs/20250816_104405/20250816_114327_aggregate_summary_arc-agi-2_all_evaluation_all_attempts_3runs.json
+
+and then re-run with the fp8 cache e5m2 on tcp 157.157.221.29:43513:
+```bash
+export ARC_PROGRAMS_DB=/tmp/arc-agi-2-all-evaluation-fp8-dynamic-bf16.db
+export ARC_LOG_TO_FILES=true
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/arc-1-fake-ttt-blended-c802 --base-url http://157.157.221.29:43513/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
+NOT GOING TO RUN, NOT A GOOD USE OF TIME.
 
 Try running and writing to a different db.
 ```bash
@@ -225,7 +373,7 @@ Api Failure Responses:
   Std Dev: 0.0%
   95% CI: [0.0%, 0.0%]
 
-and then test out the fp8 model - Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic:
+and then test out the fp8 model on H200 - Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic:
 ```bash
 uv run runpod/create_pod_and_run_tasks.py arc-agi-2 "Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic" --subset all_evaluation
 ```
