@@ -20,6 +20,11 @@ from llm_python.utils.metrics_utils import (
     calculate_task_metrics,
     metrics_to_percentages,
 )
+from llm_python.utils.voting_utils import (
+    filter_non_transductive_attempts,
+    compute_weighted_majority_voting,
+)
+from llm_python.utils.submission_validator import validate_submission_file
 from llm_python.utils.transduction import is_transduction_cheating
 from llm_python.utils.prompt_loader import PromptLoader
 from llm_python.utils.serialization import ResponseSerializer
@@ -1209,19 +1214,34 @@ class ARCTaskRunnerSimple:
             else:
                 print(f"⚠️ Task {task_id} has no valid attempts - skipping")
 
-        # Print summary to console only (no file saving)
-        self._print_summary(results, subset_name, dataset, elapsed_time)
+        # Check if we're in SUBMIT mode
+        submit_mode = os.getenv("SUBMIT", "").lower() == "true"
+        
+        if submit_mode:
+            # In SUBMIT mode: create submission file and show limited summary
+            self._print_submit_mode_summary(results, subset_name, dataset, elapsed_time)
+            self._create_submission_file(results, dataset, subset_name)
+        else:
+            # Normal mode: print full summary to console only (no file saving)
+            self._print_summary(results, subset_name, dataset, elapsed_time)
 
         return results
 
     def _display_task_summary(self, task_id: str, task_result: Dict):
         """Display a brief summary of a completed task"""
         attempts = task_result["attempts"]
+        
+        # Check if we're in SUBMIT mode
+        submit_mode = os.getenv("SUBMIT", "").lower() == "true"
 
         # Calculate key stats
-        test_correct_attempts = sum(
-            1 for attempt in attempts if attempt.get("test_correct", False)
-        )
+        if not submit_mode:
+            test_correct_attempts = sum(
+                1 for attempt in attempts if attempt.get("test_correct", False)
+            )
+        else:
+            test_correct_attempts = 0  # Not computed in SUBMIT mode
+            
         train_perfect_attempts = sum(
             1 for attempt in attempts if attempt.get("train_accuracy", 0.0) == 1.0
         )
@@ -1277,7 +1297,12 @@ class ARCTaskRunnerSimple:
 
         # Build summary
         partial_indicator = "train-partial" if task_has_partial_train else "no-partial"
-        summary = f"✅ {task_id}: {test_correct_attempts}/{len(attempts)} test-correct, {train_perfect_attempts} train-perfect, {partial_indicator}"
+        if submit_mode:
+            # SUBMIT mode: only show train metrics
+            summary = f"✅ {task_id}: {train_perfect_attempts} train-perfect, {partial_indicator} (SUBMIT mode)"
+        else:
+            # Normal mode: show both test and train metrics
+            summary = f"✅ {task_id}: {test_correct_attempts}/{len(attempts)} test-correct, {train_perfect_attempts} train-perfect, {partial_indicator}"
 
         # Add issues in timeline order if any occurred
         issues = []
@@ -1308,10 +1333,15 @@ class ARCTaskRunnerSimple:
             summary += f" | Issues: {', '.join(issues)}"
 
         # Add best attempt performance (separate from issues)
-        if best_attempt.get("test_correct", False):
+        if submit_mode:
+            # SUBMIT mode: only show train accuracy
             summary += f" (best: {best_attempt.get('train_accuracy', 0.0):.1%} train)"
         else:
-            summary += f" (best: {best_attempt.get('train_accuracy', 0.0):.1%} train, test-failed)"
+            # Normal mode: show both train and test performance
+            if best_attempt.get("test_correct", False):
+                summary += f" (best: {best_attempt.get('train_accuracy', 0.0):.1%} train)"
+            else:
+                summary += f" (best: {best_attempt.get('train_accuracy', 0.0):.1%} train, test-failed)"
 
         print(summary)
 
@@ -1467,6 +1497,250 @@ class ARCTaskRunnerSimple:
                 f"  API Failure Responses:    {percentage_metrics['api_failure_responses']:.1%}"
             )
 
+    def _print_submit_mode_summary(self, results: List[Dict], subset_name: str, dataset: str, elapsed_time: Optional[float] = None):
+        """Print limited summary for SUBMIT mode (no scoring metrics available)"""
+        # Calculate basic statistics
+        total_tasks = len(results)
+        api_successes = [r for r in results if r.get("api_success", True)]
+        successful_api_calls = len(api_successes)
+
+        # Calculate response-level and train metrics (test metrics unavailable without test outputs)
+        total_responses = sum(len(result.get("attempt_details", [])) for result in results)
+        max_length_responses = sum(
+            sum(1 for att in result.get("attempt_details", []) if att.get("hit_max_tokens", False))
+            for result in results
+        )
+        timeout_responses = sum(
+            sum(1 for att in result.get("attempt_details", []) if att.get("api_timeout", False))
+            for result in results
+        )
+        api_failure_responses = sum(
+            sum(1 for att in result.get("attempt_details", []) if not att.get("api_success", True) and not att.get("api_timeout", False))
+            for result in results
+        )
+        code_success_responses = sum(
+            sum(1 for att in result.get("attempt_details", []) if att.get("program_extracted", False))
+            for result in results
+        )
+        
+        # Calculate train accuracy metrics (possible since we have train outputs)
+        all_train_correct = sum(
+            1 for result in results 
+            if any(att.get("train_accuracy", 0.0) == 1.0 for att in result.get("attempt_details", []))
+        )
+        min1_train_correct = sum(
+            1 for result in results 
+            if any(att.get("train_accuracy", 0.0) > 0.0 for att in result.get("attempt_details", []))
+        )
+
+        # Print summary
+        run_info = f" (Run {self.run_number})" if self.run_number > 0 else ""
+        print("\n" + "=" * 50)
+        print(f"SUBMIT MODE SUMMARY{run_info}")
+        print("=" * 50)
+        print(f"Dataset: {dataset}")
+        print(f"Subset: {subset_name}")
+        print(f"Model: {self.model}")
+
+        print(f"Total tasks processed: {total_tasks}")
+        if elapsed_time:
+            print(f"Total time: {elapsed_time:.1f}s")
+
+        print(
+            f"Successful API calls: {successful_api_calls}/{total_tasks} ({successful_api_calls / total_tasks:.1%})"
+        )
+        print(f"Total tokens used: {self.total_tokens:,}")
+        print(f"Total cost: ${self.total_cost:.6f}")
+
+        # Print response-level and train metrics (test metrics unavailable without test outputs)
+        if total_responses > 0:
+            print(f"\n📊 RESPONSE METRICS:")
+            print(f"  Total responses: {total_responses}")
+            print(f"  Code extracted: {code_success_responses}/{total_responses} ({code_success_responses/total_responses:.1%})")
+            print(f"  Max length responses: {max_length_responses}/{total_responses} ({max_length_responses/total_responses:.1%})")
+            print(f"  Timeout responses: {timeout_responses}/{total_responses} ({timeout_responses/total_responses:.1%})")
+            print(f"  API failure responses: {api_failure_responses}/{total_responses} ({api_failure_responses/total_responses:.1%})")
+            
+            print(f"\n📊 TRAIN METRICS:")
+            print(f"  All train correct: {all_train_correct}/{total_tasks} ({all_train_correct/total_tasks:.1%})")
+            print(f"  Min 1 train correct: {min1_train_correct}/{total_tasks} ({min1_train_correct/total_tasks:.1%})")
+            print(f"\n⚠️  Note: Test accuracy metrics unavailable in SUBMIT mode (no test outputs)")
+
+    def _create_submission_file(self, results: List[Dict], dataset: str, subset: str) -> None:
+        """Create submission file using weighted voting when SUBMIT mode is enabled"""
+        
+        # Check environment variables
+        submit_mode = os.getenv("SUBMIT", "").lower() == "true"
+        if not submit_mode:
+            return
+            
+        submit_dir = os.getenv("SUBMIT_DIR", "/kaggle/working")
+        
+        # Ensure submit directory exists
+        os.makedirs(submit_dir, exist_ok=True)
+        
+        print(f"\n🎯 SUBMIT MODE: Creating submission file")
+        print(f"📁 Submit directory: {submit_dir}")
+        
+        # Load ALL tasks from the dataset to ensure we include every task ID
+        try:
+            all_tasks = self.task_loader.load_tasks_from_subset(subset, dataset)
+            all_task_ids = [task_id for task_id, _ in all_tasks]
+        except Exception as e:
+            print(f"⚠️ Could not load all tasks from {dataset}/{subset}: {e}")
+            print("   Using only tasks from results...")
+            all_tasks = []  # Empty list if loading fails
+            all_task_ids = [result["task_id"] for result in results]
+        
+        submission = {}
+        tasks_with_predictions = 0
+        tasks_with_duplicated_attempts = 0
+        tasks_with_empty_fallback = 0
+        
+        # Create a lookup for results by task ID
+        results_by_task_id = {result["task_id"]: result for result in results}
+        
+        # Create a lookup for task data by task ID  
+        task_data_by_id = {task_id: task_data for task_id, task_data in all_tasks}
+        
+        # Process ALL task IDs (per submission guidelines)
+        for task_id in all_task_ids:
+            if task_id in results_by_task_id:
+                # We have results for this task
+                result = results_by_task_id[task_id]
+                task_data = result["task_data"]
+                attempts = result["attempt_details"]
+            else:
+                # No results for this task - create empty fallback
+                print(f"⚠️ No results for task {task_id}, using empty fallback")
+                # Try to get task data from lookup
+                task_data = task_data_by_id.get(task_id)
+                
+                if task_data is None:
+                    # Default to single test output if we can't load task data
+                    num_test_outputs = 1
+                else:
+                    num_test_outputs = len(task_data.get("test", []))
+                    if num_test_outputs == 0:
+                        num_test_outputs = 1
+                
+                submission[task_id] = []
+                for _ in range(num_test_outputs):
+                    submission[task_id].append({
+                        "attempt_1": [[0, 0], [0, 0]],
+                        "attempt_2": [[0, 0], [0, 0]]
+                    })
+                tasks_with_empty_fallback += 1
+                continue
+            
+            # Process task with results
+            attempts = result["attempt_details"]
+            
+            # Filter out train-transductive attempts (already filtered in metrics, but double-check)
+            non_transductive_attempts = filter_non_transductive_attempts(result)
+            
+            if not non_transductive_attempts:
+                # No valid attempts, use empty grids fallback
+                num_test_outputs = len(task_data.get("test", []))
+                if num_test_outputs == 0:
+                    num_test_outputs = 1  # Default to 1 output if no test data
+                
+                submission[task_id] = []
+                for _ in range(num_test_outputs):
+                    submission[task_id].append({
+                        "attempt_1": [[0, 0], [0, 0]],
+                        "attempt_2": [[0, 0], [0, 0]]
+                    })
+                tasks_with_empty_fallback += 1
+                continue
+            
+            # Use weighted voting to get top 2 predictions
+            try:
+                top_predictions = compute_weighted_majority_voting(non_transductive_attempts, top_k=2)
+            except Exception as e:
+                print(f"⚠️ Weighted voting failed for task {task_id}: {e}")
+                # Fallback to first available predictions
+                top_predictions = []
+                for attempt in non_transductive_attempts[:2]:
+                    pred = attempt.get("test_predicted")
+                    if pred is not None:
+                        top_predictions.append(pred)
+            
+            # Handle different prediction formats (single vs multiple test outputs)
+            num_test_outputs = len(task_data.get("test", []))
+            if num_test_outputs == 0:
+                num_test_outputs = 1  # Default to 1 output if no test data
+            
+            submission[task_id] = []
+            
+            for test_idx in range(num_test_outputs):
+                attempt_1_grid = [[0, 0], [0, 0]]  # Default fallback
+                attempt_2_grid = [[0, 0], [0, 0]]  # Default fallback
+                
+                # Extract attempt 1
+                if len(top_predictions) > 0 and top_predictions[0] is not None:
+                    pred_1 = top_predictions[0]
+                    if isinstance(pred_1, tuple) and len(pred_1) > test_idx:
+                        # Multiple test outputs case
+                        attempt_1_grid = pred_1[test_idx] if pred_1[test_idx] is not None else [[0, 0], [0, 0]]
+                    elif not isinstance(pred_1, tuple) and test_idx == 0:
+                        # Single test output case
+                        attempt_1_grid = pred_1 if pred_1 is not None else [[0, 0], [0, 0]]
+                
+                # Extract attempt 2
+                if len(top_predictions) > 1 and top_predictions[1] is not None:
+                    pred_2 = top_predictions[1]
+                    if isinstance(pred_2, tuple) and len(pred_2) > test_idx:
+                        # Multiple test outputs case
+                        attempt_2_grid = pred_2[test_idx] if pred_2[test_idx] is not None else [[0, 0], [0, 0]]
+                    elif not isinstance(pred_2, tuple) and test_idx == 0:
+                        # Single test output case
+                        attempt_2_grid = pred_2 if pred_2 is not None else [[0, 0], [0, 0]]
+                else:
+                    # Only one prediction available, duplicate it
+                    attempt_2_grid = attempt_1_grid
+                    if test_idx == 0:  # Only log once per task
+                        tasks_with_duplicated_attempts += 1
+                
+                submission[task_id].append({
+                    "attempt_1": attempt_1_grid,
+                    "attempt_2": attempt_2_grid
+                })
+            
+            tasks_with_predictions += 1
+        
+        # Generate submission filename (must be submission.json per guidelines)
+        submission_filename = "submission.json"
+        submission_path = os.path.join(submit_dir, submission_filename)
+        
+        # Also create a backup with timestamp for tracking
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        model_name = self.model.replace("/", "_").replace(":", "_")
+        backup_filename = f"submission_{dataset}_{subset}_{model_name}_{timestamp}.json"
+        backup_path = os.path.join(submit_dir, backup_filename)
+        
+        # Save submission file (official format)
+        with open(submission_path, 'w') as f:
+            json.dump(submission, f, indent=2)
+        
+        # Save backup with timestamp for tracking
+        with open(backup_path, 'w') as f:
+            json.dump(submission, f, indent=2)
+        
+        # Print summary
+        total_tasks = len(all_task_ids)
+        print(f"✅ Submission file created: {submission_filename}")
+        print(f"📊 Submission Summary:")
+        print(f"  Total tasks in dataset: {total_tasks}")
+        print(f"  Tasks processed: {len(results)}")
+        print(f"  Tasks with predictions: {tasks_with_predictions}")
+        print(f"  Tasks with duplicated attempts: {tasks_with_duplicated_attempts}")
+        print(f"  Tasks with empty fallback: {tasks_with_empty_fallback}")
+        print(f"  Official file: {submission_path}")
+        print(f"  Backup file: {backup_path}")
+        
+        # Validate the submission file
+        validate_submission_file(submission_path, all_task_ids)
 
 
 def main():

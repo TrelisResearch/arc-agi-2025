@@ -45,6 +45,29 @@ Training speed-ups:
 [-] Quickly test out dp with vLLM in the L4 notebook. Deferred if sglang can work.
 [-] Consider a minimal dp notebook to send to Greg. Not doing this as we know v0 won't work.
 
+### Testing out making submissions
+
+Hit the endpoint with the standard arc agi 2 command but with 64 attempts and 1000 context:
+```bash
+export SUBMIT="true"
+export SUBMIT_DIR="./"
+export ARC_PROGRAMS_DB=/tmp/submission2.db
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 1 --model Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic --base-url http://38.80.152.249:30814/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think --limit 3
+```
+
+and then check when submit is false:
+```bash
+export SUBMIT="false"
+export SUBMIT_DIR="./"
+export ARC_PROGRAMS_DB=/tmp/submission3.db
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 1 --model Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic --base-url http://38.80.152.249:30814/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think --limit 3
+```
+
+and try the same in kaggle, passing in the `model_name` variable, which I'll have set earlier in the notebook, we'll hit the 127 localhost endpoint:
+```bash
+!uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 1 --model {model_name} --base-url http://127.0.0.1:8080/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
+
 ### Testing out dataset locations, the new one
 Startup up a pod with the fp8 model, just start the pod not the task runner:
 ```bash
@@ -73,11 +96,6 @@ Total cost: $0.171191
   Max Length Responses:     5.8%
   Timeout Responses:        0.0%
   API Failure Responses:    0.0%
-
-and try the same in kaggle, passing in the `model_name` variable, which I'll have set earlier in the notebook, we'll hit the 127 localhost endpoint:
-```bash
-!uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 1 --model {model_name} --base-url http://127.0.0.1:8080/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
-```
 
 ### Testing out the arc task runner in Kaggle
 We'll just  use the soar task runner, and test with --limit 1 and --attempts 2, and use the 127 localhost endpoint, on the bf16 model:

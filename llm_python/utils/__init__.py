@@ -28,6 +28,10 @@ from .timeout_utils import (
     execute_with_timeout
 )
 
+from .submission_validator import (
+    validate_submission_file
+)
+
 __all__ = [
     'create_arc_prompt',
     'extract_python_code',
@@ -42,5 +46,6 @@ __all__ = [
     'calculate_task_metrics',
     'format_metrics_display',
     'metrics_to_percentages',
-    'execute_with_timeout'
+    'execute_with_timeout',
+    'validate_submission_file'
 ]

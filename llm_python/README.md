@@ -409,6 +409,51 @@ Executor: unrestricted (timeout: 0.5s) ⚠️  UNSAFE MODE
 
 ### Advanced Usage
 
+#### SUBMIT Mode - Creating Submission Files
+
+For generating submission files for ARC competitions (instead of just evaluation), use SUBMIT mode:
+
+```bash
+# Set environment variables for SUBMIT mode
+export SUBMIT="true"
+export SUBMIT_DIR="/kaggle/working"  # Optional, defaults to /kaggle/working
+
+# Run evaluation and create submission file
+uv run python run_arc_tasks_soar.py --dataset arc-prize-2025 --subset evaluation --model gpt-4.1-mini
+```
+
+**SUBMIT Mode Features:**
+- **Weighted Voting**: Uses the same weighted majority voting (pattern frequency + 1000×train_accuracy) to select the best 2 attempts per task
+- **Submission Format**: Creates JSON files in the official ARC submission format with `attempt_1` and `attempt_2` for each test output
+- **Multiple Test Outputs**: Automatically handles tasks with multiple test outputs (creates separate entries for each)
+- **Graceful Fallbacks**: 
+  - If only 1 prediction available: Duplicates it as both attempts (logs to console)
+  - If no valid predictions: Uses empty `[[0, 0], [0, 0]]` grids as fallback
+- **Train-Transductive Filtering**: Automatically filters out programs that cheat on training data (test transduction checking skipped when test outputs unavailable)
+- **Official Format**: Creates `submission.json` as required by competition guidelines, plus timestamped backup for tracking
+- **Complete Coverage**: Includes ALL task IDs from the evaluation set (required per guidelines)
+
+**Environment Variables:**
+- `SUBMIT`: Set to "true" to enable submission file creation
+- `SUBMIT_DIR`: Directory to save submission files (default: `/kaggle/working`)
+
+**Example Output:**
+```
+🎯 SUBMIT MODE: Creating submission file
+📁 Submit directory: /kaggle/working
+✅ Submission file created: submission.json
+📊 Submission Summary:
+  Total tasks in dataset: 400
+  Tasks processed: 387
+  Tasks with predictions: 364
+  Tasks with duplicated attempts: 23
+  Tasks with empty fallback: 36
+  Official file: /kaggle/working/submission.json
+  Backup file: /kaggle/working/submission_arc-prize-2025_evaluation_gpt-4.1-mini_20250816_143022.json
+```
+
+#### Other Advanced Options
+
 ```bash
 # OpenRouter OpenAI models - use model variants for reasoning control
 uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_training_10 --model openai/o4-mini-high --base-url https://openrouter.ai/api/v1
