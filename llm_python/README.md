@@ -1,6 +1,6 @@
 # ARC-AGI Task Runner
 
-A comprehensive tool for testing OpenAI-compatible language models on ARC-AGI tasks using the Chat Completions API. Supports reasoning models (o3, Gemini Flash, Qwen) with all-attempts evaluation, parallel processing, and voting-based selection.
+A streamlined tool for testing OpenAI-compatible language models on ARC-AGI tasks using the Chat Completions API. Supports reasoning models (o3, Gemini Flash, Qwen) with all-attempts evaluation, parallel processing, and voting-based selection. Results are stored in a local database for analysis.
 
 ## Key Folders and Files:
 
@@ -29,6 +29,8 @@ A comprehensive tool for testing OpenAI-compatible language models on ARC-AGI ta
 - **All-attempts evaluation**: Parallel execution with voting-based selection for robust results
 - **Reasoning model support**: Optimized for o3, Gemini Flash, Qwen with configurable reasoning effort
 - **Multiple datasets**: Support for ARC-AGI-1/1r/2 with various task subsets and difficulty levels
+- **Database storage**: Successful programs are automatically stored in a local database for analysis
+- **Console output only**: Streamlined with no file logging - just summary statistics and database storage
 
 ## Setup
 
@@ -55,15 +57,6 @@ uv run python run_arc_tasks_soar.py --db-path /path/to/your/programs.db
 ```
 By default, programs are stored in `llm_python/programsdb/local.db`
 
-4. (Optional) Enable JSON file logging:
-```bash
-# Enable detailed JSON logs (disabled by default to save disk space)
-export ARC_LOG_TO_FILES=true
-
-# Or add to .env file
-ARC_LOG_TO_FILES=true
-```
-By default, JSON logging is **disabled**. When enabled, logs are saved to `llm_python/logs/<timestamp>/`
 
 ### UV Project Discovery Note
 
@@ -113,8 +106,6 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --m
 # Gemini Flash via OpenRouter with reasoning
 uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1 --reasoning_effort low
 
-# Run repeated tests with statistics
-uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --repeat-runs 3
 
 # Use LORA adapter (server must be started with LORA loaded)
 uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --base-url http://localhost:8000/v1 --lora-adapter ckpt-1057

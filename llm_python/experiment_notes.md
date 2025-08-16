@@ -30,14 +30,27 @@ Training speed-ups:
 [ ] Get SGLang working in Kaggle. Limit to max 60 mins.
   [x] Get tp working with SGLang in Kaggle.
   [x] Get tp working in an importing notebook that is offline.
-  [ ] Get dp working with SGLang in Kaggle T4s. Do turn on 
-  [ ] Test it out in L4s.
-[ ] LATER - Work with Lewis to get the task runner going.
+  [x] Get dp working with SGLang in Kaggle T4s. Incl. w/ kv cache quantization.
+  [x] Get sglang utility script export working.
+  [x] Get sglang utility script import working.
+  [ ] See if I can run the task runner on T4s.
+  [ ] Test sglang out in L4s on Kaggle.
+[ ] Create submission file in submission mode.
+[ ] Create a scorer that can process the file.
+[ ] SUBMIT!
 
 [-] Quickly test out dp with vLLM in the L4 notebook. Deferred if sglang can work.
 [-] Consider a minimal dp notebook to send to Greg. Not doing this as we know v0 won't work.
 
-## Test out running the with duckdb with 4xL4s on Runpod
+### Cleaning up to stop json logs and multiple runs.
+
+Going to test now using the runpod pod startup script:
+```bash
+export ARC_PROGRAMS_DB=/Users/ronanmcgovern/TR/arc-agi-2025/llm_python/programsdb/local.db
+uv run runpod/create_pod_and_run_tasks.py arc-agi-2 "Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic" --subset all_evaluation
+```
+
+### Test out running the with duckdb with 4xL4s on Runpod
 
 Start a pod and run arc-agi-2 with Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic:
 ```bash

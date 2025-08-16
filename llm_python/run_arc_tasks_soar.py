@@ -23,7 +23,6 @@ from llm_python.utils.transduction import is_transduction_cheating
 from llm_python.utils.prompt_loader import PromptLoader
 from llm_python.utils.serialization import ResponseSerializer
 from llm_python.utils.api_client import ARCAPIClient
-from llm_python.utils.result_processor import ResultProcessor
 from llm_python.utils.validator import ARCTaskValidator
 from llm_python.programsdb import maybe_log_program, ProgramSample
 
@@ -168,10 +167,6 @@ class ARCTaskRunnerSimple:
         self.log_to_db = log_to_db
         self.db_path = db_path
         self.prompt_version = prompt_version
-        
-        # JSON logging is opt-in via environment variable
-        import os
-        self.log_to_files = bool(os.getenv('ARC_LOG_TO_FILES', '').lower() in ('true', '1', 'yes'))
 
         # Standard API timeout for network safety, no infrastructure timeouts
         api_timeout = 1800  # 30 minutes for network safety only
@@ -183,8 +178,6 @@ class ARCTaskRunnerSimple:
                 "⚠️  WARNING: Using unrestricted executor - generated code will run directly on your system!"
             )
 
-        # Store references needed by other methods
-        self.large_file_errors = []
 
         # Initialize services
         self.api_client = ARCAPIClient(
@@ -198,9 +191,6 @@ class ARCTaskRunnerSimple:
             api_timeout=api_timeout,  # Standard timeout for network safety
         )
 
-        self.result_processor = ResultProcessor(
-            model=model, run_number=run_number, max_tokens=max_tokens
-        )
 
         # Initialize remaining components
         self.task_loader = TaskLoader()
@@ -217,8 +207,6 @@ class ARCTaskRunnerSimple:
         self.total_cost = 0.0
         self.total_tokens = 0
 
-        # Thread-safe state management
-        self._cleanup_lock = threading.Lock()
 
         # Health monitoring for long runs
         self.health_metrics = {
@@ -234,10 +222,6 @@ class ARCTaskRunnerSimple:
         print(
             f"⏰ API timeout: {api_timeout}s (network safety only, no infrastructure timeouts)"
         )
-        if self.log_to_files:
-            print(f"📁 JSON logs will be saved to: {self.result_processor.logs_dir}")
-        else:
-            print(f"📁 JSON logging: disabled (set ARC_LOG_TO_FILES=true to enable)")
         print(f"🗄️ Database logging: {'enabled' if self.log_to_db else 'disabled'}")
 
     @property
@@ -245,10 +229,6 @@ class ARCTaskRunnerSimple:
         """Get the model name from the API client"""
         return self.api_client.model
 
-    @property
-    def logs_dir(self):
-        """Get the logs directory from the result processor"""
-        return self.result_processor.logs_dir
 
     @property
     def base_url(self):
@@ -348,145 +328,6 @@ class ARCTaskRunnerSimple:
             self.total_cost += cost
             self.total_tokens += tokens
 
-    def _check_file_size_before_save(
-        self, data: Dict, filename: str, max_size_gb: float = 1.0
-    ) -> tuple[bool, str]:
-        """Check if JSON data would exceed size limit before saving
-
-        Returns:
-            tuple: (should_save, error_message)
-        """
-        try:
-            # Estimate JSON size by serializing to string
-            json_str = json.dumps(ResponseSerializer.make_json_safe(data), indent=2)
-            size_bytes = len(json_str.encode("utf-8"))
-            size_gb = size_bytes / (1024**3)
-
-            if size_gb > max_size_gb:
-                # Analyze what's making the file large
-                size_details = self._analyze_large_file_components(data, size_bytes)
-
-                error_msg = f"File {filename} would be {size_gb:.2f}GB (>{max_size_gb}GB limit). {size_details}"
-
-                # Thread-safe error tracking
-                with self._cost_lock:
-                    self.large_file_errors.append(
-                        {
-                            "filename": filename,
-                            "size_gb": size_gb,
-                            "size_bytes": size_bytes,
-                            "details": size_details,
-                            "timestamp": datetime.datetime.now().isoformat(),
-                        }
-                    )
-
-                return False, error_msg
-
-            return True, ""
-
-        except Exception as e:
-            # If we can't estimate size, err on the side of caution
-            error_msg = f"Could not estimate size for {filename}: {e}"
-            return True, error_msg  # Allow saving if we can't check
-
-    def _analyze_large_file_components(self, data: Dict, total_size: int) -> str:
-        """Analyze what components are making a file large"""
-        details = []
-
-        try:
-            # Check major components
-            if "attempt_details" in data:
-                attempt_details_size = len(
-                    json.dumps(data["attempt_details"]).encode("utf-8")
-                )
-                if attempt_details_size > total_size * 0.1:  # >10% of total
-                    details.append(
-                        f"attempt_details: {attempt_details_size / (1024**2):.1f}MB"
-                    )
-
-                    # Check individual attempts for large components
-                    for i, attempt in enumerate(
-                        data["attempt_details"][:3]
-                    ):  # Check first 3
-                        if "raw_response" in attempt:
-                            resp_size = len(
-                                json.dumps(attempt["raw_response"]).encode("utf-8")
-                            )
-                            if resp_size > 50 * 1024 * 1024:  # >50MB
-                                details.append(
-                                    f"attempt {i + 1} response: {resp_size / (1024**2):.1f}MB"
-                                )
-
-                        if "program" in attempt:
-                            prog_size = len(str(attempt["program"]).encode("utf-8"))
-                            if prog_size > 1024 * 1024:  # >1MB
-                                details.append(
-                                    f"attempt {i + 1} program: {prog_size / 1024:.1f}KB"
-                                )
-
-            if "results" in data:
-                results_size = len(json.dumps(data["results"]).encode("utf-8"))
-                if results_size > total_size * 0.1:  # >10% of total
-                    details.append(f"results array: {results_size / (1024**2):.1f}MB")
-
-            if "all_responses" in data:
-                responses_size = len(json.dumps(data["all_responses"]).encode("utf-8"))
-                if responses_size > total_size * 0.1:  # >10% of total
-                    details.append(f"all_responses: {responses_size / (1024**2):.1f}MB")
-
-            return (
-                "Large components: " + ", ".join(details)
-                if details
-                else "Unknown large components"
-            )
-
-        except Exception as e:
-            return f"Error analyzing file size: {e}"
-
-    def _report_large_file_errors(self):
-        """Report any large file errors that occurred during the run"""
-        if not self.large_file_errors:
-            return
-
-        print("")
-        print("🚨" * 30)
-        print("LARGE FILE ERRORS SUMMARY")
-        print("🚨" * 30)
-        print(f"Number of files that exceeded 1GB limit: {len(self.large_file_errors)}")
-        print("")
-
-        # Sort by size for easier analysis
-        sorted_errors = sorted(
-            self.large_file_errors, key=lambda x: x["size_gb"], reverse=True
-        )
-
-        print("Files blocked from saving (largest first):")
-        print("-" * 80)
-
-        for i, error in enumerate(sorted_errors[:10], 1):  # Show top 10
-            print(f"{i:2d}. {error['filename']}")
-            print(f"    Size: {error['size_gb']:.2f}GB ({error['size_bytes']:,} bytes)")
-            print(f"    {error['details']}")
-            print(f"    Time: {error['timestamp']}")
-            print("")
-
-        if len(sorted_errors) > 10:
-            print(f"... and {len(sorted_errors) - 10} more files blocked")
-            print("")
-
-        # Provide guidance
-        total_blocked_size = sum(e["size_gb"] for e in self.large_file_errors)
-        print(f"Total data blocked: {total_blocked_size:.2f}GB")
-        print("")
-        print("💡 RECOMMENDATIONS:")
-        print("   • Large responses often indicate very verbose model outputs")
-        print("   • Consider using lower max_tokens to reduce response size")
-        print("   • Check if model is generating extremely long programs")
-        print(
-            "   • Monitor raw_response fields which may contain large reasoning traces"
-        )
-        print("   • For debugging, you can increase the size limit parameter")
-        print("🚨" * 30)
 
     def _update_health_metrics(self, attempt_detail: AttemptDetail, exec_time: float):
         """Update health monitoring metrics (thread-safe)"""
@@ -1198,9 +1039,7 @@ class ARCTaskRunnerSimple:
                                     "full_prompt"
                                 ),  # Store prompt once per task
                             }
-                            if self.log_to_files:
-                                self.save_result(task_result)
-                            # print(f"💾 Saved log for task {task_id}")
+                            # Note: JSON logging removed - only database logging remains
                     else:
                         print(
                             f"⚠️ Task {task_id} not found in results dict - possible corruption"
@@ -1369,14 +1208,10 @@ class ARCTaskRunnerSimple:
             else:
                 print(f"⚠️ Task {task_id} has no valid attempts - skipping")
 
-        summary_filepath = None
-        if self.log_to_files:
-            summary_filepath = self.save_summary(results, subset_name, dataset, elapsed_time)
+        # Print summary to console only (no file saving)
+        self._print_summary(results, subset_name, dataset, elapsed_time)
 
-        # Report any large file errors at the end of the run
-        self._report_large_file_errors()
-
-        return results, summary_filepath
+        return results
 
     def _display_task_summary(self, task_id: str, task_result: Dict):
         """Display a brief summary of a completed task"""
@@ -1555,14 +1390,9 @@ class ARCTaskRunnerSimple:
 
         return trimmed
 
-    def save_result(self, result: Dict):
-        """Save individual task result"""
-        self.result_processor.save_result(result)
 
-    def save_summary(self, results: List[Dict], subset_name: str, dataset: str, elapsed_time: Optional[float] = None):
-        """Save summary of all results"""
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-
+    def _print_summary(self, results: List[Dict], subset_name: str, dataset: str, elapsed_time: Optional[float] = None):
+        """Print summary of all results to console"""
         # Calculate statistics
         total_tasks = len(results)
         api_successes = [r for r in results if r.get("api_success", True)]
@@ -1585,80 +1415,6 @@ class ARCTaskRunnerSimple:
                 "timeout_responses": 0.0,
                 "api_failure_responses": 0.0,
             }
-
-        # All tasks should complete now
-        api_type_summary = "chat_completions_all_attempts"
-        complete_tasks = total_tasks
-
-        # Build compact results for summary (strip heavy fields like raw_response/program/all_responses)
-        results_for_summary = []
-        for r in results:
-            try:
-                compact = {k: v for k, v in r.items() if k != "all_responses"}
-                compact_attempts = []
-                for att in r.get("attempt_details", []):
-                    if isinstance(att, dict):
-                        compact_att = {
-                            k: v for k, v in att.items() if k != "raw_response"
-                        }
-                        # Keep 'program' field but ensure it's empty string for failed attempts (avoid KeyError)
-                        if "program" not in compact_att:
-                            compact_att["program"] = ""
-                        compact_attempts.append(compact_att)
-                    else:
-                        compact_attempts.append(att)
-                compact["attempt_details"] = compact_attempts
-                results_for_summary.append(compact)
-            except Exception:
-                # Fallback to original entry on unexpected structure
-                results_for_summary.append(r)
-
-        # Create summary with compact results for later aggregation
-        summary = {
-            "timestamp": timestamp,
-            "dataset": dataset,
-            "subset": subset_name,
-            "model": self.model,
-            "api_type": api_type_summary,
-            "run_number": self.run_number,
-            "total_tasks": total_tasks,
-            "complete_tasks": complete_tasks,
-            "successful_api_calls": successful_api_calls,
-            "total_tokens": self.total_tokens,
-            "total_cost": self.total_cost,
-            "metrics": percentage_metrics,
-            "results": results_for_summary,  # Compact results to keep summary small
-            "task_ids": [
-                result["task_id"] for result in results
-            ],  # Also include task IDs for convenience
-        }
-
-        # Simple filename without timeout indicator
-        if self.run_number > 0:
-            filename = f"{timestamp}_summary_{dataset}_{subset_name}_simple_run{self.run_number}.json"
-        else:
-            filename = f"{timestamp}_summary_{dataset}_{subset_name}_simple.json"
-
-        filepath = self.logs_dir / filename
-
-        # Sanitize for JSON and check file size before saving summary
-        safe_summary = ResponseSerializer.make_json_safe(summary)
-        should_save, size_error = self._check_file_size_before_save(
-            safe_summary, filename
-        )
-
-        if not should_save:
-            print(f"🚨 LARGE SUMMARY FILE ERROR: {size_error}")
-            print(f"   Summary will not be saved to prevent disk issues")
-            print(f"   Consider reducing data collection or increasing size limit")
-            # Still continue with printing the summary statistics
-        else:
-            try:
-                with open(filepath, "w") as f:
-                    json.dump(safe_summary, f, indent=2)
-            except Exception as e:
-                print(f"🚨 SUMMARY FILE I/O ERROR: {e}")
-                should_save = False  # Mark as unsaved
 
         # Print summary
         run_info = f" (Run {self.run_number})" if self.run_number > 0 else ""
@@ -1710,354 +1466,6 @@ class ARCTaskRunnerSimple:
                 f"  API Failure Responses:    {percentage_metrics['api_failure_responses']:.1%}"
             )
 
-        # Update final message based on whether file was actually saved
-        if should_save:
-            print(f"\nResults saved to: {filepath}")
-            return filepath
-        else:
-            final_message = "⚠️ Results NOT SAVED due to size limit - see errors above"
-            print(f"\n{final_message}")
-            return None
-
-    def run_repeated_subset(
-        self,
-        subset_name: str,
-        dataset: str = "arc-agi-1",
-        limit: Optional[int] = None,
-        repeat_runs: int = 3,
-    ) -> List[List[Dict]]:
-        """Run the same subset multiple times with completely independent runs"""
-        print(f"\nRunning {repeat_runs} repeated tests of {dataset}/{subset_name}")
-        print(f"Model: {self.model}")
-        print(f"{self.max_attempts} attempts")
-        print("=" * 70)
-
-        # No infrastructure timeouts to avoid GPU overload
-        print("")
-        print(
-            "✅ No infrastructure timeouts - requests complete naturally to avoid GPU overload"
-        )
-        print("")
-
-        # Store run results independently - no shared state
-        run_files = []
-        run_times = []  # Track time for each run
-
-        for run_num in range(1, repeat_runs + 1):
-            print(f"\n🚀 STARTING RUN {run_num}/{repeat_runs}")
-            print("-" * 50)
-            run_start_time = time.time()  # Start timing the run
-
-            # Force garbage collection between runs to clear any shared state
-            import gc
-
-            gc.collect()
-
-            # Create completely independent runner with no shared state
-            runner = ARCTaskRunnerSimple(
-                model=self.model,
-                max_workers=self.max_workers,
-                rate_limit_delay=self.rate_limit_delay,
-                max_attempts=self.max_attempts,
-                run_number=run_num,  # This ensures unique file names
-                base_url=self.base_url,
-                debug=self.debug,
-                max_tokens=self.max_tokens,
-                temperature=self.temperature,
-                reasoning_effort=self.reasoning_effort,
-                qwen_no_think=self.qwen_no_think,
-                prompt_version=self.prompt_version,
-                unsafe_executor=(self.executor_type == "unrestricted"),
-                lora_adapter=self.lora_adapter,
-                log_to_db=self.log_to_db,
-                db_path=self.db_path,  # Pass through the db_path
-            )
-
-            try:
-                # Run the subset and let it save its own results
-                results, summary_filepath = runner.run_subset(
-                    subset_name, dataset, limit
-                )
-                run_duration = time.time() - run_start_time
-                run_times.append(run_duration)
-                print(f"\n✅ COMPLETED RUN {run_num}/{repeat_runs} in {run_duration:.1f}s")
-
-                # Store the actual summary file path that was created
-                run_files.append(summary_filepath)
-
-            except Exception as e:
-                run_duration = time.time() - run_start_time
-                run_times.append(run_duration)
-                print(f"\n❌ RUN {run_num} FAILED after {run_duration:.1f}s: {e}")
-                try:
-                    import traceback as _tb
-
-                    _tb.print_exc()
-                except Exception:
-                    pass
-                run_files.append(None)  # Mark as failed
-            finally:
-                # Explicit cleanup to prevent state leakage
-                # ArcTester uses singleton class variables that persist across instances
-                # Without cleanup, second run reuses stale executor context causing systematic failures
-                with self._cleanup_lock:  # Thread-safe cleanup
-                    try:
-                        ArcTester.cleanup_executor()  # Fix: Clean up singleton state
-                        if run_num < repeat_runs:  # Only print for non-final runs
-                            print(f"🧹 Cleaned up executor state after run {run_num}")
-                    except Exception as cleanup_e:
-                        print(f"⚠️ Failed to cleanup executor state: {cleanup_e}")
-                del runner
-                gc.collect()
-
-        # Load results from files and calculate aggregate statistics (only if JSON logging enabled)
-        if self.log_to_files:
-            all_run_results = self._load_and_aggregate_results(
-                run_files, subset_name, dataset, repeat_runs, run_times
-            )
-        else:
-            print(f"\n📊 Skipping aggregate statistics (JSON logging disabled)")
-            print(f"Individual run summaries were displayed above")
-            all_run_results = []
-
-        # Report any large file errors that occurred across all runs
-        # Note: Each individual run reports its own errors, but this provides a summary
-        self._report_large_file_errors()
-
-        return all_run_results
-
-    def _load_and_aggregate_results(
-        self,
-        run_files: List[Optional[Path]],
-        subset_name: str,
-        dataset: str,
-        repeat_runs: int,
-        run_times: Optional[List[float]] = None,
-    ) -> List[List[Dict]]:
-        """Load results from individual run files and aggregate statistics"""
-        print(f"\n📊 Loading results from {len(run_files)} run files...")
-
-        all_run_results = []
-        successful_runs = 0
-
-        for run_num, filepath in enumerate(run_files, 1):
-            if filepath is None:
-                print(f"❌ Run {run_num}: Failed run, no results")
-                all_run_results.append([])
-                continue
-
-            try:
-                if filepath.exists():
-                    with open(filepath, "r") as f:
-                        summary_data = json.load(f)
-
-                    # Extract the results from the summary
-                    if "results" in summary_data:
-                        results = summary_data["results"]
-                        all_run_results.append(results)
-                        successful_runs += 1
-                        print(
-                            f"✅ Run {run_num}: Loaded {len(results)} results from {filepath.name}"
-                        )
-                    else:
-                        print(f"⚠️ Run {run_num}: No results found in {filepath.name}")
-                        all_run_results.append([])
-                else:
-                    print(f"❌ Run {run_num}: File not found: {filepath}")
-                    all_run_results.append([])
-
-            except Exception as e:
-                print(f"❌ Run {run_num}: Error loading {filepath}: {e}")
-                all_run_results.append([])
-
-        print(f"📊 Successfully loaded {successful_runs}/{repeat_runs} runs")
-
-        # Calculate and display aggregate statistics
-        self._calculate_and_display_aggregate_stats(
-            all_run_results, subset_name, dataset, repeat_runs, run_times
-        )
-
-        return all_run_results
-
-    def _calculate_and_display_aggregate_stats(
-        self,
-        all_run_results: List[List[Dict]],
-        subset_name: str,
-        dataset: str,
-        repeat_runs: int,
-        run_times: Optional[List[float]] = None,
-    ):
-        """Calculate and display mean and standard deviation across multiple runs"""
-
-        # Calculate final layer metrics for each run
-        run_stats = []
-
-        for run_num, results in enumerate(all_run_results, 1):
-            if not results:
-                empty_metrics = {
-                    "run_number": run_num,
-                    "total_tasks": 0,
-                    "weighted_voting_pass2": 0.0,
-                    "train_majority_pass2": 0.0,
-                    "all_test_correct": 0.0,
-                    "all_train_correct": 0.0,
-                    "min1_train_correct": 0.0,
-                    "min1_code_success": 0.0,
-                    "max_length_responses": 0.0,
-                    "timeout_responses": 0.0,
-                    "api_failure_responses": 0.0,
-                }
-                run_stats.append(empty_metrics)
-                continue
-
-            # Calculate metrics for final layer (all attempts) using utility
-            metrics = calculate_task_metrics(results, max_tokens=self.max_tokens)
-            percentage_metrics = metrics_to_percentages(metrics)
-            percentage_metrics["run_number"] = run_num
-            run_stats.append(percentage_metrics)
-
-        # Calculate aggregate statistics
-        if run_stats and any(s["total_tasks"] > 0 for s in run_stats):
-            # Extract metrics for valid runs
-            valid_runs = [s for s in run_stats if s["total_tasks"] > 0]
-
-            metrics = {
-                "weighted_voting_pass2": [
-                    s["weighted_voting_pass2"] for s in valid_runs
-                ],
-                "train_majority_pass2": [s["train_majority_pass2"] for s in valid_runs],
-                "all_test_correct": [s["all_test_correct"] for s in valid_runs],
-                "all_train_correct": [s["all_train_correct"] for s in valid_runs],
-                "min1_train_correct": [s["min1_train_correct"] for s in valid_runs],
-                "min1_code_success": [s["min1_code_success"] for s in valid_runs],
-                "max_length_responses": [s["max_length_responses"] for s in valid_runs],
-                "timeout_responses": [s["timeout_responses"] for s in valid_runs],
-                "api_failure_responses": [
-                    s["api_failure_responses"] for s in valid_runs
-                ],
-            }
-
-            # Calculate means and std devs
-            stats = {}
-            for metric_name, values in metrics.items():
-                if values:
-                    mean_val = np.mean(values)
-                    std_val = np.std(values, ddof=1) if len(values) > 1 else 0.0
-                    stats[metric_name] = {"mean": mean_val, "std": std_val}
-                else:
-                    stats[metric_name] = {"mean": 0.0, "std": 0.0}
-
-            # Save aggregate summary (only if JSON logging is enabled)
-            filepath = None
-            if self.log_to_files:
-                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                aggregate_summary = {
-                    "timestamp": timestamp,
-                    "dataset": dataset,
-                    "subset": subset_name,
-                    "model": self.model,
-                    "api_type": "chat_completions_all_attempts",
-                    "repeat_runs": repeat_runs,
-                    "run_statistics": run_stats,
-                    "aggregate_statistics": stats,
-                }
-
-                filename = f"{timestamp}_aggregate_summary_{dataset}_{subset_name}_all_attempts_{repeat_runs}runs.json"
-                filepath = self.logs_dir / filename
-
-                # Check file size before saving aggregate summary
-                should_save, size_error = self._check_file_size_before_save(
-                    aggregate_summary, filename
-                )
-
-                if not should_save:
-                    print(f"🚨 LARGE AGGREGATE SUMMARY ERROR: {size_error}")
-                    print(f"   Aggregate summary will not be saved to prevent disk issues")
-                    print(f"   Consider reducing data collection or increasing size limit")
-                    filepath = None  # Mark as unsaved
-                else:
-                    try:
-                        with open(filepath, "w") as f:
-                            json.dump(aggregate_summary, f, indent=2)
-                    except Exception as e:
-                        print(f"🚨 AGGREGATE SUMMARY FILE I/O ERROR: {e}")
-                        filepath = None  # Mark as unsaved
-
-            # Display results
-            print("\n" + "=" * 70)
-            print("AGGREGATE STATISTICS ACROSS MULTIPLE RUNS")
-            print("=" * 70)
-            print(f"Dataset: {dataset}")
-            print(f"Subset: {subset_name}")
-            print(f"Model: {self.model}")
-            print(f"Number of runs: {repeat_runs}")
-            print(f"Valid runs: {len(valid_runs)}")
-            print("")
-
-            # Individual run results
-            print("INDIVIDUAL RUN RESULTS:")
-            print("-" * 108)
-            print(
-                f"{'Run':<4} {'Time':<8} {'Tasks':<6} {'Weighted':<10} {'Train-Maj':<10} {'Oracle':<8} {'All-Train':<10} {'Min1-Train':<11} {'Code-Success':<12} {'Max-Len':<8}"
-            )
-            print("-" * 108)
-
-            for i, stats_run in enumerate(run_stats):
-                if stats_run["total_tasks"] > 0:
-                    time_str = f"{run_times[i]:.1f}s" if run_times and i < len(run_times) else "N/A"
-                    print(
-                        f"{stats_run['run_number']:<4} {time_str:<8} {stats_run['total_tasks']:<6} "
-                        f"{stats_run['weighted_voting_pass2']:<10.1%} {stats_run['train_majority_pass2']:<10.1%} "
-                        f"{stats_run['all_test_correct']:<8.1%} {stats_run['all_train_correct']:<10.1%} "
-                        f"{stats_run['min1_train_correct']:<11.1%} "
-                        f"{stats_run['min1_code_success']:<12.1%} {stats_run['max_length_responses']:<8.1%}"
-                    )
-
-            print("")
-            
-            # Add time statistics if available
-            if run_times:
-                print("TIME STATISTICS:")
-                print("-" * 82)
-                total_time = sum(run_times)
-                mean_time = np.mean(run_times)
-                std_time = np.std(run_times, ddof=1) if len(run_times) > 1 else 0.0
-                min_time = min(run_times)
-                max_time = max(run_times)
-                
-                print(f"Total time: {total_time:.1f}s")
-                print(f"Mean time per run: {mean_time:.1f}s")
-                if len(run_times) > 1:
-                    print(f"Std Dev: {std_time:.1f}s")
-                    print(f"Min/Max: {min_time:.1f}s / {max_time:.1f}s")
-                print("")
-            
-            print("AGGREGATE STATISTICS:")
-            print("-" * 82)
-            for metric_name, stat_data in stats.items():
-                mean_val = stat_data["mean"]
-                std_val = stat_data["std"]
-                metric_display = metric_name.replace("_", " ").title()
-                print(f"{metric_display}:")
-                print(f"  Mean: {mean_val:.1%}")
-                print(f"  Std Dev: {std_val:.1%}")
-                if len(valid_runs) > 1:
-                    ci_lower = max(0, mean_val - 1.96 * std_val)
-                    ci_upper = min(1, mean_val + 1.96 * std_val)
-                    print(f"  95% CI: [{ci_lower:.1%}, {ci_upper:.1%}]")
-                print("")
-
-            if self.log_to_files:
-                if filepath:
-                    print(f"Aggregate results saved to: {filepath}")
-                else:
-                    print(
-                        "⚠️ Aggregate results NOT SAVED due to size limit - see errors above"
-                    )
-            else:
-                print("📊 Aggregate results not saved (JSON logging disabled)")
-        else:
-            print("\n❌ No valid run statistics to aggregate")
 
 
 def main():
@@ -2090,12 +1498,6 @@ def main():
         type=int,
         default=8,
         help="Maximum number of attempts per task",
-    )
-    parser.add_argument(
-        "--repeat-runs",
-        type=int,
-        default=1,
-        help="Number of times to repeat the entire test",
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug output")
     parser.add_argument(
@@ -2151,8 +1553,6 @@ def main():
     # Validation
     if args.max_workers < 1:
         parser.error("--max_workers must be at least 1")
-    if args.repeat_runs < 1:
-        parser.error("--repeat-runs must be at least 1")
     if args.temperature is not None and not (0.0 <= args.temperature <= 2.0):
         parser.error("--temperature must be between 0.0 and 2.0")
 
@@ -2177,19 +1577,13 @@ def main():
     )
 
     try:
-        if args.repeat_runs > 1:
-            runner.run_repeated_subset(
-                args.subset, args.dataset, args.limit, args.repeat_runs
-            )
-        else:
-            results, _ = runner.run_subset(args.subset, args.dataset, args.limit)
+        results = runner.run_subset(args.subset, args.dataset, args.limit)
     finally:
         # Final cleanup to ensure clean shutdown
-        with runner._cleanup_lock:  # Thread-safe cleanup
-            try:
-                ArcTester.cleanup_executor()
-            except Exception as e:
-                print(f"⚠️ Final cleanup warning: {e}")
+        try:
+            ArcTester.cleanup_executor()
+        except Exception as e:
+            print(f"⚠️ Final cleanup warning: {e}")
 
 
 if __name__ == "__main__":
