@@ -42,6 +42,19 @@ uv sync
 OPENAI_API_KEY=your_key_here
 ```
 
+3. (Optional) Configure database path for storing successful programs:
+```bash
+# Set via environment variable (applies to all commands)
+export ARC_PROGRAMS_DB=/path/to/your/programs.db
+
+# Or add to .env file
+ARC_PROGRAMS_DB=/path/to/your/programs.db
+
+# Or specify via command line (only for run_arc_tasks_soar.py)
+uv run python run_arc_tasks_soar.py --db-path /path/to/your/programs.db
+```
+By default, programs are stored in `llm_python/programsdb/local.db`
+
 ### UV Project Discovery Note
 
 **Important**: When running `uv` commands from this `llm_python/` subdirectory, `uv` automatically searches upward and discovers the root `pyproject.toml` file in the repository root.

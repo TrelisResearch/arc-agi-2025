@@ -1,4 +1,5 @@
 import hashlib
+import os
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Union
 import duckdb
@@ -15,15 +16,20 @@ def get_localdb(db_path: Optional[str] = None) -> 'LocalProgramsDB':
     Get or create a LocalProgramsDB instance using singleton pattern.
     
     Args:
-        db_path: Path to the database file. If None, uses default location.
+        db_path: Path to the database file. If None, checks ARC_PROGRAMS_DB env var,
+                 then falls back to default location.
         
     Returns:
         LocalProgramsDB instance for the specified path
     """
-    # Normalize the path
+    # Normalize the path - check env var first if no explicit path provided
     if db_path is None:
-        current_dir = Path(__file__).parent
-        db_path = str(current_dir / "local.db")
+        # Check environment variable first
+        db_path = os.getenv('ARC_PROGRAMS_DB')
+        if db_path is None:
+            # Fall back to default location
+            current_dir = Path(__file__).parent
+            db_path = str(current_dir / "local.db")
     else:
         db_path = str(Path(db_path).resolve())
     
