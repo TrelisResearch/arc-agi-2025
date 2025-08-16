@@ -18,13 +18,16 @@ Training speed-ups:
 - Flash Attention 2
 - Turn off prediction loop, to use a larger batch size.
 - Use GPT OSS? (slower to fine-tune, but fast inference). Needs vLLM, not sglang, requiring some updates to the codebase.
-
 ---
 16 Aug 2025:
+[ ] Test out running the with duckdb.
+    [x] Test out runpod L4s.
+    [x] Try to run modules from our arc runner, writing to a local db.
+    [ ] Try running and writing to a different db.
 [ ] Re-build the aux script for arc-agi-2025.
 [ ] Import the fp8 model to kaggle. Should be easy.
+  [ ] Add to the L4 script, on T4s.
 [ ] Quickly test out dp with vLLM in the L4 notebook.
-[ ] Try to run modules from our arc runner, writing to a local db.
 [ ] Get SGLang working in Kaggle. Limit to max 60 mins.
   [ ] Get tp working with SGLang in Kaggle.
   [ ] Get tp working in an importing notebook that is offline.
@@ -33,6 +36,33 @@ Training speed-ups:
 [ ] LATER - Work with Lewis to get the task runner going.
 
 [x] Consider a minimal dp notebook to send to Greg. Not doing this as we know v0 won't work.
+
+## Test out running the with duckdb with 4xL4s on Runpod
+
+Start a pod and run arc-agi-2 with Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic:
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-agi-2 "Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic" --subset all_evaluation
+```
+Not running with L4s as can't find availability via api. BUT it will start from the Runpod UI so trying that now.
+
+Now, given the TCP - 157.157.221.29:29715, we can run - AND it's working very well at around 250 toks!:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset all_evaluation --repeat-runs 3 --max_workers 32 --max_attempts 8 --model Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic --base-url http://157.157.221.29:29715/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
+...
+
+Try running and writing to a different db.
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset all_evaluation --repeat-runs 3 --max_workers 1 --max_attempts 8 --model Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic --base-url http://157.157.221.29:29715/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think --limit 3 --db-path /tmp/arc-agi-2-all-evaluation-fp8-dynamic.db
+```
+and then check that db:
+```bash
+uv run python -m llm_python.programsdb.cli stats --db-path /tmp/arc-agi-2-all-evaluation-fp8-dynamic.db
+```
+
+
+
+
 
 15 Aug 2025
 
