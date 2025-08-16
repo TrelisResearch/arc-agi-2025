@@ -45,6 +45,20 @@ Training speed-ups:
 [-] Quickly test out dp with vLLM in the L4 notebook. Deferred if sglang can work.
 [-] Consider a minimal dp notebook to send to Greg. Not doing this as we know v0 won't work.
 
+### Testing out dataset locations, the new one
+Startup up a pod with the fp8 model, just start the pod not the task runner:
+```bash
+uv run runpod/create_pod.py sglang -- --model-path Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic
+```
+and then hit the endpoint http://38.80.152.249:30586/v1 with the standard arc agi 2 command but with 64 attempts and 1000 context:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 1 --model Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic --base-url http://38.80.152.249:30586/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
+and try the same in kaggle, passing in the `model_name` variable, which I'll have set earlier in the notebook, we'll hit the 127 localhost endpoint:
+```bash
+!uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 1 --model {model_name} --base-url http://127.0.0.1:8080/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
+
 ### Testing out the arc task runner in Kaggle
 We'll just  use the soar task runner, and test with --limit 1 and --attempts 2, and use the 127 localhost endpoint, on the bf16 model:
 ```bash

@@ -57,6 +57,15 @@ uv run python run_arc_tasks_soar.py --db-path /path/to/your/programs.db
 ```
 By default, programs are stored in `llm_python/programsdb/local.db`
 
+4. (Optional) Configure custom data directory path:
+```bash
+# Set via environment variable to use a custom data location
+export ARC_DATA_ROOT=/path/to/your/data
+
+# Or add to .env file
+ARC_DATA_ROOT=/path/to/your/data
+```
+By default, the task loader searches for the `data/` directory starting from the package installation location. Use this variable to point to a different location (e.g., in Kaggle: `/kaggle/usr/lib/arc_agi_2025_aux/arc-agi-2025/data`).
 
 ### UV Project Discovery Note
 
