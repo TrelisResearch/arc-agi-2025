@@ -34,12 +34,12 @@ Training speed-ups:
   [x] Get sglang utility script export working.
   [x] Get sglang utility script import working.
   [ ] See if I can run the task runner on T4s.
-  [ ] Test sglang out in L4s on Kaggle.
 [ ] Test data loading
   [ ] See if I can add the competition dataset.
   [ ] Test locally how to use the 2024 or 2025 datasets.
 [ ] Create submission file in submission mode.
 [ ] Create a scorer that can process the file.
+[ ] Test sglang out in L4s on Kaggle.
 [ ] SUBMIT!
 
 [-] Quickly test out dp with vLLM in the L4 notebook. Deferred if sglang can work.
@@ -50,6 +50,27 @@ We'll just  use the soar task runner, and test with --limit 1 and --attempts 2, 
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset all_evaluation --repeat-runs 1 --max_workers 1 --max_attempts 2 --model Trelis/arc-1-fake-ttt-blended-c802 --base-url http://127.0.0.1:8080/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think --limit 1
 ```
+
+### Testing out runs with 64 attempts with 1000 and 2000 context.
+```bash
+ export ARC_PROGRAMS_DB=/Users/ronanmcgovern/TR/arc-agi-2025/llm_python/programsdb/local.db
+uv run runpod/create_pod_and_run_tasks.py arc-agi-2 "Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic" --subset all_evaluation
+```
+and then hit that tcp endpoint http://38.80.152.249:30586/v1 with the standard arcc agi 2 command but with 64 attempts and 1000 context:
+```bash
+export ARC_PROGRAMS_DB=/Users/ronanmcgovern/TR/arc-agi-2025/llm_python/programsdb/local-1k-fp8.db
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-2 --subset all_evaluation --max_workers 16 --max_attempts 64 --model Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic --base-url http://38.80.152.249:30586/v1 --unsafe-executor --max-tokens 1000 --qwen-no-think
+```
+...
+and also start up a new pod to test out performance with bf16 model:
+```bash
+export ARC_PROGRAMS_DB=/Users/ronanmcgovern/TR/arc-agi-2025/llm_python/programsdb/local-2k-bf16.db
+uv run runpod/create_pod_and_run_tasks.py arc-agi-2 "Trelis/arc-1-fake-ttt-blended-c802" --subset all_evaluation
+```
+...
+
+
+
 
 ### Cleaning up to stop json logs and multiple runs.
 
