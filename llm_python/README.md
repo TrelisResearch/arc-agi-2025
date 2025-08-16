@@ -6,6 +6,8 @@ A streamlined tool for testing OpenAI-compatible language models on ARC-AGI task
 
 **Important**: Recent updates added new database schema fields for transduction detection. If you have an existing programs database, it will be automatically migrated on first run. This is a one-time operation and should complete without issues. The migration adds the `is_test_transductive` column to track programs that hardcode test outputs for analysis purposes.
 
+**Package Deployment**: The `pyproject.toml` includes package data configuration to ensure prompt files are included when deploying to environments like Kaggle. The prompt-strings directory is automatically packaged and accessible at runtime.
+
 ## Key Folders and Files:
 
 **Main Scripts:**

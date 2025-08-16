@@ -38,7 +38,7 @@ Training speed-ups:
 [x] Create submission file in submission mode.
 [x] Create a scorer that can process the file.
 [x] Re-build the aux script for arc-agi-2025.
-[ ] See if I can run the task runner on T4s.
+[x] See if I can run the task runner on T4s.
 [ ] Test sglang out in L4s on Kaggle.
 [ ] SUBMIT!
 
