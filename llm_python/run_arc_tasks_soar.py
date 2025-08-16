@@ -1751,6 +1751,7 @@ class ARCTaskRunnerSimple:
                 unsafe_executor=(self.executor_type == "unrestricted"),
                 lora_adapter=self.lora_adapter,
                 log_to_db=self.log_to_db,
+                db_path=self.db_path,  # Pass through the db_path
             )
 
             try:
