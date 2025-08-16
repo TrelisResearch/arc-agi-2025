@@ -186,7 +186,7 @@ def print_results(results: Dict, verbose: bool = False):
 
 def main():
     parser = argparse.ArgumentParser(description="Score ARC submission file against reference dataset")
-    parser.add_argument("submission", default="submission.json", help="Path to submission.json file")
+    parser.add_argument("--submission", default="submission.json", help="Path to submission.json file")
     parser.add_argument("--dataset", default="arc-prize-2025", choices=["arc-agi-1", "arc-agi-1r", "arc-agi-2", "arc-prize-2024", "arc-prize-2025"], help="Reference dataset")
     parser.add_argument("--subset", default="evaluation", help="Reference subset")
     parser.add_argument("--verbose", "-v", action="store_true", help="Show detailed results")
