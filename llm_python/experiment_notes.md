@@ -47,12 +47,53 @@ Training speed-ups:
 
 ## August 17th 2025
 
+### Try the trained model, but not with TTT data (which is contaminated! with transductive examples) - Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171
+for arc-agi-2:
+```bash
+export ARC_PROGRAMS_DB=./eval-2-temp-true.db
+export SUBMIT="false"
+export SUBMIT_DIR="./"
+uv run runpod/create_pod_and_run_tasks.py arc-agi-2 "Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171" --subset all_evaluation
+```
+and then for arc-agi-1:
+```bash
+export ARC_PROGRAMS_DB=./eval-2-temp-true.db
+export SUBMIT="false"
+export SUBMIT_DIR="./"
+uv run runpod/create_pod_and_run_tasks.py arc-agi-1 "Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171" --subset all_evaluation
+```
+
+ok then hit this endpoint here with the soar task runner with 8 attempts per task - 38.80.152.249:31107:
+```bash
+export ARC_PROGRAMS_DB=./eval-3-temp-true.db
+export SUBMIT="false"
+export SUBMIT_DIR="./"
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171 --base-url http://38.80.152.249:31107/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
+
+
+### Try the bf16 model
+```bash
+export ARC_PROGRAMS_DB=./eval-temp-true.db
+export SUBMIT="false"
+export SUBMIT_DIR="./"
+uv run runpod/create_pod_and_run_tasks.py arc-agi-1 "Trelis/arc-1-fake-ttt-blended-c802" --subset all_evaluation
+```
+and then check the julien31 soar qwen 7b model:
+```bash
+export ARC_PROGRAMS_DB=./eval-temp-julien31-true.db
+export SUBMIT="false"
+export SUBMIT_DIR="./"
+uv run runpod/create_pod_and_run_tasks.py arc-agi-1 "julien31/soar-qwen-7b" --subset all_evaluation
+```
+
+
 ### Try a full run with 64 attempts, starting a pod AND running in one go
 
 ```bash
 export SUBMIT="true"
 export SUBMIT_DIR="./"
-uv run runpod/create_pod_and_run_tasks.py arc-agi-2 "Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic" --subset all_evaluation
+uv run runpod/create_pod_and_run_tasks.py arc-agi-2 "Trelis/arc-1-fake-ttt-blended-c802" --subset all_evaluation
 ```
 
 ok actually let's just start a server:
