@@ -2,6 +2,10 @@
 
 A streamlined tool for testing OpenAI-compatible language models on ARC-AGI tasks using the Chat Completions API. Supports reasoning models (o3, Gemini Flash, Qwen) with all-attempts evaluation, parallel processing, and voting-based selection. Results are stored in a local database for analysis.
 
+## ⚠️ Important Notes
+
+**Fallback Grid Handling**: When programs fail or produce invalid outputs, the system generates 2x2 fallback grids (`[[0, 0], [0, 0]]`). These fallback grids participate in the voting system but are naturally down-weighted due to their associated low train accuracy (typically 0.0). The voting weight formula `1.0 + 1000.0 * train_accuracy` ensures that successful attempts with higher train accuracy significantly outweigh failed attempts with fallback grids.
+
 ## ⚠️ Database Migration Notice
 
 **Important**: Recent updates added new database schema fields for transduction detection. If you have an existing programs database, it will be automatically migrated on first run. This is a one-time operation and should complete without issues. The migration adds the `is_test_transductive` column to track programs that hardcode test outputs for analysis purposes.

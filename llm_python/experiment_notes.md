@@ -46,6 +46,31 @@ Training speed-ups:
 [-] Consider a minimal dp notebook to send to Greg. Not doing this as we know v0 won't work.
 
 ## August 17th 2025
+
+### Try a full run with 64 attempts, starting a pod AND running in one go
+
+```bash
+export SUBMIT="true"
+export SUBMIT_DIR="./"
+uv run runpod/create_pod_and_run_tasks.py arc-agi-2 "Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic" --subset all_evaluation
+```
+
+ok actually let's just start a server:
+
+```bash
+uv run runpod/create_pod.py sglang -- --model-path Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic
+```
+
+and now we'll hit this tcp: 38.80.152.249:31053:
+
+```bash
+export SUBMIT="true"
+export SUBMIT_DIR="./"
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset test --max_workers 32 --max_attempts 64 --model Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic --base-url http://38.80.152.249:31053/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
+
+
+
 ### Test out file loading
 We'lls tart a model pod and run evaluation with 1 attempt and 1000 context:
 ```bash

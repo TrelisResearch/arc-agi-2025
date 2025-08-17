@@ -64,7 +64,7 @@ def create_arc_prompt(task_data: Dict, prompt_loader, prompt_version: str = "soa
         task_content += f"## Test Input {i} (grid shape: {input_shape}):\n{input_str}\n"
         
         # Optionally include expected output for training data (if available)
-        if 'output' in example:
+        if 'output' in example and example['output'] is not None:
             output_grid = example['output']
             output_shape = _get_grid_shape_string(output_grid)
             output_str = _format_grid_for_prompt(output_grid)

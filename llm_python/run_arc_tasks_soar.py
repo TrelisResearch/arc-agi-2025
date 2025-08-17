@@ -1137,6 +1137,17 @@ class ARCTaskRunnerSimple:
                     print(
                         f"⏳ Progress: {done_now}/{total_attempts} attempts done; {len(remaining)} remaining{timeout_info}"
                     )
+                except KeyboardInterrupt:
+                    print(f"\n🛑 Keyboard interrupt received. Cancelling remaining attempts...")
+                    # Cancel remaining futures
+                    cancelled_count = 0
+                    for future in remaining:
+                        if future.cancel():
+                            cancelled_count += 1
+                    
+                    completed_naturally = total_attempts - len(remaining)
+                    print(f"🛑 Interrupted: {completed_naturally} attempts completed, {cancelled_count} cancelled, {len(remaining) - cancelled_count} already running")
+                    break
                 except Exception:
                     # No futures completed in this window; print a heartbeat
                     done_now = total_attempts - len(remaining)
