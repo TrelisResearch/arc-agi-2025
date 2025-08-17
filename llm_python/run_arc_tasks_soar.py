@@ -971,6 +971,7 @@ class ARCTaskRunnerSimple:
         task_results = defaultdict(lambda: {"attempts": [], "task_data": None})
 
         # Initialize task results with task data and prompts (create once per task)
+        first_prompt_shown = False
         for task_id, task_data in tasks:
             task_results[task_id]["task_data"] = task_data
             system_content, user_content = self.create_prompt(task_data)
@@ -978,6 +979,17 @@ class ARCTaskRunnerSimple:
                 "system": system_content,
                 "user": user_content,
             }
+            
+            # Show the first task's prompt for debugging
+            if not first_prompt_shown:
+                print(f"\n📝 FIRST TASK PROMPT ({task_id}):")
+                print("=" * 80)
+                print("SYSTEM:")
+                print(system_content)
+                print("\nUSER:")
+                print(user_content)
+                print("=" * 80)
+                first_prompt_shown = True
 
         completed_attempts = 0
         completed_tasks = 0

@@ -63,12 +63,27 @@ uv run runpod/create_pod.py sglang -- --model-path Trelis/arc-1-fake-ttt-blended
 
 and now we'll hit this tcp: 38.80.152.249:31053:
 
+To test test:
 ```bash
 export SUBMIT="true"
 export SUBMIT_DIR="./"
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset test --max_workers 32 --max_attempts 64 --model Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic --base-url http://38.80.152.249:31053/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset test --max_workers 32 --max_attempts 8 --model Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic --base-url http://38.80.152.249:31053/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
 ```
 
+To test evaluation:
+```bash
+export ARC_PROGRAMS_DB=./eval-temp.db
+export SUBMIT="false"
+export SUBMIT_DIR="./"
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 8 --model Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic --base-url http://38.80.152.249:31053/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
+and a quick test of arc-agi-1 (via the 2024 dataset):
+```bash
+export ARC_PROGRAMS_DB=./eval-temp.db
+export SUBMIT="false"
+export SUBMIT_DIR="./"
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2024 --subset evaluation --max_workers 32 --max_attempts 8 --model Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic --base-url http://38.80.152.249:31053/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
 
 
 ### Test out file loading

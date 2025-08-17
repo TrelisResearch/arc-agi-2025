@@ -484,10 +484,10 @@ Score any submission file against reference datasets:
 
 ```bash
 # Score submission against arc-prize-2025 evaluation set
-uv run python -m llm_python.score_submission submission.json --dataset arc-prize-2025 --subset evaluation
+uv run python -m llm_python.score_submission --submission submission.json --dataset arc-prize-2025 --subset evaluation
 
 # Score with detailed per-task results
-uv run python -m llm_python.score_submission submission.json --dataset arc-agi-2 --subset evaluation --verbose
+uv run python -m llm_python.score_submission --submission submission.json --dataset arc-agi-2 --subset evaluation --verbose
 
 # Save results to JSON file, btw default is submission.json
 uv run python -m llm_python.score_submission --output results.json
