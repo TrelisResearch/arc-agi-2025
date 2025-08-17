@@ -28,8 +28,6 @@ def _get_grid_shape_string(grid: List[List[int]]) -> str:
     Returns:
         Shape string in format "width by height"
     """
-    if not grid or not grid[0]:
-        return "0 by 0"
     return f"{len(grid[0])} by {len(grid)}"
 
 def create_arc_prompt(task_data: Dict, prompt_loader, prompt_version: str = "soar") -> Tuple[str, str]:

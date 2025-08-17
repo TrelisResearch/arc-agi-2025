@@ -24,7 +24,8 @@ from llm_python.utils.voting_utils import (
     filter_non_transductive_attempts,
     compute_weighted_majority_voting,
 )
-from llm_python.utils.submission_validator import validate_submission_file, ensure_2d_grid
+from llm_python.utils.submission_validator import validate_submission_file
+from llm_python.utils.validator import replace_invalid_grid
 from llm_python.utils.transduction import detect_transduction
 from llm_python.utils.prompt_loader import PromptLoader
 from llm_python.utils.serialization import ResponseSerializer
@@ -458,18 +459,22 @@ class ARCTaskRunnerSimple:
 
             # Extract predicted outputs (convert to lists if they're numpy arrays)
             predicted_train_output = []
-            for result in train_results:
+            for i, result in enumerate(train_results):
                 pred = result.get("predicted", [])
                 if pred is not None and hasattr(pred, "tolist"):
                     pred = pred.tolist()
-                predicted_train_output.append(pred if pred is not None else [])
+                # Clean train prediction to ensure valid ARC grid format
+                clean_pred = replace_invalid_grid(pred, task_id, f"train_{i}")
+                predicted_train_output.append(clean_pred)
 
             predicted_test_output = []
-            for result in test_results:
+            for i, result in enumerate(test_results):
                 pred = result.get("predicted", [])
                 if pred is not None and hasattr(pred, "tolist"):
                     pred = pred.tolist()
-                predicted_test_output.append(pred if pred is not None else [])
+                # Clean test prediction to ensure valid ARC grid format
+                clean_pred = replace_invalid_grid(pred, task_id, f"test_debug_{i}")
+                predicted_test_output.append(clean_pred)
 
             # Extract reasoning from raw response if available
             reasoning = ""
@@ -779,7 +784,9 @@ class ARCTaskRunnerSimple:
                     "timed_out": test_tout,
                 }
             )
-            test_predictions.append(test_pred)
+            # Clean prediction immediately to ensure valid ARC grid format
+            clean_test_pred = replace_invalid_grid(test_pred, task_id, f"test_{test_idx}")
+            test_predictions.append(clean_test_pred)
 
         # Overall test correctness (all test cases must be correct)
         # In SUBMIT mode, we cannot determine correctness without ground truth
@@ -808,10 +815,8 @@ class ARCTaskRunnerSimple:
             train_accuracy=train_accuracy,
             train_exec_errors=train_exec_errors,
             train_exec_timeouts=train_exec_timeouts,
-            # Multi-test support: store all predictions and detailed results
-            test_predicted=tuple(test_predictions)
-            if len(task_data["test"]) > 1
-            else (test_predictions[0] if test_predictions else None),
+            # Always store predictions as tuple for consistency
+            test_predicted=tuple(test_predictions) if test_predictions else None,
             test_results=test_results,
             test_correct=test_correct,
             test_correct_count=test_correct_count,
@@ -1726,31 +1731,31 @@ class ARCTaskRunnerSimple:
                 # Extract attempt 1
                 if len(top_predictions) > 0 and top_predictions[0] is not None:
                     pred_1 = top_predictions[0]
-                    if isinstance(pred_1, tuple) and len(pred_1) > test_idx:
-                        # Multiple test outputs case
-                        attempt_1_grid = pred_1[test_idx] if pred_1[test_idx] is not None else [[0, 0], [0, 0]]
-                    elif not isinstance(pred_1, tuple) and test_idx == 0:
-                        # Single test output case
-                        attempt_1_grid = pred_1 if pred_1 is not None else [[0, 0], [0, 0]]
+                    
+                    # With robust fix: pred_1 is always a tuple/list of grids
+                    if isinstance(pred_1, (tuple, list)) and len(pred_1) > test_idx:
+                        attempt_1_grid = pred_1[test_idx]
+                    else:
+                        # Fallback to default
+                        attempt_1_grid = [[0, 0], [0, 0]]
                 
                 # Extract attempt 2
                 if len(top_predictions) > 1 and top_predictions[1] is not None:
                     pred_2 = top_predictions[1]
-                    if isinstance(pred_2, tuple) and len(pred_2) > test_idx:
-                        # Multiple test outputs case
-                        attempt_2_grid = pred_2[test_idx] if pred_2[test_idx] is not None else [[0, 0], [0, 0]]
-                    elif not isinstance(pred_2, tuple) and test_idx == 0:
-                        # Single test output case
-                        attempt_2_grid = pred_2 if pred_2 is not None else [[0, 0], [0, 0]]
+                    
+                    # With robust fix: pred_2 is always a tuple/list of grids
+                    if isinstance(pred_2, (tuple, list)) and len(pred_2) > test_idx:
+                        attempt_2_grid = pred_2[test_idx]
+                    else:
+                        # Fallback to default
+                        attempt_2_grid = [[0, 0], [0, 0]]
                 else:
                     # Only one prediction available, duplicate it
                     attempt_2_grid = attempt_1_grid
                     if test_idx == 0:  # Only log once per task
                         tasks_with_duplicated_attempts += 1
                 
-                # Validate and fix grid format using utility function
-                attempt_1_grid = ensure_2d_grid(attempt_1_grid, task_id, "attempt_1")
-                attempt_2_grid = ensure_2d_grid(attempt_2_grid, task_id, "attempt_2")
+                # Note: grids are already cleaned during prediction generation, no need to clean again
                 
                 submission[task_id].append({
                     "attempt_1": attempt_1_grid,

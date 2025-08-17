@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
-from typing import Dict, List, Tuple, Any
+import math
+from typing import Dict, List, Tuple, Any, Union
 
 
 class ARCTaskValidator:
@@ -108,6 +109,16 @@ class ARCTaskValidator:
             print(f"❌ Empty first row in grid for {description}")
             return False
         
+        # Check grid size limits (1x1 to 30x30 per ARC competition requirements)
+        height = len(grid)
+        width = expected_width
+        if not (1 <= height <= 30):
+            print(f"❌ Invalid grid height for {description}: {height} (must be 1-30)")
+            return False
+        if not (1 <= width <= 30):
+            print(f"❌ Invalid grid width for {description}: {width} (must be 1-30)")
+            return False
+        
         # Validate all rows
         for i, row in enumerate(grid):
             if not isinstance(row, list):
@@ -118,10 +129,11 @@ class ARCTaskValidator:
                 print(f"❌ Inconsistent grid width for {description}: row {i} has {len(row)} items, expected {expected_width}")
                 return False
             
-            # Check that all values are integers (ARC grids contain integers 0-9)
+            # Check that all values are JSON-serializable Python integers 0-9
             for j, cell in enumerate(row):
-                if not isinstance(cell, int):
-                    print(f"❌ Invalid cell value for {description} at [{i}][{j}]: {cell} (type: {type(cell)})")
+                # Check for numpy types or other non-native types
+                if not isinstance(cell, int) or type(cell).__module__ != 'builtins':
+                    print(f"❌ Invalid cell value for {description} at [{i}][{j}]: {cell} (type: {type(cell)}, expected native Python int)")
                     return False
                 
                 if not (0 <= cell <= 9):
@@ -134,3 +146,38 @@ class ARCTaskValidator:
     def validate_prediction(prediction: Any, description: str = "prediction") -> bool:
         """Validate that a prediction matches ARC grid format"""
         return ARCTaskValidator._validate_grid(prediction, description)
+
+
+def replace_invalid_grid(grid: Union[List, None], task_id: str = "", attempt_name: str = "") -> List[List[int]]:
+    """
+    Replace invalid grids with ARC competition-compliant fallback.
+    
+    Args:
+        grid: Input grid that may be invalid
+        task_id: Task identifier for logging
+        attempt_name: Attempt name for logging
+        
+    Returns:
+        Valid ARC grid (2x2 fallback if input is invalid)
+    """
+    fallback_grid = [[0, 0], [0, 0]]
+    
+    if grid is None:
+        return fallback_grid
+    
+    # If it's a flat list, we cannot safely reshape without knowing intended dimensions
+    if isinstance(grid, list) and len(grid) > 0 and not isinstance(grid[0], list):
+        if task_id and attempt_name:
+            print(f"⚠️  {task_id} {attempt_name}: Found flat list with {len(grid)} elements, cannot determine intended grid shape, using fallback")
+        return fallback_grid
+    
+    # If it's a 2D list, validate it meets ARC requirements
+    if isinstance(grid, list) and len(grid) > 0 and isinstance(grid[0], list):
+        if ARCTaskValidator.validate_prediction(grid, f"{task_id}_{attempt_name}" if task_id and attempt_name else "grid"):
+            return grid
+        elif task_id and attempt_name:
+            print(f"⚠️  {task_id} {attempt_name}: Grid failed ARC validation, using fallback")
+        return fallback_grid
+    
+    # Fallback for any other case
+    return fallback_grid

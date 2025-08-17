@@ -45,6 +45,24 @@ Training speed-ups:
 [-] Quickly test out dp with vLLM in the L4 notebook. Deferred if sglang can work.
 [-] Consider a minimal dp notebook to send to Greg. Not doing this as we know v0 won't work.
 
+## August 17th 2025
+### Test out file loading
+We'lls tart a model pod and run evaluation with 1 attempt and 1000 context:
+```bash
+uv run runpod/create_pod.py sglang -- --model-path Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic
+```
+and then hit the 38.80.152.249:31194 endpoint with single attempts:
+```bash
+export SUBMIT="true"
+export SUBMIT_DIR="./"
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 1 --model Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic --base-url http://38.80.152.249:31194/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
+
+
+
+
+## August 16th 2025
+
 ### Load test files
 ```bash
 export SUBMIT="true"

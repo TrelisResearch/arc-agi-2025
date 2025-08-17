@@ -4,55 +4,19 @@ Validates submission.json files against competition guidelines.
 """
 
 import json
-import math
-from typing import List, Union
+from typing import List
+from .validator import ARCTaskValidator
 
 
-def ensure_2d_grid(grid: Union[List, None], task_id: str = "", attempt_name: str = "") -> List[List[int]]:
+def validate_submission_file(submission_path: str, expected_task_ids: List[str] = None, test_challenges_path: str = None) -> None:
     """
-    Ensure grid is a proper 2D list, fix if needed.
+    Validate submission file format against competition guidelines.
     
     Args:
-        grid: Input grid that may be None, 1D flat list, or proper 2D list
-        task_id: Task identifier for logging
-        attempt_name: Attempt name for logging
-        
-    Returns:
-        Valid 2D grid as list of lists
+        submission_path: Path to submission.json file
+        expected_task_ids: List of expected task IDs (optional, derived from test_challenges_path if not provided)
+        test_challenges_path: Path to test challenges file (for validation and task ID extraction)
     """
-    if grid is None:
-        return [[0, 0], [0, 0]]
-    
-    # If it's a flat list, try to reshape it
-    if isinstance(grid, list) and len(grid) > 0 and not isinstance(grid[0], list):
-        if task_id and attempt_name:
-            print(f"⚠️  {task_id} {attempt_name}: Found flattened grid with {len(grid)} elements, attempting to reshape")
-        
-        # Try common square shapes first
-        sqrt_len = int(math.sqrt(len(grid)))
-        if sqrt_len * sqrt_len == len(grid):
-            # Perfect square, reshape to square grid
-            reshaped = []
-            for i in range(sqrt_len):
-                reshaped.append(grid[i*sqrt_len:(i+1)*sqrt_len])
-            if task_id and attempt_name:
-                print(f"   Reshaped to {sqrt_len}x{sqrt_len} grid")
-            return reshaped
-        else:
-            if task_id and attempt_name:
-                print(f"   Cannot reshape {len(grid)} elements to square grid, using fallback")
-            return [[0, 0], [0, 0]]
-    
-    # If it's already 2D, validate it
-    if isinstance(grid, list) and len(grid) > 0 and isinstance(grid[0], list):
-        return grid
-    
-    # Fallback for any other case
-    return [[0, 0], [0, 0]]
-
-
-def validate_submission_file(submission_path: str, expected_task_ids: List[str]) -> None:
-    """Validate submission file format against competition guidelines"""
     print(f"\n🔍 VALIDATING SUBMISSION: {submission_path}")
     
     errors = []
@@ -63,27 +27,59 @@ def validate_submission_file(submission_path: str, expected_task_ids: List[str])
         with open(submission_path, 'r') as f:
             submission = json.load(f)
         
+        # Load test challenges if provided for prediction count validation and task ID extraction
+        test_challenges = {}
+        if test_challenges_path:
+            try:
+                with open(test_challenges_path, 'r') as f:
+                    test_challenges = json.load(f)
+                print(f"📁 Loaded test challenges: {len(test_challenges)} tasks")
+                
+                # If no expected_task_ids provided, derive from test challenges (runtime scenario)
+                if expected_task_ids is None:
+                    expected_task_ids = list(test_challenges.keys())
+                    print(f"📋 Using task IDs from runtime test file: {len(expected_task_ids)} tasks")
+                    
+            except Exception as e:
+                errors.append(f"Could not load test challenges file: {e}")
+                test_challenges = {}
+                if expected_task_ids is None:
+                    errors.append("No task IDs available for validation")
+                    return
+        
         # Check 1: File is a dictionary
         if not isinstance(submission, dict):
             errors.append("Submission file must be a JSON dictionary")
             return
         
-        # Check 2: All expected task IDs are present
-        submission_task_ids = set(submission.keys())
-        expected_task_ids_set = set(expected_task_ids)
-        
-        missing_tasks = expected_task_ids_set - submission_task_ids
-        extra_tasks = submission_task_ids - expected_task_ids_set
-        
-        if missing_tasks:
-            errors.append(f"Missing task IDs: {sorted(list(missing_tasks))[:10]}{'...' if len(missing_tasks) > 10 else ''} ({len(missing_tasks)} total)")
-        
-        if extra_tasks:
-            warnings.append(f"Extra task IDs not in dataset: {sorted(list(extra_tasks))[:10]}{'...' if len(extra_tasks) > 10 else ''} ({len(extra_tasks)} total)")
+        # Check 2: Task ID coverage validation
+        if expected_task_ids is not None:
+            submission_task_ids = set(submission.keys())
+            expected_task_ids_set = set(expected_task_ids)
+            
+            missing_tasks = expected_task_ids_set - submission_task_ids
+            extra_tasks = submission_task_ids - expected_task_ids_set
+            
+            if missing_tasks:
+                errors.append(f"Missing required task IDs: {sorted(list(missing_tasks))[:10]}{'...' if len(missing_tasks) > 10 else ''} ({len(missing_tasks)} total)")
+            
+            if extra_tasks:
+                if test_challenges_path:
+                    # Runtime scenario: extra tasks not in test file are serious errors
+                    errors.append(f"Submission contains task IDs not in test file: {sorted(list(extra_tasks))[:10]}{'...' if len(extra_tasks) > 10 else ''} ({len(extra_tasks)} total)")
+                else:
+                    # Development scenario: just warn about extra tasks
+                    warnings.append(f"Extra task IDs not in expected set: {sorted(list(extra_tasks))[:10]}{'...' if len(extra_tasks) > 10 else ''} ({len(extra_tasks)} total)")
+            
+            # Perfect match validation for runtime
+            if test_challenges_path and len(missing_tasks) == 0 and len(extra_tasks) == 0:
+                print(f"✅ Perfect task ID match: {len(expected_task_ids)} tasks")
+        else:
+            warnings.append("No expected task IDs provided for validation")
         
         # Check 3: Validate structure for each task
-        invalid_structure_count = 0
         empty_predictions_count = 0
+        prediction_count_errors = 0
         
         for task_id, predictions in submission.items():
             # Must be a list
@@ -95,6 +91,13 @@ def validate_submission_file(submission_path: str, expected_task_ids: List[str])
             if len(predictions) == 0:
                 errors.append(f"Task {task_id}: must have at least one prediction")
                 continue
+            
+            # Check prediction count matches test inputs (if test challenges available)
+            if test_challenges and task_id in test_challenges:
+                expected_count = len(test_challenges[task_id].get('test', []))
+                if len(predictions) != expected_count:
+                    errors.append(f"Task {task_id}: has {len(predictions)} predictions but task has {expected_count} test inputs")
+                    prediction_count_errors += 1
             
             # Check each prediction
             for i, pred in enumerate(predictions):
@@ -108,14 +111,13 @@ def validate_submission_file(submission_path: str, expected_task_ids: List[str])
                 if "attempt_2" not in pred:
                     errors.append(f"Task {task_id}[{i}]: missing 'attempt_2'")
                 
-                # Check if attempts are grids (list of lists)
+                # Validate attempts using proper ARC grid validation
                 for attempt_key in ["attempt_1", "attempt_2"]:
                     if attempt_key in pred:
                         attempt = pred[attempt_key]
-                        if not isinstance(attempt, list):
-                            errors.append(f"Task {task_id}[{i}].{attempt_key}: must be a list (grid)")
-                        elif len(attempt) > 0 and not isinstance(attempt[0], list):
-                            errors.append(f"Task {task_id}[{i}].{attempt_key}: must be a list of lists (2D grid)")
+                        # Use ARCTaskValidator for comprehensive validation
+                        if not ARCTaskValidator.validate_prediction(attempt, f"Task {task_id}[{i}].{attempt_key}"):
+                            errors.append(f"Task {task_id}[{i}].{attempt_key}: invalid ARC grid format")
                         elif attempt == [[0, 0], [0, 0]]:
                             empty_predictions_count += 1
         
@@ -127,6 +129,8 @@ def validate_submission_file(submission_path: str, expected_task_ids: List[str])
         print(f"  Total tasks: {unique_tasks}")
         print(f"  Total predictions: {total_predictions}")
         print(f"  Empty predictions ([[0,0],[0,0]]): {empty_predictions_count}")
+        if test_challenges:
+            print(f"  Prediction count mismatches: {prediction_count_errors}")
         
         # Report errors and warnings
         if errors:

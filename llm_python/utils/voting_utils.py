@@ -7,6 +7,7 @@ import numpy as np
 from typing import Dict, List, Optional, Callable
 from collections import defaultdict, Counter
 from .transduction import detect_transduction
+from .validator import ARCTaskValidator
 
 
 def serialize_prediction_for_voting(test_pred) -> str:
@@ -52,6 +53,35 @@ def filter_non_transductive_attempts(result: Dict) -> List[Dict]:
         if not is_train_transductive:
             non_transductive.append(att)
     return non_transductive
+
+
+def filter_valid_predictions(attempts: List[Dict]) -> List[Dict]:
+    """Filter out attempts with invalid ARC grid predictions"""
+    valid_attempts = []
+    for att in attempts:
+        test_predicted = att.get('test_predicted')
+        
+        # Handle different prediction formats
+        if test_predicted is None:
+            continue
+            
+        # Check if prediction is valid
+        is_valid = True
+        if isinstance(test_predicted, tuple):
+            # Multiple test outputs case - validate each grid
+            for grid in test_predicted:
+                if grid is not None and not ARCTaskValidator.validate_prediction(grid, "voting_filter"):
+                    is_valid = False
+                    break
+        else:
+            # Single test output case - validate the grid
+            if not ARCTaskValidator.validate_prediction(test_predicted, "voting_filter"):
+                is_valid = False
+        
+        if is_valid:
+            valid_attempts.append(att)
+    
+    return valid_attempts
 
 
 def generic_voting(
