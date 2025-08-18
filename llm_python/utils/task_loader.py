@@ -28,12 +28,20 @@ class TaskLoader:
     - Competition format: arc-prize-2024, arc-prize-2025 (training/evaluation/test)
     - All existing subset definitions from data/subsets/
 
+    When duplicate task IDs are found with conflicting outputs, the canonical_dataset
+    parameter determines which version to prefer.
+
+    Args:
+        data_root: Path to the data directory. If None, searches for 'data' directory.
+        canonical_dataset: Dataset to prefer when resolving conflicts (default: "arc-prize-2025")
+
     Subset naming:
     - Competition: "arc-prize-2024/training", "arc-prize-2025/evaluation", "arc-prize-2024/test"
     - Legacy subsets: "arc-agi-1/shortest_training_1", "arc-agi-2/all_evaluation", etc.
     """
 
-    def __init__(self, data_root: Optional[str] = None):
+    def __init__(self, data_root: Optional[str] = None, canonical_dataset: str = "arc-prize-2025"):
+        self.canonical_dataset = canonical_dataset
         if data_root is None:
             # Check environment variable first
             data_root = os.getenv('ARC_DATA_ROOT')
@@ -58,32 +66,82 @@ class TaskLoader:
         # Cache for loaded data
         self.tasks: Dict[str, TaskData] = {}
         self.subsets: Dict[str, List[str]] = {}
-        self._loaded_subsets: set = set()  # Track what we've already loaded
+        self.task_sources: Dict[str, str] = {}  # Track which dataset each task came from
 
-        # Load subset definitions only
+        # Load everything upfront
+        self._load_all_data()
+
+    def _load_all_data(self):
+        """Load all subset definitions and task data upfront"""
+        # First load subset definitions
         self._load_all_subsets()
-
-    def _ensure_subset_loaded(self, subset_name: str):
-        """Load a specific subset on demand if not already loaded"""
-        if subset_name in self._loaded_subsets:
-            return
-            
-        print(f"Loading subset {subset_name}...")
         
-        # Parse subset name to determine dataset and split
-        if "/" in subset_name:
-            dataset, split = subset_name.split("/", 1)
-            if dataset in ["arc-prize-2024", "arc-prize-2025"]:
-                # Load competition format data for this specific subset
-                subset_tasks = self._load_competition_split(dataset, split)
-                self.tasks.update(subset_tasks)
-                if subset_tasks:
-                    self.subsets[subset_name] = list(subset_tasks.keys())
-                    print(f"  Loaded {len(subset_tasks)} tasks from {subset_name}")
-        
-        self._loaded_subsets.add(subset_name)
+        # Then load all competition format data
+        self._load_all_competition_data()
 
-    def _load_competition_data(self):
+    def _has_outputs(self, task_data: TaskData) -> bool:
+        """Check if a task has any test outputs defined"""
+        return any(test_example.get("output") is not None for test_example in task_data["test"])
+
+    def _outputs_are_equal(self, task1: TaskData, task2: TaskData) -> bool:
+        """Check if two tasks have identical test outputs"""
+        test1, test2 = task1["test"], task2["test"]
+        if len(test1) != len(test2):
+            return False
+        
+        for t1, t2 in zip(test1, test2):
+            output1, output2 = t1.get("output"), t2.get("output")
+            # Both None is equal, otherwise compare the actual outputs
+            if output1 is None and output2 is None:
+                continue
+            if output1 is None or output2 is None:
+                return False
+            if output1 != output2:
+                return False
+        return True
+
+    def _merge_task_data(self, existing_task: TaskData, new_task: TaskData, task_id: str, new_source_dataset: str, existing_source_dataset: str) -> TaskData:
+        """Merge two task data entries, preserving outputs when available"""
+        # If existing task has outputs and new task doesn't, keep existing
+        if self._has_outputs(existing_task) and not self._has_outputs(new_task):
+            return existing_task
+        
+        # If new task has outputs and existing doesn't, use new task
+        if self._has_outputs(new_task) and not self._has_outputs(existing_task):
+            return new_task
+        
+        # If both have outputs, check if they're the same
+        if self._has_outputs(existing_task) and self._has_outputs(new_task):
+            if not self._outputs_are_equal(existing_task, new_task):
+                # Use canonical dataset to resolve conflicts
+                if new_source_dataset == self.canonical_dataset:
+                    return new_task
+                elif existing_source_dataset == self.canonical_dataset:
+                    return existing_task
+                else:
+                    # Neither is canonical, prefer the new one
+                    return new_task
+        
+        # If both have same outputs or neither has outputs, use the new one
+        return new_task
+
+    def _add_tasks_safely(self, new_tasks: Dict[str, TaskData], source_dataset: str) -> None:
+        """Add tasks to the cache, handling duplicates by preserving outputs when possible"""
+        for task_id, task_data in new_tasks.items():
+            if task_id in self.tasks:
+                existing_source = self.task_sources.get(task_id, "unknown")
+                merged_task = self._merge_task_data(self.tasks[task_id], task_data, task_id, source_dataset, existing_source)
+                self.tasks[task_id] = merged_task
+                
+                # Update source based on which task we ended up using
+                if merged_task is task_data:  # Using new task
+                    self.task_sources[task_id] = source_dataset
+                # If using existing task, keep the existing source
+            else:
+                self.tasks[task_id] = task_data
+                self.task_sources[task_id] = source_dataset
+
+    def _load_all_competition_data(self):
         """Load all competition format data from arc-prize-2024 and arc-prize-2025"""
         for dataset in ["arc-prize-2024", "arc-prize-2025"]:
             dataset_path = self.data_root / dataset
@@ -94,22 +152,22 @@ class TaskLoader:
 
             # Load training split
             training_tasks = self._load_competition_split(dataset, "training")
-            self.tasks.update(training_tasks)
             if training_tasks:
+                self._add_tasks_safely(training_tasks, dataset)
                 self.subsets[f"{dataset}/training"] = list(training_tasks.keys())
                 print(f"  Training: {len(training_tasks)} tasks")
 
             # Load evaluation split
             eval_tasks = self._load_competition_split(dataset, "evaluation")
-            self.tasks.update(eval_tasks)
             if eval_tasks:
+                self._add_tasks_safely(eval_tasks, dataset)
                 self.subsets[f"{dataset}/evaluation"] = list(eval_tasks.keys())
                 print(f"  Evaluation: {len(eval_tasks)} tasks")
 
             # Load test split (challenges only, no solutions expected)
             test_tasks = self._load_competition_split(dataset, "test")
-            self.tasks.update(test_tasks)
             if test_tasks:
+                self._add_tasks_safely(test_tasks, dataset)
                 self.subsets[f"{dataset}/test"] = list(test_tasks.keys())
                 print(f"  Test: {len(test_tasks)} tasks")
 
@@ -151,7 +209,7 @@ class TaskLoader:
         return tasks
 
     def _load_all_subsets(self):
-        """Load subset definitions from data/subsets and discover competition splits"""
+        """Load subset definitions from data/subsets"""
         # Load legacy subset definitions from data/subsets
         subsets_dir = self.data_root / "subsets"
         if subsets_dir.exists():
@@ -174,20 +232,6 @@ class TaskLoader:
                     except Exception as e:
                         print(f"Warning: Could not load subset {subset_file}: {e}")
 
-        # Discover competition format subsets (but don't load task data yet)
-        for dataset in ["arc-prize-2024", "arc-prize-2025"]:
-            dataset_path = self.data_root / dataset
-            if not dataset_path.exists():
-                continue
-
-            for split in ["training", "evaluation", "test"]:
-                challenges_path = dataset_path / f"arc-agi_{split}_challenges.json"
-                if challenges_path.exists():
-                    subset_key = f"{dataset}/{split}"
-                    # Just mark that this subset exists - we'll load task IDs on demand
-                    if subset_key not in self.subsets:
-                        self.subsets[subset_key] = []  # Empty list means "exists but not loaded yet"
-
     def get_task(self, task_id: str) -> TaskData:
         """Get a task by ID"""
         if task_id not in self.tasks:
@@ -195,10 +239,7 @@ class TaskLoader:
         return self.tasks[task_id]
 
     def get_subset_tasks(self, subset_name: str) -> List[Tuple[str, TaskData]]:
-        """Get all tasks from a subset, returning (task_id, task_data) tuples"""
-        # Load the subset on demand if not already loaded
-        self._ensure_subset_loaded(subset_name)
-        
+        """Get all tasks from a subset, returning (task_id, task_data) tuples"""        
         if subset_name not in self.subsets:
             raise ValueError(
                 f"Subset {subset_name} not found. Available: {list(self.subsets.keys())}"
