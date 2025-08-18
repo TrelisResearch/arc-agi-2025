@@ -873,19 +873,12 @@ class ARCTaskRunnerSimple:
         return result
 
     def run_subset(
-        self, subset_name: str, dataset: str = "arc-prize-2025", limit: Optional[int] = None, filter_name: Optional[str] = None
+        self, subset_name: str, dataset: str = "arc-prize-2025", limit: Optional[int] = None
     ) -> List[Dict]:
         """Run all tasks in a subset with true parallelization at the attempt level"""
         try:
-            # Construct the subset name pattern
-            if filter_name:
-                subset_path = f"{subset_name}/{filter_name}" 
-                print(f"Loading filtered subset: {dataset}/{subset_path}")
-            else:
-                subset_path = subset_name
-                print(f"Loading subset: {dataset}/{subset_path}")
-                
-            tasks = self.task_loader.load_tasks_from_subset(subset_path, dataset)
+            print(f"Loading subset: {dataset}/{subset_name}")
+            tasks = self.task_loader.load_tasks_from_subset(subset_name, dataset)
             if limit:
                 tasks = tasks[:limit]
             total_tasks = len(tasks)
@@ -1894,11 +1887,9 @@ def main():
     parser.add_argument(
         "--dataset",
         default="arc-prize-2025",
-        choices=["arc-prize-2024", "arc-prize-2025"],
-        help="Dataset to use",
+        help="Dataset to use (e.g., arc-prize-2025, arc-agi-1, arc-agi-2)",
     )
-    parser.add_argument("--subset", default="training", choices=["training", "evaluation", "test"], help="Dataset split to use")
-    parser.add_argument("--filter", help="Optional subset filter (e.g., unique_training_tasks, shortest_training_10)")
+    parser.add_argument("--subset", default="training", help="Dataset subset to use (e.g., training, evaluation, unique_training_tasks)")
     parser.add_argument("--model", default="gpt-4.1-mini", help="Model to use")
     parser.add_argument("--limit", type=int, help="Limit number of tasks to run")
     parser.add_argument(
@@ -1997,7 +1988,7 @@ def main():
     )
 
     try:
-        results = runner.run_subset(args.subset, args.dataset, args.limit, args.filter)
+        results = runner.run_subset(args.subset, args.dataset, args.limit)
     finally:
         # Final cleanup to ensure clean shutdown
         try:

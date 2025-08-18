@@ -98,8 +98,7 @@ This script will:
     
     parser.add_argument('dataset', 
                        default='arc-prize-2025',
-                       choices=['arc-agi-1', 'arc-agi-2', 'arc-prize-2024', 'arc-prize-2025'],
-                       help='Dataset to run (arc-agi-1 or arc-agi-2)')
+                       help='Dataset to run (e.g., arc-prize-2025, arc-agi-1, arc-agi-2)')
     parser.add_argument('model_path', 
                        help='Full model path (e.g., Trelis/Qwen3-4B_...)')
     parser.add_argument('--template', 
