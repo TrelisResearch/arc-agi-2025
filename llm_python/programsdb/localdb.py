@@ -1,5 +1,6 @@
 import hashlib
 import os
+import threading
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Union
 import duckdb
@@ -7,20 +8,23 @@ import duckdb
 from .schema import ProgramSample
 
 
-# Global registry for singleton instances
-_db_instances: Dict[str, 'LocalProgramsDB'] = {}
+# Thread-local storage for connections
+_thread_local = threading.local()
+# Global flag to track if tables have been created
+_tables_initialized = False
+_initialization_lock = threading.Lock()
 
 
 def get_localdb(db_path: Optional[str] = None) -> 'LocalProgramsDB':
     """
-    Get or create a LocalProgramsDB instance using singleton pattern.
+    Get or create a thread-local LocalProgramsDB instance.
     
     Args:
         db_path: Path to the database file. If None, checks ARC_PROGRAMS_DB env var,
                  then falls back to default location.
         
     Returns:
-        LocalProgramsDB instance for the specified path
+        LocalProgramsDB instance for the current thread
     """
     # Normalize the path - check env var first if no explicit path provided
     if db_path is None:
@@ -33,10 +37,14 @@ def get_localdb(db_path: Optional[str] = None) -> 'LocalProgramsDB':
     else:
         db_path = str(Path(db_path).resolve())
     
-    # Return existing instance or create new one
-    if db_path not in _db_instances:
-        _db_instances[db_path] = LocalProgramsDB(db_path)
-    return _db_instances[db_path]
+    # Get or create thread-local instance
+    if not hasattr(_thread_local, 'db_instances'):
+        _thread_local.db_instances = {}
+    
+    if db_path not in _thread_local.db_instances:
+        _thread_local.db_instances[db_path] = LocalProgramsDB(db_path)
+    
+    return _thread_local.db_instances[db_path]
 
 
 class LocalProgramsDB:
@@ -54,17 +62,11 @@ class LocalProgramsDB:
         """
         Initialize the database connection manager.
         
-        Note: This class should not be instantiated directly. Use get_localdb() 
-        function instead to ensure singleton behavior per database path.
-        
         Args:
             db_path: Path to the database file.
         """
-        # Only initialize if this is a fresh instance
-        if not hasattr(self, '_initialized'):
-            self.db_path = db_path
-            self._connection: Optional[duckdb.DuckDBPyConnection] = None
-            self._initialized = True
+        self.db_path = db_path
+        self._connection: Optional[duckdb.DuckDBPyConnection] = None
     
     @property
     def connection(self) -> duckdb.DuckDBPyConnection:
@@ -76,92 +78,68 @@ class LocalProgramsDB:
     
     def _ensure_table_exists(self) -> None:
         """Create the programs table and metadata table if they don't exist."""
-        # Create metadata table for storing database ID
-        create_metadata_sql = """
-        CREATE TABLE IF NOT EXISTS metadata (
-            key VARCHAR PRIMARY KEY,
-            value VARCHAR NOT NULL
-        )
-        """
-        # Use BEGIN/COMMIT for atomic table creation
-        try:
-            self.connection.execute("BEGIN")
-            self.connection.execute(create_metadata_sql)
-            self.connection.execute("COMMIT")
-        except Exception as e:
-            self.connection.execute("ROLLBACK")
-            # Only ignore if table already exists
-            if "already exists" in str(e).lower() or "table" in str(e).lower():
-                pass  # Table already exists
-            else:
-                raise
+        global _tables_initialized
         
-        # Create main programs table
-        create_table_sql = """
-        CREATE TABLE IF NOT EXISTS programs (
-            key VARCHAR UNIQUE NOT NULL,
-            task_id VARCHAR NOT NULL,
-            reasoning TEXT,
-            code TEXT NOT NULL,
-            correct_train_input BOOLEAN[] NOT NULL,
-            correct_test_input BOOLEAN[] NOT NULL,
-            predicted_train_output INTEGER[][][] NOT NULL,
-            predicted_test_output INTEGER[][][] NOT NULL,
-            model VARCHAR NOT NULL,
-            is_test_transductive BOOLEAN NOT NULL DEFAULT FALSE
-        )
-        """
-        # Use BEGIN/COMMIT for atomic table creation
-        try:
-            self.connection.execute("BEGIN")
-            self.connection.execute(create_table_sql)
-            self.connection.execute("COMMIT")
-        except Exception as e:
-            self.connection.execute("ROLLBACK")
-            # Only ignore if table already exists
-            if "already exists" in str(e).lower() or "table" in str(e).lower():
-                pass  # Table already exists
-            else:
-                raise
-        
-        # Migrate existing databases to add new columns if needed
-        self._migrate_schema()
-        
-        # Ensure database has a unique ID
-        self._ensure_database_id()
+        if _tables_initialized:
+            return
+            
+        with _initialization_lock:
+            if _tables_initialized:  # Double-check after acquiring lock
+                return
+                
+            # Create metadata table for storing database ID
+            self.connection.execute("""
+                CREATE TABLE IF NOT EXISTS metadata (
+                    key VARCHAR PRIMARY KEY,
+                    value VARCHAR NOT NULL
+                )
+            """)
+            
+            # Create main programs table
+            self.connection.execute("""
+                CREATE TABLE IF NOT EXISTS programs (
+                    key VARCHAR UNIQUE NOT NULL,
+                    task_id VARCHAR NOT NULL,
+                    reasoning TEXT,
+                    code TEXT NOT NULL,
+                    correct_train_input BOOLEAN[] NOT NULL,
+                    correct_test_input BOOLEAN[] NOT NULL,
+                    predicted_train_output INTEGER[][][] NOT NULL,
+                    predicted_test_output INTEGER[][][] NOT NULL,
+                    model VARCHAR NOT NULL,
+                    is_test_transductive BOOLEAN NOT NULL DEFAULT FALSE
+                )
+            """)
+            
+            # Migrate existing databases to add new columns if needed
+            self._migrate_schema()
+            
+            # Ensure database has a unique ID
+            self._ensure_database_id()
+            
+            _tables_initialized = True
     
     def _migrate_schema(self) -> None:
         """Migrate existing database schema to add new columns if needed."""
         try:
-            # Try to query the new column to see if it exists
-            self.connection.execute("SELECT is_test_transductive FROM programs LIMIT 1").fetchone()
-            # If we get here, column exists - no migration needed
+            # Try to add the column - will fail silently if it already exists
+            self.connection.execute("ALTER TABLE programs ADD COLUMN is_test_transductive BOOLEAN DEFAULT FALSE")
+            # Set default for existing rows (no-op if column was just created)
+            self.connection.execute("UPDATE programs SET is_test_transductive = FALSE WHERE is_test_transductive IS NULL")
         except Exception:
-            # Column doesn't exist or table doesn't exist, try to add it
-            try:
-                print("🔄 Migrating database: Adding is_test_transductive column")
-                # DuckDB doesn't support constraints in ALTER TABLE, add column without constraint
-                self.connection.execute(
-                    "ALTER TABLE programs ADD COLUMN is_test_transductive BOOLEAN"
-                )
-                # Set default value for existing rows
-                self.connection.execute(
-                    "UPDATE programs SET is_test_transductive = FALSE WHERE is_test_transductive IS NULL"
-                )
-                print("✅ Database migration completed")
-            except Exception as e:
-                # Migration failed - might be first run or column already exists
-                # This is not critical, the column will be created with the table
-                pass
+            # Column already exists or other non-critical error - ignore
+            pass
     
     def _ensure_database_id(self) -> None:
         """Ensure the database has a unique ID, creating one if it doesn't exist."""
-        result = self.connection.execute("SELECT value FROM metadata WHERE key = 'db_id'").fetchone()
-        if not result:
-            # Generate a new unique ID using uuid
-            import uuid
-            db_id = uuid.uuid4().hex[:16]  # Use first 16 characters for shorter ID
-            self.connection.execute("INSERT OR IGNORE INTO metadata (key, value) VALUES ('db_id', ?)", [db_id])
+        import uuid
+        db_id = uuid.uuid4().hex[:16]
+        try:
+            # Try to insert, will fail if key already exists
+            self.connection.execute("INSERT INTO metadata (key, value) VALUES ('db_id', ?)", [db_id])
+        except Exception:
+            # Key already exists - this is expected and fine
+            pass
     
     def get_database_id(self) -> str:
         """Get the unique database ID."""
@@ -359,17 +337,20 @@ class LocalProgramsDB:
     @classmethod
     def clear_all_instances(cls) -> None:
         """
-        Close all database connections and clear singleton instances.
+        Close all database connections and clear thread-local instances.
         Useful for testing or when you want to force recreation of instances.
         """
-        for instance in _db_instances.values():
-            instance.close()
-        _db_instances.clear()
+        if hasattr(_thread_local, 'db_instances'):
+            for instance in _thread_local.db_instances.values():
+                instance.close()
+            _thread_local.db_instances.clear()
     
     @classmethod
     def get_instance_count(cls) -> int:
-        """Get the number of active singleton instances."""
-        return len(_db_instances)
+        """Get the number of active thread-local instances."""
+        if hasattr(_thread_local, 'db_instances'):
+            return len(_thread_local.db_instances)
+        return 0
     
     def __enter__(self):
         """Context manager entry."""

@@ -46,11 +46,31 @@ Training speed-ups:
 [-] Consider a minimal dp notebook to send to Greg. Not doing this as we know v0 won't work.
 
 ## August 18th 2025
+Test out the 14b model on the 2024 dataset:
 ```bash
 export SUBMIT="false"
-export ARC_PROGRAMS_DB=./julien-debug-14b-f.db
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2024 --subset evaluation --max_workers 32 --max_attempts 8 --model julien31/soar-qwen-14b --base-url http://107.152.109.26:11424/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think --limit 3
+export ARC_PROGRAMS_DB=./julien-debug-14b-aa1-eval.db
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2024 --subset evaluation --max_workers 32 --max_attempts 8 --model julien31/soar-qwen-14b --base-url http://107.152.109.26:11424/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
 ```
+and then test out the 7b model on the 2024 dataset:
+```bash
+export SUBMIT="false"
+export ARC_PROGRAMS_DB=./julien-debug-7b-aa1-eval.db
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2024 --subset evaluation --max_workers 32 --max_attempts 8 --model julien31/soar-qwen-7b --base-url http://38.80.152.249:30923/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
+
+And then start a pod with this: Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171:
+```bash
+uv run runpod/create_pod.py sglang -- --model-path Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171
+```
+and test that out on the 2024 dataset:
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local.db
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2024 --subset evaluation --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171 --base-url http://107.152.109.26:11378/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
+
+
+
 
 ## August 17th 2025
 

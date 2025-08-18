@@ -8,6 +8,8 @@ A streamlined tool for testing OpenAI-compatible language models on ARC-AGI task
 
 **Task Loading**: The system uses on-demand loading to ensure that only the requested dataset/subset is loaded (e.g., when requesting "arc-prize-2024/evaluation", only evaluation tasks are loaded, preventing test tasks without solutions from overwriting evaluation tasks that have solutions).
 
+**Multi-Process Concurrency**: The database layer now supports running multiple instances simultaneously against the same database file. Each process gets its own thread-local connections, enabling safe concurrent execution for faster processing or fault isolation.
+
 ## ⚠️ Database Migration Notice
 
 **Important**: Recent updates added new database schema fields for transduction detection. If you have an existing programs database, it will be automatically migrated on first run. This is a one-time operation and should complete without issues. The migration adds the `is_test_transductive` column to track programs that hardcode test outputs for analysis purposes.
