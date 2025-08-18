@@ -177,7 +177,7 @@ class ARCTaskRunnerSimple:
         self.STOP_IF_NO_TRAIN_CORRECT_AFTER = int(os.getenv('STOP_IF_NO_TRAIN_CORRECT_AFTER', '50'))
 
         # Standard API timeout for network safety, no infrastructure timeouts
-        api_timeout = 1800  # 30 minutes for network safety only
+        api_timeout = 300  # 5 minutes for network safety only
         
         # Optional global timeout from environment variable
         global_timeout = None

@@ -27,7 +27,7 @@ actually try running on http://107.152.109.26:11569/v1 with the task runner:
 
 ```bash
 export ARC_PROGRAMS_DB=./llm_python/programsdb/local-unique-train.db
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset unique_training_tasks --max_workers 32 --max_attempts 512 --model julien31/soar-qwen-14b --base-url http://107.152.109.26:11569/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset unique_training_tasks --max_workers 24 --max_attempts 512 --model julien31/soar-qwen-14b --base-url http://107.152.109.26:11569/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
 ```
 
 
