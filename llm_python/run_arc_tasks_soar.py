@@ -1531,7 +1531,7 @@ class ARCTaskRunnerSimple:
             print(f"Total time: {elapsed_time:.1f}s")
 
         print(
-            f"Successful API calls: {successful_api_calls}/{total_tasks} ({successful_api_calls / total_tasks:.1%})"
+            f"Successful API calls: {successful_api_calls}/{total_tasks} ({(successful_api_calls / total_tasks):.1%})" if total_tasks > 0 else f"Successful API calls: {successful_api_calls}/{total_tasks} (0.0%)"
         )
         print(f"Total tokens used: {self.total_tokens:,}")
         print(f"Total cost: ${self.total_cost:.6f}")
@@ -1622,7 +1622,7 @@ class ARCTaskRunnerSimple:
             print(f"Total time: {elapsed_time:.1f}s")
 
         print(
-            f"Successful API calls: {successful_api_calls}/{total_tasks} ({successful_api_calls / total_tasks:.1%})"
+            f"Successful API calls: {successful_api_calls}/{total_tasks} ({(successful_api_calls / total_tasks):.1%})" if total_tasks > 0 else f"Successful API calls: {successful_api_calls}/{total_tasks} (0.0%)"
         )
         print(f"Total tokens used: {self.total_tokens:,}")
         print(f"Total cost: ${self.total_cost:.6f}")

@@ -99,6 +99,27 @@ uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_
 ```
 
 
+and start a pod for correct 50:
+```bash
+uv run runpod/create_pod.py sglang -- --model-path Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716
+```
+and then hit the endpoint with the standard arc agi 1 command but with 8 attempts and 2000 context - 107.152.109.26:11564:
+```bash
+export ARC_PROGRAMS_DB=./eval-3-temp-true.db
+export SUBMIT="false"
+export SUBMIT_DIR="./"
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2024 --subset evaluation --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716 --base-url http://107.152.109.26:11564/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
+
+and try running qwen 14b on arc-agi-2 for 64 attempts - 107.152.109.26:11424:
+```bash
+export ARC_PROGRAMS_DB=./eval-3-temp-true.db
+export SUBMIT="false"
+export SUBMIT_DIR="./"
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 64 --model Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716 --base-url http://107.152.109.26:11424/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
+
+
 ### Try the bf16 model
 ```bash
 export ARC_PROGRAMS_DB=./eval-temp-true.db
