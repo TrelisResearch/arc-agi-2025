@@ -1371,29 +1371,23 @@ class ARCTaskRunnerSimple:
         # Check if we're in SUBMIT mode
         submit_mode = os.getenv("SUBMIT", "").lower() == "true"
 
-        # Filter out train-transductive attempts first (like voting does)
-        non_transductive_attempts = [
-            attempt for attempt in attempts 
-            if not attempt.get("is_train_transductive", False)
-        ]
-
-        # Calculate key stats using only non-transductive attempts
+        # Calculate key stats using all attempts (no filtering for denominator)
         if not submit_mode:
             test_correct_attempts = sum(
-                1 for attempt in non_transductive_attempts if attempt.get("test_correct", False)
+                1 for attempt in attempts if attempt.get("test_correct", False)
             )
         else:
             test_correct_attempts = 0  # Not computed in SUBMIT mode
             
         train_perfect_attempts = sum(
-            1 for attempt in non_transductive_attempts if attempt.get("train_accuracy", 0.0) == 1.0
+            1 for attempt in attempts if attempt.get("train_accuracy", 0.0) == 1.0
         )
         # Align with Min 1 Train logic: task-level, has partial but not perfect training
         has_perfect_train = any(
-            attempt.get("train_accuracy", 0.0) == 1.0 for attempt in non_transductive_attempts
+            attempt.get("train_accuracy", 0.0) == 1.0 for attempt in attempts
         )
         has_partial_train = any(
-            0 < attempt.get("train_accuracy", 0.0) < 1.0 for attempt in non_transductive_attempts
+            0 < attempt.get("train_accuracy", 0.0) < 1.0 for attempt in attempts
         )
         task_has_partial_train = has_partial_train and not has_perfect_train
 
@@ -1432,9 +1426,9 @@ class ARCTaskRunnerSimple:
             1 for attempt in attempts if attempt.get("test_exec_timeout", False)
         )
 
-        # Find best attempt (from non-transductive attempts)
+        # Find best attempt (from all attempts)
         best_attempt = max(
-            non_transductive_attempts if non_transductive_attempts else attempts,
+            attempts,
             key=lambda x: (x.get("test_correct", False), x.get("train_accuracy", 0.0)),
         )
 
@@ -1444,8 +1438,8 @@ class ARCTaskRunnerSimple:
             # SUBMIT mode: only show train metrics
             summary = f"✅ {task_id}: {train_perfect_attempts} train-perfect, {partial_indicator} (SUBMIT mode)"
         else:
-            # Normal mode: show both test and train metrics (using non-transductive counts)
-            summary = f"✅ {task_id}: {test_correct_attempts}/{len(non_transductive_attempts)} test-correct, {train_perfect_attempts} train-perfect, {partial_indicator}"
+            # Normal mode: show both test and train metrics (using total attempts)
+            summary = f"✅ {task_id}: {test_correct_attempts}/{len(attempts)} test-correct, {train_perfect_attempts} train-perfect, {partial_indicator}"
 
         # Add issues in timeline order if any occurred
         issues = []

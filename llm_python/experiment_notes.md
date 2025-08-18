@@ -23,6 +23,13 @@ uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "julien31/soar-qwen-14b
 export ARC_PROGRAMS_DB=./llm_python/programsdb/local-unique-train.db
 uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "julien31/soar-qwen-14b" --max-attempts 512 --subset unique_training_tasks
 ```
+actually try running on http://107.152.109.26:11569/v1 with the task runner:
+
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-unique-train.db
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset unique_training_tasks --max_workers 32 --max_attempts 512 --model julien31/soar-qwen-14b --base-url http://107.152.109.26:11569/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
+
 
 ### Test out the 50 correct 200 partial model with bf16 kvcache - Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171
 ```bash
