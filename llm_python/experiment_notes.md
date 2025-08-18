@@ -52,12 +52,51 @@ export SUBMIT="false"
 export ARC_PROGRAMS_DB=./julien-debug-14b-aa1-eval.db
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2024 --subset evaluation --max_workers 32 --max_attempts 8 --model julien31/soar-qwen-14b --base-url http://107.152.109.26:11424/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
 ```
+Dataset: arc-prize-2024
+Subset: evaluation
+Model: julien31/soar-qwen-14b
+Total tasks: 400
+Total time: 811.5s
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 13,021,635
+Total cost: $2.473691
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 33.2%
+  Pass@2 (Train Majority):  32.2%
+  Oracle (Best Attempt):    33.8%
+  All Train Correct:        34.2%
+  Min 1 Train Correct:      61.0%
+  Min 1 Code Success:       99.8%
+  Max Length Responses:     1.3%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
 and then test out the 7b model on the 2024 dataset:
 ```bash
 export SUBMIT="false"
 export ARC_PROGRAMS_DB=./julien-debug-7b-aa1-eval.db
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2024 --subset evaluation --max_workers 32 --max_attempts 8 --model julien31/soar-qwen-7b --base-url http://38.80.152.249:30923/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
 ```
+Dataset: arc-prize-2024
+Subset: evaluation
+Model: julien31/soar-qwen-7b
+Total tasks: 400
+Total time: 481.9s
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 12,970,710
+Total cost: $2.443136
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 27.0%
+  Pass@2 (Train Majority):  26.0%
+  Oracle (Best Attempt):    28.0%
+  All Train Correct:        27.0%
+  Min 1 Train Correct:      56.2%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.8%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
 And then start a pod with this: Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171:
 ```bash
@@ -68,7 +107,64 @@ and test that out on the 2024 dataset:
 export ARC_PROGRAMS_DB=./llm_python/programsdb/local.db
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2024 --subset evaluation --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171 --base-url http://107.152.109.26:11378/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
 ```
+Dataset: arc-prize-2024
+Subset: evaluation
+Model: Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171
+Total tasks: 400
+Total time: 535.9s
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 13,099,987
+Total cost: $2.514943
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 6.0%
+  Pass@2 (Train Majority):  5.2%
+  Oracle (Best Attempt):    6.5%
+  All Train Correct:        14.0%
+  Min 1 Train Correct:      35.8%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.7%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+and then on the 50 correct:
+Dataset: arc-prize-2024
+Subset: evaluation
+Model: Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716
+Total tasks: 400
+Total time: 416.2s
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 12,810,163
+Total cost: $2.341048
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 9.0%
+  Pass@2 (Train Majority):  9.0%
+  Oracle (Best Attempt):    10.2%
+  All Train Correct:        9.0%
+  Min 1 Train Correct:      18.0%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.2%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+and try running qwen 14b on arc-agi-2 for 64 attempts - 107.152.109.26:11424:
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-julien-14b.db
+export SUBMIT="false"
+export SUBMIT_DIR="./"
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 64 --model julien31/soar-qwen-14b --base-url http://107.152.109.26:11424/v1 --base-url http://107.152.109.26:11424/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
+[...RESULTS]
+
+ok and run this model `Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716` on arc-agi-2 for 64 attempts - 107.152.109.26:11564:
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local.db
+export SUBMIT="false"
+export SUBMIT_DIR="./"
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 64 --model Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716 --base-url http://107.152.109.26:11564/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
+[...RESULTS]
 
 
 
@@ -98,7 +194,6 @@ export SUBMIT_DIR="./"
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-agi-1 --subset all_evaluation --max_workers 32 --max_attempts 8 --model Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171 --base-url http://38.80.152.249:31107/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
 ```
 
-
 and start a pod for correct 50:
 ```bash
 uv run runpod/create_pod.py sglang -- --model-path Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716
@@ -113,12 +208,19 @@ uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2024 --subset
 
 and try running qwen 14b on arc-agi-2 for 64 attempts - 107.152.109.26:11424:
 ```bash
-export ARC_PROGRAMS_DB=./eval-3-temp-true.db
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-julien-14b.db
 export SUBMIT="false"
 export SUBMIT_DIR="./"
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 64 --model Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716 --base-url http://107.152.109.26:11424/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 64 --model julien31/soar-qwen-14b --base-url http://107.152.109.26:11424/v1 --base-url http://107.152.109.26:11424/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
 ```
 
+ok and run this model `Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716` on arc-agi-2 for 64 attempts - 107.152.109.26:11564:
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local.db
+export SUBMIT="false"
+export SUBMIT_DIR="./"
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 64 --model Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716 --base-url http://107.152.109.26:11564/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
 
 ### Try the bf16 model
 ```bash
