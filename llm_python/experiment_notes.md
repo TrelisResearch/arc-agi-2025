@@ -20,9 +20,8 @@ Fine-tuning:
 Data generation:
 [ ] Tackle tasks by order of length.
 [ ] Make a simple submission to the competition with this approach.
-[ ] Reduce concurrent workers down to 16 as we're using Qwen 14B.
+[ ] Reduce concurrent workers down to 16 as we're using Qwen 14B. Or possibly even down as far as 12.
 [ ] Generate data for remaining tasks not covered in "arc-prize-2025 unique_training_tasks" and "arc-prize-2024 evaluation" with Qwen 14B from julien31. Focus tasks without 50 all-train-correct in the db.
-
 
 Issues:
 - The unique training tasks seem to freeze:
