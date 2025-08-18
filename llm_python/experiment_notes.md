@@ -46,6 +46,35 @@ Training speed-ups:
 [-] Consider a minimal dp notebook to send to Greg. Not doing this as we know v0 won't work.
 
 ## August 18th 2025
+
+### Test out the 50 correct 200 partial model with bf16 kvcache - Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-correct-partial.db
+export SUBMIT="false"
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171" --subset evaluation --max_attempts 8
+```
+Dataset: arc-prize-2024
+Subset: evaluation
+Model: Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171
+Total tasks: 400
+Total time: 516.3s
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 13,089,342
+Total cost: $2.508556
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 6.8%
+  Pass@2 (Train Majority):  6.0%
+  Oracle (Best Attempt):    8.0%
+  All Train Correct:        14.8%
+  Min 1 Train Correct:      35.2%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.6%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+### Test out results without passing in test outputs
+
 Test out the 14b model on the 2024 dataset:
 ```bash
 export SUBMIT="false"
@@ -155,7 +184,25 @@ export SUBMIT="false"
 export SUBMIT_DIR="./"
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 64 --model julien31/soar-qwen-14b --base-url http://107.152.109.26:11424/v1 --base-url http://107.152.109.26:11424/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
 ```
-[...RESULTS]
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: julien31/soar-qwen-14b
+Total tasks: 120
+Total time: 2624.0s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 46,686,453
+Total cost: $8.209366
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.8%
+  Pass@2 (Train Majority):  0.8%
+  Oracle (Best Attempt):    0.8%
+  All Train Correct:        1.7%
+  Min 1 Train Correct:      13.3%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.6%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
 ok and run this model `Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716` on arc-agi-2 for 64 attempts - 107.152.109.26:11564:
 ```bash
@@ -164,9 +211,25 @@ export SUBMIT="false"
 export SUBMIT_DIR="./"
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 64 --model Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716 --base-url http://107.152.109.26:11564/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
 ```
-[...RESULTS]
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716
+Total tasks: 120
+Total time: 2666.8s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 46,725,535
+Total cost: $8.232815
 
-
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.8%
+  Pass@2 (Train Majority):  0.8%
+  Oracle (Best Attempt):    0.8%
+  All Train Correct:        1.7%
+  Min 1 Train Correct:      14.2%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.6%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
 ## August 17th 2025
 
