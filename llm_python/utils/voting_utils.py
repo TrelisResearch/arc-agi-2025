@@ -6,7 +6,6 @@ import json
 import numpy as np
 from typing import Dict, List, Optional, Callable
 from collections import defaultdict, Counter
-from .transduction import detect_transduction
 from .validator import ARCTaskValidator
 
 
@@ -48,6 +47,7 @@ def filter_non_transductive_attempts(result: Dict) -> List[Dict]:
             is_train_transductive = att['is_train_transductive']
         else:
             # Re-calculate if not stored (for older data)
+            from .transduction import detect_transduction
             is_train_transductive, _, _, _ = detect_transduction(att.get('program', ''), result['task_data'])
         
         if not is_train_transductive:
