@@ -2,50 +2,29 @@
 
 Lewis Reminders:
 - test transduction is now metadata. THESE PROGRAMS ARE BEING SAVED TO THE DB, BEWARE.
-- can we remove all_responses? it's duplicating everything.
-- note that currently, there are incorrect programs that generate massive grids.
 - Discuss logs going into folders vs not going into folders.
 - Mathieu.
-- How will we want to save data, during test time tuning? DuckDB!
-- For test time tuning, will we a) try to train on all data, b) continued training on the ttt data, c) continued training on the ttt data + a small blend. Worth considering how we do this, perhaps best done via the run_arc_tasks_soar script. We will opt for c.
 
-Ronan reminders:
-Training speed-ups:
-- Use 'pissa' for Lora initialization.
-- Move to 2e-4 for learning rate.
-- Reduce max seq length to around 24000.
-  - Check context lengths on all problems.
-- Flash Attention 2
-- Turn off prediction loop, to use a larger batch size.
-- Use GPT OSS? (slower to fine-tune, but fast inference). Needs vLLM, not sglang, requiring some updates to the codebase.
 ---
-16 Aug 2025:
-[x] Test out running the with duckdb.
-    [x] Test out runpod L4s.
-    [x] Try to run modules from our arc runner, writing to a local db.
-    [x] Try running and writing to a different db.
-[x] Import the fp8 model to kaggle. Should be easy.
-  [x] Add to the L4 script, on T4s. 
-[ ] Get SGLang working in Kaggle.
-  [x] Get tp working with SGLang in Kaggle.
-  [x] Get tp working in an importing notebook that is offline.
-  [x] Get dp working with SGLang in Kaggle T4s. Incl. w/ kv cache quantization.
-  [x] Get sglang utility script export working.
-  [x] Get sglang utility script import working.
-[x] Test data loading
-  [x] See if I can add the competition dataset.
-  [x] Test locally how to use the 2024 or 2025 datasets.
-[x] Create submission file in submission mode.
-[x] Create a scorer that can process the file.
-[x] Re-build the aux script for arc-agi-2025.
-[x] See if I can run the task runner on T4s.
-[ ] Test sglang out in L4s on Kaggle.
-[ ] SUBMIT!
-
-[-] Quickly test out dp with vLLM in the L4 notebook. Deferred if sglang can work.
-[-] Consider a minimal dp notebook to send to Greg. Not doing this as we know v0 won't work.
-
 ## August 18th 2025
+
+### Generate data for arc-agi-1 eval using Qwen 14B from julien31
+
+Start a pod and run with 512 attempts and save to local.db in the programsdb folder. Create the pod AND run the tasks.
+
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "julien31/soar-qwen-14b" --max-attempts 512 --subset evaluation
+```
+[...RESULTS]
+
+### Generate data for arc-agi-2 unique train  with Qwen 14B from julien31:
+
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-agi-2 "julien31/soar-qwen-14b" --max-attempts 512 --subset unique_train
+```
+
+
+
 
 ### Test out the 50 correct 200 partial model with bf16 kvcache - Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171
 ```bash
@@ -356,6 +335,31 @@ uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset
 
 
 ## August 16th 2025
+
+[x] Test out running the with duckdb.
+    [x] Test out runpod L4s.
+    [x] Try to run modules from our arc runner, writing to a local db.
+    [x] Try running and writing to a different db.
+[x] Import the fp8 model to kaggle. Should be easy.
+  [x] Add to the L4 script, on T4s. 
+[ ] Get SGLang working in Kaggle.
+  [x] Get tp working with SGLang in Kaggle.
+  [x] Get tp working in an importing notebook that is offline.
+  [x] Get dp working with SGLang in Kaggle T4s. Incl. w/ kv cache quantization.
+  [x] Get sglang utility script export working.
+  [x] Get sglang utility script import working.
+[x] Test data loading
+  [x] See if I can add the competition dataset.
+  [x] Test locally how to use the 2024 or 2025 datasets.
+[x] Create submission file in submission mode.
+[x] Create a scorer that can process the file.
+[x] Re-build the aux script for arc-agi-2025.
+[x] See if I can run the task runner on T4s.
+[ ] Test sglang out in L4s on Kaggle.
+[ ] SUBMIT!
+
+[-] Quickly test out dp with vLLM in the L4 notebook. Deferred if sglang can work.
+[-] Consider a minimal dp notebook to send to Greg. Not doing this as we know v0 won't work.
 
 ### Load test files
 ```bash

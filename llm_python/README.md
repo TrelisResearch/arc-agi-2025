@@ -69,7 +69,10 @@ ARC_PROGRAMS_DB=/path/to/your/programs.db
 # Or specify via command line (only for run_arc_tasks_soar.py)
 uv run python run_arc_tasks_soar.py --db-path /path/to/your/programs.db
 ```
-By default, programs are stored in `llm_python/programsdb/local.db`
+
+**Default database path** (when --db-path not specified):
+1. First checks `ARC_PROGRAMS_DB` environment variable
+2. If not set, defaults to `llm_python/programsdb/local.db`
 
 4. (Optional) Configure custom data directory path:
 ```bash
@@ -453,7 +456,7 @@ uv run python run_arc_tasks_soar.py --dataset arc-prize-2025 --subset evaluation
 - **Complete Coverage**: Includes ALL task IDs from the evaluation set (required per guidelines)
 
 **Environment Variables:**
-- `SUBMIT`: Set to "true" to enable submission file creation
+- `SUBMIT`: Set to "true" to enable submission file creation (default: `false` - evaluation mode only)
 - `SUBMIT_DIR`: Directory to save submission files (default: `/kaggle/working`)
 - `GLOBAL_TIMEOUT`: Optional global timeout in seconds - cleanly stops execution and processes completed attempts
 
