@@ -21,11 +21,8 @@ uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "julien31/soar-qwen-14b
 
 ```bash
 export ARC_PROGRAMS_DB=./llm_python/programsdb/local-unique-train.db
-uv run runpod/create_pod_and_run_tasks.py arc-agi-2 "julien31/soar-qwen-14b" --max-attempts 512 --subset unique_training_tasks
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "julien31/soar-qwen-14b" --max-attempts 512 --subset training --filter unique_training_tasks
 ```
-
-
-
 
 ### Test out the 50 correct 200 partial model with bf16 kvcache - Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171
 ```bash

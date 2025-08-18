@@ -164,6 +164,7 @@ uv run python run_arc_tasks_soar.py --dataset arc-agi-1 --subset shortest_10 --b
 - **Robust State Management**: Explicit garbage collection and thread-safe cleanup between runs prevents state spillover and race conditions
 - **Output Size Guards**: Predicted grids exceeding size limits are dropped to prevent runaway logs (default ≤10,000 chars and ≤1,800 cells)
 - **GPU-Optimized Scheduling**: Batched execution pattern reduces context switching and improves prefix caching efficiency
+- **Dynamic Early Stopping**: Configurable thresholds to stop dispatching attempts when tasks reach success criteria or show no progress (see Environment Variables section for `STOP_AT_ALL_TRAIN_CORRECT` and `STOP_IF_NO_TRAIN_CORRECT_AFTER`)
 
 **When to use:**
 - For comprehensive evaluation with statistical rigor
@@ -459,6 +460,8 @@ uv run python run_arc_tasks_soar.py --dataset arc-prize-2025 --subset evaluation
 - `SUBMIT`: Set to "true" to enable submission file creation (default: `false` - evaluation mode only)
 - `SUBMIT_DIR`: Directory to save submission files (default: `/kaggle/working`)
 - `GLOBAL_TIMEOUT`: Optional global timeout in seconds - cleanly stops execution and processes completed attempts
+- `STOP_AT_ALL_TRAIN_CORRECT`: Stop dispatching new attempts for a task after N all-train-correct attempts (default: `50`)
+- `STOP_IF_NO_TRAIN_CORRECT_AFTER`: Stop dispatching new attempts for a task if no train-correct found in first N attempts (default: `50`)
 
 **Example Output:**
 ```
