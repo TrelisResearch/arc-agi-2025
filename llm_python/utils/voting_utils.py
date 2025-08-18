@@ -65,18 +65,17 @@ def filter_valid_predictions(attempts: List[Dict]) -> List[Dict]:
         if test_predicted is None:
             continue
             
-        # Check if prediction is valid
+        # Check if prediction is valid (test_predicted should be a list of grids)
         is_valid = True
-        if isinstance(test_predicted, tuple):
-            # Multiple test outputs case - validate each grid
+        if isinstance(test_predicted, list):
+            # Validate each grid in the list
             for grid in test_predicted:
                 if grid is not None and not ARCTaskValidator.validate_prediction(grid, "voting_filter"):
                     is_valid = False
                     break
         else:
-            # Single test output case - validate the grid
-            if not ARCTaskValidator.validate_prediction(test_predicted, "voting_filter"):
-                is_valid = False
+            # Invalid format - test_predicted should always be a list
+            is_valid = False
         
         if is_valid:
             valid_attempts.append(att)

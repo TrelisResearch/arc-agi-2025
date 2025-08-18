@@ -48,8 +48,8 @@ Training speed-ups:
 ## August 18th 2025
 ```bash
 export SUBMIT="false"
-export ARC_PROGRAMS_DB=./julien-debug-14b-epsilon.db
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2024 --subset evaluation --max_workers 32 --max_attempts 64 --model julien31/soar-qwen-14b --base-url http://107.152.109.26:11424/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think --limit 3
+export ARC_PROGRAMS_DB=./julien-debug-14b-f.db
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2024 --subset evaluation --max_workers 32 --max_attempts 8 --model julien31/soar-qwen-14b --base-url http://107.152.109.26:11424/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think --limit 3
 ```
 
 ## August 17th 2025

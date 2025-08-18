@@ -55,23 +55,33 @@ class TaskLoader:
         if not self.data_root.exists():
             raise ValueError(f"Data root directory not found: {data_root}")
 
-        # Load everything into memory on init
+        # Cache for loaded data
         self.tasks: Dict[str, TaskData] = {}
         self.subsets: Dict[str, List[str]] = {}
+        self._loaded_subsets: set = set()  # Track what we've already loaded
 
-        self._load_all_data()
-
-    def _load_all_data(self):
-        """Load all tasks and subsets from all available sources"""
-        print("Loading all task data into memory...")
-
-        # Load competition format data
-        self._load_competition_data()
-
-        # Load all subset definitions
+        # Load subset definitions only
         self._load_all_subsets()
 
-        print(f"Loaded {len(self.tasks)} total tasks and {len(self.subsets)} subsets")
+    def _ensure_subset_loaded(self, subset_name: str):
+        """Load a specific subset on demand if not already loaded"""
+        if subset_name in self._loaded_subsets:
+            return
+            
+        print(f"Loading subset {subset_name}...")
+        
+        # Parse subset name to determine dataset and split
+        if "/" in subset_name:
+            dataset, split = subset_name.split("/", 1)
+            if dataset in ["arc-prize-2024", "arc-prize-2025"]:
+                # Load competition format data for this specific subset
+                subset_tasks = self._load_competition_split(dataset, split)
+                self.tasks.update(subset_tasks)
+                if subset_tasks:
+                    self.subsets[subset_name] = list(subset_tasks.keys())
+                    print(f"  Loaded {len(subset_tasks)} tasks from {subset_name}")
+        
+        self._loaded_subsets.add(subset_name)
 
     def _load_competition_data(self):
         """Load all competition format data from arc-prize-2024 and arc-prize-2025"""
@@ -141,29 +151,42 @@ class TaskLoader:
         return tasks
 
     def _load_all_subsets(self):
-        """Load all subset definitions from data/subsets"""
+        """Load subset definitions from data/subsets and discover competition splits"""
+        # Load legacy subset definitions from data/subsets
         subsets_dir = self.data_root / "subsets"
-        if not subsets_dir.exists():
-            return
-
-        for dataset_dir in subsets_dir.iterdir():
-            if not dataset_dir.is_dir():
-                continue
-
-            dataset_name = dataset_dir.name
-            for subset_file in dataset_dir.glob("*.txt"):
-                if "_details.json" in subset_file.name or "archive" in str(subset_file):
+        if subsets_dir.exists():
+            for dataset_dir in subsets_dir.iterdir():
+                if not dataset_dir.is_dir():
                     continue
 
-                subset_name = subset_file.stem
-                subset_key = f"{dataset_name}/{subset_name}"
+                dataset_name = dataset_dir.name
+                for subset_file in dataset_dir.glob("*.txt"):
+                    if "_details.json" in subset_file.name or "archive" in str(subset_file):
+                        continue
 
-                try:
-                    with open(subset_file, "r") as f:
-                        task_ids = [line.strip() for line in f if line.strip()]
-                    self.subsets[subset_key] = task_ids
-                except Exception as e:
-                    print(f"Warning: Could not load subset {subset_file}: {e}")
+                    subset_name = subset_file.stem
+                    subset_key = f"{dataset_name}/{subset_name}"
+
+                    try:
+                        with open(subset_file, "r") as f:
+                            task_ids = [line.strip() for line in f if line.strip()]
+                        self.subsets[subset_key] = task_ids
+                    except Exception as e:
+                        print(f"Warning: Could not load subset {subset_file}: {e}")
+
+        # Discover competition format subsets (but don't load task data yet)
+        for dataset in ["arc-prize-2024", "arc-prize-2025"]:
+            dataset_path = self.data_root / dataset
+            if not dataset_path.exists():
+                continue
+
+            for split in ["training", "evaluation", "test"]:
+                challenges_path = dataset_path / f"arc-agi_{split}_challenges.json"
+                if challenges_path.exists():
+                    subset_key = f"{dataset}/{split}"
+                    # Just mark that this subset exists - we'll load task IDs on demand
+                    if subset_key not in self.subsets:
+                        self.subsets[subset_key] = []  # Empty list means "exists but not loaded yet"
 
     def get_task(self, task_id: str) -> TaskData:
         """Get a task by ID"""
@@ -173,6 +196,9 @@ class TaskLoader:
 
     def get_subset_tasks(self, subset_name: str) -> List[Tuple[str, TaskData]]:
         """Get all tasks from a subset, returning (task_id, task_data) tuples"""
+        # Load the subset on demand if not already loaded
+        self._ensure_subset_loaded(subset_name)
+        
         if subset_name not in self.subsets:
             raise ValueError(
                 f"Subset {subset_name} not found. Available: {list(self.subsets.keys())}"

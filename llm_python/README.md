@@ -6,6 +6,8 @@ A streamlined tool for testing OpenAI-compatible language models on ARC-AGI task
 
 **Fallback Grid Handling**: When programs fail or produce invalid outputs, the system generates 2x2 fallback grids (`[[0, 0], [0, 0]]`). These fallback grids participate in the voting system but are naturally down-weighted due to their associated low train accuracy (typically 0.0). The voting weight formula `1.0 + 1000.0 * train_accuracy` ensures that successful attempts with higher train accuracy significantly outweigh failed attempts with fallback grids.
 
+**Task Loading**: The system uses on-demand loading to ensure that only the requested dataset/subset is loaded (e.g., when requesting "arc-prize-2024/evaluation", only evaluation tasks are loaded, preventing test tasks without solutions from overwriting evaluation tasks that have solutions).
+
 ## ⚠️ Database Migration Notice
 
 **Important**: Recent updates added new database schema fields for transduction detection. If you have an existing programs database, it will be automatically migrated on first run. This is a one-time operation and should complete without issues. The migration adds the `is_test_transductive` column to track programs that hardcode test outputs for analysis purposes.

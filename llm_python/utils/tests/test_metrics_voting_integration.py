@@ -96,8 +96,8 @@ class TestMetricsVotingIntegration:
         test_outputs = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]]
         task_data = self.create_task_data(test_outputs)
         
-        # Attempts with correct predictions (as tuple)
-        correct_prediction = tuple(test_outputs)
+        # Attempts with correct predictions (as list)
+        correct_prediction = test_outputs
         attempts = [
             self.create_attempt(correct_prediction),
             self.create_attempt(correct_prediction),

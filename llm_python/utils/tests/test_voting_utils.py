@@ -38,15 +38,15 @@ class TestVotingUtils:
         # Create test attempts with different training accuracies
         attempts = [
             {
-                'test_predicted': [[1, 2], [3, 4]],
+                'test_predicted': [[[1, 2], [3, 4]]],
                 'train_accuracy': 0.5
             },
             {
-                'test_predicted': [[1, 2], [3, 4]],  # Same prediction, higher accuracy
+                'test_predicted': [[[1, 2], [3, 4]]],  # Same prediction, higher accuracy
                 'train_accuracy': 1.0
             },
             {
-                'test_predicted': [[5, 6], [7, 8]],  # Different prediction, lower accuracy
+                'test_predicted': [[[5, 6], [7, 8]]],  # Different prediction, lower accuracy
                 'train_accuracy': 0.0
             }
         ]
@@ -54,26 +54,26 @@ class TestVotingUtils:
         result = compute_weighted_majority_voting(attempts, top_k=2)
         
         # Should return top 2 predictions by weight
-        # [[1, 2], [3, 4]] should have highest weight (1.0 + 1000*1.0 = 1001.0)
-        # [[5, 6], [7, 8]] should have lowest weight (1.0 + 1000*0.0 = 1.0)
+        # [[[1, 2], [3, 4]]] should have highest weight (1.0 + 1000*1.0 = 1001.0)
+        # [[[5, 6], [7, 8]]] should have lowest weight (1.0 + 1000*0.0 = 1.0)
         assert len(result) == 2
-        assert [[1, 2], [3, 4]] in result
-        assert [[5, 6], [7, 8]] in result
+        assert [[[1, 2], [3, 4]]] in result
+        assert [[[5, 6], [7, 8]]] in result
     
     def test_compute_train_majority_voting(self):
         """Test train-majority voting"""
         # Create test attempts with different training results
         attempts = [
             {
-                'test_predicted': [[1, 2], [3, 4]],
+                'test_predicted': [[[1, 2], [3, 4]]],
                 'train_results': [{'correct': True}, {'correct': False}]  # 1/2 correct
             },
             {
-                'test_predicted': [[1, 2], [3, 4]],  # Same prediction, better training
+                'test_predicted': [[[1, 2], [3, 4]]],  # Same prediction, better training
                 'train_results': [{'correct': True}, {'correct': True}]   # 2/2 correct
             },
             {
-                'test_predicted': [[5, 6], [7, 8]],  # Different prediction, same best training
+                'test_predicted': [[[5, 6], [7, 8]]],  # Different prediction, same best training
                 'train_results': [{'correct': True}, {'correct': True}]   # 2/2 correct
             }
         ]
@@ -82,8 +82,8 @@ class TestVotingUtils:
         
         # Should return predictions from attempts with best training performance (2/2 correct)
         assert len(result) == 2
-        assert [[1, 2], [3, 4]] in result
-        assert [[5, 6], [7, 8]] in result
+        assert [[[1, 2], [3, 4]]] in result
+        assert [[[5, 6], [7, 8]]] in result
     
     def test_empty_attempts(self):
         """Test voting with empty attempts list"""
@@ -99,14 +99,14 @@ class TestVotingUtils:
         """Test voting with single attempt"""
         single_attempt = [
             {
-                'test_predicted': [[1, 2], [3, 4]],
+                'test_predicted': [[[1, 2], [3, 4]]],
                 'train_accuracy': 0.8,
                 'train_results': [{'correct': True}, {'correct': False}]
             }
         ]
         
         weighted_result = compute_weighted_majority_voting(single_attempt, top_k=1)
-        assert weighted_result == [[[1, 2], [3, 4]]]
+        assert weighted_result == [[[[1, 2], [3, 4]]]]
         
         train_result = compute_train_majority_voting(single_attempt, top_k=1)
-        assert train_result == [[[1, 2], [3, 4]]] 
+        assert train_result == [[[[1, 2], [3, 4]]]] 

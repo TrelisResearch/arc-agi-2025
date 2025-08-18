@@ -18,11 +18,6 @@ def _first(x):
     """Return first element if list/tuple, else x."""
     return x[0] if isinstance(x, (list, tuple)) and x else x
 
-def _to_tuple(x):
-    """Make prediction hashable (handles multi‑grid)."""
-    if x is None:
-        return None
-    return tuple(x) if isinstance(x, (list, tuple)) else (x,)
 
 
 # ---------------------------------------------------------------- core metric
@@ -87,25 +82,13 @@ def calculate_task_metrics(
             continue  # nothing to score
 
         # ---------- ground truth ----------
-        gt = tuple(t["output"] for t in task["task_data"]["test"])
+        gt = [t["output"] for t in task["task_data"]["test"]]
 
         # ---------- weighted voting pass@2 ----------
         try:
             preds = compute_weighted_majority_voting(non_trans)   # list
-            # Handle both single test (raw grid) and multi-test (tuple of grids) cases
-            normalized_preds = []
-            for p in preds:
-                if p is None:
-                    continue
-                # If it's already a tuple (multi-test), keep as is
-                # If it's a single grid, convert to tuple to match gt format
-                if len(gt) == 1:
-                    # Single test case: p should be raw grid, wrap in tuple
-                    normalized_preds.append(_to_tuple([p]))
-                else:
-                    # Multi test case: p should already be tuple
-                    normalized_preds.append(_to_tuple(p))
-            if any(p == gt for p in normalized_preds):
+            # Compare predictions directly as lists
+            if any(p == gt for p in preds if p is not None):
                 weighted_pass2 += 1
         except Exception:
             pass
@@ -113,20 +96,8 @@ def calculate_task_metrics(
         # ---------- train‑majority voting pass@2 ----------
         try:
             preds = compute_train_majority_voting(non_trans)
-            # Handle both single test (raw grid) and multi-test (tuple of grids) cases
-            normalized_preds = []
-            for p in preds:
-                if p is None:
-                    continue
-                # If it's already a tuple (multi-test), keep as is
-                # If it's a single grid, convert to tuple to match gt format
-                if len(gt) == 1:
-                    # Single test case: p should be raw grid, wrap in tuple
-                    normalized_preds.append(_to_tuple([p]))
-                else:
-                    # Multi test case: p should already be tuple
-                    normalized_preds.append(_to_tuple(p))
-            if any(p == gt for p in normalized_preds):
+            # Compare predictions directly as lists
+            if any(p == gt for p in preds if p is not None):
                 train_majority_pass2 += 1
         except Exception:
             pass

@@ -90,7 +90,7 @@ class AttemptDetail(TypedDict):
     # Test results (supports multiple test cases)
     test_predicted: Union[
         None, List[List[int]], Tuple[Optional[List[List[int]]], ...]
-    ]  # Predictions: None, single grid, or tuple of grids
+    ]  # Predictions: None, single grid, or list of grids
     test_results: List[TestResult]  # Detailed results for each test case
     test_correct: bool  # True if ALL test cases are correct
     test_correct_count: int  # Number of correct test cases
@@ -729,7 +729,6 @@ class ARCTaskRunnerSimple:
 
         for test_idx, test_example in enumerate(task_data["test"]):
             test_input = test_example["input"]
-            
             # Check if we're in SUBMIT mode - test outputs may not be available
             submit_mode = os.getenv("SUBMIT", "").lower() == "true"
             
@@ -737,7 +736,7 @@ class ARCTaskRunnerSimple:
             if submit_mode:
                 test_expected = None  # No ground truth available in SUBMIT mode
             else:
-                test_expected = test_example["output"]
+                test_expected = test_example.get("output", None)
 
             if not program_extracted:
                 test_pred, test_err, test_tout = None, "no program", False
@@ -757,6 +756,7 @@ class ARCTaskRunnerSimple:
                 if test_tout:
                     any_test_exec_timeout = True
 
+
             # Mark as correct/incorrect only when we have ground truth (not in SUBMIT mode)
             is_correct = (
                 (test_pred == test_expected)
@@ -770,6 +770,7 @@ class ARCTaskRunnerSimple:
                 )
                 else False
             )
+
 
             if is_correct:
                 test_correct_count += 1
@@ -815,8 +816,8 @@ class ARCTaskRunnerSimple:
             train_accuracy=train_accuracy,
             train_exec_errors=train_exec_errors,
             train_exec_timeouts=train_exec_timeouts,
-            # Always store predictions as tuple for consistency
-            test_predicted=tuple(test_predictions) if test_predictions else None,
+            # Store predictions as list for consistency
+            test_predicted=test_predictions,
             test_results=test_results,
             test_correct=test_correct,
             test_correct_count=test_correct_count,
@@ -1755,8 +1756,8 @@ class ARCTaskRunnerSimple:
                 if len(top_predictions) > 0 and top_predictions[0] is not None:
                     pred_1 = top_predictions[0]
                     
-                    # With robust fix: pred_1 is always a tuple/list of grids
-                    if isinstance(pred_1, (tuple, list)) and len(pred_1) > test_idx:
+                    # With robust fix: pred_1 is always a list of grids
+                    if isinstance(pred_1, list) and len(pred_1) > test_idx:
                         attempt_1_grid = pred_1[test_idx]
                     else:
                         # Fallback to default
@@ -1766,8 +1767,8 @@ class ARCTaskRunnerSimple:
                 if len(top_predictions) > 1 and top_predictions[1] is not None:
                     pred_2 = top_predictions[1]
                     
-                    # With robust fix: pred_2 is always a tuple/list of grids
-                    if isinstance(pred_2, (tuple, list)) and len(pred_2) > test_idx:
+                    # With robust fix: pred_2 is always a list of grids
+                    if isinstance(pred_2, list) and len(pred_2) > test_idx:
                         attempt_2_grid = pred_2[test_idx]
                     else:
                         # Fallback to default

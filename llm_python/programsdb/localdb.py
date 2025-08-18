@@ -83,7 +83,18 @@ class LocalProgramsDB:
             value VARCHAR NOT NULL
         )
         """
-        self.connection.execute(create_metadata_sql)
+        # Use BEGIN/COMMIT for atomic table creation
+        try:
+            self.connection.execute("BEGIN")
+            self.connection.execute(create_metadata_sql)
+            self.connection.execute("COMMIT")
+        except Exception as e:
+            self.connection.execute("ROLLBACK")
+            # Only ignore if table already exists
+            if "already exists" in str(e).lower() or "table" in str(e).lower():
+                pass  # Table already exists
+            else:
+                raise
         
         # Create main programs table
         create_table_sql = """
@@ -100,7 +111,18 @@ class LocalProgramsDB:
             is_test_transductive BOOLEAN NOT NULL DEFAULT FALSE
         )
         """
-        self.connection.execute(create_table_sql)
+        # Use BEGIN/COMMIT for atomic table creation
+        try:
+            self.connection.execute("BEGIN")
+            self.connection.execute(create_table_sql)
+            self.connection.execute("COMMIT")
+        except Exception as e:
+            self.connection.execute("ROLLBACK")
+            # Only ignore if table already exists
+            if "already exists" in str(e).lower() or "table" in str(e).lower():
+                pass  # Table already exists
+            else:
+                raise
         
         # Migrate existing databases to add new columns if needed
         self._migrate_schema()
