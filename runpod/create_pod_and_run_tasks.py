@@ -44,7 +44,7 @@ def wait_for_openai_endpoint(base_url, model_name, timeout=600, check_interval=1
     print(f"❌ Endpoint failed to become ready after {timeout}s")
     return False
 
-def run_arc_tasks(dataset, model_path, base_url, subset="all_evaluation"):
+def run_arc_tasks(dataset, model_path, base_url, subset="all_evaluation", max_attempts=64):
     """Run the ARC tasks with the specified configuration"""
     print(f"\n🎯 Running ARC tasks for {dataset} with subset {subset}...")
     
@@ -56,7 +56,7 @@ def run_arc_tasks(dataset, model_path, base_url, subset="all_evaluation"):
         "--dataset", dataset,
         "--subset", subset,
         "--max_workers", "32",
-        "--max_attempts", "64",
+        "--max_attempts", str(max_attempts),
         "--model", model_path,
         "--base-url", base_url,
         "--unsafe-executor",
@@ -85,37 +85,43 @@ def main():
 Examples:
   %(prog)s arc-agi-1 Trelis/Qwen3-4B_dsarc-agi-1-train-programs-best-length-filtered-250_20250811-155856-c904
   %(prog)s arc-agi-2 Trelis/Qwen3-4B_dsarc-agi-2-custom-model --subset shortest_1
-  %(prog)s arc-agi-1 Trelis/Qwen3-4B_model --subset all_evaluation
+  %(prog)s arc-agi-1 Trelis/Qwen3-4B_model --subset all_evaluation --max_attempts 32
   %(prog)s arc-agi-2 Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic --subset all_evaluation --kv-cache-dtype fp8_e5m2
 
 This script will:
 1. Create a RunPod pod with the specified model
 2. Wait for the OpenAI endpoint to be ready
-3. Run ARC tasks with 8 attempts and 3 runs on specified subset (default: all_evaluation)
+3. Run ARC tasks on specified subset (default: all_evaluation) with configurable max attempts (default: 64)
 4. Keep the pod running until you press Ctrl+C
         """
     )
     
     parser.add_argument('dataset', 
-                       choices=['arc-agi-1', 'arc-agi-2'],
+                       default='arc-prize-2025',
+                       choices=['arc-agi-1', 'arc-agi-2', 'arc-prize-2024', 'arc-prize-2025'],
                        help='Dataset to run (arc-agi-1 or arc-agi-2)')
     parser.add_argument('model_path', 
                        help='Full model path (e.g., Trelis/Qwen3-4B_...)')
     parser.add_argument('--template', 
                        default='sglang',
                        help='RunPod template to use (default: sglang)')
+    parser.add_argument('--subset',
+                       default='evaluation',
+                       help='Dataset subset to run (default: evaluation)')
     parser.add_argument('--skip-tasks',
                        action='store_true',
                        help='Skip running ARC tasks (only create pod)')
     parser.add_argument('--no-health-check',
                        action='store_true',
                        help='Skip health check after pod creation')
-    parser.add_argument('--subset',
-                       default='all_evaluation',
-                       help='Dataset subset to run (default: all_evaluation)')
     parser.add_argument('--kv-cache-dtype',
                        type=str,
                        help='KV cache data type for sglang servers (e.g., fp8_e5m2)')
+    parser.add_argument('--max-attempts', '--max_attempts',
+                       type=int,
+                       default=64,
+                       dest='max_attempts',
+                       help='Maximum number of attempts for ARC tasks (default: 64)')
     
     args = parser.parse_args()
     
@@ -251,7 +257,7 @@ This script will:
         # Step 2: Run ARC tasks
         print(f"\n🎯 Step 2: Running ARC tasks for {args.dataset}")
         
-        if run_arc_tasks(args.dataset, args.model_path, base_url, args.subset):
+        if run_arc_tasks(args.dataset, args.model_path, base_url, args.subset, args.max_attempts):
             print(f"\n🎉 All tasks completed successfully!")
         else:
             print(f"\n⚠️  Some tasks may have failed. Check the output above for details.")
