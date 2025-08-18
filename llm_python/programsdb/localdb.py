@@ -139,7 +139,7 @@ class LocalProgramsDB:
             # Generate a new unique ID using uuid
             import uuid
             db_id = uuid.uuid4().hex[:16]  # Use first 16 characters for shorter ID
-            self.connection.execute("INSERT INTO metadata (key, value) VALUES ('db_id', ?)", [db_id])
+            self.connection.execute("INSERT OR IGNORE INTO metadata (key, value) VALUES ('db_id', ?)", [db_id])
     
     def get_database_id(self) -> str:
         """Get the unique database ID."""
