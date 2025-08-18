@@ -20,7 +20,8 @@ uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "julien31/soar-qwen-14b
 ### Generate data for arc-agi-2 unique train  with Qwen 14B from julien31:
 
 ```bash
-uv run runpod/create_pod_and_run_tasks.py arc-agi-2 "julien31/soar-qwen-14b" --max-attempts 512 --subset unique_train
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-unique-train.db
+uv run runpod/create_pod_and_run_tasks.py arc-agi-2 "julien31/soar-qwen-14b" --max-attempts 512 --subset unique_training_tasks
 ```
 
 
@@ -345,7 +346,7 @@ uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset
 [ ] Get SGLang working in Kaggle.
   [x] Get tp working with SGLang in Kaggle.
   [x] Get tp working in an importing notebook that is offline.
-  [x] Get dp working with SGLang in Kaggle T4s. Incl. w/ kv cache quantization.
+  [x] Get dp working with SGLang in Kaggle T4s. Incl. w/ kv cache quantiz ation.
   [x] Get sglang utility script export working.
   [x] Get sglang utility script import working.
 [x] Test data loading
