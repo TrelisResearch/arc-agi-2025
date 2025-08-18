@@ -894,6 +894,28 @@ class ARCTaskRunnerSimple:
                 total_tasks = len(tasks)
 
             print(f"✅ Task validation complete: {total_tasks} valid tasks")
+            
+            # Sort tasks by total length (training + test examples)
+            def calculate_task_length(task_tuple):
+                task_id, task_data = task_tuple
+                total_length = 0
+                # Add training examples length
+                if 'train' in task_data:
+                    for example in task_data['train']:
+                        if 'input' in example:
+                            total_length += len(str(example['input']))
+                        if 'output' in example:
+                            total_length += len(str(example['output']))
+                # Add test examples length (only inputs since we don't have outputs)
+                if 'test' in task_data:
+                    for example in task_data['test']:
+                        if 'input' in example:
+                            total_length += len(str(example['input']))
+                return total_length
+            
+            # Sort tasks from shortest to longest
+            tasks = sorted(tasks, key=calculate_task_length)
+            print(f"📏 Tasks sorted by length (shortest to longest)")
 
         except Exception as e:
             print(f"Error loading tasks: {e}")

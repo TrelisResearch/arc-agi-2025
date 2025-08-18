@@ -13,18 +13,30 @@ TODO:
 Check tests pass in repo!
 
 Fine-tuning:
-[] Ability add a fine-tuning script.
-[] local model save option.
-[] run one notebook from another
+[ ] Ability add a fine-tuning script.
+[ ] local model save option.
+[ ] run one notebook from another
 
 Data generation:
-[ ] Tackle tasks by order of length.
-[ ] Make a simple submission to the competition with this approach.
-[ ] Reduce concurrent workers down to 16 as we're using Qwen 14B. Or possibly even down as far as 12.
+[x] Tackle tasks by order of length.
+[x] Reduce concurrent workers down to 12 as we're using Qwen 14B.
 [ ] Generate data for remaining tasks not covered in "arc-prize-2025 unique_training_tasks" and "arc-prize-2024 evaluation" with Qwen 14B from julien31. Focus tasks without 50 all-train-correct in the db.
 
-Issues:
-- The unique training tasks seem to freeze:
+Submission attempt:
+[x] Make a simple submission to the competition with a basic approach.
+
+Submission improvements:
+[] Measure 4x L4 relative to 4xH200. On fp8 and standard.
+[] 
+
+
+Re-run evaluation:
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local.db
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "julien31/soar-qwen-14b" --max-attempts 512 --subset evaluation
+```
+
+Re-run unique training tasks:
 ```bash
 export ARC_PROGRAMS_DB=./llm_python/programsdb/local-unique-train.db
 uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "julien31/soar-qwen-14b" --max-attempts 512 --subset unique_training_tasks

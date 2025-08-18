@@ -55,7 +55,7 @@ def run_arc_tasks(dataset, model_path, base_url, subset="all_evaluation", max_at
         "uv", "run", "python", "-m", "llm_python.run_arc_tasks_soar",
         "--dataset", dataset,
         "--subset", subset,
-        "--max_workers", "32",
+        "--max_workers", "12",
         "--max_attempts", str(max_attempts),
         "--model", model_path,
         "--base-url", base_url,

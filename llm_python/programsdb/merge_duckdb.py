@@ -136,7 +136,13 @@ def merge_databases(source_dbs, target_db, table_name='programs', key_column='ke
         )
     """
     target_conn.execute(create_table_sql)
-    print("✅ Table created")
+    
+    # Create unique index on key column if it exists (for ON CONFLICT support)
+    if 'key' in all_columns:
+        target_conn.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS idx_{table_name}_key ON {table_name}(key)")
+        print(f"✅ Table created with UNIQUE constraint on 'key' column")
+    else:
+        print("✅ Table created")
     
     # Merge data from all databases
     print(f"\n📥 Merging data from {len(valid_source_dbs)} databases...")
