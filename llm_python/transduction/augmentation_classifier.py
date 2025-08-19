@@ -23,7 +23,7 @@ class AugmentationBasedTransductionClassifier:
         """
         self.arc_tester = arc_tester
     
-    def is_transductive(self, program: str, task_data: Optional[TaskData] = None) -> Tuple[bool, float]:
+    def is_transductive(self, program: str, task_data: Optional[TaskData] = None) -> Tuple[bool, None]:
         """
         Detect if a program is transductive by testing augmentation invariance.
 
@@ -50,20 +50,18 @@ class AugmentationBasedTransductionClassifier:
             raise ValueError("task_data is required for augmentation-based transduction classification")
         
         # Get original program results
-        try:
-            original_results = self.arc_tester.test_program(program, task_data)
-        except Exception:
-            return True, 1.0  # If program fails, consider it transductive with high confidence
+        original_results = self.arc_tester.test_program(program, task_data)
+        print(original_results)
 
         # Extract original training outputs
         original_train_outputs = original_results.train_outputs
 
         if not original_train_outputs:
-            return False, 0.5  # No training outputs to compare, return low confidence
+            return False, None  # No training outputs to compare, return low confidence
 
         # Check if all outputs are None (program failed to produce any valid outputs)
         if all(output is None for output in original_train_outputs):
-            return True, 1.0  # Program failed to produce any valid outputs, likely transductive
+            return True, None  # Program failed to produce any valid outputs, likely transductive
 
         # Define augmentations to test
         augmentations = [
@@ -126,25 +124,7 @@ class AugmentationBasedTransductionClassifier:
         # (i.e., if it fails all augmentation tests, it's likely memorizing)
         is_transductive = len(invariant_augmentations) == 0
 
-        # Calculate confidence based on how many augmentations passed/failed
-        total_augmentations = len(augmentations)
-        if total_augmentations == 0:
-            confidence = 0.5  # No augmentations tested, low confidence
-        else:
-            # High confidence if all augmentations agree on the classification
-            # Lower confidence if it's borderline
-            invariant_ratio = len(invariant_augmentations) / total_augmentations
-            if is_transductive:
-                # Transductive: confident if no augmentations were invariant
-                confidence = 1.0 - invariant_ratio
-            else:
-                # Not transductive: confident if many augmentations were invariant
-                confidence = invariant_ratio
-            
-            # Ensure minimum confidence of 0.6 for clear cases
-            confidence = max(confidence, 0.6)
-
-        return is_transductive, confidence
+        return is_transductive, None
     
     def _count_matching_train_outputs(self, original_outputs, augmented_outputs):
         """Count how many training outputs match between original and augmented results."""

@@ -247,11 +247,10 @@ for test_input in test_inputs:
 
 return outputs
 """
-        
+        # Ensure we have an executor context
+        if ArcTester._executor_context is None:
+            raise RuntimeError("Executor not initialized")
         try:
-            # Ensure we have an executor context
-            if ArcTester._executor_context is None:
-                raise RuntimeError("Executor not initialized")
                 
             result, error = ArcTester._executor_context.execute_code(code, timeout=self.timeout * len(test_inputs))
             

@@ -18,16 +18,13 @@ def load_test_data():
 
 # Load test cases for parametrization
 test_cases = load_test_data()
-arc_tester = ArcTester()
 task_loader = TaskLoader()
-
-# Initialize classifiers
-augmentation_classifier = AugmentationBasedTransductionClassifier(arc_tester)
-code_classifier = CodeTransductionClassifier()
-
 
 @pytest.mark.parametrize("case", test_cases)
 def test_both_classifiers(case):
+    arc_tester = ArcTester()
+    augmentation_classifier = AugmentationBasedTransductionClassifier(arc_tester)
+    code_classifier = CodeTransductionClassifier()
     """Test that both classifiers produce the expected result."""
     code = case["code"]
     task_id = case["task_id"]
