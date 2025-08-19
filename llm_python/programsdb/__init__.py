@@ -1,49 +1,65 @@
-"""
-Local Programs Database Module
-"""
-
 from typing import Optional, List
+
+from llm_python.transduction.code_classifier import CodeTransductionClassifier
 from ..utils.code import normalize_code
 from .localdb import get_localdb
 from .schema import ProgramSample
+import traceback
 
 
-def should_log_program(task_id: str, code: str, db_path: Optional[str] = None) -> bool:
+def should_log_program(program: ProgramSample, db_path: Optional[str] = None) -> bool:
     """
-    Quick check to determine if a program should be processed.
-    
-    This function normalizes the code and checks if the (task_id, normalized_code) 
-    pair already exists in the database.
-    
-    Args:
-        task_id: The task identifier
-        code: The program code (will be normalized)
-        db_path: Optional path to database file
-        
-    Returns:
-        True if the program should be processed, False if it already exists
+    Check if a program should be logged to the database.
+
+    This function performs all validation checks:
+    1. Checks if the program has at least one training or test example correct
+    2. Filters out programs with invalid grids (larger than 40x40 or not properly 2D)
+    3. Normalizes the code and checks if the (task_id, normalized_code) pair already exists
     """
     try:
-        # Normalize the code first
-        normalized_code = normalize_code(code)
-        
+        # Check if program has at least one correct answer
+        has_correct_answer = any(program["correct_train_input"]) or any(
+            program["correct_test_input"]
+        )
+
+        if not has_correct_answer:
+            return False  # Don't log programs with no correct answers
+
+        # Check for invalid grids (oversized or not properly 2D)
+        if _has_invalid_grids(program["predicted_train_output"]) or _has_invalid_grids(
+            program["predicted_test_output"]
+        ):
+            return False  # Don't log programs with invalid grids
+
+        # Normalize the code and check for duplicates
+        normalized_code = normalize_code(program["code"]) if program["code"] else ""
+
+        if not normalized_code.strip():
+            return False  # Don't log empty programs
+
+        transduction_tester = CodeTransductionClassifier()
+
+        if transduction_tester.is_transductive(normalized_code):
+            return False
+
         # Get database instance
         db = get_localdb(db_path)
-        
+
         # Generate the same key that would be used for storage
-        key = db.generate_key(task_id, normalized_code)
-        
+        key = db.generate_key(program["task_id"], normalized_code)
+
         # Check if this key already exists in the database
         result = db.connection.execute(
-            "SELECT 1 FROM programs WHERE key = ? LIMIT 1", 
-            [key]
+            "SELECT 1 FROM programs WHERE key = ? LIMIT 1", [key]
         ).fetchone()
-        
+
         return result is None  # Should process if not found
-        
+
     except Exception:
-        # If there's any error, default to processing the program
-        return True
+        # If there's any error, default to not processing the program but log it, as this is unexpected.
+        print("Error determining whether to log program:")
+        traceback.print_exc()
+        return False
 
 
 def _has_invalid_grids(outputs: List[List[List[int]]], max_size: int = 40) -> bool:
@@ -59,11 +75,11 @@ def _has_invalid_grids(outputs: List[List[List[int]]], max_size: int = 40) -> bo
                 # Check that all rows are lists and have the same width
                 if not isinstance(output[0], list):
                     return True
-                
+
                 expected_width = len(output[0])
                 if expected_width > max_size:
                     return True
-                
+
                 # Check all rows have the same width (proper 2D grid)
                 for row in output:
                     if not isinstance(row, list) or len(row) != expected_width:
@@ -73,41 +89,31 @@ def _has_invalid_grids(outputs: List[List[List[int]]], max_size: int = 40) -> bo
 
 def maybe_log_program(program: ProgramSample, db_path: Optional[str] = None) -> None:
     """
-    Get or create a database instance and log a program if it passes validation.
-    
-    Uses the singleton pattern to ensure only one database instance per file path.
-    
-    This function:
-    1. Checks if the program has at least one training or test example correct
-    2. Filters out programs with invalid grids (larger than 40x40 or not properly 2D)
-    3. Normalizes the code (strips comments, normalizes newlines)
-    4. Only logs the program if it passes all checks
-    
+    Log a program to the database if it passes all validation checks.
+
+    Uses should_log_program to determine if the program should be logged,
+    then performs the actual logging.
+
     Args:
         program: Program data conforming to ProgramSample schema
         db_path: Optional path to database file. If None, uses default location.
     """
-    # Check if program has at least one correct answer
-    has_correct_answer = any(program['correct_train_input']) or any(program['correct_test_input'])
-    
-    if not has_correct_answer:
-        return  # Don't log programs with no correct answers
-    
-    # Check for invalid grids (oversized or not properly 2D)
-    if (_has_invalid_grids(program['predicted_train_output']) or 
-        _has_invalid_grids(program['predicted_test_output'])):
-        return  # Don't log programs with invalid grids
-    
-    # Get singleton instance (will create if needed)
+    # Check if program should be logged
+    if not should_log_program(program, db_path):
+        return
+
+    # Get database instance
     db = get_localdb(db_path)
-    
-    
+
+    # Create a copy to avoid modifying the original
+    program_copy = program.copy()
+
     # Normalize the code
-    if program['code']:
-        program['code'] = normalize_code(program['code'])
-    
+    if program_copy["code"]:
+        program_copy["code"] = normalize_code(program_copy["code"])
+
     # Log the program
-    db.add_program(program)
+    db.add_program(program_copy)
 
 
-__all__ = ['get_localdb', 'ProgramSample', 'maybe_log_program', 'should_log_program']
+__all__ = ["get_localdb", "ProgramSample", "maybe_log_program", "should_log_program"]

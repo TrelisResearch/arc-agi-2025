@@ -104,29 +104,14 @@ class LocalProgramsDB:
                     correct_test_input BOOLEAN[] NOT NULL,
                     predicted_train_output INTEGER[][][] NOT NULL,
                     predicted_test_output INTEGER[][][] NOT NULL,
-                    model VARCHAR NOT NULL,
-                    is_test_transductive BOOLEAN NOT NULL DEFAULT FALSE
+                    model VARCHAR NOT NULL
                 )
             """)
-            
-            # Migrate existing databases to add new columns if needed
-            self._migrate_schema()
-            
+
             # Ensure database has a unique ID
             self._ensure_database_id()
             
             self._tables_initialized = True
-    
-    def _migrate_schema(self) -> None:
-        """Migrate existing database schema to add new columns if needed."""
-        try:
-            # Try to add the column - will fail silently if it already exists
-            self.connection.execute("ALTER TABLE programs ADD COLUMN is_test_transductive BOOLEAN DEFAULT FALSE")
-            # Set default for existing rows (no-op if column was just created)
-            self.connection.execute("UPDATE programs SET is_test_transductive = FALSE WHERE is_test_transductive IS NULL")
-        except Exception:
-            # Column already exists or other non-critical error - ignore
-            pass
     
     def _ensure_database_id(self) -> None:
         """Ensure the database has a unique ID, creating one if it doesn't exist."""
@@ -253,7 +238,7 @@ class LocalProgramsDB:
         """Legacy private method - use generate_key instead."""
         return self.generate_key(task_id, code)
     
-    def add_program(self, program: Union[ProgramSample, Dict[str, Any]]) -> None:
+    def add_program(self, program: ProgramSample) -> None:
         """
         Add a program to the database with validation.
         
@@ -263,35 +248,32 @@ class LocalProgramsDB:
         Raises:
             ValueError: If program validation fails
         """
-        # Convert to dict - TypedDict is already a dict in runtime
-        program_dict = dict(program)
         
         # Validate the program
-        self._validate_program(program_dict)
+        self._validate_program(program)
         
         # Generate unique key from task_id and code
-        key = self.generate_key(program_dict['task_id'], program_dict['code'])
+        key = self.generate_key(program['task_id'], program['code'])
         
         # Insert into database (ON CONFLICT DO NOTHING to avoid duplicates)
         insert_sql = """
         INSERT INTO programs 
         (key, task_id, reasoning, code, correct_train_input, correct_test_input,
-         predicted_train_output, predicted_test_output, model, is_test_transductive)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         predicted_train_output, predicted_test_output, model)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (key) DO NOTHING
         """
         
         self.connection.execute(insert_sql, [
             key,
-            program_dict['task_id'],
-            program_dict.get('reasoning'),
-            program_dict['code'],
-            program_dict['correct_train_input'],
-            program_dict['correct_test_input'],
-            program_dict['predicted_train_output'],
-            program_dict['predicted_test_output'],
-            program_dict['model'],
-            program_dict.get('is_test_transductive', False) if 'is_test_transductive' in program_dict else False
+            program['task_id'],
+            program.get('reasoning'),
+            program['code'],
+            program['correct_train_input'],
+            program['correct_test_input'],
+            program['predicted_train_output'],
+            program['predicted_test_output'],
+            program['model'],
         ])
     
     def get_programs_by_task(self, task_id: str) -> List[Dict[str, Any]]:
