@@ -1,0 +1,248 @@
+import sys
+from pathlib import Path
+project_root = next((parent for parent in [Path.cwd()] + list(Path.cwd().parents) if (parent / "pyproject.toml").exists()), Path.cwd())
+sys.path.append(str(project_root))
+
+import pandas as pd
+from datasets import load_dataset
+import json
+from typing import Dict, List, Tuple, Any
+from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor
+import time
+
+from llm_python.transduction.augmentation_classifier import detect_transduction_augmentation
+from llm_python.transduction.code_based_classifier import classify_transductive_program
+from llm_python.utils.arc_tester import ArcTester
+from llm_python.utils.task_loader import TaskLoader, TaskData
+
+def download_and_filter_dataset(dataset_name: str):
+    """Download and filter dataset for specific models"""
+    print(f"\nDownloading dataset: {dataset_name}")
+    dataset = load_dataset(dataset_name, split="train")
+    
+    df = dataset.to_pandas()
+    
+    models_to_keep = [
+        "Qwen2.5-72B-Instruct",
+        "Mistral-Large-Instruct-2407", 
+        "Qwen2.5-Coder-32B-Instruct"
+    ]
+    
+    print(f"Original dataset size: {len(df)}")
+    filtered_df = df[df['model'].isin(models_to_keep)]
+    print(f"Filtered dataset size: {len(filtered_df)}")
+    
+    model_counts = filtered_df['model'].value_counts()
+    print("\nRows per model:")
+    for model, count in model_counts.items():
+        print(f"  {model}: {count}")
+    
+    return filtered_df
+
+def analyze_batch(batch_data, task_loader, arc_tester):
+    """Analyze a batch of programs using shared task loader and arc tester"""
+    results = []
+    
+    for row_dict in batch_data:
+        task_id = row_dict.get('task_id')
+        program = row_dict.get('code')
+        
+        if not task_id or not program:
+            results.append({
+                'aug_transductive': None,
+                'aug_reason': 'Missing task_id or code',
+                'code_transductive': None,
+                'code_confidence': None,
+                'error': 'Missing required fields'
+            })
+            continue
+        
+        try:
+            # Get task data
+            task_data = task_loader.get_task(task_id)
+            
+            # Method 1: Augmentation method (augmentation invariance)
+            aug_transductive, aug_reason = detect_transduction_augmentation(
+                program, task_data, arc_tester, debug=False
+            )
+            
+            # Method 2: Code-based method (ML classifier on program features)
+            code_transductive, code_confidence = classify_transductive_program(program)
+            
+            results.append({
+                'aug_transductive': aug_transductive,
+                'aug_reason': aug_reason,
+                'code_transductive': code_transductive,
+                'code_confidence': code_confidence,
+                'error': None
+            })
+            
+        except FileNotFoundError:
+            results.append({
+                'aug_transductive': None,
+                'aug_reason': 'Task not found',
+                'code_transductive': None,
+                'code_confidence': None,
+                'error': 'Task not found'
+            })
+        except Exception as e:
+            results.append({
+                'aug_transductive': None,
+                'aug_reason': f'Error: {str(e)}',
+                'code_transductive': None,
+                'code_confidence': None,
+                'error': str(e)
+            })
+    
+    return results
+
+def analyze_dataset_optimized(dataset_name: str, batch_size: int = 50):
+    """Main function to analyze a Hugging Face dataset using optimized batch processing"""
+    print("="*80)
+    print(f"TRANSDUCTION ANALYSIS FOR: {dataset_name}")
+    print("="*80)
+    
+    # Download and filter dataset
+    df = download_and_filter_dataset(dataset_name)
+    
+    # Check if required columns exist
+    if 'task_id' not in df.columns or 'code' not in df.columns:
+        print("\nERROR: Dataset missing required columns (task_id, code)")
+        print(f"Available columns: {list(df.columns)}")
+        return None
+    
+    # Initialize shared resources ONCE
+    print("\nInitializing shared resources...")
+    task_loader = TaskLoader()
+    print(f"✓ TaskLoader initialized with {len(task_loader.tasks)} tasks")
+    
+    arc_tester = ArcTester(timeout=2)
+    print("✓ ArcTester initialized")
+    
+    # Filter to only programs with available task data
+    unique_task_ids = set(df['task_id'].unique())
+    available_tasks = set(task_loader.tasks.keys())
+    covered_tasks = unique_task_ids.intersection(available_tasks)
+    missing_tasks = unique_task_ids - available_tasks
+    
+    print(f"✓ Task coverage: {len(covered_tasks)}/{len(unique_task_ids)} ({100*len(covered_tasks)/len(unique_task_ids) if unique_task_ids else 0:.1f}%)")
+    if missing_tasks:
+        print(f"⚠️  Missing {len(missing_tasks)} tasks: {list(missing_tasks)[:5]}...")
+    
+    df_filtered = df[df['task_id'].isin(available_tasks)].copy()
+    print(f"✓ Filtered to {len(df_filtered)} programs with task data available")
+    
+    if len(df_filtered) == 0:
+        print("ERROR: No programs with available task data")
+        return None
+    
+    # Process in batches with progress bar
+    print(f"\nAnalyzing {len(df_filtered)} programs in batches of {batch_size}...")
+    
+    # Convert to list of dicts for batch processing
+    rows_data = df_filtered.to_dict('records')
+    
+    all_results = []
+    
+    # Process batches sequentially but use threading for I/O within batches
+    for i in tqdm(range(0, len(rows_data), batch_size), desc="Processing batches"):
+        batch = rows_data[i:i+batch_size]
+        
+        # Use threading for the batch (mainly helps with I/O)
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            # Split batch into smaller chunks for threading
+            chunk_size = max(1, len(batch) // 4)
+            chunks = [batch[j:j+chunk_size] for j in range(0, len(batch), chunk_size)]
+            
+            futures = [executor.submit(analyze_batch, chunk, task_loader, arc_tester) 
+                      for chunk in chunks if chunk]
+            
+            batch_results = []
+            for future in futures:
+                batch_results.extend(future.result())
+        
+        all_results.extend(batch_results)
+    
+    # Clean up
+    ArcTester.cleanup_executor()
+    
+    # Convert results to DataFrame and combine with original data
+    results_df = pd.DataFrame(all_results)
+    
+    for col in results_df.columns:
+        df_filtered[col] = results_df[col].values
+    
+    # Filter out errors for statistics
+    df_valid = df_filtered[df_filtered['error'].isna()].copy()
+    
+    print(f"\n✓ Analysis complete")
+    print(f"✓ Success rate: {len(df_valid)}/{len(df_filtered)} ({100*len(df_valid)/len(df_filtered) if df_filtered.shape[0] > 0 else 0:.1f}%)")
+    
+    # Calculate statistics
+    print("\n" + "="*60)
+    print("TRANSDUCTION DETECTION RESULTS")
+    print("="*60)
+    
+    if len(df_valid) > 0:
+        # Method 1: Augmentation
+        aug_count = df_valid['aug_transductive'].sum()
+        print(f"\nMETHOD 1 - AUGMENTATION (Invariance Testing):")
+        print(f"Total transductive: {aug_count}/{len(df_valid)} ({aug_count/len(df_valid)*100:.2f}%)")
+        
+        print("\nBreakdown by model:")
+        for model in df_valid['model'].unique():
+            model_df = df_valid[df_valid['model'] == model]
+            trans_count = model_df['aug_transductive'].sum()
+            print(f"  {model}: {trans_count}/{len(model_df)} ({trans_count/len(model_df)*100:.2f}%)")
+        
+        # Method 2: Code-based
+        code_count = df_valid['code_transductive'].sum()
+        print(f"\nMETHOD 2 - CODE-BASED (ML Classifier):")
+        print(f"Total transductive: {code_count}/{len(df_valid)} ({code_count/len(df_valid)*100:.2f}%)")
+        print(f"Average confidence: {df_valid['code_confidence'].mean():.3f}")
+        
+        print("\nBreakdown by model:")
+        for model in df_valid['model'].unique():
+            model_df = df_valid[df_valid['model'] == model]
+            trans_count = model_df['code_transductive'].sum()
+            avg_conf = model_df['code_confidence'].mean()
+            print(f"  {model}: {trans_count}/{len(model_df)} ({trans_count/len(model_df)*100:.2f}%), avg conf: {avg_conf:.3f}")
+        
+        # Agreement analysis
+        both_transductive = df_valid['aug_transductive'] & df_valid['code_transductive']
+        either_transductive = df_valid['aug_transductive'] | df_valid['code_transductive']
+        agreement = (df_valid['aug_transductive'] == df_valid['code_transductive']).mean()
+        
+        print(f"\n--- METHOD AGREEMENT ---")
+        print(f"Methods agree: {agreement*100:.1f}%")
+        print(f"Both detect transductive: {both_transductive.sum()}/{len(df_valid)} ({both_transductive.sum()/len(df_valid)*100:.2f}%)")
+        print(f"Either detects transductive: {either_transductive.sum()}/{len(df_valid)} ({either_transductive.sum()/len(df_valid)*100:.2f}%)")
+        
+        # Save results
+        output_file = f'experimental/transduction_hf_dataset/{dataset_name.replace("/", "_")}_results.csv'
+        df_valid.to_csv(output_file, index=False)
+        print(f"\n✓ Results saved to {output_file}")
+    
+    return df_valid
+
+def main():
+    """Analyze both datasets"""
+    # Dataset 1
+    print("Starting with first dataset...")
+    start_time = time.time()
+    df1 = analyze_dataset_optimized("Trelis/arc-programs-correct-50", batch_size=100)
+    print(f"First dataset completed in {time.time() - start_time:.1f} seconds")
+    
+    # Dataset 2  
+    print("\nStarting second dataset...")
+    start_time = time.time()
+    df2 = analyze_dataset_optimized("Trelis/arc-programs-50-full-200-partial", batch_size=100)
+    print(f"Second dataset completed in {time.time() - start_time:.1f} seconds")
+    
+    print("\n" + "="*80)
+    print("ANALYSIS COMPLETE")
+    print("="*80)
+
+if __name__ == "__main__":
+    main()
