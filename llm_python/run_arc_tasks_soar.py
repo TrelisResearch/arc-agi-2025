@@ -172,10 +172,6 @@ class ARCTaskRunnerSimple:
         self.db_path = db_path
         self.prompt_version = prompt_version
         
-        # Early stopping thresholds
-        self.STOP_AT_ALL_TRAIN_CORRECT = int(os.getenv('STOP_AT_ALL_TRAIN_CORRECT', '50'))
-        self.STOP_IF_NO_TRAIN_CORRECT_AFTER = int(os.getenv('STOP_IF_NO_TRAIN_CORRECT_AFTER', '50'))
-
         # Standard API timeout for network safety, no infrastructure timeouts
         api_timeout = 300  # 5 minutes for network safety only
         
@@ -1008,17 +1004,6 @@ class ARCTaskRunnerSimple:
         import threading
 
         task_results = defaultdict(lambda: {"attempts": [], "task_data": None})
-        
-        # Thread-safe early stopping state
-        early_stopping_lock = threading.Lock()
-        task_early_stopping = {task_id: {"stop_dispatching": False, "all_train_correct_count": 0, "any_train_correct_found": False, "completed_attempts": 0} 
-                              for task_id, _ in tasks}
-        
-        # Only apply early stopping if max_attempts is higher than the thresholds
-        use_early_stopping = (self.max_attempts > max(self.STOP_AT_ALL_TRAIN_CORRECT, self.STOP_IF_NO_TRAIN_CORRECT_AFTER))
-        
-        if use_early_stopping:
-            print(f"🎯 Early stopping enabled: stop after {self.STOP_AT_ALL_TRAIN_CORRECT} all-train-correct OR after {self.STOP_IF_NO_TRAIN_CORRECT_AFTER} attempts with no train-correct")
 
         # Initialize task results with task data and prompts (create once per task)
         first_prompt_shown = False
@@ -1049,33 +1034,6 @@ class ARCTaskRunnerSimple:
             nonlocal completed_attempts, completed_tasks
             attempt_start = time.time()
             
-            # Early stopping check - skip expensive work if conditions are met
-            if use_early_stopping:
-                with early_stopping_lock:
-                    stopping_state = task_early_stopping[task_id]
-                    
-                    # Check if we should skip this attempt due to early stopping
-                    if stopping_state["stop_dispatching"]:
-                        with count_lock:
-                            completed_attempts += 1
-                        return None  # Skip this attempt
-                    
-                    # Check if we should stop after reaching enough all-train-correct attempts
-                    if stopping_state["all_train_correct_count"] >= self.STOP_AT_ALL_TRAIN_CORRECT:
-                        stopping_state["stop_dispatching"] = True
-                        print(f"⏹️  Task {task_id}: Stopping after {stopping_state['all_train_correct_count']} all-train-correct attempts")
-                        with count_lock:
-                            completed_attempts += 1
-                        return None
-                        
-                    # Check if we should stop after no train correct in first N attempts  
-                    if (attempt_num >= self.STOP_IF_NO_TRAIN_CORRECT_AFTER and 
-                        not stopping_state["any_train_correct_found"]):
-                        stopping_state["stop_dispatching"] = True
-                        print(f"⏹️  Task {task_id}: Stopping after {self.STOP_IF_NO_TRAIN_CORRECT_AFTER} attempts with no train-correct")
-                        with count_lock:
-                            completed_attempts += 1
-                        return None
             
             try:
                 # Get the pre-created prompt for this task
@@ -1099,23 +1057,6 @@ class ARCTaskRunnerSimple:
                         # Prompt is already stored at task level during initialization
                         completed_attempts += 1
                         
-                        # Update early stopping state based on this attempt's results
-                        if use_early_stopping:
-                            with early_stopping_lock:
-                                stopping_state = task_early_stopping[task_id]
-                                stopping_state["completed_attempts"] += 1
-                                
-                                # Check if this attempt had any train correct
-                                attempt_detail = result["attempt_detail"]
-                                train_accuracy = attempt_detail.get("train_accuracy", 0.0)
-                                has_any_train_correct = train_accuracy > 0.0
-                                if has_any_train_correct:
-                                    stopping_state["any_train_correct_found"] = True
-                                
-                                # Check if this attempt had all train correct
-                                has_all_train_correct = train_accuracy == 1.0
-                                if has_all_train_correct:
-                                    stopping_state["all_train_correct_count"] += 1
 
                         # Check if task is complete
                         if len(task_results[task_id]["attempts"]) == self.max_attempts:

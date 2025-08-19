@@ -40,11 +40,68 @@ Submission improvements:
 
 ## August 18th 2025
 
+### Measure the time to do 64 attempts on different hardware.
+
+H200 - 
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local.db
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 16 --model Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716 --base-url http://107.152.109.26:11288/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
+
+1 attempt = 20-30 s
+4 attempts = 92 s
+16 attempts = 
+64 attempts = 
+
+4xL4:
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-test.db
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 4 --model Qwen/Qwen3-4B --base-url http://157.157.221.29:29745/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
+
+1 attempt = 200 s
+4 attempts = ???
+
+
+### Tune the server inference
+Start a pod and run the task runner with the correct 50 model on the arc prize 2025 evaluation dataset with 64 attempts::
+```bash
+uv run runpod/create_pod.py sglang -- --model-path Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716
+```
+and now hit that endpoint - http://107.152.109.26:11288/v1:
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local.db
+export STOP_AT_ALL_TRAIN_CORRECT="7"
+export STOP_IF_NO_TRAIN_CORRECT_AFTER="50"
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 64 --model Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716 --base-url http://107.152.109.26:11288/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
+
+### Test out L4 best concurrency by hitting with 32 to start, and doing 64 attempts, limit of 4 - 157.157.221.29:29745
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-test.db
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 64 --model Qwen/Qwen3-4B --base-url http://157.157.221.29:29745/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
+and now hit 
+
+### Try to find a race condition
+Start a pod with the qwen 50 correct model, just start the pod:
+
+```bash
+uv run runpod/create_pod.py sglang -- --model-path Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716
+```
+and then hit that pod with a limit of 4 tasks but with high concurrency:
+
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-test.db
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2024 --subset training --max_workers 32 --max_attempts 512 --model Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716 --base-url http://38.80.152.249:30932/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
+
+
 ### Run the 120B OSS model from openai on --dataset arc-prize-2025 --subset missing_solutions_20250819 
 We'll use openrouter:
 ```bash
 export ARC_PROGRAMS_DB=./llm_python/programsdb/local.db
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset missing_solutions_20250819 --max_workers 32 --max_attempts 1 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset missing_solutions_20250819 --max_workers 32 --max_attempts 32 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --limit 4
 ```
 
 and running tests:

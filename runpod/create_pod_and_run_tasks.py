@@ -73,7 +73,7 @@ def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="
         "uv", "run", "python", "-m", "llm_python.run_arc_tasks_soar",
         "--dataset", dataset,
         "--subset", subset,
-        "--max_workers", "12",
+        "--max_workers", "32",
         "--max_attempts", str(max_attempts),
         "--model", model_path,
         "--base-url", base_url,
