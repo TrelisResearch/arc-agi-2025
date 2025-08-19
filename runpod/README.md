@@ -1,39 +1,24 @@
 # RunPod Pod Management
 
-This directory contains scripts and templates for creating and managing RunPod pods with configurable health checks.
+Scripts for creating and managing RunPod pods.
 
-## Setup
+## Quick Start
 
-### Required Environment Variables
+Set `RUNPOD_API_KEY` environment variable, then:
 
 ```bash
-export RUNPOD_API_KEY="your-api-key-here"
+# Deploy fine-tuning environment
+uv run python runpod/create_pod.py fine_tuning
+
+# Deploy inference server  
+uv run python runpod/create_pod.py sglang -- --model-path Qwen/Qwen3-4B
 ```
-
-Or add it to your `.env` file.
-
-### RunPod Secrets (for Hugging Face models)
-
-For private Hugging Face models, you need to configure a RunPod secret:
-
-1. Go to your [RunPod Settings](https://www.runpod.io/console/user/settings)
-2. Add a new secret named `HUGGING_FACE_HUB_TOKEN` with your HF token
-3. The templates will automatically use this secret via `{{ RUNPOD_SECRET_HUGGING_FACE_HUB_TOKEN }}`
-
-Alternatively, you can modify the template to use a local environment variable instead of a RunPod secret.
 
 ## Available Templates
 
-- **`sglang`**: SGLang inference server (recommended for most models)
-- **`vllm`**: vLLM inference server (optimized for OSS models)
-
-## Usage
-
-### Basic Pod Creation
-
-```bash
-uv run create_pod.py <template> [--no-health-check] [--debug] -- [docker_args...]
-```
+- **`fine_tuning`**: Jupyter environment for fine-tuning with unsloth
+- **`sglang`**: SGLang inference server 
+- **`vllm`**: vLLM inference server
 
 ### Automated Pod Creation + ARC Task Running
 

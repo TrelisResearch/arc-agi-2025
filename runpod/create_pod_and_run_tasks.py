@@ -6,14 +6,14 @@ import argparse
 import signal
 import time
 import requests
+import select
 from dotenv import load_dotenv
+import sys
+sys.path.insert(0, os.path.dirname(__file__))
+from runpod_utils import delete_pod
 
 load_dotenv()
 
-def signal_handler(signum, frame):
-    """Handle interrupt signals for graceful shutdown"""
-    print(f"\n🛑 Received signal {signum}. Exiting...")
-    sys.exit(0)
 
 def wait_for_openai_endpoint(base_url, model_name, timeout=600, check_interval=10):
     """Wait for the OpenAI-compatible endpoint to be ready"""
@@ -44,12 +44,30 @@ def wait_for_openai_endpoint(base_url, model_name, timeout=600, check_interval=1
     print(f"❌ Endpoint failed to become ready after {timeout}s")
     return False
 
-def run_arc_tasks(dataset, model_path, base_url, subset="all_evaluation", max_attempts=64):
-    """Run the ARC tasks with the specified configuration"""
-    print(f"\n🎯 Running ARC tasks for {dataset} with subset {subset}...")
+def prompt_keep_pod(timeout=10):
+    """Prompt user whether to keep pod running, with timeout"""
+    print(f"\n💰 Keep pod running for manual use? [y/N] (timeout in {timeout}s): ", end="", flush=True)
     
-    # Extract model name from path for display
-    model_name = model_path.split('/')[-1]
+    # Use select for timeout on Unix systems
+    try:
+        if hasattr(select, 'select'):
+            ready, _, _ = select.select([sys.stdin], [], [], timeout)
+            if ready:
+                response = sys.stdin.readline().strip().lower()
+                return response.startswith('y')
+            else:
+                print("\n⏰ Timeout - defaulting to No (will delete pod)")
+                return False
+        else:
+            # Fallback for Windows - no timeout
+            response = input().strip().lower()
+            return response.startswith('y')
+    except Exception:
+        return False
+
+def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="all_evaluation", max_attempts=64):
+    """Run ARC tasks - task runner handles its own graceful shutdown"""
+    print(f"\n🎯 Running ARC tasks for {dataset} with subset {subset}...")
     
     cmd = [
         "uv", "run", "python", "-m", "llm_python.run_arc_tasks_soar",
@@ -66,16 +84,81 @@ def run_arc_tasks(dataset, model_path, base_url, subset="all_evaluation", max_at
     
     print(f"📝 Running command: {' '.join(cmd)}")
     
+    # Start subprocess
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, 
+                              universal_newlines=True, bufsize=1)
+    
     try:
-        result = subprocess.run(cmd, check=True)
-        print(f"✅ ARC tasks completed successfully for {dataset}!")
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"❌ Error running ARC tasks: {e}")
-        return False
+        # Stream output in real-time
+        while True:
+            line = process.stdout.readline()
+            if not line and process.poll() is not None:
+                break
+            if line:
+                print(line.rstrip())
+        
+        # Wait for process to complete
+        return_code = process.wait()
+        
+        if return_code == 0:
+            print(f"✅ ARC tasks completed successfully for {dataset}!")
+            return True
+        else:
+            print(f"❌ ARC tasks failed with return code {return_code}")
+            return False
+    
     except KeyboardInterrupt:
-        print("\n⚠️  Task execution interrupted by user")
-        return False
+        print(f"\n🛑 Ctrl+C received - forwarding to ARC tasks for graceful shutdown...")
+        
+        # Forward SIGINT to subprocess
+        process.send_signal(signal.SIGINT)
+        
+        # Wait for graceful shutdown (task runner handles this well)
+        print(f"⏳ Waiting for ARC tasks to complete gracefully...")
+        try:
+            return_code = process.wait(timeout=301)  # Just over API timeout for safety
+            print(f"✅ ARC tasks shut down gracefully")
+            return False  # Interrupted = not successful
+        except subprocess.TimeoutExpired:
+            print(f"⚠️  ARC tasks didn't shut down gracefully, terminating...")
+            process.terminate()
+            process.wait()
+            return False
+
+def terminate_pod_process(pod_process):
+    """Terminate the pod creation subprocess gracefully"""
+    if pod_process and pod_process.poll() is None:
+        print(f"\n🛑 Terminating pod creation...")
+        pod_process.send_signal(signal.SIGINT)
+        try:
+            pod_process.wait(timeout=30)
+            print(f"✅ Pod creation shut down gracefully")
+        except subprocess.TimeoutExpired:
+            print(f"⚠️  Pod creation didn't respond, force terminating...")
+            pod_process.terminate()
+            pod_process.wait()
+
+def handle_cleanup_decision(pod_id, base_url=None):
+    """Handle the decision to keep or delete the pod"""
+    if not pod_id:
+        return
+    
+    print(f"\n💰 Pod {pod_id} is still running and incurring costs.")
+    keep_pod = prompt_keep_pod()
+    
+    if keep_pod:
+        print(f"\n🚀 Keeping pod running for manual use:")
+        if base_url:
+            print(f"   Endpoint: {base_url}")
+        print(f"   Console: https://console.runpod.io/pods/{pod_id}")
+        print(f"   ⚠️  Remember to delete the pod when done to stop charges!")
+    else:
+        delete_pod(pod_id)
+
+def terminate_and_cleanup(pod_process, pod_id, base_url=None):
+    """Terminate pod process and handle cleanup decision"""
+    terminate_pod_process(pod_process)
+    handle_cleanup_decision(pod_id, base_url)
 
 def main():
     parser = argparse.ArgumentParser(
@@ -129,9 +212,6 @@ This script will:
         print("❌ Error: RUNPOD_API_KEY environment variable not set!")
         sys.exit(1)
     
-    # Register signal handlers
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
     
     # Step 1: Create the pod
     print(f"🚀 Step 1: Creating RunPod pod with model {args.model_path}")
@@ -221,6 +301,12 @@ This script will:
                     endpoint_ready = True
                     break  # This is where create_pod.py enters its wait loop
                     
+    except KeyboardInterrupt:
+        print(f"\n🛑 Ctrl+C during pod creation - cleaning up...")
+        terminate_pod_process(pod_process)
+        # create_pod.py handles its own cleanup when terminated
+        print(f"✅ Pod cleanup handled by create_pod.py")
+        sys.exit(0)
     except Exception as e:
         print(f"\n❌ Error reading pod creation output: {e}")
         pass  # Error details already printed
@@ -241,8 +327,7 @@ This script will:
         print(f"\n🔌 Using proxy connection: {base_url}")
     else:
         print("\n❌ Failed to determine pod endpoint URL")
-        if pod_process.poll() is None:
-            pod_process.terminate()
+        terminate_pod_process(pod_process)
         sys.exit(1)
     
     # Additional wait to ensure the endpoint is ready
@@ -250,30 +335,37 @@ This script will:
         # Double-check the endpoint is ready
         if not wait_for_openai_endpoint(base_url, args.model_path, timeout=300):
             print("❌ OpenAI endpoint failed to become ready")
-            pod_process.terminate()
+            terminate_pod_process(pod_process)
             sys.exit(1)
         
         # Step 2: Run ARC tasks
         print(f"\n🎯 Step 2: Running ARC tasks for {args.dataset}")
         
-        if run_arc_tasks(args.dataset, args.model_path, base_url, args.subset, args.max_attempts):
+        task_success = run_arc_tasks_with_graceful_handling(
+            args.dataset, args.model_path, base_url, args.subset, args.max_attempts
+        )
+        
+        if task_success:
             print(f"\n🎉 All tasks completed successfully!")
         else:
-            print(f"\n⚠️  Some tasks may have failed. Check the output above for details.")
+            print(f"\n⚠️  Tasks completed with issues or were cancelled.")
+        
+        # Always just prompt for cleanup (keep pod process running)
+        handle_cleanup_decision(pod_id, base_url)
     else:
         print("\n⏭️  Skipping ARC tasks as requested")
-    
-    # Step 3: Keep the pod running
-    print(f"\n💡 The pod is still running. Press Ctrl+C to stop and delete the pod.")
-    print(f"   You can continue to use the endpoint at: {base_url}")
-    
-    try:
-        # Wait for the pod process to complete (it will run until Ctrl+C)
-        pod_process.wait()
-    except KeyboardInterrupt:
-        print("\n🛑 Shutting down...")
-        pod_process.terminate()
-        pod_process.wait()
+        
+        # Step 3: Keep the create_pod.py process running until user decides
+        print(f"\n💡 Pod is running. Press Ctrl+C when ready to decide about pod.")
+        
+        try:
+            # Wait for the pod process to complete (it will run until Ctrl+C)
+            pod_process.wait()
+        except KeyboardInterrupt:
+            print(f"\n🛑 Ctrl+C received")
+        
+        # Always terminate and prompt in skip-tasks mode
+        terminate_and_cleanup(pod_process, pod_id, base_url)
 
 if __name__ == "__main__":
     main()

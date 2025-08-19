@@ -52,10 +52,9 @@ and running tests:
 export ARC_PROGRAMS_DB=./llm_python/programsdb/local-test.db
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset missing_solutions_20250819 --max_workers 32 --max_attempts 1 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
 ```
-and running tests using the pod startup with qwen correct 50:
+and running tests using the pod startup with qwen correct 50, use the pod startup and run tasks script:
 ```bash
-export ARC_PROGRAMS_DB=./llm_python/programsdb/local.db
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset missing_solutions_20250819 --max_workers 32 --max_attempts 1 --model Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716 --base-url http://107.152.109.26:11569/v1 --unsafe-executor --max-tokens 32000
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716" --max-attempts 1 --subset missing_solutions_20250819
 ```
 
 ### Run one test on the correct50 model
