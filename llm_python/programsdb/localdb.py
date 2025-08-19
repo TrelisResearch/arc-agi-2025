@@ -98,7 +98,7 @@ class LocalProgramsDB:
             # Create main programs table
             self.connection.execute("""
                 CREATE TABLE IF NOT EXISTS programs (
-                    key VARCHAR UNIQUE NOT NULL,
+                    key VARCHAR PRIMARY KEY,
                     task_id VARCHAR NOT NULL,
                     reasoning TEXT,
                     code TEXT NOT NULL,
@@ -274,12 +274,13 @@ class LocalProgramsDB:
         # Generate unique key from task_id and code
         key = self.generate_key(program_dict['task_id'], program_dict['code'])
         
-        # Insert into database (ON CONFLICT IGNORE to avoid duplicates)
+        # Insert into database (ON CONFLICT DO NOTHING to avoid duplicates)
         insert_sql = """
-        INSERT OR IGNORE INTO programs 
+        INSERT INTO programs 
         (key, task_id, reasoning, code, correct_train_input, correct_test_input,
          predicted_train_output, predicted_test_output, model, is_test_transductive)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (key) DO NOTHING
         """
         
         self.connection.execute(insert_sql, [

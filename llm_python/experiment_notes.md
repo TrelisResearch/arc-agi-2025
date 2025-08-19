@@ -14,21 +14,23 @@ Check tests pass in repo!
 
 Fine-tuning:
 [ ] Ability add a fine-tuning script.
-[ ] local model save option.
-[ ] run one notebook from another
+[ ] Local model save option.
+[ ] Run one notebook from another.
 
 Data generation:
 [x] Tackle tasks by order of length.
 [x] Reduce concurrent workers down to 12 as we're using Qwen 14B.
-[ ] Generate data for remaining tasks not covered in "arc-prize-2025 unique_training_tasks" and "arc-prize-2024 evaluation" with Qwen 14B from julien31. Focus tasks without 50 all-train-correct in the db.
+[x] Generate data for remaining tasks not covered in "arc-prize-2025 unique_training_tasks" and "arc-prize-2024 evaluation" with Qwen 14B from julien31. Focus tasks without 50 all-train-correct in the db.
 
 Submission attempt:
 [x] Make a simple submission to the competition with a basic approach.
 
 Submission improvements:
-[] Measure 4x L4 relative to 4xH200. On fp8 and standard.
-[] 
-
+[x] Order tasks as per the challenges file, before submission. Actually this was already happening.
+[ ] Get tests to pass.
+[ ] Try out some load testing on the server, to see what breaks it.
+[ ] Check that we can fully run through the arc-agi-2 tasks on L4s.
+[ ] Measure 4x L4 relative to 4xH200. On fp8 and standard.
 
 Re-run evaluation:
 ```bash
@@ -43,6 +45,22 @@ uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "julien31/soar-qwen-14b
 ```
 
 ## August 18th 2025
+
+### Run the 120B OSS model from openai on the unique_train problems for 8 attempts to see how it scores.
+Just run the task runner:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset unique_training_tasks --max_workers 32 --max_attempts 8 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
+```
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset unique_training_tasks --max_workers 32 --max_attempts 64 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
+```
+
+And run on the evaluation dataset of arc-prize-2024 to get more data there:
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-oss-120b-eval.db
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2024 --subset evaluation --max_workers 32 --max_attempts 64 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
+```
 
 ### Generate data for arc-agi-1 eval using Qwen 14B from julien31
 
