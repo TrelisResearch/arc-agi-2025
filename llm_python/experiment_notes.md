@@ -42,26 +42,39 @@ Submission improvements:
 
 ### Measure the time to do 64 attempts on different hardware.
 
-H200 - 
+H200:
 ```bash
 export ARC_PROGRAMS_DB=./llm_python/programsdb/local.db
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 16 --model Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716 --base-url http://107.152.109.26:11288/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 64 --model Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716 --base-url http://107.152.109.26:11288/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
 ```
-
 1 attempt = 20-30 s
 4 attempts = 92 s
-16 attempts = 
-64 attempts = 
+16 attempts = 316 s
+64 attempts = 1232 s (and gets 1/120 weighted voting correct):
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.8%
+  Pass@2 (Train Majority):  0.8%
+  Oracle (Best Attempt):    0.8%
+  All Train Correct:        0.8%
+  Min 1 Train Correct:      3.3%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.4%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
 4xL4:
 ```bash
 export ARC_PROGRAMS_DB=./llm_python/programsdb/local-test.db
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 4 --model Qwen/Qwen3-4B --base-url http://157.157.221.29:29745/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 16 --model Qwen/Qwen3-4B --base-url http://157.157.221.29:29745/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
 ```
-
 1 attempt = 200 s
-4 attempts = ???
+4 attempts = 547 s
+16 attempts = 1865 s
 
+That's for 120 tasks, so for 240 tasks, could probably do:
+(120 / 240) x 12 hours x 3600 s/h = 21,600 s
+ / 1865 s per 16 attempts
+ = 185 attempts per task
 
 ### Tune the server inference
 Start a pod and run the task runner with the correct 50 model on the arc prize 2025 evaluation dataset with 64 attempts::
