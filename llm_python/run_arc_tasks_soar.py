@@ -8,6 +8,8 @@ import threading
 import traceback
 import numpy as np
 import os
+import signal
+import atexit
 from pathlib import Path
 from typing import Dict, List, NotRequired, Optional, TypedDict, Union, Tuple, Any
 from dotenv import load_dotenv
@@ -1248,6 +1250,8 @@ class ARCTaskRunnerSimple:
                     )
                 except KeyboardInterrupt:
                     print(f"\n🛑 Keyboard interrupt received. Cancelling remaining attempts...")
+                    # Note: cleanup_handler() will be called automatically by signal handler
+                    
                     # Cancel remaining futures
                     cancelled_count = 0
                     for future in remaining:
@@ -1912,6 +1916,50 @@ class ARCTaskRunnerSimple:
         validate_submission_file(submission_path, all_task_ids)
 
 
+# Global flag to prevent multiple cleanup calls
+_cleanup_performed = threading.Lock()
+_cleanup_done = False
+
+def cleanup_handler(signum=None, frame=None):
+    """Clean shutdown handler for proper resource cleanup (idempotent)"""
+    global _cleanup_done
+    
+    with _cleanup_performed:
+        if _cleanup_done:
+            return  # Already cleaned up, avoid duplicate work
+        
+        signal_name = {
+            signal.SIGINT: "SIGINT (Ctrl+C)",
+            signal.SIGTERM: "SIGTERM",
+            None: "atexit"
+        }.get(signum, f"signal {signum}")
+        
+        print(f"\n🧹 Cleanup handler called ({signal_name})")
+        
+        # Close database connections first (most important for WAL files)
+        try:
+            from llm_python.programsdb.localdb import LocalProgramsDB
+            instance_count = LocalProgramsDB.get_instance_count()
+            if instance_count > 0:
+                print(f"📦 Closing {instance_count} database connection(s)")
+                LocalProgramsDB.clear_all_instances()
+                print("✅ Database connections closed")
+            else:
+                print("📦 No database connections to close")
+        except Exception as e:
+            print(f"⚠️ Database cleanup error: {e}")
+        
+        # Clean up executor resources
+        try:
+            ArcTester.cleanup_executor()
+            print("✅ Executor resources cleaned up")
+        except Exception as e:
+            print(f"⚠️ Executor cleanup error: {e}")
+        
+        _cleanup_done = True
+        print("🧹 Cleanup completed")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Run ARC tasks with all-attempts, rolling execution, and voting-based evaluation"
@@ -1993,6 +2041,12 @@ def main():
 
     args = parser.parse_args()
 
+    # Register cleanup handlers for proper resource cleanup on shutdown
+    print("🛡️ Registering cleanup handlers for graceful shutdown")
+    signal.signal(signal.SIGINT, cleanup_handler)
+    signal.signal(signal.SIGTERM, cleanup_handler)
+    atexit.register(cleanup_handler)
+
     # Validation
     if args.max_workers < 1:
         parser.error("--max_workers must be at least 1")
@@ -2019,14 +2073,8 @@ def main():
         db_path=args.db_path,
     )
 
-    try:
-        results = runner.run_subset(args.subset, args.dataset, args.limit)
-    finally:
-        # Final cleanup to ensure clean shutdown
-        try:
-            ArcTester.cleanup_executor()
-        except Exception as e:
-            print(f"⚠️ Final cleanup warning: {e}")
+    # Run the task subset - cleanup is handled automatically by signal handlers
+    results = runner.run_subset(args.subset, args.dataset, args.limit)
 
 
 if __name__ == "__main__":

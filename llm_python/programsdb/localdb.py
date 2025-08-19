@@ -10,8 +10,7 @@ from .schema import ProgramSample
 
 # Thread-local storage for connections
 _thread_local = threading.local()
-# Global flag to track if tables have been created
-_tables_initialized = False
+# Global lock for thread-safe initialization
 _initialization_lock = threading.Lock()
 
 
@@ -67,6 +66,7 @@ class LocalProgramsDB:
         """
         self.db_path = db_path
         self._connection: Optional[duckdb.DuckDBPyConnection] = None
+        self._tables_initialized = False
     
     @property
     def connection(self) -> duckdb.DuckDBPyConnection:
@@ -78,13 +78,11 @@ class LocalProgramsDB:
     
     def _ensure_table_exists(self) -> None:
         """Create the programs table and metadata table if they don't exist."""
-        global _tables_initialized
-        
-        if _tables_initialized:
+        if self._tables_initialized:
             return
             
         with _initialization_lock:
-            if _tables_initialized:  # Double-check after acquiring lock
+            if self._tables_initialized:  # Double-check after acquiring lock
                 return
                 
             # Create metadata table for storing database ID
@@ -117,7 +115,7 @@ class LocalProgramsDB:
             # Ensure database has a unique ID
             self._ensure_database_id()
             
-            _tables_initialized = True
+            self._tables_initialized = True
     
     def _migrate_schema(self) -> None:
         """Migrate existing database schema to add new columns if needed."""

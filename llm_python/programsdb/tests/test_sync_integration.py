@@ -35,14 +35,14 @@ def cleanup_db():
     
     yield track_db
     
-    # Only clear the specific database instances we created
-    from ..localdb import _db_instances
+    # Clean up using the class method that handles thread-local instances
+    from ..localdb import LocalProgramsDB, _thread_local
     for db_path in created_dbs:
-        if db_path in _db_instances:
+        if hasattr(_thread_local, 'db_instances') and db_path in _thread_local.db_instances:
             # Close the database connection if it has one
-            if hasattr(_db_instances[db_path], 'close'):
-                _db_instances[db_path].close()
-            del _db_instances[db_path]
+            if hasattr(_thread_local.db_instances[db_path], 'close'):
+                _thread_local.db_instances[db_path].close()
+            del _thread_local.db_instances[db_path]
 
 
 def create_test_programs() -> List[ProgramSample]:

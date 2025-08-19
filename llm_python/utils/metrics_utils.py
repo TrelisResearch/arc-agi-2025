@@ -87,7 +87,7 @@ def calculate_task_metrics(
         # ---------- weighted voting pass@2 ----------
         try:
             preds = compute_weighted_majority_voting(non_trans)   # list
-            # Compare predictions directly as lists
+            # Compare predictions as lists of test outputs
             if any(p == gt for p in preds if p is not None):
                 weighted_pass2 += 1
         except Exception:
@@ -96,7 +96,7 @@ def calculate_task_metrics(
         # ---------- train‑majority voting pass@2 ----------
         try:
             preds = compute_train_majority_voting(non_trans)
-            # Compare predictions directly as lists
+            # Compare predictions as lists of test outputs
             if any(p == gt for p in preds if p is not None):
                 train_majority_pass2 += 1
         except Exception:

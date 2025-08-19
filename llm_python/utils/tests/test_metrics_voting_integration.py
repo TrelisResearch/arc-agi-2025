@@ -43,11 +43,11 @@ class TestMetricsVotingIntegration:
         test_output = [[1, 2], [3, 4]]
         task_data = self.create_task_data([test_output])
         
-        # Multiple attempts with same correct prediction
+        # Multiple attempts with same correct prediction - test_predicted should be list of grids
         attempts = [
-            self.create_attempt(test_output),  # Correct prediction
-            self.create_attempt(test_output),  # Same correct prediction
-            self.create_attempt([[0, 0], [0, 0]]),  # Wrong prediction
+            self.create_attempt([test_output]),  # Correct prediction (wrapped in list)
+            self.create_attempt([test_output]),  # Same correct prediction (wrapped in list)
+            self.create_attempt([[[0, 0], [0, 0]]]),  # Wrong prediction (wrapped in list)
         ]
         
         results = [{
@@ -70,8 +70,8 @@ class TestMetricsVotingIntegration:
         
         # All attempts have wrong predictions
         attempts = [
-            self.create_attempt([[0, 0], [0, 0]]),  # Wrong prediction
-            self.create_attempt([[5, 5], [5, 5]]),  # Different wrong prediction
+            self.create_attempt([[[0, 0], [0, 0]]]),  # Wrong prediction (wrapped in list)
+            self.create_attempt([[[5, 5], [5, 5]]]),  # Different wrong prediction (wrapped in list)
         ]
         
         # Update to mark as incorrect
@@ -122,8 +122,8 @@ class TestMetricsVotingIntegration:
         
         # High train accuracy attempt with correct prediction should win
         attempts = [
-            self.create_attempt([[0, 0], [0, 0]], train_accuracy=0.5),  # Wrong, low train
-            self.create_attempt(test_output, train_accuracy=1.0),  # Correct, high train
+            self.create_attempt([[[0, 0], [0, 0]]], train_accuracy=0.5),  # Wrong, low train (wrapped in list)
+            self.create_attempt([test_output], train_accuracy=1.0),  # Correct, high train (wrapped in list)
         ]
         
         results = [{
@@ -141,19 +141,19 @@ class TestMetricsVotingIntegration:
         test_output = [[1, 2], [3, 4]]
         
         attempts = [
-            self.create_attempt(test_output, train_accuracy=1.0),
-            self.create_attempt([[0, 0], [0, 0]], train_accuracy=0.5),
+            self.create_attempt([test_output], train_accuracy=1.0),  # Wrapped in list
+            self.create_attempt([[[0, 0], [0, 0]]], train_accuracy=0.5),  # Wrapped in list
         ]
         
         # Test weighted voting
         weighted_results = compute_weighted_majority_voting(attempts, top_k=2)
         assert len(weighted_results) <= 2, "Should return at most top_k results"
-        assert test_output in weighted_results, "Correct prediction should be in results"
+        assert [test_output] in weighted_results, "Correct prediction list should be in results"
         
         # Test train majority voting
         train_results = compute_train_majority_voting(attempts, top_k=2)
         assert len(train_results) <= 2, "Should return at most top_k results"
-        assert test_output in train_results, "Correct prediction should be in results"
+        assert [test_output] in train_results, "Correct prediction list should be in results"
     
     def test_edge_cases(self):
         """Test edge cases that previously caused bugs"""
@@ -172,7 +172,7 @@ class TestMetricsVotingIntegration:
         assert metrics["train_majority_pass2"] == 0
         
         # All transductive attempts (should be filtered out)
-        attempts = [self.create_attempt([[1, 2]])]
+        attempts = [self.create_attempt([[[1, 2]]])]  # Wrapped in list
         attempts[0]["is_transductive"] = True
         results = [{"task_data": {"test": [{"output": [[1, 2]]}]}, "attempt_details": attempts}]
         metrics = calculate_task_metrics(results)
@@ -188,7 +188,7 @@ class TestMetricsVotingIntegration:
         task_data = self.create_task_data([test_output])
         
         # Create attempt with correct prediction
-        attempts = [self.create_attempt(test_output)]
+        attempts = [self.create_attempt([test_output])]  # Wrapped in list
         
         results = [{
             "task_data": task_data["task_data"],
