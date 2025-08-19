@@ -4,7 +4,7 @@ import os
 from llm_python.transduction.augmentation_classifier import (
     AugmentationBasedTransductionClassifier,
 )
-from llm_python.transduction.code_based_classifier import CodeBasedTransductionClassifier
+from llm_python.transduction.code_classifier import CodeTransductionClassifier
 from llm_python.utils.arc_tester import ArcTester
 from llm_python.utils.task_loader import TaskLoader
 
@@ -23,7 +23,7 @@ task_loader = TaskLoader()
 
 # Initialize classifiers
 augmentation_classifier = AugmentationBasedTransductionClassifier(arc_tester)
-code_classifier = CodeBasedTransductionClassifier()
+code_classifier = CodeTransductionClassifier()
 
 
 @pytest.mark.parametrize("case", test_cases)

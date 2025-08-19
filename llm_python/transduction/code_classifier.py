@@ -5,7 +5,7 @@ from typing import Tuple, Optional
 from llm_python.utils.task_loader import TaskData
 
 
-class CodeBasedTransductionClassifier:
+class CodeTransductionClassifier:
     """
     Classifier that determines if a program is transductive based on code analysis.
     """

@@ -26,7 +26,7 @@ from llm_python.utils.voting_utils import (
 )
 from llm_python.utils.submission_validator import validate_submission_file
 from llm_python.utils.validator import replace_invalid_grid
-from llm_python.utils.transduction import detect_transduction
+from llm_python.transduction.code_classifier import CodeTransductionClassifier
 from llm_python.utils.prompt_loader import PromptLoader
 from llm_python.utils.serialization import ResponseSerializer
 from llm_python.utils.api_client import ARCAPIClient
@@ -216,6 +216,7 @@ class ARCTaskRunnerSimple:
             max_output_cells=1_800,
         )
         self.prompt_loader = PromptLoader()
+        self.transduction_classifier = CodeTransductionClassifier()
 
         # Thread-safe cost tracking
         self._cost_lock = threading.Lock()
@@ -665,12 +666,21 @@ class ARCTaskRunnerSimple:
         is_test_transductive = False
         test_transduction_reason = ""
         if program_extracted:
-            (
-                is_train_transductive,
-                train_transduction_reason,
-                is_test_transductive,
-                test_transduction_reason,
-            ) = detect_transduction(program, task_data)
+            # Use the new CodeTransductionClassifier
+            is_transductive, confidence = self.transduction_classifier.is_transductive(program, task_data)
+            
+            # Map the single transduction result to both train and test for backward compatibility
+            # The new classifier provides a general transduction detection
+            is_train_transductive = is_transductive
+            is_test_transductive = is_transductive
+            
+            if is_transductive:
+                reason = f"Code-based transduction detected (confidence: {confidence:.3f})"
+                train_transduction_reason = reason
+                test_transduction_reason = reason
+            else:
+                train_transduction_reason = f"Not transductive (confidence: {1-confidence:.3f})"
+                test_transduction_reason = f"Not transductive (confidence: {1-confidence:.3f})"
 
         # Evaluate on training examples (skip if transductive)
         train_results: List[TrainResult] = []
