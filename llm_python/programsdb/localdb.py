@@ -104,18 +104,21 @@ class LocalProgramsDB:
                     correct_test_input BOOLEAN[] NOT NULL,
                     predicted_train_output INTEGER[][][] NOT NULL,
                     predicted_test_output INTEGER[][][] NOT NULL,
-                    model VARCHAR NOT NULL,
-                    is_test_transductive BOOLEAN NOT NULL DEFAULT FALSE
+                    model VARCHAR NOT NULL
                 )
             """)
 
+<<<<<<< HEAD
             # Migrate existing databases to add new columns if needed
             self._migrate_schema()
 
+=======
+>>>>>>> main
             # Ensure database has a unique ID
             self._ensure_database_id()
 
             self._tables_initialized = True
+<<<<<<< HEAD
 
     def _migrate_schema(self) -> None:
         """Migrate existing database schema to add new columns if needed."""
@@ -132,6 +135,9 @@ class LocalProgramsDB:
             # Column already exists or other non-critical error - ignore
             pass
 
+=======
+    
+>>>>>>> main
     def _ensure_database_id(self) -> None:
         """Ensure the database has a unique ID, creating one if it doesn't exist."""
         import uuid
@@ -273,8 +279,13 @@ class LocalProgramsDB:
     def _generate_key(self, task_id: str, code: str) -> str:
         """Legacy private method - use generate_key instead."""
         return self.generate_key(task_id, code)
+<<<<<<< HEAD
 
     def add_program(self, program: Union[ProgramSample, Dict[str, Any]]) -> None:
+=======
+    
+    def add_program(self, program: ProgramSample) -> None:
+>>>>>>> main
         """
         Add a program to the database with validation.
 
@@ -284,6 +295,7 @@ class LocalProgramsDB:
         Raises:
             ValueError: If program validation fails
         """
+<<<<<<< HEAD
         # Convert to dict - TypedDict is already a dict in runtime
         program_dict = dict(program)
 
@@ -293,14 +305,24 @@ class LocalProgramsDB:
         # Generate unique key from task_id and code
         key = self.generate_key(program_dict["task_id"], program_dict["code"])
 
+=======
+        
+        # Validate the program
+        self._validate_program(program)
+        
+        # Generate unique key from task_id and code
+        key = self.generate_key(program['task_id'], program['code'])
+        
+>>>>>>> main
         # Insert into database (ON CONFLICT DO NOTHING to avoid duplicates)
         insert_sql = """
         INSERT INTO programs 
         (key, task_id, reasoning, code, correct_train_input, correct_test_input,
-         predicted_train_output, predicted_test_output, model, is_test_transductive)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         predicted_train_output, predicted_test_output, model)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (key) DO NOTHING
         """
+<<<<<<< HEAD
 
         self.connection.execute(
             insert_sql,
@@ -320,6 +342,21 @@ class LocalProgramsDB:
             ],
         )
 
+=======
+        
+        self.connection.execute(insert_sql, [
+            key,
+            program['task_id'],
+            program.get('reasoning'),
+            program['code'],
+            program['correct_train_input'],
+            program['correct_test_input'],
+            program['predicted_train_output'],
+            program['predicted_test_output'],
+            program['model'],
+        ])
+    
+>>>>>>> main
     def get_programs_by_task(self, task_id: str) -> List[Dict[str, Any]]:
         """
         Get all programs for a specific task.
