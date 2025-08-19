@@ -6,6 +6,42 @@ Lewis Reminders:
 - Mathieu.
 
 ---
+## Aug 19
+
+TODO:
+
+Check tests pass in repo!
+
+Fine-tuning:
+[ ] Ability add a fine-tuning script.
+[ ] local model save option.
+[ ] run one notebook from another
+
+Data generation:
+[x] Tackle tasks by order of length.
+[x] Reduce concurrent workers down to 12 as we're using Qwen 14B.
+[ ] Generate data for remaining tasks not covered in "arc-prize-2025 unique_training_tasks" and "arc-prize-2024 evaluation" with Qwen 14B from julien31. Focus tasks without 50 all-train-correct in the db.
+
+Submission attempt:
+[x] Make a simple submission to the competition with a basic approach.
+
+Submission improvements:
+[] Measure 4x L4 relative to 4xH200. On fp8 and standard.
+[] 
+
+
+Re-run evaluation:
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local.db
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "julien31/soar-qwen-14b" --max-attempts 512 --subset evaluation
+```
+
+Re-run unique training tasks:
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-unique-train.db
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "julien31/soar-qwen-14b" --max-attempts 512 --subset unique_training_tasks
+```
+
 ## August 18th 2025
 
 ### Generate data for arc-agi-1 eval using Qwen 14B from julien31
@@ -21,10 +57,14 @@ uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "julien31/soar-qwen-14b
 
 ```bash
 export ARC_PROGRAMS_DB=./llm_python/programsdb/local-unique-train.db
-uv run runpod/create_pod_and_run_tasks.py arc-agi-2 "julien31/soar-qwen-14b" --max-attempts 512 --subset unique_training_tasks
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "julien31/soar-qwen-14b" --max-attempts 512 --subset unique_training_tasks
 ```
+actually try running on http://107.152.109.26:11569/v1 with the task runner:
 
-
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-unique-train.db
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset unique_training_tasks --max_workers 24 --max_attempts 512 --model julien31/soar-qwen-14b --base-url http://107.152.109.26:11569/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
 
 
 ### Test out the 50 correct 200 partial model with bf16 kvcache - Trelis/Qwen3-4B_dsarc-programs-50-full-200-partial_20250807-211749-c3171

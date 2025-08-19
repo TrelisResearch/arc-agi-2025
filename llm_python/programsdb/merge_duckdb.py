@@ -50,8 +50,40 @@ def merge_databases(source_dbs, target_db, table_name='programs', key_column='ke
         print("❌ No valid database files to merge")
         return False
     
-    # Create/overwrite the target database
+    # Check if target database exists and warn user
     if os.path.exists(target_db):
+        try:
+            conn = duckdb.connect(target_db, read_only=True)
+            existing_count = 0
+            existing_tables = []
+            try:
+                tables = conn.execute("SHOW TABLES").fetchall()
+                for table in tables:
+                    table_name_check = table[0]
+                    count = conn.execute(f"SELECT COUNT(*) FROM {table_name_check}").fetchone()[0]
+                    existing_count += count
+                    existing_tables.append(f"{table_name_check} ({count} rows)")
+            except:
+                pass
+            conn.close()
+            
+            if existing_count > 0:
+                print(f"⚠️  WARNING: Target database '{target_db}' already exists!")
+                print(f"   It contains {existing_count} total rows across tables: {', '.join(existing_tables)}")
+                print(f"   This operation will DELETE all existing data in '{target_db}'")
+                response = input("   Do you want to continue? (yes/no): ").strip().lower()
+                if response not in ['yes', 'y']:
+                    print("❌ Merge cancelled by user")
+                    return False
+        except:
+            # If we can't read it, still warn but less detail
+            print(f"⚠️  WARNING: Target database '{target_db}' already exists!")
+            print(f"   This operation will DELETE it and create a new database")
+            response = input("   Do you want to continue? (yes/no): ").strip().lower()
+            if response not in ['yes', 'y']:
+                print("❌ Merge cancelled by user")
+                return False
+        
         os.remove(target_db)
         print("✅ Removed existing target database")
     
@@ -104,7 +136,13 @@ def merge_databases(source_dbs, target_db, table_name='programs', key_column='ke
         )
     """
     target_conn.execute(create_table_sql)
-    print("✅ Table created")
+    
+    # Create unique index on key column if it exists (for ON CONFLICT support)
+    if 'key' in all_columns:
+        target_conn.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS idx_{table_name}_key ON {table_name}(key)")
+        print(f"✅ Table created with UNIQUE constraint on 'key' column")
+    else:
+        print("✅ Table created")
     
     # Merge data from all databases
     print(f"\n📥 Merging data from {len(valid_source_dbs)} databases...")

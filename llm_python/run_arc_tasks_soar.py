@@ -171,9 +171,13 @@ class ARCTaskRunnerSimple:
         self.log_to_db = log_to_db
         self.db_path = db_path
         self.prompt_version = prompt_version
+        
+        # Early stopping thresholds
+        self.STOP_AT_ALL_TRAIN_CORRECT = int(os.getenv('STOP_AT_ALL_TRAIN_CORRECT', '50'))
+        self.STOP_IF_NO_TRAIN_CORRECT_AFTER = int(os.getenv('STOP_IF_NO_TRAIN_CORRECT_AFTER', '50'))
 
         # Standard API timeout for network safety, no infrastructure timeouts
-        api_timeout = 1800  # 30 minutes for network safety only
+        api_timeout = 300  # 5 minutes for network safety only
         
         # Optional global timeout from environment variable
         global_timeout = None
@@ -879,10 +883,11 @@ class ARCTaskRunnerSimple:
         return result
 
     def run_subset(
-        self, subset_name: str, dataset: str = "arc-agi-1", limit: Optional[int] = None
+        self, subset_name: str, dataset: str = "arc-prize-2025", limit: Optional[int] = None
     ) -> List[Dict]:
         """Run all tasks in a subset with true parallelization at the attempt level"""
         try:
+            print(f"Loading subset: {dataset}/{subset_name}")
             tasks = self.task_loader.load_tasks_from_subset(subset_name, dataset)
             if limit:
                 tasks = tasks[:limit]
@@ -899,6 +904,28 @@ class ARCTaskRunnerSimple:
                 total_tasks = len(tasks)
 
             print(f"✅ Task validation complete: {total_tasks} valid tasks")
+            
+            # Sort tasks by total length (training + test examples)
+            def calculate_task_length(task_tuple):
+                task_id, task_data = task_tuple
+                total_length = 0
+                # Add training examples length
+                if 'train' in task_data:
+                    for example in task_data['train']:
+                        if 'input' in example:
+                            total_length += len(str(example['input']))
+                        if 'output' in example:
+                            total_length += len(str(example['output']))
+                # Add test examples length (only inputs since we don't have outputs)
+                if 'test' in task_data:
+                    for example in task_data['test']:
+                        if 'input' in example:
+                            total_length += len(str(example['input']))
+                return total_length
+            
+            # Sort tasks from shortest to longest
+            tasks = sorted(tasks, key=calculate_task_length)
+            print(f"📏 Tasks sorted by length (shortest to longest)")
 
         except Exception as e:
             print(f"Error loading tasks: {e}")
@@ -978,8 +1005,20 @@ class ARCTaskRunnerSimple:
 
         # Track results by task - use thread-safe defaultdict to prevent race conditions
         from collections import defaultdict
+        import threading
 
         task_results = defaultdict(lambda: {"attempts": [], "task_data": None})
+        
+        # Thread-safe early stopping state
+        early_stopping_lock = threading.Lock()
+        task_early_stopping = {task_id: {"stop_dispatching": False, "all_train_correct_count": 0, "any_train_correct_found": False, "completed_attempts": 0} 
+                              for task_id, _ in tasks}
+        
+        # Only apply early stopping if max_attempts is higher than the thresholds
+        use_early_stopping = (self.max_attempts > max(self.STOP_AT_ALL_TRAIN_CORRECT, self.STOP_IF_NO_TRAIN_CORRECT_AFTER))
+        
+        if use_early_stopping:
+            print(f"🎯 Early stopping enabled: stop after {self.STOP_AT_ALL_TRAIN_CORRECT} all-train-correct OR after {self.STOP_IF_NO_TRAIN_CORRECT_AFTER} attempts with no train-correct")
 
         # Initialize task results with task data and prompts (create once per task)
         first_prompt_shown = False
@@ -1009,6 +1048,35 @@ class ARCTaskRunnerSimple:
         def attempt_wrapper(task_idx, task_id, task_data, attempt_num):
             nonlocal completed_attempts, completed_tasks
             attempt_start = time.time()
+            
+            # Early stopping check - skip expensive work if conditions are met
+            if use_early_stopping:
+                with early_stopping_lock:
+                    stopping_state = task_early_stopping[task_id]
+                    
+                    # Check if we should skip this attempt due to early stopping
+                    if stopping_state["stop_dispatching"]:
+                        with count_lock:
+                            completed_attempts += 1
+                        return None  # Skip this attempt
+                    
+                    # Check if we should stop after reaching enough all-train-correct attempts
+                    if stopping_state["all_train_correct_count"] >= self.STOP_AT_ALL_TRAIN_CORRECT:
+                        stopping_state["stop_dispatching"] = True
+                        print(f"⏹️  Task {task_id}: Stopping after {stopping_state['all_train_correct_count']} all-train-correct attempts")
+                        with count_lock:
+                            completed_attempts += 1
+                        return None
+                        
+                    # Check if we should stop after no train correct in first N attempts  
+                    if (attempt_num >= self.STOP_IF_NO_TRAIN_CORRECT_AFTER and 
+                        not stopping_state["any_train_correct_found"]):
+                        stopping_state["stop_dispatching"] = True
+                        print(f"⏹️  Task {task_id}: Stopping after {self.STOP_IF_NO_TRAIN_CORRECT_AFTER} attempts with no train-correct")
+                        with count_lock:
+                            completed_attempts += 1
+                        return None
+            
             try:
                 # Get the pre-created prompt for this task
                 full_prompt = task_results[task_id]["full_prompt"]
@@ -1030,6 +1098,24 @@ class ARCTaskRunnerSimple:
                         )
                         # Prompt is already stored at task level during initialization
                         completed_attempts += 1
+                        
+                        # Update early stopping state based on this attempt's results
+                        if use_early_stopping:
+                            with early_stopping_lock:
+                                stopping_state = task_early_stopping[task_id]
+                                stopping_state["completed_attempts"] += 1
+                                
+                                # Check if this attempt had any train correct
+                                attempt_detail = result["attempt_detail"]
+                                train_accuracy = attempt_detail.get("train_accuracy", 0.0)
+                                has_any_train_correct = train_accuracy > 0.0
+                                if has_any_train_correct:
+                                    stopping_state["any_train_correct_found"] = True
+                                
+                                # Check if this attempt had all train correct
+                                has_all_train_correct = train_accuracy == 1.0
+                                if has_all_train_correct:
+                                    stopping_state["all_train_correct_count"] += 1
 
                         # Check if task is complete
                         if len(task_results[task_id]["attempts"]) == self.max_attempts:
@@ -1310,29 +1396,23 @@ class ARCTaskRunnerSimple:
         # Check if we're in SUBMIT mode
         submit_mode = os.getenv("SUBMIT", "").lower() == "true"
 
-        # Filter out train-transductive attempts first (like voting does)
-        non_transductive_attempts = [
-            attempt for attempt in attempts 
-            if not attempt.get("is_train_transductive", False)
-        ]
-
-        # Calculate key stats using only non-transductive attempts
+        # Calculate key stats using all attempts (no filtering for denominator)
         if not submit_mode:
             test_correct_attempts = sum(
-                1 for attempt in non_transductive_attempts if attempt.get("test_correct", False)
+                1 for attempt in attempts if attempt.get("test_correct", False)
             )
         else:
             test_correct_attempts = 0  # Not computed in SUBMIT mode
             
         train_perfect_attempts = sum(
-            1 for attempt in non_transductive_attempts if attempt.get("train_accuracy", 0.0) == 1.0
+            1 for attempt in attempts if attempt.get("train_accuracy", 0.0) == 1.0
         )
         # Align with Min 1 Train logic: task-level, has partial but not perfect training
         has_perfect_train = any(
-            attempt.get("train_accuracy", 0.0) == 1.0 for attempt in non_transductive_attempts
+            attempt.get("train_accuracy", 0.0) == 1.0 for attempt in attempts
         )
         has_partial_train = any(
-            0 < attempt.get("train_accuracy", 0.0) < 1.0 for attempt in non_transductive_attempts
+            0 < attempt.get("train_accuracy", 0.0) < 1.0 for attempt in attempts
         )
         task_has_partial_train = has_partial_train and not has_perfect_train
 
@@ -1371,9 +1451,9 @@ class ARCTaskRunnerSimple:
             1 for attempt in attempts if attempt.get("test_exec_timeout", False)
         )
 
-        # Find best attempt (from non-transductive attempts)
+        # Find best attempt (from all attempts)
         best_attempt = max(
-            non_transductive_attempts if non_transductive_attempts else attempts,
+            attempts,
             key=lambda x: (x.get("test_correct", False), x.get("train_accuracy", 0.0)),
         )
 
@@ -1383,8 +1463,8 @@ class ARCTaskRunnerSimple:
             # SUBMIT mode: only show train metrics
             summary = f"✅ {task_id}: {train_perfect_attempts} train-perfect, {partial_indicator} (SUBMIT mode)"
         else:
-            # Normal mode: show both test and train metrics (using non-transductive counts)
-            summary = f"✅ {task_id}: {test_correct_attempts}/{len(non_transductive_attempts)} test-correct, {train_perfect_attempts} train-perfect, {partial_indicator}"
+            # Normal mode: show both test and train metrics (using total attempts)
+            summary = f"✅ {task_id}: {test_correct_attempts}/{len(attempts)} test-correct, {train_perfect_attempts} train-perfect, {partial_indicator}"
 
         # Add issues in timeline order if any occurred
         issues = []
@@ -1838,11 +1918,10 @@ def main():
     )
     parser.add_argument(
         "--dataset",
-        default="arc-agi-1",
-        choices=["arc-agi-1", "arc-agi-1r", "arc-agi-2", "arc-prize-2024", "arc-prize-2025"],
-        help="Dataset to use",
+        default="arc-prize-2025",
+        help="Dataset to use (e.g., arc-prize-2025, arc-agi-1, arc-agi-2)",
     )
-    parser.add_argument("--subset", default="shortest_1", help="Subset name")
+    parser.add_argument("--subset", default="training", help="Dataset subset to use (e.g., training, evaluation, unique_training_tasks)")
     parser.add_argument("--model", default="gpt-4.1-mini", help="Model to use")
     parser.add_argument("--limit", type=int, help="Limit number of tasks to run")
     parser.add_argument(
