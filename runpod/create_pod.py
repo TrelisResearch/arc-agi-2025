@@ -16,7 +16,7 @@ load_dotenv()
 # Sensible default data centers
 DEFAULT_DATA_CENTERS = [
     "US-IL-1", "US-TX-1", "US-TX-3", "US-KS-2", 
-    "US-GA-1", "US-CA-2", "EU-RO-1", "EU-SE-1"
+    "US-GA-1", "EU-RO-1", "EU-SE-1"
 ]
 
 # Global variable to store pod ID for cleanup

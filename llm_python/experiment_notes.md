@@ -32,6 +32,13 @@ uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc
 export ARC_PROGRAMS_DB=./llm_python/programsdb/local-missing-solutions.db
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset missing_solutions_20250819 --max_workers 32 --max_attempts 256 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
 ```
+run also on the gpt-oss-20b model:
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-missing-solutions-20b.db
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset missing_solutions_20250819 --max_workers 32 --max_attempts 256 --model openai/gpt-oss-20b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
+```
+
+
 
 
 ## Aug 19
