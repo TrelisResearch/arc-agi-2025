@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from typing import List, Optional, NamedTuple, Any, Tuple
+from llm_python.utils.numpy import convert_numpy_types
 from sandbox import create_executor
 from .task_loader import TaskData, Grid, TaskExample
 
@@ -77,27 +78,6 @@ class ArcTester:
             cls._executor_context = None
             cls._executor_type = None
     
-    def _convert_numpy_types(self, obj):
-        """Convert numpy types to Python native types for JSON serialization"""
-        try:
-            import numpy as np
-            
-            if isinstance(obj, np.ndarray):
-                return obj.tolist()
-            elif isinstance(obj, (np.integer, np.int64, np.int32, np.int16, np.int8)):
-                return int(obj)
-            elif isinstance(obj, (np.floating, np.float64, np.float32)):
-                return float(obj)
-        except ImportError:
-            pass  # numpy not available
-        
-        if isinstance(obj, list):
-            return [self._convert_numpy_types(item) for item in obj]
-        elif isinstance(obj, tuple):
-            return tuple(self._convert_numpy_types(item) for item in obj)
-        else:
-            return obj
-    
     def execute_program_with_timeout(self, program: str, test_input: List[List[int]]) -> Tuple[Optional[List[List[int]]], str, bool]:
         """
         Execute a Python program with the test input
@@ -158,7 +138,7 @@ else:
             
             if result is not None:
                 # Convert numpy types to Python types if needed
-                result = self._convert_numpy_types(result)
+                result = convert_numpy_types(result)
                 # Oversize output guard
                 try:
                     import json as _json
@@ -272,7 +252,7 @@ return outputs
                         results.append((None, output[1], False))
                     else:
                         # Convert numpy types to Python types if needed
-                        converted_output = self._convert_numpy_types(output)
+                        converted_output = convert_numpy_types(output)
                         results.append((converted_output, "", False))
                 
                 return results
