@@ -39,7 +39,8 @@ def should_log_program(program: ProgramSample, db_path: Optional[str] = None) ->
 
         transduction_tester = CodeTransductionClassifier()
 
-        if transduction_tester.is_transductive(normalized_code):
+        is_transductive, confidence = transduction_tester.is_transductive(normalized_code)
+        if is_transductive:
             return False
 
         # Get database instance

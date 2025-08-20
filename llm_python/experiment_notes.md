@@ -11,6 +11,12 @@ Fine-tuning:
 [ ] Read from yaml.
   [ ] Local model save option.
 
+### Test out the db logging
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-test-logging.db
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2024 --subset training --max_workers 32 --max_attempts 4 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --limit 1
+```
+
 ## Aug 19
 
 TODO:
