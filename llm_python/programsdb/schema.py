@@ -18,16 +18,17 @@ class ProgramSample(TypedDict):
     model: str  # What model generated this example
 
 # PyArrow schema for parquet serialization/deserialization
+# All fields are required (nullable=False) except reasoning
 PARQUET_SCHEMA = pa.schema(
     [
-        ("task_id", pa.string()),
-        ("reasoning", pa.string()),
-        ("code", pa.string()),
-        ("correct_train_input", pa.list_(pa.bool_())),
-        ("correct_test_input", pa.list_(pa.bool_())),
-        ("predicted_train_output", pa.list_(pa.list_(pa.list_(pa.int64())))),
-        ("predicted_test_output", pa.list_(pa.list_(pa.list_(pa.int64())))),
-        ("model", pa.string()),
+        ("task_id", pa.string(), False),  # Required
+        ("reasoning", pa.string(), True),  # Optional - can be null
+        ("code", pa.string(), False),  # Required
+        ("correct_train_input", pa.list_(pa.bool_()), False),  # Required
+        ("correct_test_input", pa.list_(pa.bool_()), False),  # Required
+        ("predicted_train_output", pa.list_(pa.list_(pa.list_(pa.int64()))), False),  # Required
+        ("predicted_test_output", pa.list_(pa.list_(pa.list_(pa.int64()))), False),  # Required
+        ("model", pa.string(), False),  # Required
     ]
 )
 

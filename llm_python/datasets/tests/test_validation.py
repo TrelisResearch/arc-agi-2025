@@ -1,171 +1,230 @@
-import pytest
+"""
+Tests for llm_python.datasets.validation module.
+
+Tests validation functionality including schema checks, business logic, and result objects.
+"""
+
 import pandas as pd
 
-from llm_python.datasets.validation import validate_soar_sample, validate_soar_dataframe
+from llm_python.datasets.validation import validate_soar_dataframe, ValidationResult
+from llm_python.datasets.tests.test_io import create_valid_sample_data
 
 
-@pytest.fixture
-def valid_soar_sample():
-    """Fixture providing a valid SOAR sample."""
-    return {
-        "task_id": "test_task",
-        "code": "def generate(input): return input",
-        "model": "test_model",
-        "predicted_train_output": [[[1, 2], [3, 4]]],
-        "predicted_test_output": [[[5, 6], [7, 8]]],
-        "correct_train_input": [True, False],
-        "correct_test_input": [True],
-    }
-
-
-class TestValidateSoarSample:
-    """Test suite for validate_soar_sample function."""
-
-    def test_valid_sample_passes(self, valid_soar_sample):
-        """Test that a valid sample passes validation."""
-        is_valid, msg = validate_soar_sample(valid_soar_sample)
-        assert is_valid, f"Valid data should pass validation: {msg}"
-        assert msg == "Valid"
-
-    @pytest.mark.parametrize("missing_field", [
-        "task_id", "code", "model", "predicted_train_output", 
-        "predicted_test_output", "correct_train_input", "correct_test_input"
-    ])
-    def test_missing_required_fields(self, valid_soar_sample, missing_field):
-        """Test that missing required fields cause validation to fail."""
-        invalid_data = valid_soar_sample.copy()
-        del invalid_data[missing_field]
-        
-        is_valid, msg = validate_soar_sample(invalid_data)
-        assert not is_valid
-        assert f"Missing field: {missing_field}" in msg
-
-    @pytest.mark.parametrize("field,invalid_value", [
-        ("task_id", 123),
-        ("code", None),
-        ("model", []),
-    ])
-    def test_invalid_string_types(self, valid_soar_sample, field, invalid_value):
-        """Test that non-string values for string fields fail validation."""
-        invalid_data = valid_soar_sample.copy()
-        invalid_data[field] = invalid_value
-        
-        is_valid, msg = validate_soar_sample(invalid_data)
-        assert not is_valid
-        assert f"{field} should be str" in msg
-
-    @pytest.mark.parametrize("field", ["predicted_train_output", "predicted_test_output"])
-    def test_invalid_3d_array_types(self, valid_soar_sample, field):
-        """Test that invalid 3D array structures fail validation."""
-        # Test non-list at top level
-        invalid_data = valid_soar_sample.copy()
-        invalid_data[field] = "not a list"
-        
-        is_valid, msg = validate_soar_sample(invalid_data)
-        assert not is_valid
-        assert f"{field} should be list" in msg
-
-        # Test non-list at grid level
-        invalid_data[field] = ["not a grid"]
-        is_valid, msg = validate_soar_sample(invalid_data)
-        assert not is_valid
-        assert "should be list (2D grid)" in msg
-
-        # Test non-list at row level
-        invalid_data[field] = [["not a row"]]
-        is_valid, msg = validate_soar_sample(invalid_data)
-        assert not is_valid
-        assert "should be list (row)" in msg
-
-        # Test non-int at cell level
-        invalid_data[field] = [[["not an int"]]]
-        is_valid, msg = validate_soar_sample(invalid_data)
-        assert not is_valid
-        assert "should be int" in msg
-
-    @pytest.mark.parametrize("field", ["correct_train_input", "correct_test_input"])
-    def test_invalid_boolean_array_types(self, valid_soar_sample, field):
-        """Test that invalid boolean array structures fail validation."""
-        # Test non-list
-        invalid_data = valid_soar_sample.copy()
-        invalid_data[field] = "not a list"
-        
-        is_valid, msg = validate_soar_sample(invalid_data)
-        assert not is_valid
-        assert f"{field} should be list" in msg
-
-        # Test non-boolean values
-        invalid_data[field] = [True, "not a bool", False]
-        is_valid, msg = validate_soar_sample(invalid_data)
-        assert not is_valid
-        assert "should be bool" in msg
-
-    def test_exception_handling(self, valid_soar_sample):
-        """Test that exceptions during validation are handled properly."""
-        # Create a problematic data structure that might cause an exception
-        invalid_data = valid_soar_sample.copy()
-        
-        # This should be handled gracefully by the try-except block
-        # We can't easily trigger an exception with the current validation logic,
-        # but this test ensures the structure is in place
-        is_valid, msg = validate_soar_sample(invalid_data)
-        assert is_valid  # Should still pass with valid data
+class TestValidationResult:
+    """Test the ValidationResult dataclass and its methods."""
+    
+    def test_is_valid_all_pass(self):
+        """Test is_valid returns True when all validations pass."""
+        result = ValidationResult(
+            total_rows=10,
+            schema_valid=True,
+            schema_error=None,
+            business_logic_valid=True,
+            business_logic_issues=[],
+            correctness_sample_size=5,
+            correctness_valid=True,
+            correctness_errors=[]
+        )
+        assert result.is_valid() is True
+    
+    def test_is_valid_schema_fail(self):
+        """Test is_valid returns False when schema validation fails."""
+        result = ValidationResult(
+            total_rows=10,
+            schema_valid=False,
+            schema_error="Missing column",
+            business_logic_valid=True,
+            business_logic_issues=[],
+            correctness_sample_size=5,
+            correctness_valid=True,
+            correctness_errors=[]
+        )
+        assert result.is_valid() is False
+    
+    def test_is_valid_business_logic_fail(self):
+        """Test is_valid returns False when business logic validation fails."""
+        result = ValidationResult(
+            total_rows=10,
+            schema_valid=True,
+            schema_error=None,
+            business_logic_valid=False,
+            business_logic_issues=["Empty lists found"],
+            correctness_sample_size=5,
+            correctness_valid=True,
+            correctness_errors=[]
+        )
+        assert result.is_valid() is False
+    
+    def test_is_valid_correctness_fail(self):
+        """Test is_valid returns False when correctness validation fails."""
+        result = ValidationResult(
+            total_rows=10,
+            schema_valid=True,
+            schema_error=None,
+            business_logic_valid=True,
+            business_logic_issues=[],
+            correctness_sample_size=5,
+            correctness_valid=False,
+            correctness_errors=["Program failed"]
+        )
+        assert result.is_valid() is False
 
 
 class TestValidateSoarDataframe:
-    """Test suite for validate_soar_dataframe function."""
-
-    def test_valid_dataframe_passes(self, valid_soar_sample):
-        """Test that a DataFrame with valid samples passes validation."""
-        df = pd.DataFrame([valid_soar_sample, valid_soar_sample])
+    """Test the main validation function."""
+    
+    def test_validate_valid_data(self):
+        """Test validation of valid data."""
+        df = create_valid_sample_data()
         
-        is_valid, msg = validate_soar_dataframe(df)
-        assert is_valid
-        assert "All 2 rows are valid" in msg
-
-    def test_invalid_dataframe_fails(self, valid_soar_sample):
-        """Test that a DataFrame with invalid samples fails validation."""
-        invalid_sample = valid_soar_sample.copy()
-        invalid_sample["task_id"] = 123  # Invalid type instead of missing field
+        result = validate_soar_dataframe(df, correctness_samples=0)
         
-        df = pd.DataFrame([valid_soar_sample, invalid_sample])
-        
-        is_valid, msg = validate_soar_dataframe(df)
-        assert not is_valid
-        assert "1 validation error sample" in msg
-        assert "Row 1:" in msg
-        assert "task_id should be str" in msg
-
-    def test_multiple_invalid_rows(self, valid_soar_sample):
-        """Test that multiple invalid rows are reported properly."""
-        invalid_sample1 = valid_soar_sample.copy()
-        invalid_sample1["task_id"] = 123  # Invalid type
-        
-        invalid_sample2 = valid_soar_sample.copy()
-        invalid_sample2["code"] = None  # Invalid type
-        
-        df = pd.DataFrame([invalid_sample1, invalid_sample2])
-        
-        is_valid, msg = validate_soar_dataframe(df)
-        assert not is_valid
-        assert "2 validation error sample" in msg
-        assert "Row 0:" in msg
-        assert "Row 1:" in msg
-
-    def test_dataframe_with_missing_fields(self, valid_soar_sample):
-        """Test that DataFrame with truly missing fields fails validation."""
-        # Create a DataFrame with different column structures
-        partial_sample = {k: v for k, v in valid_soar_sample.items() if k != "task_id"}
-        df = pd.DataFrame([partial_sample])
-        
-        is_valid, msg = validate_soar_dataframe(df)
-        assert not is_valid
-        assert "Missing field: task_id" in msg
-
-    def test_empty_dataframe(self):
-        """Test that an empty DataFrame passes validation."""
+        assert result.total_rows == 2
+        assert result.schema_valid is True
+        assert result.schema_error is None
+        assert result.business_logic_valid is True
+        assert result.business_logic_issues == []
+        assert result.correctness_valid is True
+        assert result.correctness_errors == []
+        assert result.is_valid() is True
+    
+    def test_validate_empty_dataframe(self):
+        """Test validation of empty DataFrame."""
         df = pd.DataFrame()
         
-        is_valid, msg = validate_soar_dataframe(df)
-        assert is_valid
-        assert "All 0 rows are valid" in msg
+        result = validate_soar_dataframe(df, correctness_samples=0)
+        
+        assert result.total_rows == 0
+        assert result.schema_valid is False
+        assert "Schema validation failed" in result.schema_error
+        assert result.business_logic_valid is True  # No business logic issues for empty
+        assert result.correctness_valid is True  # No correctness issues for empty
+        assert result.is_valid() is False
+    
+    def test_validate_missing_columns(self):
+        """Test validation with missing required columns."""
+        df = pd.DataFrame({
+            'task_id': ['task_001'],
+            'code': ['def generate(): pass']
+            # Missing other required columns
+        })
+        
+        result = validate_soar_dataframe(df, correctness_samples=0)
+        
+        assert result.schema_valid is False
+        assert "Schema validation failed" in result.schema_error
+        assert result.is_valid() is False
+    
+    def test_business_logic_empty_lists(self):
+        """Test business logic validation catches empty lists."""
+        df = pd.DataFrame({
+            'task_id': ['task_001'],
+            'reasoning': [None],
+            'code': ['def generate(): return []'],
+            'correct_train_input': [[]],  # Empty list
+            'correct_test_input': [[True]],
+            'predicted_train_output': [[]],  # Empty list
+            'predicted_test_output': [[[]]],
+            'model': ['test_model']
+        })
+        
+        result = validate_soar_dataframe(df, correctness_samples=0)
+        
+        assert result.schema_valid is True  # Schema is valid
+        assert result.business_logic_valid is False  # But business logic has issues
+        assert len(result.business_logic_issues) > 0
+        assert any("empty lists" in issue for issue in result.business_logic_issues)
+        assert result.is_valid() is False
+    
+    def test_business_logic_empty_code(self):
+        """Test business logic validation catches empty code."""
+        df = pd.DataFrame({
+            'task_id': ['task_001'],
+            'reasoning': [None],
+            'code': ['   '],  # Whitespace only
+            'correct_train_input': [[True]],
+            'correct_test_input': [[True]],
+            'predicted_train_output': [[[]]],
+            'predicted_test_output': [[[]]],
+            'model': ['test_model']
+        })
+        
+        result = validate_soar_dataframe(df, correctness_samples=0)
+        
+        assert result.business_logic_valid is False
+        assert any("empty or whitespace-only code" in issue for issue in result.business_logic_issues)
+    
+    def test_correctness_sampling(self):
+        """Test that correctness sampling works correctly."""
+        df = create_valid_sample_data()
+        
+        # Test with sample size larger than dataframe
+        result = validate_soar_dataframe(df, correctness_samples=10)
+        assert result.correctness_sample_size == 2  # Should be limited to df size
+        
+        # Test with sample size smaller than dataframe
+        result = validate_soar_dataframe(df, correctness_samples=1)
+        assert result.correctness_sample_size == 1
+        
+        # Test with zero samples
+        result = validate_soar_dataframe(df, correctness_samples=0)
+        assert result.correctness_sample_size == 0
+        assert result.correctness_valid is True  # Should pass with no samples
+    
+    def test_seed_consistency(self):
+        """Test that using the same seed produces consistent results."""
+        df = create_valid_sample_data()
+        
+        result1 = validate_soar_dataframe(df, correctness_samples=1, seed=42)
+        result2 = validate_soar_dataframe(df, correctness_samples=1, seed=42)
+        
+        # Results should be identical with same seed
+        assert result1.correctness_sample_size == result2.correctness_sample_size
+        assert result1.correctness_valid == result2.correctness_valid
+    
+    def test_program_correctness_with_real_program(self):
+        """Test program correctness validation with a real Python program."""
+        
+        # Create a simple program that adds 1 to all values in the input grid
+        program_code = """
+import numpy as np
+
+def generate(input_grid):
+    # Add 1 to all values in the input grid
+    return (np.array(input_grid) + 1).tolist()
+"""
+        
+        # Create test data with known inputs and expected outputs
+        # We'll create a fake task ID that probably doesn't exist to test error handling
+        expected_output = [[1, 2], [3, 4]]  # If input was [[0, 1], [2, 3]]
+        expected_output2 = [[6]]  # If input was [[5]]
+        
+        df = pd.DataFrame({
+            'task_id': ['fake_task_123'],  # Non-existent task ID
+            'reasoning': ['Adds 1 to all values'],
+            'code': [program_code],
+            'correct_train_input': [[True]],  # Assume the program works on training
+            'correct_test_input': [[True]],   # Assume the program works on test
+            'predicted_train_output': [[expected_output]],  # What we expect for training
+            'predicted_test_output': [[expected_output2]],   # What we expect for test
+            'model': ['test_model']
+        })
+        
+        # Test with actual program execution (should fail due to non-existent task)
+        result = validate_soar_dataframe(df, correctness_samples=1)
+        
+        # Should pass schema and business logic validation
+        assert result.schema_valid is True
+        assert result.business_logic_valid is True
+        
+        # Should fail correctness validation due to non-existent task or other execution issues
+        assert result.correctness_valid is False
+        assert len(result.correctness_errors) > 0
+        assert result.correctness_sample_size == 1
+        
+        # The error should mention the program execution failure
+        error_message = ' '.join(result.correctness_errors)
+        assert 'execution failed' in error_message.lower() or 'row 0' in error_message.lower()
+    
+    
+
