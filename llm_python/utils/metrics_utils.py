@@ -102,24 +102,35 @@ def calculate_task_metrics(
         except Exception:
             pass
 
-        # ---------- oracle all‑test ----------
+        # ---------- oracle all‑test (test-correct) ----------
+        # NOTE: test-correct and train-perfect are NOT mutually exclusive
+        # A program can be both test-correct AND train-perfect simultaneously
         if any(att.get("all_test_correct", False) for att in non_trans):
             all_test_correct += 1
 
         # ---------- oracle train‑set metrics ----------
+        # CLASSIFICATION RULES (NOT mutually exclusive):
+        # - train-perfect: ALL training examples correct (subset of min-1-train-correct)
+        # - train-partial: some but NOT all training examples correct
+        # - min-1-train-correct: at least 1 training example correct (includes train-perfect)
+        # 
+        # MUTUAL EXCLUSIVITY:
+        # - train-perfect and train-partial are mutually exclusive (cannot be both)
+        # - min-1-train-correct includes train-perfect (train-perfect ⊆ min-1-train-correct)
+        # - test-correct can occur with any train status (independent classification)
         any_all = any_min1 = False
         for att in non_trans:
             trs = att.get("train_results", [])
             if not trs:
                 continue
             if all(tr.get("correct", False) for tr in trs):
-                any_all = True
+                any_all = True  # train-perfect: ALL training examples correct
             if any(tr.get("correct", False) for tr in trs):
-                any_min1 = True
+                any_min1 = True  # min-1-train-correct: at least 1 training example correct
         if any_all:
-            all_train_correct += 1
+            all_train_correct += 1  # This task has a train-perfect program
         if any_min1:
-            min1_train_correct += 1
+            min1_train_correct += 1  # This task has min-1-train-correct (includes train-perfect)
 
     # ------------------- assemble ---------------------
     return {
