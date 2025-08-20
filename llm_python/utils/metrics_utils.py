@@ -36,6 +36,7 @@ def calculate_task_metrics(
     # response‑level counters
     total_responses = max_length_responses = 0
     timeout_responses = api_failure_responses = 0
+    transductive_responses = non_transductive_responses = 0
 
     # --------------- iterate through tasks -----------------
     for task in results:
@@ -49,6 +50,10 @@ def calculate_task_metrics(
         # ---------- response‑level metrics ----------
         for att in attempts:
             total_responses += 1
+            if att.get("is_transductive", False):
+                transductive_responses += 1
+            else:
+                non_transductive_responses += 1
             if att.get("hit_max_tokens", False):
                 max_length_responses += 1
             if att.get("api_timeout", False):
@@ -61,8 +66,8 @@ def calculate_task_metrics(
         if trans_count > 0:
             min1_transductive += 1
         
-        # Use all attempts directly (no filtering)
-        non_trans = attempts
+        # Exclude transductive attempts from train metrics
+        non_trans = [att for att in attempts if not att.get("is_transductive", False)]
 
         # ---------- min‑1 code success (extracted and executed without errors) ----------
         code_success = False
@@ -145,6 +150,8 @@ def calculate_task_metrics(
         "total":                  total_tasks,
         # response‑level
         "total_responses":        total_responses,
+        "transductive_responses": transductive_responses,
+        "non_transductive_responses": non_transductive_responses,
         "max_length_responses":   max_length_responses,
         "timeout_responses":      timeout_responses,
         "api_failure_responses":  api_failure_responses,
@@ -181,6 +188,10 @@ def format_metrics_display(metrics: Dict, layer: Optional[int] = None) -> str:
     ]
     if tr > 0:
         ln.extend([
+            f"  Transductive responses: {metrics['transductive_responses']}/{tr} "
+            f"({metrics['transductive_responses']/tr:.1%})",
+            f"  Non‑transductive responses: {metrics['non_transductive_responses']}/{tr} "
+            f"({metrics['non_transductive_responses']/tr:.1%})",
             f"  Max‑length responses: {metrics['max_length_responses']}/{tr} "
             f"({metrics['max_length_responses']/tr:.1%})",
             f"  Timeout responses: {metrics['timeout_responses']}/{tr} "

@@ -116,7 +116,9 @@ def generic_voting(
 def compute_weighted_majority_voting(attempts: List[Dict], top_k: int = 2) -> List:
     """Compute weighted majority voting based on count + 1000 * train_accuracy"""
     def weight_func(att: Dict) -> float:
-        return 1.0 + 1000.0 * att.get('train_accuracy', 0.0)
+        # Transductive programs get train_accuracy = 0 (only base weight of 1.0)
+        train_acc = 0.0 if att.get("is_transductive", False) else att.get('train_accuracy', 0.0)
+        return 1.0 + 1000.0 * train_acc
     
     return generic_voting(attempts, weight_func, top_k)
 
@@ -126,16 +128,16 @@ def compute_train_majority_voting(attempts: List[Dict], top_k: int = 2) -> List:
     if not attempts:
         return []
     
-    # Find attempts with most train correct
+    # Find attempts with most train correct (transductive get score = 0)
     best_train_score = max(
-        sum(tr.get('correct', False) for tr in att.get('train_results', [])) 
+        0 if att.get("is_transductive", False) else sum(tr.get('correct', False) for tr in att.get('train_results', []))
         for att in attempts
     )
     
     # Filter to best group and do simple majority voting
     best_group = [
         att for att in attempts 
-        if sum(tr.get('correct', False) for tr in att.get('train_results', [])) == best_train_score
+        if (0 if att.get("is_transductive", False) else sum(tr.get('correct', False) for tr in att.get('train_results', []))) == best_train_score
     ]
     
     def weight_func(att: Dict) -> float:
