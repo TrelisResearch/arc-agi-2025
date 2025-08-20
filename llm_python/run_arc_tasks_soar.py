@@ -21,7 +21,6 @@ from llm_python.utils.metrics_utils import (
     metrics_to_percentages,
 )
 from llm_python.utils.voting_utils import (
-    filter_non_transductive_attempts,
     compute_weighted_majority_voting,
 )
 from llm_python.utils.submission_validator import validate_submission_file
@@ -436,9 +435,8 @@ class ARCTaskRunnerSimple:
             if not program:
                 return
 
-            # Skip if program is train transductive (hardcodes training outputs)
-            if attempt_detail.get("is_train_transductive", False):
-                return  # Don't save programs that hardcode training outputs
+            # Note: We still log the transductive flag but don't filter based on it
+            # This allows us to analyze transductive programs later
             
             # Check if program has at least one correct answer (train or test)
             train_correct = sum(map(lambda x: x.get("correct", False), attempt_detail.get("train_results", [])))
@@ -682,7 +680,7 @@ class ARCTaskRunnerSimple:
                 train_transduction_reason = f"Not transductive (confidence: {1-confidence:.3f})"
                 test_transduction_reason = f"Not transductive (confidence: {1-confidence:.3f})"
 
-        # Evaluate on training examples (skip if transductive)
+        # Evaluate on training examples
         train_results: List[TrainResult] = []
         train_correct = 0
         train_exec_errors = 0
@@ -691,21 +689,19 @@ class ARCTaskRunnerSimple:
         for ex in task_data["train"]:
             if not program_extracted:
                 pred, err, tout = None, "no program", False
-            elif is_train_transductive:
-                pred, err, tout = None, "train_transductive", False
             else:
+                # Always execute, even if marked as transductive (for analysis)
                 pred, err, tout = self.executor.execute_program_with_timeout(
                     program, ex["input"]
                 )
 
-            # Mark as incorrect if train transductive
+            # Check correctness based on actual execution results
             is_corr = (
                 (pred == ex["output"])
                 if (
                     pred is not None
                     and not err
                     and not tout
-                    and not is_train_transductive
                 )
                 else False
             )
@@ -721,7 +717,7 @@ class ARCTaskRunnerSimple:
 
             if is_corr:
                 train_correct += 1
-            elif err and err != "no program" and err != "train_transductive":
+            elif err and err != "no program":
                 train_exec_errors += 1
             elif tout:
                 train_exec_timeouts += 1
@@ -750,17 +746,14 @@ class ARCTaskRunnerSimple:
 
             if not program_extracted:
                 test_pred, test_err, test_tout = None, "no program", False
-            elif is_train_transductive:
-                test_pred, test_err, test_tout = None, "train_transductive", False
             else:
-                # Allow test execution even if test_transductive (for metadata logging)
+                # Always execute, even if marked as transductive (for analysis)
                 test_pred, test_err, test_tout = (
                     self.executor.execute_program_with_timeout(program, test_input)
                 )
                 if (
                     test_err
                     and test_err != "no program"
-                    and test_err != "train_transductive"
                 ):
                     any_test_exec_error = True
                 if test_tout:
@@ -1746,11 +1739,11 @@ class ARCTaskRunnerSimple:
             # Process task with results
             attempts = result["attempt_details"]
             
-            # Filter out train-transductive attempts (already filtered in metrics, but double-check)
-            non_transductive_attempts = filter_non_transductive_attempts(result)
+            # Use all attempts (no filtering for transductive)
+            non_transductive_attempts = attempts
             
             if not non_transductive_attempts:
-                # No valid attempts, use empty grids fallback
+                # No attempts at all, use empty grids fallback
                 num_test_outputs = len(task_data.get("test", []))
                 if num_test_outputs == 0:
                     num_test_outputs = 1  # Default to 1 output if no test data

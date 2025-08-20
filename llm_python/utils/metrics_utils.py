@@ -8,7 +8,6 @@ Simply replace your old file with this one and restart the kernel.
 
 from typing import Dict, List, Optional
 from .voting_utils import (
-    filter_non_transductive_attempts,
     compute_weighted_majority_voting,
     compute_train_majority_voting,
 )
@@ -57,12 +56,13 @@ def calculate_task_metrics(
             if not att.get("api_success", True) and not att.get("api_timeout", False):
                 api_failure_responses += 1
 
-        # ---------- remove transductive ----------
-        non_trans = filter_non_transductive_attempts(
-            {"attempt_details": attempts, "task_data": task["task_data"]}
-        )
-        if len(attempts) > len(non_trans):
+        # ---------- track transductive for stats ----------
+        trans_count = sum(1 for att in attempts if att.get("is_train_transductive", False))
+        if trans_count > 0:
             min1_transductive += 1
+        
+        # Use all attempts directly (no filtering)
+        non_trans = attempts
 
         # ---------- min‑1 code success (extracted and executed without errors) ----------
         code_success = False

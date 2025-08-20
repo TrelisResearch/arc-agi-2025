@@ -37,11 +37,10 @@ def should_log_program(program: ProgramSample, db_path: Optional[str] = None) ->
         if not normalized_code.strip():
             return False  # Don't log empty programs
 
-        transduction_tester = CodeTransductionClassifier()
-
-        is_transductive, confidence = transduction_tester.is_transductive(normalized_code)
-        if is_transductive:
-            return False
+        # Still check transduction for logging purposes, but don't filter
+        # transduction_tester = CodeTransductionClassifier()
+        # is_transductive, confidence = transduction_tester.is_transductive(normalized_code)
+        # Removed: filtering based on transduction status
 
         # Get database instance
         db = get_localdb(db_path)

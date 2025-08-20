@@ -7,15 +7,32 @@ Lewis Reminders:
 
 ---
 ## Aug 20
-Fine-tuning:
-[ ] Read from yaml.
-  [ ] Local model save option.
+Learnings:
+- Seems our trained models are better, BUT unclear if all-train are transductive or not.
+- Create a validation dataset from arc-agi-2 to help with training duration.
+- Remove the annealing at one epoch and just look at two.
 
 ### Test out the db logging
 ```bash
 export ARC_PROGRAMS_DB=./llm_python/programsdb/local-test-logging.db
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2024 --subset training --max_workers 32 --max_attempts 4 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --limit 1
 ```
+
+### Run arc-agi-2 evaluation to check out all-train correct programs - Trelis/Qwen3-4B_ds-arc-agi-2-perfect-50-c970
+
+Start a pod and run the task runner:
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local.db
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-2-perfect-50-c970" --max-attempts 64 --subset evaluation
+```
+
+### Create data on missing_solutions_20250819 using OSS 120B and openrouter
+
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-missing-solutions.db
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset missing_solutions_20250819 --max_workers 32 --max_attempts 256 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
+```
+
 
 ## Aug 19
 
