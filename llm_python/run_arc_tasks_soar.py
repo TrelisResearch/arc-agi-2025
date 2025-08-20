@@ -768,7 +768,6 @@ class ARCTaskRunnerSimple:
                     and test_expected is not None  # Only score if we have ground truth
                     and not test_err
                     and not test_tout
-                    and not is_train_transductive
                     and not submit_mode  # Never score in SUBMIT mode
                 )
                 else False
@@ -1622,18 +1621,15 @@ class ARCTaskRunnerSimple:
         )
         
         # Calculate train accuracy metrics (possible since we have train outputs)
-        # Filter out train-transductive attempts first
         all_train_correct = sum(
             1 for result in results 
             if any(att.get("train_accuracy", 0.0) == 1.0 
-                   for att in result.get("attempt_details", [])
-                   if not att.get("is_train_transductive", False))
+                   for att in result.get("attempt_details", []))
         )
         min1_train_correct = sum(
             1 for result in results 
             if any(att.get("train_accuracy", 0.0) > 0.0 
-                   for att in result.get("attempt_details", [])
-                   if not att.get("is_train_transductive", False))
+                   for att in result.get("attempt_details", []))
         )
 
         # Print summary
