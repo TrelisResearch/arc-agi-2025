@@ -14,8 +14,8 @@ Learnings:
 
 ### Test out the db logging
 ```bash
-export ARC_PROGRAMS_DB=./llm_python/programsdb/local-test-logging.db
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2024 --subset training --max_workers 32 --max_attempts 4 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --limit 1
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-test-logging-2.db
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset unique_training_tasks --max_workers 32 --max_attempts 64 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --limit 4
 ```
 
 ### Run arc-agi-2 evaluation to check out all-train correct programs - Trelis/Qwen3-4B_ds-arc-agi-2-perfect-50-c970

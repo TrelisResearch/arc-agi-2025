@@ -74,10 +74,8 @@ class AttemptDetail(TypedDict):
     program: str  # Extracted Python code
 
     # Transduction detection
-    is_train_transductive: bool  # Whether program hardcodes training outputs
-    train_transduction_reason: str  # Why it's considered transductive
-    is_test_transductive: bool  # Whether program hardcodes test outputs
-    test_transduction_reason: str  # Why it's considered transductive
+    is_transductive: bool  # Whether program hardcodes outputs
+    transduction_reason: str  # Why it's considered transductive
 
 
     # Training results
@@ -496,7 +494,7 @@ class ARCTaskRunnerSimple:
                 predicted_train_output=predicted_train_output,
                 predicted_test_output=predicted_test_output,
                 model=self.model,
-                is_test_transductive=attempt_detail.get("is_test_transductive", False),
+                is_transductive=attempt_detail.get("is_transductive", False),
             )
 
             # Log to database (maybe_log_program handles deduplication and validation)
@@ -658,27 +656,6 @@ class ARCTaskRunnerSimple:
         program = self.extract_code_from_response(response) if response else ""
         program_extracted = bool(program and program.strip())
 
-        # Check for transductive behavior (hardcoded outputs)
-        is_train_transductive = False
-        train_transduction_reason = ""
-        is_test_transductive = False
-        test_transduction_reason = ""
-        if program_extracted:
-            # Use the new CodeTransductionClassifier
-            is_transductive, confidence = self.transduction_classifier.is_transductive(program, task_data)
-            
-            # Map the single transduction result to both train and test for backward compatibility
-            # The new classifier provides a general transduction detection
-            is_train_transductive = is_transductive
-            is_test_transductive = is_transductive
-            
-            if is_transductive:
-                reason = f"Code-based transduction detected (confidence: {confidence:.3f})"
-                train_transduction_reason = reason
-                test_transduction_reason = reason
-            else:
-                train_transduction_reason = f"Not transductive (confidence: {1-confidence:.3f})"
-                test_transduction_reason = f"Not transductive (confidence: {1-confidence:.3f})"
 
         # Evaluate on training examples
         train_results: List[TrainResult] = []
@@ -800,6 +777,7 @@ class ARCTaskRunnerSimple:
             else False
         )
 
+
         # Store attempt details
         # Note: This dictionary structure matches the AttemptDetail TypedDict defined above
         attempt_detail = AttemptDetail(
@@ -810,10 +788,8 @@ class ARCTaskRunnerSimple:
             attempt_cost=attempt_cost,
             program_extracted=program_extracted,
             program=program,
-            is_train_transductive=is_train_transductive,
-            train_transduction_reason=train_transduction_reason,
-            is_test_transductive=is_test_transductive,
-            test_transduction_reason=test_transduction_reason,
+            is_transductive=False,  # Will be set in post-processing
+            transduction_reason="",  # Will be set in post-processing
             train_results=train_results,
             train_accuracy=train_accuracy,
             train_exec_errors=train_exec_errors,
@@ -869,6 +845,31 @@ class ARCTaskRunnerSimple:
             or {"system": system_content, "user": user_content},
         }
         return result
+
+    def _add_transductive_detection(self, attempts: List[Dict], task_data: TaskData) -> None:
+        """Post-process attempts to add transductive detection.
+        
+        This is much cleaner than doing it during execution - we only check
+        transduction for attempts that actually made it to the results.
+        """
+        for attempt in attempts:
+            if attempt.get("program_extracted", False):
+                program = attempt.get("program", "")
+                if program.strip():
+                    # Use the CodeTransductionClassifier
+                    is_transductive, confidence = self.transduction_classifier.is_transductive(program, task_data)
+                    
+                    attempt["is_transductive"] = is_transductive
+                    if is_transductive:
+                        attempt["transduction_reason"] = f"Code-based transduction detected (confidence: {confidence:.3f})"
+                    else:
+                        attempt["transduction_reason"] = f"Not transductive (confidence: {1-confidence:.3f})"
+                else:
+                    attempt["is_transductive"] = False
+                    attempt["transduction_reason"] = "Empty program"
+            else:
+                attempt["is_transductive"] = False
+                attempt["transduction_reason"] = "Program not extracted"
 
     def run_subset(
         self, subset_name: str, dataset: str = "arc-prize-2025", limit: Optional[int] = None
@@ -1268,6 +1269,9 @@ class ARCTaskRunnerSimple:
                         f"⚠️ Task {task_id}: {len(attempts) - len(valid_attempts)} invalid attempts filtered out"
                     )
 
+                # Post-process: Add transductive detection to all valid attempts
+                self._add_transductive_detection(valid_attempts, task_results[task_id]["task_data"])
+
                 # All tasks should have complete attempts now
                 api_type = "chat_completions_all_attempts"
 
@@ -1369,11 +1373,8 @@ class ARCTaskRunnerSimple:
         no_code_extracted = sum(
             1 for attempt in attempts if not attempt.get("program_extracted", False)
         )
-        train_transductive_attempts = sum(
-            1 for attempt in attempts if attempt.get("is_train_transductive", False)
-        )
-        test_transductive_attempts = sum(
-            1 for attempt in attempts if attempt.get("is_test_transductive", False)
+        transductive_attempts = sum(
+            1 for attempt in attempts if attempt.get("is_transductive", False)
         )
         train_exec_errors = sum(
             1 for attempt in attempts if attempt.get("train_exec_errors", 0) > 0
@@ -1415,10 +1416,8 @@ class ARCTaskRunnerSimple:
             issues.append(f"{max_length_hits} max-len")
         if no_code_extracted > 0:
             issues.append(f"{no_code_extracted} no-code")
-        if train_transductive_attempts > 0:
-            issues.append(f"{train_transductive_attempts} train-transductive")
-        if test_transductive_attempts > 0:
-            issues.append(f"{test_transductive_attempts} test-transductive")
+        if transductive_attempts > 0:
+            issues.append(f"{transductive_attempts} transductive")
         if train_exec_errors > 0:
             issues.append(f"{train_exec_errors} train-exec-error")
         if train_exec_timeouts > 0:
@@ -1479,10 +1478,8 @@ class ARCTaskRunnerSimple:
             attempt_cost=attempt.get("attempt_cost", 0.0),
             program_extracted=attempt.get("program_extracted", False),
             program="",  # Always empty for trimmed
-            is_train_transductive=attempt.get("is_train_transductive", False),
-            train_transduction_reason=attempt.get("train_transduction_reason", ""),
-            is_test_transductive=attempt.get("is_test_transductive", False),
-            test_transduction_reason=attempt.get("test_transduction_reason", ""),
+            is_transductive=attempt.get("is_transductive", False),
+            transduction_reason=attempt.get("transduction_reason", ""),
             train_results=[],  # Always empty for trimmed
             train_accuracy=attempt.get("train_accuracy", 0.0),
             train_exec_errors=attempt.get("train_exec_errors", 0),

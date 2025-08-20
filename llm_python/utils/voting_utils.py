@@ -38,30 +38,6 @@ def deserialize_prediction_from_voting(key: str):
         return None  # Skip invalid entries
 
 
-def filter_non_transductive_attempts(result: Dict) -> List[Dict]:
-    """Filter out train-transductive attempts from a result's attempt_details"""
-    non_transductive = []
-    
-    # Initialize classifier for re-calculation if needed
-    code_classifier = None
-    
-    for att in result['attempt_details']:
-        # Use stored flag if available, otherwise re-calculate
-        if 'is_train_transductive' in att:
-            is_train_transductive = att['is_train_transductive']
-        else:
-            # Re-calculate if not stored (for older data)
-            if code_classifier is None:
-                from llm_python.transduction.code_classifier import CodeTransductionClassifier
-                code_classifier = CodeTransductionClassifier()
-            
-            # Use the new classifier
-            is_transductive, _ = code_classifier.is_transductive(att.get('program', ''), result.get('task_data'))
-            is_train_transductive = is_transductive  # Map general transduction to train transduction
-        
-        if not is_train_transductive:
-            non_transductive.append(att)
-    return non_transductive
 
 
 def filter_valid_predictions(attempts: List[Dict]) -> List[Dict]:

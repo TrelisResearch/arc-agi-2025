@@ -57,7 +57,7 @@ def calculate_task_metrics(
                 api_failure_responses += 1
 
         # ---------- track transductive for stats ----------
-        trans_count = sum(1 for att in attempts if att.get("is_train_transductive", False))
+        trans_count = sum(1 for att in attempts if att.get("is_transductive", False))
         if trans_count > 0:
             min1_transductive += 1
         
