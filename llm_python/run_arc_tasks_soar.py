@@ -655,6 +655,21 @@ class ARCTaskRunnerSimple:
         # Extract and evaluate program
         program = self.extract_code_from_response(response) if response else ""
         program_extracted = bool(program and program.strip())
+        
+        # Run transduction detection immediately after extraction
+        is_transductive = False
+        transduction_reason = ""
+        if program_extracted:
+            try:
+                is_transductive, confidence = self.transduction_classifier.is_transductive(program, task_data)
+                if is_transductive:
+                    transduction_reason = f"Code-based transduction detected (confidence: {confidence:.3f})"
+                else:
+                    transduction_reason = f"Not transductive (confidence: {1-confidence:.3f})"
+            except Exception as e:
+                transduction_reason = f"Transduction detection failed: {e}"
+        else:
+            transduction_reason = "No program extracted"
 
 
         # Evaluate on training examples
@@ -788,8 +803,8 @@ class ARCTaskRunnerSimple:
             attempt_cost=attempt_cost,
             program_extracted=program_extracted,
             program=program,
-            is_transductive=False,  # Will be set in post-processing
-            transduction_reason="",  # Will be set in post-processing
+            is_transductive=is_transductive,
+            transduction_reason=transduction_reason,
             train_results=train_results,
             train_accuracy=train_accuracy,
             train_exec_errors=train_exec_errors,
@@ -846,30 +861,7 @@ class ARCTaskRunnerSimple:
         }
         return result
 
-    def _add_transductive_detection(self, attempts: List[Dict], task_data: TaskData) -> None:
-        """Post-process attempts to add transductive detection.
-        
-        This is much cleaner than doing it during execution - we only check
-        transduction for attempts that actually made it to the results.
-        """
-        for attempt in attempts:
-            if attempt.get("program_extracted", False):
-                program = attempt.get("program", "")
-                if program.strip():
-                    # Use the CodeTransductionClassifier
-                    is_transductive, confidence = self.transduction_classifier.is_transductive(program, task_data)
-                    
-                    attempt["is_transductive"] = is_transductive
-                    if is_transductive:
-                        attempt["transduction_reason"] = f"Code-based transduction detected (confidence: {confidence:.3f})"
-                    else:
-                        attempt["transduction_reason"] = f"Not transductive (confidence: {1-confidence:.3f})"
-                else:
-                    attempt["is_transductive"] = False
-                    attempt["transduction_reason"] = "Empty program"
-            else:
-                attempt["is_transductive"] = False
-                attempt["transduction_reason"] = "Program not extracted"
+    # _add_transductive_detection method removed - transduction detection now happens during execution
 
     def run_subset(
         self, subset_name: str, dataset: str = "arc-prize-2025", limit: Optional[int] = None
@@ -1269,8 +1261,7 @@ class ARCTaskRunnerSimple:
                         f"⚠️ Task {task_id}: {len(attempts) - len(valid_attempts)} invalid attempts filtered out"
                     )
 
-                # Post-process: Add transductive detection to all valid attempts
-                self._add_transductive_detection(valid_attempts, task_results[task_id]["task_data"])
+                # Transductive detection is now done during program execution
 
                 # All tasks should have complete attempts now
                 api_type = "chat_completions_all_attempts"
@@ -1337,23 +1328,27 @@ class ARCTaskRunnerSimple:
         # Check if we're in SUBMIT mode
         submit_mode = os.getenv("SUBMIT", "").lower() == "true"
 
-        # Calculate key stats using all attempts (no filtering for denominator)
+        # Filter out transductive attempts for main metrics
+        non_transductive_attempts = [att for att in attempts if not att.get("is_transductive", False)]
+        transductive_count = len(attempts) - len(non_transductive_attempts)
+        
+        # Calculate key stats using non-transductive attempts only
         if not submit_mode:
             test_correct_attempts = sum(
-                1 for attempt in attempts if attempt.get("test_correct", False)
+                1 for attempt in non_transductive_attempts if attempt.get("test_correct", False)
             )
         else:
             test_correct_attempts = 0  # Not computed in SUBMIT mode
             
         train_perfect_attempts = sum(
-            1 for attempt in attempts if attempt.get("train_accuracy", 0.0) == 1.0
+            1 for attempt in non_transductive_attempts if attempt.get("train_accuracy", 0.0) == 1.0
         )
-        # Align with Min 1 Train logic: task-level, has partial but not perfect training
+        # Align with Min 1 Train logic: task-level, has partial but not perfect training (non-transductive only)
         has_perfect_train = any(
-            attempt.get("train_accuracy", 0.0) == 1.0 for attempt in attempts
+            attempt.get("train_accuracy", 0.0) == 1.0 for attempt in non_transductive_attempts
         )
         has_partial_train = any(
-            0 < attempt.get("train_accuracy", 0.0) < 1.0 for attempt in attempts
+            0 < attempt.get("train_accuracy", 0.0) < 1.0 for attempt in non_transductive_attempts
         )
         task_has_partial_train = has_partial_train and not has_perfect_train
 
@@ -1373,9 +1368,7 @@ class ARCTaskRunnerSimple:
         no_code_extracted = sum(
             1 for attempt in attempts if not attempt.get("program_extracted", False)
         )
-        transductive_attempts = sum(
-            1 for attempt in attempts if attempt.get("is_transductive", False)
-        )
+        # transductive_count already calculated above
         train_exec_errors = sum(
             1 for attempt in attempts if attempt.get("train_exec_errors", 0) > 0
         )
@@ -1401,8 +1394,8 @@ class ARCTaskRunnerSimple:
             # SUBMIT mode: only show train metrics
             summary = f"✅ {task_id}: {train_perfect_attempts} train-perfect, {partial_indicator} (SUBMIT mode)"
         else:
-            # Normal mode: show both test and train metrics (using total attempts)
-            summary = f"✅ {task_id}: {test_correct_attempts}/{len(attempts)} test-correct, {train_perfect_attempts} train-perfect, {partial_indicator}"
+            # Normal mode: show both test and train metrics (using non-transductive attempts for denominator)
+            summary = f"✅ {task_id}: {test_correct_attempts}/{len(non_transductive_attempts)} test-correct, {train_perfect_attempts} train-perfect, {partial_indicator}"
 
         # Add issues in timeline order if any occurred
         issues = []
@@ -1416,8 +1409,8 @@ class ARCTaskRunnerSimple:
             issues.append(f"{max_length_hits} max-len")
         if no_code_extracted > 0:
             issues.append(f"{no_code_extracted} no-code")
-        if transductive_attempts > 0:
-            issues.append(f"{transductive_attempts} transductive")
+        if transductive_count > 0:
+            issues.append(f"{transductive_count} transductive")
         if train_exec_errors > 0:
             issues.append(f"{train_exec_errors} train-exec-error")
         if train_exec_timeouts > 0:
