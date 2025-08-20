@@ -2,7 +2,7 @@ import hashlib
 import os
 import threading
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional, List, Dict, Any
 import duckdb
 
 from .schema import ProgramSample
@@ -108,36 +108,11 @@ class LocalProgramsDB:
                 )
             """)
 
-<<<<<<< HEAD
-            # Migrate existing databases to add new columns if needed
-            self._migrate_schema()
-
-=======
->>>>>>> main
             # Ensure database has a unique ID
             self._ensure_database_id()
 
             self._tables_initialized = True
-<<<<<<< HEAD
-
-    def _migrate_schema(self) -> None:
-        """Migrate existing database schema to add new columns if needed."""
-        try:
-            # Try to add the column - will fail silently if it already exists
-            self.connection.execute(
-                "ALTER TABLE programs ADD COLUMN is_test_transductive BOOLEAN DEFAULT FALSE"
-            )
-            # Set default for existing rows (no-op if column was just created)
-            self.connection.execute(
-                "UPDATE programs SET is_test_transductive = FALSE WHERE is_test_transductive IS NULL"
-            )
-        except Exception:
-            # Column already exists or other non-critical error - ignore
-            pass
-
-=======
     
->>>>>>> main
     def _ensure_database_id(self) -> None:
         """Ensure the database has a unique ID, creating one if it doesn't exist."""
         import uuid
@@ -164,7 +139,7 @@ class LocalProgramsDB:
         return result[0]
 
     def get_all_programs(
-        self, include_transductive: bool = False
+        self, 
     ) -> List[Dict[str, Any]]:
         """
         Get all programs in the database.
@@ -172,7 +147,7 @@ class LocalProgramsDB:
         Returns:
             List of all program dictionaries
         """
-        query_sql = f"SELECT * FROM programs {'WHERE NOT is_test_transductive' if not include_transductive else ''} ORDER BY task_id, model"
+        query_sql = "SELECT * FROM programs ORDER BY task_id, model"
 
         cursor = self.connection.execute(query_sql)
         results = cursor.fetchall()
@@ -279,13 +254,8 @@ class LocalProgramsDB:
     def _generate_key(self, task_id: str, code: str) -> str:
         """Legacy private method - use generate_key instead."""
         return self.generate_key(task_id, code)
-<<<<<<< HEAD
-
-    def add_program(self, program: Union[ProgramSample, Dict[str, Any]]) -> None:
-=======
     
     def add_program(self, program: ProgramSample) -> None:
->>>>>>> main
         """
         Add a program to the database with validation.
 
@@ -295,17 +265,6 @@ class LocalProgramsDB:
         Raises:
             ValueError: If program validation fails
         """
-<<<<<<< HEAD
-        # Convert to dict - TypedDict is already a dict in runtime
-        program_dict = dict(program)
-
-        # Validate the program
-        self._validate_program(program_dict)
-
-        # Generate unique key from task_id and code
-        key = self.generate_key(program_dict["task_id"], program_dict["code"])
-
-=======
         
         # Validate the program
         self._validate_program(program)
@@ -313,7 +272,6 @@ class LocalProgramsDB:
         # Generate unique key from task_id and code
         key = self.generate_key(program['task_id'], program['code'])
         
->>>>>>> main
         # Insert into database (ON CONFLICT DO NOTHING to avoid duplicates)
         insert_sql = """
         INSERT INTO programs 
@@ -322,27 +280,6 @@ class LocalProgramsDB:
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (key) DO NOTHING
         """
-<<<<<<< HEAD
-
-        self.connection.execute(
-            insert_sql,
-            [
-                key,
-                program_dict["task_id"],
-                program_dict.get("reasoning"),
-                program_dict["code"],
-                program_dict["correct_train_input"],
-                program_dict["correct_test_input"],
-                program_dict["predicted_train_output"],
-                program_dict["predicted_test_output"],
-                program_dict["model"],
-                program_dict.get("is_test_transductive", False)
-                if "is_test_transductive" in program_dict
-                else False,
-            ],
-        )
-
-=======
         
         self.connection.execute(insert_sql, [
             key,
@@ -356,7 +293,6 @@ class LocalProgramsDB:
             program['model'],
         ])
     
->>>>>>> main
     def get_programs_by_task(self, task_id: str) -> List[Dict[str, Any]]:
         """
         Get all programs for a specific task.
