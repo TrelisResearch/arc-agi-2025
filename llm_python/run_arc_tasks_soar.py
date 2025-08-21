@@ -1348,9 +1348,10 @@ class ARCTaskRunnerSimple:
             10. empty-response: API returned empty response
             11. no-outputs: Code ran but produced no test outputs
             12. invalid-outputs: Code produced invalid outputs (wrong format/size)
-            13. api-timeout: API call timed out
-            14. api-fail: API call failed (non-timeout)
-            15. other-fail: Any remaining edge cases
+            13. wrong-outputs: Code ran successfully but got 0% train accuracy
+            14. api-timeout: API call timed out
+            15. api-fail: API call failed (non-timeout)
+            16. other-fail: Any remaining edge cases
             """
             
             # Test-based categories (only available when NOT in SUBMIT mode)
@@ -1401,6 +1402,11 @@ class ARCTaskRunnerSimple:
             if not isinstance(test_predicted, list):
                 return "invalid-outputs"
             
+            # Check for logic/algorithm failures - code ran successfully but got wrong answers
+            train_acc = attempt.get("train_accuracy", 0.0)
+            if train_acc == 0.0 and attempt.get("program_extracted", False):
+                return "wrong-outputs"
+            
             # Catch-all for any remaining edge cases
             return "other-fail"
         
@@ -1421,7 +1427,7 @@ class ARCTaskRunnerSimple:
         category_order = [
             "all-perfect", "test-perfect", "test-partial",  # SUBMIT mode only
             "train-perfect", "train-partial", "transductive",  # Training outcomes
-            "exec-error", "no-code", "max-length", "empty-response", "no-outputs", "invalid-outputs", "api-timeout", "api-fail", "other-fail"  # Failures
+            "exec-error", "no-code", "max-length", "empty-response", "no-outputs", "invalid-outputs", "wrong-outputs", "api-timeout", "api-fail", "other-fail"  # Failures
         ]
         
         # Build parts list with only non-zero categories

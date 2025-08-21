@@ -13,11 +13,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Sensible default data centers
-DEFAULT_DATA_CENTERS = [
-    "US-IL-1", "US-TX-1", "US-TX-3", "US-KS-2", 
-    "US-GA-1", "EU-RO-1", "EU-SE-1"
-]
+# Import shared configuration
+from config import DEFAULT_DATA_CENTERS, get_regions
 
 # Global variable to store pod ID for cleanup
 pod_id = None
@@ -402,10 +399,15 @@ def main():
         epilog="""
 Examples:
   %(prog)s sglang -- --model-path Qwen/Qwen3-4B
-  %(prog)s sglang-tcp -- --model-path Qwen/Qwen3-4B --reasoning-parser qwen3
+  %(prog)s sglang --regions us_only -- --model-path Qwen/Qwen3-4B --reasoning-parser qwen3
 
 Template names are loaded from the templates/ folder. File extensions are optional.
 All arguments after '--' are passed directly to the docker command.
+
+Region Configuration:
+- Default regions are defined in config.py and used automatically
+- Use --regions to override: default, us_only, eu_only, low_latency, cost_optimized
+- Templates can specify dataCenterIds to override both defaults and --regions
 
 Health Check Configuration:
 Templates can include a 'healthCheck' section to configure health monitoring:
@@ -422,6 +424,9 @@ The healthCheck section is automatically stripped before sending to RunPod.
                        help='Skip health check after pod creation')
     parser.add_argument('--debug', action='store_true',
                        help='Show debug information about pod status')
+    parser.add_argument('--regions', 
+                       choices=['default', 'us_only', 'eu_only', 'low_latency', 'cost_optimized'],
+                       help='Region set to use (overrides template dataCenterIds)')
     
     # Parse arguments, splitting at '--'
     if '--' in sys.argv:
@@ -443,6 +448,11 @@ The healthCheck section is automatically stripped before sending to RunPod.
     config = load_template(args.template)
     if not config:
         sys.exit(1)
+    
+    # Override regions if specified
+    if args.regions:
+        config['dataCenterIds'] = get_regions(args.regions)
+        print(f"🌍 Using {args.regions} regions: {config['dataCenterIds']}")
     
     # Register signal handlers for graceful shutdown
     signal.signal(signal.SIGINT, signal_handler)

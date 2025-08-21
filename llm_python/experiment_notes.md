@@ -29,9 +29,6 @@ export ARC_PROGRAMS_DB=./llm_python/programsdb/local-partial-100-1-epoch.db
 uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c1574" --max-attempts 64 --subset evaluation
 ```
 
-
-
-
 ## Aug 20
 Learnings:
 - Seems our trained models are better, BUT unclear if all-train are transductive or not.
