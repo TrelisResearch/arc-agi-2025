@@ -2,7 +2,7 @@
 Schema types for the programs database.
 """
 
-from typing import TypedDict, List
+from typing import TypedDict, List, Optional
 import pyarrow as pa
 
 

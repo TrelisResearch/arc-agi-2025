@@ -22,6 +22,12 @@ export ARC_PROGRAMS_DB=./llm_python/programsdb/local-correct-50.db
 uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716" --max-attempts 64 --subset evaluation
 ```
 
+and test the 1-epoch checpoint of Trelis/Qwen3-4B_ds-arc-agi-1-perfect-50-c321:
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-correct-50-1-epoch.db
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-1-perfect-50-c321" --max-attempts 64 --subset evaluation
+```
+
 
 ### Run the latest perfect model on the partial 100 dataset
 
