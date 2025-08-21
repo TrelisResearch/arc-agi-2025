@@ -11,7 +11,7 @@ Lewis Reminders:
 ### Test out logging by running on local.db with openrouter with oss 120b and the missing solutions dataset
 
 ```bash
-export ARC_PROGRAMS_DB=./llm_python/programsdb/local.db
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-test.db
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset missing_solutions_20250819 --max_workers 32 --max_attempts 16 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --limit 1
 ```
 Looks good and adds up to the total attempts.
@@ -23,11 +23,40 @@ Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c3148
 export ARC_PROGRAMS_DB=./llm_python/programsdb/local.db
 uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c3148" --max-attempts 64 --subset evaluation
 ```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c3148
+Total tasks: 120
+Total time: 1185.3s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 46,667,498
+Total cost: $8.184169
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.8%
+  Pass@2 (Train Majority):  0.8%
+  Oracle (Best Attempt):    0.8%
+  All Train Correct:        2.5%
+  Min 1 Train Correct:      12.5%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
 and run the 1 epoch checkpoint too - Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c1574:
 ```bash
 export ARC_PROGRAMS_DB=./llm_python/programsdb/local-partial-100-1-epoch.db
 uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c1574" --max-attempts 64 --subset evaluation
 ```
+  Pass@2 (Weighted Voting): 0.8%
+  Pass@2 (Train Majority):  0.8%
+  Oracle (Best Attempt):    0.8%
+  All Train Correct:        0.8%
+  Min 1 Train Correct:      14.2%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.2%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
 ## Aug 20
 Learnings:

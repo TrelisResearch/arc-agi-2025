@@ -13,7 +13,7 @@ DEFAULT_DATA_CENTERS = [
     "EU-RO-1",  # EU-Romania-1
     "EU-SE-1",   # EU-Sweden-1
     "US-NC-1",
-    "AP-JP-1"
+    # "AP-JP-1"
 ]
 
 # Alternative region sets for specific use cases

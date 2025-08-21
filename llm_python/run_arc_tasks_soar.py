@@ -1049,61 +1049,7 @@ class ARCTaskRunnerSimple:
                             # Calculate and display task summary
                             self._display_task_summary(task_id, task_results[task_id])
 
-                            # Save task result immediately when it's complete
-                            attempts = sorted(
-                                task_results[task_id]["attempts"],
-                                key=lambda x: x["attempt_number"],
-                            )
-                            valid_attempts = [
-                                attempt
-                                for attempt in attempts
-                                if isinstance(attempt, dict)
-                                and "attempt_number" in attempt
-                            ]
-
-                            # Trim failed attempts to reduce file size
-                            trimmed_attempts = [
-                                self._trim_failed_attempt(attempt)
-                                for attempt in valid_attempts
-                            ]
-
-                            # Only include raw_responses for non-trimmed attempts
-                            all_responses = []
-                            for i, attempt in enumerate(trimmed_attempts):
-                                if attempt.get("data_trimmed", False):
-                                    all_responses.append(
-                                        None
-                                    )  # No raw response for trimmed attempts
-                                else:
-                                    all_responses.append(
-                                        valid_attempts[i].get("raw_response")
-                                    )
-
-                            task_result = {
-                                "task_id": task_id,
-                                "model": self.model,
-                                "api_type": "chat_completions_all_attempts",
-                                "dataset": dataset,
-                                "subset": subset_name,
-                                "attempt_details": trimmed_attempts,
-                                "all_responses": all_responses,
-                                "tokens_used": sum(
-                                    attempt.get("input_tokens", 0)
-                                    + attempt.get("output_tokens", 0)
-                                    for attempt in trimmed_attempts
-                                ),
-                                "request_cost": sum(
-                                    attempt.get("attempt_cost", 0.0)
-                                    for attempt in trimmed_attempts
-                                ),
-                                "max_attempts": self.max_attempts,
-                                "api_success": True,
-                                "task_data": task_data,
-                                "full_prompt": task_results[task_id].get(
-                                    "full_prompt"
-                                ),  # Store prompt once per task
-                            }
-                            # Note: JSON logging removed - only database logging remains
+                            # Task completed - only database logging remains
                     else:
                         print(
                             f"⚠️ Task {task_id} not found in results dict - possible corruption"
@@ -1271,16 +1217,6 @@ class ARCTaskRunnerSimple:
                     self._trim_failed_attempt(attempt) for attempt in valid_attempts
                 ]
 
-                # Only include raw_responses for non-trimmed attempts
-                all_responses = []
-                for i, attempt in enumerate(trimmed_attempts):
-                    if attempt.get("data_trimmed", False):
-                        all_responses.append(
-                            None
-                        )  # No raw response for trimmed attempts
-                    else:
-                        all_responses.append(valid_attempts[i].get("raw_response"))
-
                 result = {
                     "task_id": task_id,
                     "model": self.model,
@@ -1288,7 +1224,6 @@ class ARCTaskRunnerSimple:
                     "dataset": dataset,
                     "subset": subset_name,
                     "attempt_details": trimmed_attempts,
-                    "all_responses": all_responses,
                     "tokens_used": sum(
                         attempt.get("input_tokens", 0) + attempt.get("output_tokens", 0)
                         for attempt in trimmed_attempts
@@ -1304,7 +1239,6 @@ class ARCTaskRunnerSimple:
                     "task_data": task_data,
                 }
                 results.append(result)
-                # Note: save_result() is now called when each task completes, not here
             else:
                 print(f"⚠️ Task {task_id} has no valid attempts - skipping")
 
@@ -1517,11 +1451,6 @@ class ARCTaskRunnerSimple:
             data_trimmed=True,
             trim_reason="execution_failure",
         )
-        return trimmed
-
-        # Keep required fields as empty/None instead of dropping them entirely
-        # This maintains compatibility with downstream code while still reducing size
-
         return trimmed
 
 
