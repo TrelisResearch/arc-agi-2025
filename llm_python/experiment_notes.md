@@ -8,8 +8,43 @@ Lewis Reminders:
 ---
 ## Aug 21
 
+### Testing prompt optimisation
+
+We'll start by running 64 attempts on Qwen 3 base model, starting a pod and running arc agi 1 eval:
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-test-prompt-optimisation.db
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Qwen/Qwen3-4B" --max-attempts 64 --subset training
+```
+
+and then run the same with an optimised prompt:
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-test-prompt-optimisation-IMPROVED.db
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Qwen/Qwen3-4B" --max-attempts 64 --subset training
+```
+
+
+```markdown
+You are an AI assistant specialized in solving Abstract Reasoning Corpus (ARC-AGI) tasks by generating Python code.
+Your goal is to analyze input-output grid pairs. The outputs were produced by applying a transformation rule to the inputs. Implement the transformation rules as a Python function.
+You should only write the implemented the transformation in code.
+You must write code in triple backticks (```python and then ```). You must write a function called 'transform' which takes a single argument, the input grid as 'list[list[int]]', and returns the transformed grid (also as 'list[list[int]]').
+Your solution must work correctly for ALL training input-output pairs provided, not just some of them. Create a general algorithmic solution that captures the complete transformation rule - avoid hardcoded values or patterns that only work for specific cases. The algorithm should generalize to work on any test input following the same underlying rule.
+The number in the input grid can be mapped to the following colors: 0:Black; 1:Blue; 2:Red; 3:Green; 4:Yellow; 5:Grey; 6:Pink; 7:Orange; 8:Purple; 9:Brown
+Now, solve the following ARC-AGI task:
+# Task to solve:
+{task_content} 
+```
+
+
+### Allowing for TTT
+[ ] Clean up the ipynb notebook.
+[ ] Allow for ipynb notebook conversion - how to do this? how to pass in values?!?
+  [ ] Can huggingface 
+
+
+
 ### Notes on Transductive Investigations.
-- All-correct. These appear to rarely be transductive.
+- All-correct. These appear to rarely be transductive, although some of them are falsely flagged as transductive (very few, 5 out of thousands).
 - Train-perfect, test all incorrect: These appear to nearly always be transductive.
 - Test-perfect, partial-train: Possibly these are mostly non-transductive, and help to increase the oracle/weighted score above all-train-correct.
 - Train-partial: These often appear to be transductive. 

@@ -278,27 +278,48 @@ class LocalProgramsDB:
         # Generate unique key from task_id and code
         key = self.generate_key(program['task_id'], program['code'])
         
-        # Insert into database (ON CONFLICT DO NOTHING to avoid duplicates)
+        # Check if this key already exists to avoid transaction conflicts
+        existing = self.connection.execute(
+            "SELECT 1 FROM programs WHERE key = ? LIMIT 1", [key]
+        ).fetchone()
+        
+        if existing:
+            return  # Program already exists, skip insertion
+        
+        # Insert into database
         insert_sql = """
         INSERT INTO programs 
         (key, task_id, reasoning, code, correct_train_input, correct_test_input,
          predicted_train_output, predicted_test_output, model, is_transductive)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT (key) DO NOTHING
         """
         
-        self.connection.execute(insert_sql, [
-            key,
-            program['task_id'],
-            program.get('reasoning'),
-            program['code'],
-            program['correct_train_input'],
-            program['correct_test_input'],
-            program['predicted_train_output'],
-            program['predicted_test_output'],
-            program['model'],
-            program['is_transductive'],
-        ])
+        try:
+            self.connection.execute(insert_sql, [
+                key,
+                program['task_id'],
+                program.get('reasoning'),
+                program['code'],
+                program['correct_train_input'],
+                program['correct_test_input'],
+                program['predicted_train_output'],
+                program['predicted_test_output'],
+                program['model'],
+                program['is_transductive'],
+            ])
+        except Exception as e:
+            # Still handle rare race conditions where another thread inserted between our check and insert
+            error_str = str(e).lower()
+            if any(phrase in error_str for phrase in [
+                "duplicate key",
+                "primary key",
+                "unique constraint",
+                "constraint violation",
+                "transaction"
+            ]):
+                pass  # Program already exists, that's fine
+            else:
+                raise  # Re-raise other errors
     
     def get_programs_by_task(self, task_id: str) -> List[Dict[str, Any]]:
         """
