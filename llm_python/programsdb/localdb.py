@@ -104,7 +104,8 @@ class LocalProgramsDB:
                     correct_test_input BOOLEAN[] NOT NULL,
                     predicted_train_output INTEGER[][][] NOT NULL,
                     predicted_test_output INTEGER[][][] NOT NULL,
-                    model VARCHAR NOT NULL
+                    model VARCHAR NOT NULL,
+                    is_transductive BOOLEAN NOT NULL DEFAULT FALSE
                 )
             """)
 

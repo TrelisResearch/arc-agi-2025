@@ -16,6 +16,7 @@ class ProgramSample(TypedDict):
     predicted_train_output: List[List[List[int]]]  # Program's predicted outputs for training inputs
     predicted_test_output: List[List[List[int]]]  # Program's predicted outputs for test inputs
     model: str  # What model generated this example
+    is_transductive: bool  # Whether program hardcodes outputs (transductive)
 
 # PyArrow schema for parquet serialization/deserialization
 # All fields are required (nullable=False) except reasoning
@@ -29,6 +30,7 @@ PARQUET_SCHEMA = pa.schema(
         ("predicted_train_output", pa.list_(pa.list_(pa.list_(pa.int64()))), False),  # Required
         ("predicted_test_output", pa.list_(pa.list_(pa.list_(pa.int64()))), False),  # Required
         ("model", pa.string(), False),  # Required
+        ("is_transductive", pa.bool_(), False),  # Required
     ]
 )
 

@@ -16,6 +16,13 @@ uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset
 ```
 Looks good and adds up to the total attempts.
 
+### Test out the correct 50 old model - Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-correct-50.db
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_dsarc-programs-correct-50_20250806-233716" --max-attempts 64 --subset evaluation
+```
+
+
 ### Run the latest perfect model on the partial 100 dataset
 
 Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c3148
