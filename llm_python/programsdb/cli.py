@@ -98,6 +98,20 @@ def import_command(args):
     return 0
 
 
+def export_command(args):
+    """Handle the export command."""
+    try:
+        output_path = sync_database_to_cloud(args.db_path, args.output_path)
+        if output_path:
+            print(f"Export completed successfully to {output_path}")
+        else:
+            print("No data to export")
+    except Exception as e:
+        print(f"Error during export: {e}")
+        return 1
+    return 0
+
+
 def clear_command(args):
     """Handle the clear command."""
     from pathlib import Path
@@ -156,6 +170,14 @@ def main():
         help="Path to parquet file (local path or gs:// URL)"
     )
     
+    # Export command
+    export_parser = subparsers.add_parser("export", help="Export programs to local parquet file")
+    export_parser.add_argument(
+        "output_path",
+        type=str,
+        help="Path to output parquet file"
+    )
+    
     # Clear command
     subparsers.add_parser("clear", help="Clear the local database (delete the database file)")
     
@@ -168,6 +190,8 @@ def main():
         return sync_command(args)
     elif args.command == "import":
         return import_command(args)
+    elif args.command == "export":
+        return export_command(args)
     elif args.command == "clear":
         return clear_command(args)
     elif args.command == "stats":
