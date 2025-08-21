@@ -1325,103 +1325,113 @@ class ARCTaskRunnerSimple:
         """Display a brief summary of a completed task"""
         attempts = task_result["attempts"]
         
-        # Check if we're in SUBMIT mode
+        # Check if we're in SUBMIT mode (test outputs available for scoring)
         submit_mode = os.getenv("SUBMIT", "").lower() == "true"
 
-        # Filter out transductive attempts for main metrics
-        non_transductive_attempts = [att for att in attempts if not att.get("is_transductive", False)]
-        transductive_count = len(attempts) - len(non_transductive_attempts)
-        
-        # Calculate key stats using non-transductive attempts only
-        if not submit_mode:
-            test_correct_attempts = sum(
-                1 for attempt in non_transductive_attempts if attempt.get("test_correct", False)
-            )
-        else:
-            test_correct_attempts = 0  # Not computed in SUBMIT mode
+        def categorize_attempt(attempt):
+            """
+            Categorize each attempt into exactly ONE category (mutually exclusive).
+            Priority order matters - first matching condition wins.
             
-        train_perfect_attempts = sum(
-            1 for attempt in non_transductive_attempts if attempt.get("train_accuracy", 0.0) == 1.0
-        )
-        # Align with Min 1 Train logic: task-level, has partial but not perfect training (non-transductive only)
-        has_perfect_train = any(
-            attempt.get("train_accuracy", 0.0) == 1.0 for attempt in non_transductive_attempts
-        )
-        has_partial_train = any(
-            0 < attempt.get("train_accuracy", 0.0) < 1.0 for attempt in non_transductive_attempts
-        )
-        task_has_partial_train = has_partial_train and not has_perfect_train
+            NORMAL MODE CATEGORIES (when test outputs available for evaluation):
+            1. all-perfect: Both train AND test 100% correct
+            2. test-perfect: All test correct (but not all train)
+            3. test-partial: Some test correct (but not perfect)
+            
+            BOTH MODES:
+            4. transductive: Flagged as memorization/hardcoding (any training success)
+            5. train-perfect: All train correct, no test success (non-transductive)
+            6. train-partial: Some train correct, no test success (non-transductive)
+            7. exec-error: Execution errors during train or test
+            8. no-code: Failed to extract valid Python code
+            9. max-length: Hit token limit during generation
+            10. empty-response: API returned empty response
+            11. no-outputs: Code ran but produced no test outputs
+            12. invalid-outputs: Code produced invalid outputs (wrong format/size)
+            13. api-timeout: API call timed out
+            14. api-fail: API call failed (non-timeout)
+            15. other-fail: Any remaining edge cases
+            """
+            
+            # Test-based categories (only available when NOT in SUBMIT mode)
+            # In SUBMIT mode, we don't have test outputs to evaluate against
+            if not submit_mode:
+                test_correct = attempt.get("test_correct", False)
+                train_acc = attempt.get("train_accuracy", 0.0)
+                
+                if test_correct and train_acc == 1.0:
+                    return "all-perfect"
+                if test_correct:
+                    return "test-perfect"
+                if attempt.get("test_correct_count", 0) > 0:
+                    return "test-partial"
+            
+            # Transductive check (before train categories to separate memorization)
+            if attempt.get("is_transductive", False):
+                return "transductive"
+            
+            # Training-based categories (only for non-transductive)
+            train_acc = attempt.get("train_accuracy", 0.0)
+            if train_acc == 1.0:
+                return "train-perfect"
+            if train_acc > 0:
+                return "train-partial"
+            
+            # Failure categories (in order of specificity)
+            if attempt.get("train_exec_errors", 0) > 0 or attempt.get("test_exec_error", False):
+                return "exec-error"
+            if not attempt.get("program_extracted", False):
+                return "no-code"
+            if attempt.get("hit_max_tokens", False):
+                return "max-length"
+            if attempt.get("empty_response", False):
+                return "empty-response"
+            if attempt.get("api_timeout", False):
+                return "api-timeout"
+            if not attempt.get("api_success", True):
+                return "api-fail"
+            
+            # Check for output-related failures
+            test_predicted = attempt.get("test_predicted")
+            if test_predicted is None:
+                return "no-outputs"
+            
+            # If we have outputs but they're invalid (wrong format, size, etc.)
+            # This catches cases where execution succeeded but outputs are malformed
+            if not isinstance(test_predicted, list):
+                return "invalid-outputs"
+            
+            # Catch-all for any remaining edge cases
+            return "other-fail"
+        
+        # Count attempts by category
+        categories = {}
+        for attempt in attempts:
+            cat = categorize_attempt(attempt)
+            categories[cat] = categories.get(cat, 0) + 1
 
-        # Calculate issues in timeline order
-        api_timeouts = sum(
-            1 for attempt in attempts if attempt.get("api_timeout", False)
-        )
-        api_failures = sum(
-            1 for attempt in attempts if not attempt.get("api_success", True)
-        )
-        empty_responses = sum(
-            1 for attempt in attempts if attempt.get("empty_response", False)
-        )
-        max_length_hits = sum(
-            1 for attempt in attempts if attempt.get("hit_max_tokens", False)
-        )
-        no_code_extracted = sum(
-            1 for attempt in attempts if not attempt.get("program_extracted", False)
-        )
-        # transductive_count already calculated above
-        train_exec_errors = sum(
-            1 for attempt in attempts if attempt.get("train_exec_errors", 0) > 0
-        )
-        train_exec_timeouts = sum(
-            1 for attempt in attempts if attempt.get("train_exec_timeouts", 0) > 0
-        )
-        test_exec_errors = sum(
-            1 for attempt in attempts if attempt.get("test_exec_error", False)
-        )
-        test_exec_timeouts = sum(
-            1 for attempt in attempts if attempt.get("test_exec_timeout", False)
-        )
-
-        # Find best attempt (from all attempts)
+        # Find best attempt for additional context
         best_attempt = max(
             attempts,
             key=lambda x: (x.get("test_correct", False), x.get("train_accuracy", 0.0)),
         )
 
-        # Build summary
-        partial_indicator = "train-partial" if task_has_partial_train else "no-partial"
-        if submit_mode:
-            # SUBMIT mode: only show train metrics
-            summary = f"✅ {task_id}: {train_perfect_attempts} train-perfect, {partial_indicator} (SUBMIT mode)"
-        else:
-            # Normal mode: show both test and train metrics (using non-transductive attempts for denominator)
-            summary = f"✅ {task_id}: {test_correct_attempts}/{len(non_transductive_attempts)} test-correct, {train_perfect_attempts} train-perfect, {partial_indicator}"
-
-        # Add issues in timeline order if any occurred
-        issues = []
-        if api_timeouts > 0:
-            issues.append(f"{api_timeouts} api-timeout")
-        if api_failures > 0:
-            issues.append(f"{api_failures} api-fail")
-        if empty_responses > 0:
-            issues.append(f"{empty_responses} empty-response")
-        if max_length_hits > 0:
-            issues.append(f"{max_length_hits} max-len")
-        if no_code_extracted > 0:
-            issues.append(f"{no_code_extracted} no-code")
-        if transductive_count > 0:
-            issues.append(f"{transductive_count} transductive")
-        if train_exec_errors > 0:
-            issues.append(f"{train_exec_errors} train-exec-error")
-        if train_exec_timeouts > 0:
-            issues.append(f"{train_exec_timeouts} train-exec-timeout")
-        if test_exec_errors > 0:
-            issues.append(f"{test_exec_errors} test-exec-error")
-        if test_exec_timeouts > 0:
-            issues.append(f"{test_exec_timeouts} test-exec-timeout")
-
-        if issues:
-            summary += f" | Issues: {', '.join(issues)}"
+        # Build summary showing total attempts and breakdown by category
+        # Order categories by importance (best outcomes first)
+        category_order = [
+            "all-perfect", "test-perfect", "test-partial",  # SUBMIT mode only
+            "train-perfect", "train-partial", "transductive",  # Training outcomes
+            "exec-error", "no-code", "max-length", "empty-response", "no-outputs", "invalid-outputs", "api-timeout", "api-fail", "other-fail"  # Failures
+        ]
+        
+        # Build parts list with only non-zero categories
+        parts = []
+        for cat in category_order:
+            if cat in categories and categories[cat] > 0:
+                parts.append(f"{categories[cat]} {cat}")
+        
+        # Create the summary line
+        summary = f"✅ {task_id}: {len(attempts)} attempts | {', '.join(parts)}"
 
         # Add best attempt performance (separate from issues)
         if submit_mode:

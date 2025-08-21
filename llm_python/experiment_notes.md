@@ -6,6 +6,32 @@ Lewis Reminders:
 - Mathieu.
 
 ---
+## Aug 21
+
+### Test out logging by running on local.db with openrouter with oss 120b and the missing solutions dataset
+
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local.db
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset missing_solutions_20250819 --max_workers 32 --max_attempts 16 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --limit 1
+```
+Looks good and adds up to the total attempts.
+
+### Run the latest perfect model on the partial 100 dataset
+
+Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c3148
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local.db
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c3148" --max-attempts 64 --subset evaluation
+```
+and run the 1 epoch checkpoint too - Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c1574:
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-partial-100-1-epoch.db
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c1574" --max-attempts 64 --subset evaluation
+```
+
+
+
+
 ## Aug 20
 Learnings:
 - Seems our trained models are better, BUT unclear if all-train are transductive or not.
