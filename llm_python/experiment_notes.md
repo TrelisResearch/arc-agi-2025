@@ -102,25 +102,58 @@ Total cost: $1.783165
   API Failure Responses:    0.0%
 
 WARNING ACTUALLY THE TWO ABOVE WERE RUN ON THE SAME PROMPT! So this is not showing anything.
+  Base 8-attempt DB:
+  - Total tasks: 35
+  - Tasks with at least one transductive attempt: 3 (8.6%)
+  - Total transductive attempts: 6 out of 99 total attempts (6.1%)
+
+  Repeat! 8-attempt DB:
+  - Total tasks: 36
+  - Tasks with at least one transductive attempt: 4 (11.1%)
+  - Total transductive attempts: 7 out of 97 total attempts (7.2%)
 
 I need to run once more, witha  new db:
 ```bash
 export ARC_PROGRAMS_DB=./llm_python/programsdb/local-test-prompt-optimisation-IMPROVED-8-2.db
 uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Qwen/Qwen3-4B" --max-attempts 8 --subset training
 ```
+Dataset: arc-prize-2024
+Subset: training
+Model: Qwen/Qwen3-4B
+Total tasks: 400
+Total time: 1086.5s
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 9,017,393
+Total cost: $1.919919
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 3.8%
+  Pass@2 (Train Majority):  3.5%
+  Oracle (Best Attempt):    4.2%
+  All Train Correct:        3.8%
+  Min 1 Train Correct:      10.2%
+  Min 1 Code Success:       99.8%
+  Max Length Responses:     6.8%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
+  Transductive Usage:
+  - Tasks with transductive attempts: 7 (15.2%)
+  - Total transductive attempts: 9 out of 117 (7.7%)
 
+The conclusion is that prompting doesn't help all that much.
 
 ### Allowing for TTT
-[ ] Clean up the ipynb notebook.
-[ ] Allow for ipynb notebook conversion - how to do this? how to pass in values?!?
-  [ ] Can huggingface 
+[x] Clean up the ipynb notebook.
+[x] Allow for ipynb notebook conversion - how to do this? how to pass in values?!?
+[ ] Parquet loading.
+  [ ] Parquet generation from duckdb. How to do that? Ask Lewis.
+  [ ] Load with huggingface from local (default to kaggle/working if in kaggle).
+  [ ] Get ttt working in Runpod on H200.
+
 [ ] Get working in kaggle
   [ ] Qwen tuned needs to be available
-  [ ] Read in from parquet file.
-
-
+  [ ] Read in from parquet file
 
 ### Notes on Transductive Investigations.
 - All-correct. These appear to rarely be transductive, although some of them are falsely flagged as transductive (very few, 5 out of thousands).
