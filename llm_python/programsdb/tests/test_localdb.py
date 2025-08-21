@@ -29,7 +29,8 @@ def sample_program() -> ProgramSample:
         'correct_test_input': [True],
         'predicted_train_output': [[[1, 2], [3, 4]], [[0, 0], [0, 0]]],
         'predicted_test_output': [[[1, 2], [3, 4]]],
-        'model': 'test_model'
+        'model': 'test_model',
+        'is_transductive': False
     }
 
 

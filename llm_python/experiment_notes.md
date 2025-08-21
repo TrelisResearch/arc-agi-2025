@@ -35,11 +35,90 @@ Now, solve the following ARC-AGI task:
 {task_content} 
 ```
 
+Results:
+⏺ Task Success Analysis (54 common tasks):
+
+  Base DB:
+  - a) At least one attempt all correct (test + train): 16 tasks (29.6%)
+  - b) All train correct: 17 tasks (31.5%)
+  - c) At least one train correct: 53 tasks (98.1%)
+
+  Improved DB:
+  - a) At least one attempt all correct (test + train): 16 tasks (29.6%)
+  - b) All train correct: 18 tasks (33.3%)
+  - c) At least one train correct: 52 tasks (96.3%)
+
+Transductive Attempts Analysis:
+- Base DB: 49 transductive attempts out of 440 total programs (11.14%)
+- Improved DB: 52 transductive attempts out of 600 total programs (8.67%)
+
+Run again with 8 attempts:
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-test-prompt-optimisation-8.db
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Qwen/Qwen3-4B" --max-attempts 8 --subset training
+```
+Dataset: arc-prize-2024
+Subset: training
+Model: Qwen/Qwen3-4B
+Total tasks: 400
+Total time: 430.3s
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 8,726,021
+Total cost: $1.788296
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 4.2%
+  Pass@2 (Train Majority):  3.5%
+  Oracle (Best Attempt):    4.8%
+  All Train Correct:        2.8%
+  Min 1 Train Correct:      7.8%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     6.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+and then run the same with an optimised prompt:
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-test-prompt-optimisation-IMPROVED-8.db
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Qwen/Qwen3-4B" --max-attempts 8 --subset training
+```
+Dataset: arc-prize-2024
+Subset: training
+Model: Qwen/Qwen3-4B
+Total tasks: 400
+Total time: 429.4s
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 8,717,469
+Total cost: $1.783165
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 4.2%
+  Pass@2 (Train Majority):  4.0%
+  Oracle (Best Attempt):    4.5%
+  All Train Correct:        2.8%
+  Min 1 Train Correct:      8.5%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     5.8%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+WARNING ACTUALLY THE TWO ABOVE WERE RUN ON THE SAME PROMPT! So this is not showing anything.
+
+I need to run once more, witha  new db:
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-test-prompt-optimisation-IMPROVED-8-2.db
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Qwen/Qwen3-4B" --max-attempts 8 --subset training
+```
+
+
+
 
 ### Allowing for TTT
 [ ] Clean up the ipynb notebook.
 [ ] Allow for ipynb notebook conversion - how to do this? how to pass in values?!?
   [ ] Can huggingface 
+[ ] Get working in kaggle
+  [ ] Qwen tuned needs to be available
+  [ ] Read in from parquet file.
 
 
 

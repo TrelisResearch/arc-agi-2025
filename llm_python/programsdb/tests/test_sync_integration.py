@@ -66,7 +66,8 @@ def create_test_programs() -> List[ProgramSample]:
                 [[13, 14], [15, 16]], 
                 [[17, 18], [19, 20]]
             ],
-            'model': 'gpt-4-test'
+            'model': 'gpt-4o-mini',
+            'is_transductive': False
         },
         {
             'task_id': 'task_002',
@@ -83,7 +84,8 @@ def create_test_programs() -> List[ProgramSample]:
             'predicted_test_output': [
                 [[4, 4, 4, 4, 4], [4, 4, 4, 4, 4], [4, 4, 4, 4, 4], [4, 4, 4, 4, 4], [4, 4, 4, 4, 4]]
             ],
-            'model': 'claude-3-test'
+            'model': 'claude-3-5-sonnet',
+            'is_transductive': False
         },
         {
             'task_id': 'task_003', 
@@ -93,7 +95,8 @@ def create_test_programs() -> List[ProgramSample]:
             'correct_test_input': [],
             'predicted_train_output': [],
             'predicted_test_output': [],
-            'model': 'local-model'
+            'model': 'Qwen/Qwen3-4B',
+            'is_transductive': False
         },
         {
             'task_id': 'task_001',  # Duplicate task_id with different code
@@ -110,7 +113,8 @@ def create_test_programs() -> List[ProgramSample]:
                 [[14, 15], [16, 17]], 
                 [[18, 19], [20, 21]]
             ],
-            'model': 'gpt-4-test'
+            'model': 'gpt-4o-mini',
+            'is_transductive': False
         }
     ]
     

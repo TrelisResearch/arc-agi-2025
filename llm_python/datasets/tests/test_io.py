@@ -33,7 +33,8 @@ def create_valid_sample_data() -> pd.DataFrame:
             [[[1, 1]]],
             [[[2, 2]]]
         ],
-        'model': ['gpt-4', 'claude-3']
+        'model': ['gpt-4o-mini', 'claude-3-5-sonnet'],
+        'is_transductive': [False, True]  # Test both values
     })
 
 
@@ -221,6 +222,7 @@ class TestSchemaValidation:
             'predicted_train_output': pd.Series([], dtype='object'),
             'predicted_test_output': pd.Series([], dtype='object'),
             'model': pd.Series([], dtype='string'),
+            'is_transductive': pd.Series([], dtype='bool'),
         })
         
         # Should not raise any exception
@@ -266,7 +268,8 @@ class TestEdgeCases:
             'correct_test_input': [[False] * 15],
             'predicted_train_output': [large_output],
             'predicted_test_output': [large_output[:2]],
-            'model': ['test_model']
+            'model': ['gpt-4o-mini'],
+            'is_transductive': [False]
         })
         
         # Should validate successfully
@@ -299,7 +302,8 @@ class TestEdgeCases:
             'predicted_test_output': [
                 [[[3, 4]]]
             ],
-            'model': ['модель_🤖']
+            'model': ['claude-3-5-sonnet'],
+            'is_transductive': [False]
         })
         
         # Should validate and roundtrip successfully
@@ -328,7 +332,8 @@ class TestEdgeCases:
             'correct_test_input': [[]],   # Empty list
             'predicted_train_output': [[]],  # Empty list
             'predicted_test_output': [[]],   # Empty list
-            'model': ['test_model']
+            'model': ['gpt-4o-mini'],
+            'is_transductive': [False]
         })
         
         # Should validate successfully (empty lists are valid)

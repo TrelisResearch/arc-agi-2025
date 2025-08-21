@@ -125,7 +125,8 @@ class TestValidateSoarDataframe:
             'correct_test_input': [[True]],
             'predicted_train_output': [[]],  # Empty list
             'predicted_test_output': [[[]]],
-            'model': ['test_model']
+            'model': ['gpt-4o-mini'],
+            'is_transductive': [False]
         })
         
         result = validate_soar_dataframe(df, correctness_samples=0)
@@ -207,7 +208,8 @@ def generate(input_grid):
             'correct_test_input': [[True]],   # Assume the program works on test
             'predicted_train_output': [[expected_output]],  # What we expect for training
             'predicted_test_output': [[expected_output2]],   # What we expect for test
-            'model': ['test_model']
+            'model': ['gpt-4o-mini'],
+            'is_transductive': [False]
         })
         
         # Test with actual program execution (should fail due to non-existent task)
