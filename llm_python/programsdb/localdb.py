@@ -191,6 +191,7 @@ class LocalProgramsDB:
             "predicted_train_output",
             "predicted_test_output",
             "model",
+            "is_transductive",
         ]
 
         # Check all required fields are present
@@ -238,6 +239,10 @@ class LocalProgramsDB:
             if not isinstance(program["reasoning"], str):
                 raise ValueError("reasoning must be a string if provided")
 
+        # Validate is_transductive field
+        if not isinstance(program["is_transductive"], bool):
+            raise ValueError("is_transductive must be a boolean")
+
     def generate_key(self, task_id: str, code: str) -> str:
         """
         Generate a unique key for a program based on task_id and code.
@@ -277,8 +282,8 @@ class LocalProgramsDB:
         insert_sql = """
         INSERT INTO programs 
         (key, task_id, reasoning, code, correct_train_input, correct_test_input,
-         predicted_train_output, predicted_test_output, model)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         predicted_train_output, predicted_test_output, model, is_transductive)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (key) DO NOTHING
         """
         
@@ -292,6 +297,7 @@ class LocalProgramsDB:
             program['predicted_train_output'],
             program['predicted_test_output'],
             program['model'],
+            program['is_transductive'],
         ])
     
     def get_programs_by_task(self, task_id: str) -> List[Dict[str, Any]]:
