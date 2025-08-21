@@ -9,7 +9,7 @@ import pyarrow as pa
 class ProgramSample(TypedDict):
     """Schema for SOAR program examples stored in the database"""
     task_id: str  # Task ID from ARC
-    reasoning: str  # Reasoning trace if provided (optional)
+    reasoning: Optional[str]  # Reasoning trace if provided (optional)
     code: str  # Program code that should define a `generate` function
     correct_train_input: List[bool]  # Training inputs where program produced correct output
     correct_test_input: List[bool]  # Test inputs where program produced correct output
