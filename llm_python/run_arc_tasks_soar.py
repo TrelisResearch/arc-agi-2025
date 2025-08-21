@@ -1725,10 +1725,10 @@ class ARCTaskRunnerSimple:
             # Process task with results
             attempts = result["attempt_details"]
             
-            # Use all attempts (no filtering for transductive)
-            non_transductive_attempts = attempts
+            # Use all attempts (transductive downweighted in voting)
+            all_attempts = attempts
             
-            if not non_transductive_attempts:
+            if not all_attempts:
                 # No attempts at all, use empty grids fallback
                 num_test_outputs = len(task_data.get("test", []))
                 if num_test_outputs == 0:
@@ -1745,12 +1745,12 @@ class ARCTaskRunnerSimple:
             
             # Use weighted voting to get top 2 predictions
             try:
-                top_predictions = compute_weighted_majority_voting(non_transductive_attempts, top_k=2)
+                top_predictions = compute_weighted_majority_voting(all_attempts, top_k=2)
             except Exception as e:
                 print(f"⚠️ Weighted voting failed for task {task_id}: {e}")
                 # Fallback to first available predictions
                 top_predictions = []
-                for attempt in non_transductive_attempts[:2]:
+                for attempt in all_attempts[:2]:
                     pred = attempt.get("test_predicted")
                     if pred is not None:
                         top_predictions.append(pred)
