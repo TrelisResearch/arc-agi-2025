@@ -8,6 +8,12 @@ Lewis Reminders:
 ---
 ## Aug 21
 
+### Notes on Transductive Investigations.
+- All-correct. These appear to rarely be transductive.
+- Train-perfect, test all incorrect: These appear to nearly always be transductive.
+- Test-perfect, partial-train: Possibly these are mostly non-transductive, and help to increase the oracle/weighted score above all-train-correct.
+- Train-partial: These often appear to be transductive. 
+
 ### Test out logging by running on local.db with openrouter with oss 120b and the missing solutions dataset
 
 ```bash
@@ -25,7 +31,7 @@ uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_dsarc-
 and test the 1-epoch checpoint of Trelis/Qwen3-4B_ds-arc-agi-1-perfect-50-c321:
 ```bash
 export ARC_PROGRAMS_DB=./llm_python/programsdb/local-correct-50-1-epoch.db
-uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-1-perfect-50-c321" --max-attempts 64 --subset evaluation
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Trelis/Qwen3-4B_ds-arc-agi-1-perfect-50-c321" --max-attempts 8 --subset evaluation
 ```
 
 
