@@ -34,7 +34,13 @@ def stats_command(args):
         # Get basic counts
         total_programs = db.count_programs()
         unique_tasks = db.get_task_count()
-        
+
+        # Get is_transductive stats
+        transductive_query = "SELECT COUNT(*) FROM programs WHERE is_transductive = TRUE"
+        non_transductive_query = "SELECT COUNT(*) FROM programs WHERE is_transductive = FALSE"
+        transductive_count = db.connection.execute(transductive_query).fetchone()[0]
+        non_transductive_count = db.connection.execute(non_transductive_query).fetchone()[0]
+
         # Get fully correct programs count
         fully_correct_query = """
         SELECT COUNT(*) FROM programs 
@@ -43,11 +49,11 @@ def stats_command(args):
         """
         fully_correct_result = db.connection.execute(fully_correct_query).fetchone()
         fully_correct = fully_correct_result[0] if fully_correct_result else 0
-        
+
         # Get model distribution
         models_query = "SELECT model, COUNT(*) FROM programs GROUP BY model ORDER BY COUNT(*) DESC"
         models_result = db.connection.execute(models_query).fetchall()
-        
+
         # Print stats
         print("Database Statistics")
         print("==================")
@@ -60,7 +66,9 @@ def stats_command(args):
         print(f"Unique tasks covered: {unique_tasks:,}")
         print(f"Average programs per task: {total_programs/unique_tasks:.1f}" if unique_tasks > 0 else "Average programs per task: 0.0")
         print()
-        
+        print(f"Transductive programs: {transductive_count:,} ({transductive_count/total_programs*100:.1f}%)" if total_programs > 0 else "Transductive programs: 0 (0.0%)")
+        print(f"Non-transductive programs: {non_transductive_count:,} ({non_transductive_count/total_programs*100:.1f}%)" if total_programs > 0 else "Non-transductive programs: 0 (0.0%)")
+        print()
         if models_result:
             print("Programs by model:")
             for model, count in models_result:
