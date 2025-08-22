@@ -76,6 +76,12 @@ Total cost: $2.377037
   Timeout Responses:        0.0%
   API Failure Responses:    0.0%
 
+And re-run with the better classifier now 8 attempts on arc agi 1 eval dataset with Trelis/Qwen3-4B_ds-arc-agi-1-perfect-50-c642.
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-test-improved-classifier.db
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Trelis/Qwen3-4B_ds-arc-agi-1-perfect-50-c642" --max-attempts 8 --subset evaluation
+```
+
 ### ARC AGI 1 Perfect 50 Program inspection
 
 1. There are redundant functions appended for printing or doing checks. These could be removed.
