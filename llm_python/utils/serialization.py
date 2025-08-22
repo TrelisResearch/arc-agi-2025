@@ -1,8 +1,6 @@
-#!/usr/bin/env python3
-
 import json
 import numpy as np
-from typing import Any, Dict, List
+from typing import Any, Dict, Optional
 
 
 class ResponseSerializer:
@@ -19,7 +17,7 @@ class ResponseSerializer:
             if hasattr(obj, '__len__'):
                 print(f"⚠️  Converting list_reverseiterator with {len(obj)} items to list")
             else:
-                print(f"⚠️  Converting list_reverseiterator to list")
+                print("⚠️  Converting list_reverseiterator to list")
             return list(obj)
         elif type(obj).__name__ in ('map', 'filter', 'enumerate', 'zip'):
             print(f"⚠️  Converting {type(obj).__name__} iterator to list")
@@ -42,7 +40,7 @@ class ResponseSerializer:
             return str(obj)
     
     @classmethod
-    def serialize_response(cls, response) -> Dict:
+    def serialize_response(cls, response) -> Optional[Dict]:
         """Convert OpenAI response to JSON-serializable format"""
         if not response:
             return None

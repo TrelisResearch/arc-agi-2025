@@ -3,13 +3,9 @@ Tests for prompt utility functions.
 """
 
 import unittest
-import sys
-import os
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-
-from utils import (
+from llm_python.utils import (
     create_arc_prompt,
     extract_python_code,
     format_grid_for_prompt,

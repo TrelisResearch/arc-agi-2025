@@ -5,41 +5,6 @@ from typing import Dict, List, Optional, Tuple, TypedDict
 
 import threading
 
-_default_task_loader_instance = None
-_default_task_loader_lock = threading.Lock()
-
-
-def get_task_loader():
-    """
-    Lazily create and return a singleton TaskLoader instance in a thread-safe way.
-    Computes data_root if not provided, using environment or search logic.
-    """
-    global _default_task_loader_instance
-    if _default_task_loader_instance is not None:
-        return _default_task_loader_instance
-    with _default_task_loader_lock:
-        if _default_task_loader_instance is None:
-            # Compute data_root if not provided
-            data_root = os.getenv("ARC_DATA_ROOT")
-            if data_root is None:
-                current_path = Path(__file__).resolve()
-                while current_path.parent != current_path:
-                    data_path = current_path / "data"
-                    if data_path.exists() and data_path.is_dir():
-                        data_root = data_path.as_posix()
-                        break
-                    current_path = current_path.parent
-                else:
-                    data_root = (
-                        (Path(__file__).parent.parent.parent / "data")
-                        .resolve()
-                        .as_posix()
-                    )
-            _default_task_loader_instance = TaskLoader(
-                data_root=data_root, canonical_dataset="arc-prize-2025"
-            )
-    return _default_task_loader_instance
-
 
 # Type definitions for ARC-AGI data structures
 Grid = List[List[int]]
@@ -76,29 +41,8 @@ class TaskLoader:
     - Legacy subsets: "arc-agi-1/shortest_training_1", "arc-agi-2/all_evaluation", etc.
     """
 
-    def __init__(
-        self, data_root: Optional[str] = None, canonical_dataset: str = "arc-prize-2025"
-    ):
+    def __init__(self, data_root: str, canonical_dataset: str = "arc-prize-2025"):
         self.canonical_dataset = canonical_dataset
-        if data_root is None:
-            # Check environment variable first
-            data_root = os.getenv("ARC_DATA_ROOT")
-            if data_root is None:
-                # Find the data directory by searching up the directory tree
-                current_path = Path(__file__).resolve()
-                while current_path.parent != current_path:  # Stop at filesystem root
-                    data_path = current_path / "data"
-                    if data_path.exists() and data_path.is_dir():
-                        data_root = data_path.as_posix()
-                        break
-                    current_path = current_path.parent
-                else:
-                    # Fallback to the original calculation
-                    data_root = (
-                        (Path(__file__).parent.parent.parent / "data")
-                        .resolve()
-                        .as_posix()
-                    )
         self.data_root = Path(data_root)
         if not self.data_root.exists():
             raise ValueError(f"Data root directory not found: {data_root}")
@@ -334,3 +278,41 @@ class TaskLoader:
                 )
 
         return stats
+
+
+def get_default_data_root() -> str:
+    # Compute data_root if not provided
+    data_root = os.getenv("ARC_DATA_ROOT")
+    if data_root is None:
+        current_path = Path(__file__).resolve()
+        while current_path.parent != current_path:
+            data_path = current_path / "data"
+            if data_path.exists() and data_path.is_dir():
+                data_root = data_path.as_posix()
+                break
+            current_path = current_path.parent
+        else:
+            data_root = (
+                (Path(__file__).parent.parent.parent / "data").resolve().as_posix()
+            )
+    return data_root
+
+
+_default_task_loader_instance = None
+_default_task_loader_lock = threading.Lock()
+
+
+def get_task_loader() -> TaskLoader:
+    """
+    Lazily create and return a singleton TaskLoader instance in a thread-safe way.
+    Computes data_root if not provided, using environment or search logic.
+    """
+    global _default_task_loader_instance
+    if _default_task_loader_instance is not None:
+        return _default_task_loader_instance
+    with _default_task_loader_lock:
+        if _default_task_loader_instance is None:
+            _default_task_loader_instance = TaskLoader(
+                data_root=get_default_data_root(), canonical_dataset="arc-prize-2025"
+            )
+    return _default_task_loader_instance

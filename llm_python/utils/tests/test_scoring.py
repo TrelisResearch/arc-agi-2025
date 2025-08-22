@@ -42,7 +42,7 @@ class TestArcTester:
     
     def test_simple_transform(self):
         """Test executing a simple transform function"""
-        executor = ArcTester(timeout=1.0, executor_type="unrestricted")
+        executor = ArcTester(timeout=1, executor_type="unrestricted")
         
         program = """
 def transform(grid):
@@ -58,7 +58,7 @@ def transform(grid):
     
     def test_solve_function(self):
         """Test executing a solve function"""
-        executor = ArcTester(timeout=1.0, executor_type="unrestricted")
+        executor = ArcTester(timeout=1, executor_type="unrestricted")
         
         program = """
 def solve(grid):
@@ -74,7 +74,7 @@ def solve(grid):
     
     def test_syntax_error(self):
         """Test program with syntax error"""
-        executor = ArcTester(timeout=1.0, executor_type="unrestricted")
+        executor = ArcTester(timeout=1, executor_type="unrestricted")
         
         program = """
 def transform(grid):
@@ -90,7 +90,7 @@ def transform(grid):
     
     def test_no_function(self):
         """Test program with no valid function"""
-        executor = ArcTester(timeout=1.0, executor_type="unrestricted")
+        executor = ArcTester(timeout=1, executor_type="unrestricted")
         
         program = "x = 5"  # No function
         test_input = [[1, 2]]
