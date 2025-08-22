@@ -6,7 +6,7 @@ from llm_python.transduction.augmentation_classifier import (
 )
 from llm_python.transduction.code_classifier import CodeTransductionClassifier
 from llm_python.utils.arc_tester import ArcTester
-from llm_python.utils.task_loader import TaskLoader
+from llm_python.utils.task_loader import get_task_loader
 
 
 def load_test_data():
@@ -18,7 +18,7 @@ def load_test_data():
 
 # Load test cases for parametrization
 test_cases = load_test_data()
-task_loader = TaskLoader()
+task_loader = get_task_loader()
 
 
 @pytest.mark.parametrize("case", test_cases)
@@ -30,7 +30,7 @@ def test_both_classifiers(case):
     code = case["code"]
     task_id = case["task_id"]
     expected = case["transductive"]
-    task_data = task_loader.load_task(task_id)
+    task_data = task_loader.get_task(task_id)
 
     # Test augmentation-based classifier
     aug_result, aug_confidence = augmentation_classifier.is_transductive(

@@ -15,7 +15,7 @@ import pandas as pd
 from llm_python.datasets.io import validate_soar_dataframe_schema, read_soar_parquet
 from llm_python.utils.arc_tester import ArcTester
 from llm_python.utils.grids import grids_equal
-from llm_python.utils.task_loader import TaskLoader
+from llm_python.utils.task_loader import get_task_loader
 
 
 @dataclass
@@ -153,7 +153,7 @@ def validate_soar_dataframe(
             sample_df = df.iloc[sample_indices]
 
         # Test program correctness
-        task_loader = TaskLoader()
+        task_loader = get_task_loader()
         arc_tester = ArcTester()
 
         for idx, row in sample_df.iterrows():

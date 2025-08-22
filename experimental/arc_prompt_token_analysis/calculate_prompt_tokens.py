@@ -11,6 +11,8 @@ from typing import Dict, List, Tuple, Any
 from collections import defaultdict
 import pandas as pd
 
+from llm_python.utils.task_loader import get_task_loader
+
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
 sys.path.append(str(project_root))
@@ -281,7 +283,7 @@ def main():
     
     # Initialize components
     print("Initializing task loader, prompt loader, and tokenizer...")
-    task_loader = TaskLoader()
+    task_loader = get_task_loader()
     prompt_loader = PromptLoader()
     tokenizer = setup_tokenizer()
     

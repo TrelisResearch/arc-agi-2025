@@ -12,7 +12,7 @@ from tqdm import tqdm
 from llm_python.transduction.augmentation_classifier import detect_transduction_augmentation
 from llm_python.transduction.code_based_classifier import classify_transductive_program
 from llm_python.utils.arc_tester import ArcTester
-from llm_python.utils.task_loader import TaskLoader, TaskData
+from llm_python.utils.task_loader import TaskLoader, TaskData, get_task_loader
 
 def download_and_filter_dataset(dataset_name: str):
     """Download and filter dataset for specific models"""
@@ -106,7 +106,7 @@ def analyze_dataset(dataset_name: str):
     
     # Initialize task loader and arc tester
     print("\nInitializing TaskLoader...")
-    task_loader = TaskLoader()
+    task_loader = get_task_loader()
     print(f"✓ TaskLoader initialized with {len(task_loader.tasks)} tasks")
     
     arc_tester = ArcTester(timeout=2)

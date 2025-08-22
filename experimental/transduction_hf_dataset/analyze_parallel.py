@@ -15,7 +15,7 @@ from functools import partial
 from llm_python.transduction.augmentation_classifier import detect_transduction_augmentation
 from llm_python.transduction.code_based_classifier import classify_transductive_program
 from llm_python.utils.arc_tester import ArcTester
-from llm_python.utils.task_loader import TaskLoader, TaskData
+from llm_python.utils.task_loader import TaskLoader, TaskData, get_task_loader
 
 def download_and_filter_dataset(dataset_name: str):
     """Download and filter dataset for specific models"""
@@ -61,7 +61,7 @@ def analyze_single_program(row_data):
     
     try:
         # Initialize task loader and arc tester for this process
-        task_loader = TaskLoader()
+        task_loader = get_task_loader()
         arc_tester = ArcTester(timeout=2)
         
         # Get task data
@@ -120,7 +120,7 @@ def analyze_dataset_parallel(dataset_name: str, max_workers: int = None):
     
     # Quick check of task availability
     print("\nChecking task availability...")
-    task_loader = TaskLoader()
+    task_loader = get_task_loader()
     print(f"✓ TaskLoader initialized with {len(task_loader.tasks)} tasks")
     
     unique_task_ids = set(df['task_id'].unique())
