@@ -81,6 +81,33 @@ And re-run with the better classifier now 8 attempts on arc agi 1 eval dataset w
 export ARC_PROGRAMS_DB=./llm_python/programsdb/local-test-improved-classifier.db
 uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Trelis/Qwen3-4B_ds-arc-agi-1-perfect-50-c642" --max-attempts 8 --subset evaluation
 ```
+Dataset: arc-prize-2024
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-1-perfect-50-c642
+Total tasks: 400
+Total time: 405.5s
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 12,844,368
+Total cost: $2.361571
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 5.8%
+  Pass@2 (Train Majority):  5.5%
+  Oracle (Best Attempt):    6.8%
+  All Train Correct:        4.5%
+  Min 1 Train Correct:      13.0%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.1%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+and then 64 attempts:
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-test-improved-classifier.db
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Trelis/Qwen3-4B_ds-arc-agi-1-perfect-50-c642" --max-attempts 64 --subset evaluation
+```
+
+And there's no change.
 
 ### ARC AGI 1 Perfect 50 Program inspection
 

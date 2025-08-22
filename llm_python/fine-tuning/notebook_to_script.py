@@ -19,7 +19,7 @@ def load_config(config_path: str) -> Dict[str, Any]:
         return yaml.safe_load(f)
 
 
-def extract_code_cells(notebook_path: str, skip_config_cell: bool = True) -> List[str]:
+def extract_code_cells(notebook_path: str, skip_config_cell: bool = False) -> List[str]:
     """Extract code cells from notebook, optionally skipping config cell."""
     with open(notebook_path, 'r') as f:
         notebook = json.load(f)
@@ -29,7 +29,7 @@ def extract_code_cells(notebook_path: str, skip_config_cell: bool = True) -> Lis
         if cell['cell_type'] == 'code':
             source = ''.join(cell['source'])
             
-            # Skip the config cell if requested
+            # Skip the config cell if requested (now defaults to False)
             if skip_config_cell and i == 1 and 'Config' in source and '=' in source:
                 continue
             
@@ -41,79 +41,11 @@ def extract_code_cells(notebook_path: str, skip_config_cell: bool = True) -> Lis
     return code_blocks
 
 
-def generate_config_loader() -> str:
-    """Generate Python code to load configuration from YAML."""
-    return '''# ---------------------------------------------------------------------
-# Configuration Loading
-# ---------------------------------------------------------------------
-import yaml
-import sys
-from pathlib import Path
-
-def load_config(config_path="config.yaml"):
-    """Load configuration from YAML file."""
-    if not Path(config_path).exists():
-        print(f"Config file {config_path} not found!")
-        sys.exit(1)
-    
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
-    
-    # Flatten nested configuration
-    flat_config = {}
-    
-    # Handle test_run override
-    test_run = config.get('test_run', False)
-    flat_config['test_run'] = test_run
-    
-    # Environment configs
-    flat_config['is_local'] = config.get('is_local', False)
-    flat_config['local_model_dir'] = config.get('local_model_dir', '/kaggle/working/')
-    
-    # Model configs
-    model_config = config.get('model', {})
-    flat_config['model_slug'] = model_config.get('slug', 'Qwen/Qwen3-4B')
-    flat_config['model_max_length'] = model_config.get('max_length', 32768)
-    flat_config['lora_rank'] = model_config.get('lora_rank', 128)
-    
-    # Training configs
-    training_config = config.get('training', {})
-    flat_config['batch_size_global'] = training_config.get('batch_size_global', 4)
-    flat_config['train_slug'] = training_config.get('dataset_slug', 'Trelis/arc-agi-2-perfect-50')
-    flat_config['enable_thinking'] = training_config.get('enable_thinking', False)
-    
-    # Handle max_rows with test_run override
-    if test_run:
-        overrides = config.get('overrides', {})
-        flat_config['max_rows'] = overrides.get('test_run_max_rows', 128)
-    else:
-        flat_config['max_rows'] = training_config.get('max_rows')
-    
-    return flat_config
-
-# Load configuration
-import argparse
-parser = argparse.ArgumentParser()
-parser.add_argument('--config', default='config.yaml', help='Path to config file')
-args, unknown = parser.parse_known_args()
-
-config = load_config(args.config)
-
-# Inject config variables into global namespace
-for key, value in config.items():
-    globals()[key] = value
-    print(f"Config: {key} = {value}")
-
-print("\\nConfiguration loaded successfully!")
-print("-" * 70)
-'''
 
 
 def convert_notebook_to_script(
     notebook_path: str,
-    config_path: str = None,
-    output_path: str = None,
-    include_config_loader: bool = True
+    output_path: str = None
 ) -> str:
     """Convert notebook to executable Python script."""
     
@@ -127,23 +59,17 @@ def convert_notebook_to_script(
         "#!/usr/bin/env python",
         '"""',
         f"Generated from: {notebook_path}",
-        f"Config file: {config_path or 'config.yaml'}",
         '"""',
         "",
     ]
     
-    # Add config loader if requested
-    if include_config_loader and config_path:
-        script_parts.append(generate_config_loader())
-        script_parts.append("")
-    
-    # Add code cells
-    code_cells = extract_code_cells(notebook_path, skip_config_cell=include_config_loader)
+    # Extract all code cells from notebook
+    code_cells = extract_code_cells(notebook_path, skip_config_cell=False)
     
     for i, cell_code in enumerate(code_cells):
-        script_parts.append(f"# ---------------------------------------------------------------------")
+        script_parts.append("# ---------------------------------------------------------------------")
         script_parts.append(f"# Cell {i + 1}")
-        script_parts.append(f"# ---------------------------------------------------------------------")
+        script_parts.append("# ---------------------------------------------------------------------")
         script_parts.append(cell_code)
         script_parts.append("")
     
@@ -154,19 +80,14 @@ def convert_notebook_to_script(
         f.write(script_content)
     
     print(f"✅ Converted notebook to: {output_path}")
-    if config_path:
-        print(f"📝 Using config file: {config_path}")
     
     return str(output_path)
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Convert Jupyter notebook to Python script with YAML config')
+    parser = argparse.ArgumentParser(description='Convert Jupyter notebook to Python script')
     parser.add_argument('notebook', help='Path to the Jupyter notebook')
-    parser.add_argument('--config', default='config.yaml', help='Path to YAML config file')
     parser.add_argument('--output', help='Output Python script path')
-    parser.add_argument('--no-config-loader', action='store_true', 
-                       help='Do not include config loader code')
     
     args = parser.parse_args()
     
@@ -175,15 +96,13 @@ def main():
         print(f"❌ Notebook {args.notebook} not found!")
         sys.exit(1)
     
-    # Convert the notebook
+    # Convert the notebook (uses notebook's own config cell)
     output_file = convert_notebook_to_script(
         notebook_path=args.notebook,
-        config_path=args.config if not args.no_config_loader else None,
-        output_path=args.output,
-        include_config_loader=not args.no_config_loader
+        output_path=args.output
     )
     
-    print(f"\n🚀 Run with: uv run python {output_file} --config {args.config}")
+    print(f"\n🚀 Run with: uv run python {output_file} --config config.yaml")
 
 
 if __name__ == "__main__":
