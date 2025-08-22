@@ -96,7 +96,7 @@ class TestValidateSoarDataframe:
         
         assert result.total_rows == 0
         assert result.schema_valid is False
-        assert "Schema validation failed" in result.schema_error
+        assert result.schema_error is not None and "Schema validation failed" in result.schema_error
         assert result.business_logic_valid is True  # No business logic issues for empty
         assert result.correctness_valid is True  # No correctness issues for empty
         assert result.is_valid() is False
@@ -112,7 +112,7 @@ class TestValidateSoarDataframe:
         result = validate_soar_dataframe(df, correctness_samples=0)
         
         assert result.schema_valid is False
-        assert "Schema validation failed" in result.schema_error
+        assert result.schema_error is not None and "Schema validation failed" in result.schema_error
         assert result.is_valid() is False
     
     def test_business_logic_empty_lists(self):

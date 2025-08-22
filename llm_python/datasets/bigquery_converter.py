@@ -82,7 +82,7 @@ def convert_bigquery_to_soar(
         "predicted_test_output",
         "model",
     ]
-    final_dataset = final_dataset[schema_columns]
+    final_dataset = pd.DataFrame(final_dataset[schema_columns])
 
     print(
         f"Successfully converted {len(final_dataset)} programs from {len(raw_data)} input rows"
