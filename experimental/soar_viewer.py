@@ -4,7 +4,7 @@ from typing import List
 from llm_python.datasets.io import read_soar_parquet
 import numpy as np
 
-from llm_python.utils.task_loader import TaskLoader
+from llm_python.utils.task_loader import get_task_loader
 
 # ANSI color codes for numbers 0-9
 COLOR_CODES = {
@@ -105,7 +105,7 @@ def print_grids_horizontally(grids: List[List[List[int]]], labels: List[str] = N
     return "\n".join(result_lines)
 
 def print_soar_dataset(file_path, train_filter="any", test_filter="any", use_colors=True):
-    task_loader = TaskLoader()
+    task_loader = get_task_loader()
     df = read_soar_parquet(file_path)
     
     original_size = len(df)

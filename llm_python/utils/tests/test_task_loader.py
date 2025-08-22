@@ -123,20 +123,3 @@ class TestTaskLoader:
             # Subset might not exist, which is fine
             pass
     
-    def test_backward_compatibility_methods(self):
-        """Test that old interface methods still work"""
-        loader = TaskLoader()
-        if loader.tasks:
-            # Test old load_task method
-            task_id = next(iter(loader.tasks.keys()))
-            task_data = loader.load_task(task_id)
-            assert "train" in task_data
-            assert "test" in task_data
-            
-            # Test old load_tasks_from_subset method
-            try:
-                tasks = loader.load_tasks_from_subset("shortest_training_1", "arc-agi-1")
-                assert isinstance(tasks, list)
-            except ValueError:
-                # Subset might not exist, which is fine
-                pass    

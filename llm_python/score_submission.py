@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 from collections import defaultdict
 
-from llm_python.utils.task_loader import TaskLoader
+from llm_python.utils.task_loader import get_task_loader
 
 
 def load_submission(submission_path: str) -> Dict:
@@ -23,8 +23,8 @@ def score_submission(submission: Dict, dataset: str, subset: str) -> Dict:
     """Score submission against reference dataset"""
     
     # Load reference dataset
-    task_loader = TaskLoader()
-    reference_tasks = task_loader.load_tasks_from_subset(subset, dataset)
+    task_loader = get_task_loader()
+    reference_tasks = task_loader.get_subset_tasks(f"{dataset}/{subset}")
     reference_dict = {task_id: task_data for task_id, task_data in reference_tasks}
     
     # Initialize metrics

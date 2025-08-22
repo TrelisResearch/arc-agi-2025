@@ -1,9 +1,45 @@
-#!/usr/bin/env python3
-
 import json
 import os
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, TypedDict
+
+import threading
+
+_default_task_loader_instance = None
+_default_task_loader_lock = threading.Lock()
+
+
+def get_task_loader():
+    """
+    Lazily create and return a singleton TaskLoader instance in a thread-safe way.
+    Computes data_root if not provided, using environment or search logic.
+    """
+    global _default_task_loader_instance
+    if _default_task_loader_instance is not None:
+        return _default_task_loader_instance
+    with _default_task_loader_lock:
+        if _default_task_loader_instance is None:
+            # Compute data_root if not provided
+            data_root = os.getenv("ARC_DATA_ROOT")
+            if data_root is None:
+                current_path = Path(__file__).resolve()
+                while current_path.parent != current_path:
+                    data_path = current_path / "data"
+                    if data_path.exists() and data_path.is_dir():
+                        data_root = data_path.as_posix()
+                        break
+                    current_path = current_path.parent
+                else:
+                    data_root = (
+                        (Path(__file__).parent.parent.parent / "data")
+                        .resolve()
+                        .as_posix()
+                    )
+            _default_task_loader_instance = TaskLoader(
+                data_root=data_root, canonical_dataset="arc-prize-2025"
+            )
+    return _default_task_loader_instance
+
 
 # Type definitions for ARC-AGI data structures
 Grid = List[List[int]]
@@ -40,11 +76,13 @@ class TaskLoader:
     - Legacy subsets: "arc-agi-1/shortest_training_1", "arc-agi-2/all_evaluation", etc.
     """
 
-    def __init__(self, data_root: Optional[str] = None, canonical_dataset: str = "arc-prize-2025"):
+    def __init__(
+        self, data_root: Optional[str] = None, canonical_dataset: str = "arc-prize-2025"
+    ):
         self.canonical_dataset = canonical_dataset
         if data_root is None:
             # Check environment variable first
-            data_root = os.getenv('ARC_DATA_ROOT')
+            data_root = os.getenv("ARC_DATA_ROOT")
             if data_root is None:
                 # Find the data directory by searching up the directory tree
                 current_path = Path(__file__).resolve()
@@ -57,7 +95,9 @@ class TaskLoader:
                 else:
                     # Fallback to the original calculation
                     data_root = (
-                        (Path(__file__).parent.parent.parent / "data").resolve().as_posix()
+                        (Path(__file__).parent.parent.parent / "data")
+                        .resolve()
+                        .as_posix()
                     )
         self.data_root = Path(data_root)
         if not self.data_root.exists():
@@ -66,7 +106,9 @@ class TaskLoader:
         # Cache for loaded data
         self.tasks: Dict[str, TaskData] = {}
         self.subsets: Dict[str, List[str]] = {}
-        self.task_sources: Dict[str, str] = {}  # Track which dataset each task came from
+        self.task_sources: Dict[
+            str, str
+        ] = {}  # Track which dataset each task came from
 
         # Load everything upfront
         self._load_all_data()
@@ -75,20 +117,22 @@ class TaskLoader:
         """Load all subset definitions and task data upfront"""
         # First load subset definitions
         self._load_all_subsets()
-        
+
         # Then load all competition format data
         self._load_all_competition_data()
 
     def _has_outputs(self, task_data: TaskData) -> bool:
         """Check if a task has any test outputs defined"""
-        return any(test_example.get("output") is not None for test_example in task_data["test"])
+        return any(
+            test_example.get("output") is not None for test_example in task_data["test"]
+        )
 
     def _outputs_are_equal(self, task1: TaskData, task2: TaskData) -> bool:
         """Check if two tasks have identical test outputs"""
         test1, test2 = task1["test"], task2["test"]
         if len(test1) != len(test2):
             return False
-        
+
         for t1, t2 in zip(test1, test2):
             output1, output2 = t1.get("output"), t2.get("output")
             # Both None is equal, otherwise compare the actual outputs
@@ -100,16 +144,23 @@ class TaskLoader:
                 return False
         return True
 
-    def _merge_task_data(self, existing_task: TaskData, new_task: TaskData, task_id: str, new_source_dataset: str, existing_source_dataset: str) -> TaskData:
+    def _merge_task_data(
+        self,
+        existing_task: TaskData,
+        new_task: TaskData,
+        task_id: str,
+        new_source_dataset: str,
+        existing_source_dataset: str,
+    ) -> TaskData:
         """Merge two task data entries, preserving outputs when available"""
         # If existing task has outputs and new task doesn't, keep existing
         if self._has_outputs(existing_task) and not self._has_outputs(new_task):
             return existing_task
-        
+
         # If new task has outputs and existing doesn't, use new task
         if self._has_outputs(new_task) and not self._has_outputs(existing_task):
             return new_task
-        
+
         # If both have outputs, check if they're the same
         if self._has_outputs(existing_task) and self._has_outputs(new_task):
             if not self._outputs_are_equal(existing_task, new_task):
@@ -121,18 +172,26 @@ class TaskLoader:
                 else:
                     # Neither is canonical, prefer the new one
                     return new_task
-        
+
         # If both have same outputs or neither has outputs, use the new one
         return new_task
 
-    def _add_tasks_safely(self, new_tasks: Dict[str, TaskData], source_dataset: str) -> None:
+    def _add_tasks_safely(
+        self, new_tasks: Dict[str, TaskData], source_dataset: str
+    ) -> None:
         """Add tasks to the cache, handling duplicates by preserving outputs when possible"""
         for task_id, task_data in new_tasks.items():
             if task_id in self.tasks:
                 existing_source = self.task_sources.get(task_id, "unknown")
-                merged_task = self._merge_task_data(self.tasks[task_id], task_data, task_id, source_dataset, existing_source)
+                merged_task = self._merge_task_data(
+                    self.tasks[task_id],
+                    task_data,
+                    task_id,
+                    source_dataset,
+                    existing_source,
+                )
                 self.tasks[task_id] = merged_task
-                
+
                 # Update source based on which task we ended up using
                 if merged_task is task_data:  # Using new task
                     self.task_sources[task_id] = source_dataset
@@ -148,8 +207,6 @@ class TaskLoader:
             if not dataset_path.exists():
                 continue
 
-            print(f"Loading {dataset}...")
-
             # Load training split
             training_tasks = self._load_competition_split(dataset, "training")
             if training_tasks:
@@ -162,14 +219,12 @@ class TaskLoader:
             if eval_tasks:
                 self._add_tasks_safely(eval_tasks, dataset)
                 self.subsets[f"{dataset}/evaluation"] = list(eval_tasks.keys())
-                print(f"  Evaluation: {len(eval_tasks)} tasks")
 
             # Load test split (challenges only, no solutions expected)
             test_tasks = self._load_competition_split(dataset, "test")
             if test_tasks:
                 self._add_tasks_safely(test_tasks, dataset)
                 self.subsets[f"{dataset}/test"] = list(test_tasks.keys())
-                print(f"  Test: {len(test_tasks)} tasks")
 
     def _load_competition_split(self, dataset: str, split: str) -> Dict[str, TaskData]:
         """Load a specific split (training/evaluation) from competition format"""
@@ -219,7 +274,9 @@ class TaskLoader:
 
                 dataset_name = dataset_dir.name
                 for subset_file in dataset_dir.glob("*.txt"):
-                    if "_details.json" in subset_file.name or "archive" in str(subset_file):
+                    if "_details.json" in subset_file.name or "archive" in str(
+                        subset_file
+                    ):
                         continue
 
                     subset_name = subset_file.stem
@@ -239,7 +296,7 @@ class TaskLoader:
         return self.tasks[task_id]
 
     def get_subset_tasks(self, subset_name: str) -> List[Tuple[str, TaskData]]:
-        """Get all tasks from a subset, returning (task_id, task_data) tuples"""        
+        """Get all tasks from a subset, returning (task_id, task_data) tuples"""
         if subset_name not in self.subsets:
             raise ValueError(
                 f"Subset {subset_name} not found. Available: {list(self.subsets.keys())}"
@@ -277,25 +334,3 @@ class TaskLoader:
                 )
 
         return stats
-
-    # Backward compatibility methods
-    def load_task(self, task_id: str, dataset: Optional[str] = None) -> TaskData:
-        """Backward compatibility: Load a single task by ID
-
-        Args:
-            task_id: The task ID to load
-            dataset: Ignored (kept for compatibility)
-        """
-        return self.get_task(task_id)
-
-    def load_tasks_from_subset(
-        self, subset_name: str, dataset: str = "arc-agi-1"
-    ) -> List[Tuple[str, TaskData]]:
-        """Backward compatibility: Load all tasks from a subset
-
-        Args:
-            subset_name: Name of the subset
-            dataset: Dataset name (used to construct full subset path)
-        """
-        full_subset_name = f"{dataset}/{subset_name}"
-        return self.get_subset_tasks(full_subset_name)

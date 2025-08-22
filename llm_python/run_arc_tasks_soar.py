@@ -13,7 +13,7 @@ from typing import Dict, List, NotRequired, Optional, TypedDict, Union, Tuple, A
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor
 
-from llm_python.utils.task_loader import TaskData, TaskLoader
+from llm_python.utils.task_loader import TaskData, TaskLoader, get_task_loader
 from llm_python.utils.arc_tester import ArcTester
 from llm_python.utils.prompt_utils import create_arc_prompt, extract_python_code
 from llm_python.utils.metrics_utils import (
@@ -206,7 +206,7 @@ class ARCTaskRunnerSimple:
 
 
         # Initialize remaining components
-        self.task_loader = TaskLoader()
+        self.task_loader = get_task_loader()
         self.executor = ArcTester(
             timeout=0.5,
             executor_type=executor_type,
@@ -874,7 +874,7 @@ class ARCTaskRunnerSimple:
         """Run all tasks in a subset with true parallelization at the attempt level"""
         try:
             print(f"Loading subset: {dataset}/{subset_name}")
-            tasks = self.task_loader.load_tasks_from_subset(subset_name, dataset)
+            tasks = self.task_loader.get_subset_tasks(f"{dataset}/{subset_name}")
             if limit:
                 tasks = tasks[:limit]
             total_tasks = len(tasks)
@@ -1624,7 +1624,7 @@ class ARCTaskRunnerSimple:
         
         # Load ALL tasks from the dataset to ensure we include every task ID
         try:
-            all_tasks = self.task_loader.load_tasks_from_subset(subset, dataset)
+            all_tasks = self.task_loader.get_subset_tasks(f"{dataset}/{subset}")
             all_task_ids = [task_id for task_id, _ in all_tasks]
         except Exception as e:
             print(f"⚠️ Could not load all tasks from {dataset}/{subset}: {e}")
