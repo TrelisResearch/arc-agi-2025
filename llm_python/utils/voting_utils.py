@@ -114,33 +114,50 @@ def generic_voting(
 
 
 def compute_weighted_majority_voting(attempts: List[Dict], top_k: int = 2) -> List:
-    """Compute weighted majority voting based on count + 1000 * train_accuracy"""
+    """Compute weighted majority voting based on count + 1000 * train_accuracy, with transductive confidence penalty"""
     def weight_func(att: Dict) -> float:
-        # Transductive programs get train_accuracy = 0 (only base weight of 1.0)
-        train_acc = 0.0 if att.get("is_transductive", False) else att.get('train_accuracy', 0.0)
-        return 1.0 + 1000.0 * train_acc
+        train_acc = att.get('train_accuracy', 0.0)
+        base_weight = 1.0 + 1000.0 * train_acc
+        
+        # Apply transductive penalty using (1 - confidence)²
+        if att.get("is_transductive", False):
+            confidence = att.get("transduction_confidence", 1.0)  # Default to 1.0 if missing
+            penalty = (1 - confidence) ** 2
+            return base_weight * penalty
+        
+        return base_weight
     
     return generic_voting(attempts, weight_func, top_k)
 
 
 def compute_train_majority_voting(attempts: List[Dict], top_k: int = 2) -> List:
-    """Compute train-majority voting for test outputs"""
+    """Compute train-majority voting for test outputs with transductive confidence penalty"""
     if not attempts:
         return []
     
-    # Find attempts with most train correct (transductive get score = 0)
-    best_train_score = max(
-        0 if att.get("is_transductive", False) else sum(tr.get('correct', False) for tr in att.get('train_results', []))
-        for att in attempts
-    )
+    # Calculate effective train score with transductive penalty
+    def effective_train_score(att: Dict) -> float:
+        train_correct = sum(tr.get('correct', False) for tr in att.get('train_results', []))
+        if att.get("is_transductive", False):
+            confidence = att.get("transduction_confidence", 1.0)
+            penalty = (1 - confidence) ** 2
+            return train_correct * penalty
+        return train_correct
     
-    # Filter to best group and do simple majority voting
+    # Find best effective score
+    best_train_score = max(effective_train_score(att) for att in attempts)
+    
+    # Filter to best group
     best_group = [
         att for att in attempts 
-        if (0 if att.get("is_transductive", False) else sum(tr.get('correct', False) for tr in att.get('train_results', []))) == best_train_score
+        if abs(effective_train_score(att) - best_train_score) < 0.001  # Small epsilon for float comparison
     ]
     
     def weight_func(att: Dict) -> float:
-        return 1.0  # Equal weight for all in best group
+        # Apply same transductive penalty in final weighting
+        if att.get("is_transductive", False):
+            confidence = att.get("transduction_confidence", 1.0)
+            return (1 - confidence) ** 2
+        return 1.0
     
     return generic_voting(best_group, weight_func, top_k) 

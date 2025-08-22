@@ -75,6 +75,7 @@ class AttemptDetail(TypedDict):
 
     # Transduction detection
     is_transductive: bool  # Whether program hardcodes outputs
+    transduction_confidence: float  # Confidence score for transduction classification
     transduction_reason: str  # Why it's considered transductive
 
 
@@ -658,18 +659,21 @@ class ARCTaskRunnerSimple:
         
         # Run transduction detection immediately after extraction
         is_transductive = False
+        transduction_confidence = 0.0
         transduction_reason = ""
         if program_extracted:
             try:
-                is_transductive, confidence = self.transduction_classifier.is_transductive(program, task_data)
+                is_transductive, transduction_confidence = self.transduction_classifier.is_transductive(program, task_data)
                 if is_transductive:
-                    transduction_reason = f"Code-based transduction detected (confidence: {confidence:.3f})"
+                    transduction_reason = f"Code-based transduction detected (confidence: {transduction_confidence:.3f})"
                 else:
-                    transduction_reason = f"Not transductive (confidence: {1-confidence:.3f})"
+                    transduction_reason = f"Not transductive (confidence: {1-transduction_confidence:.3f})"
             except Exception as e:
                 transduction_reason = f"Transduction detection failed: {e}"
+                transduction_confidence = 0.5  # Default to uncertain if detection fails
         else:
             transduction_reason = "No program extracted"
+            transduction_confidence = 0.0  # No program means not transductive
 
 
         # Evaluate on training examples
@@ -804,6 +808,7 @@ class ARCTaskRunnerSimple:
             program_extracted=program_extracted,
             program=program,
             is_transductive=is_transductive,
+            transduction_confidence=transduction_confidence,
             transduction_reason=transduction_reason,
             train_results=train_results,
             train_accuracy=train_accuracy,
@@ -1422,6 +1427,7 @@ class ARCTaskRunnerSimple:
             program_extracted=attempt.get("program_extracted", False),
             program="",  # Always empty for trimmed
             is_transductive=attempt.get("is_transductive", False),
+            transduction_confidence=attempt.get("transduction_confidence", 0.0),
             transduction_reason=attempt.get("transduction_reason", ""),
             train_results=[],  # Always empty for trimmed
             train_accuracy=attempt.get("train_accuracy", 0.0),

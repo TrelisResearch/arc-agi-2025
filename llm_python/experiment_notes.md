@@ -6,6 +6,25 @@ Lewis Reminders:
 - Mathieu.
 
 ---
+## Aug 22
+### Baseline classifier performance
+
+Now using (1-transductive confidence)^2 as penalty on voting.
+
+Start a pod and run 64 attempts on arc agi 1 eval dataset with Trelis/Qwen3-4B_ds-arc-agi-1-perfect-50-c642.
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-test-baseline-classifier.db
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Trelis/Qwen3-4B_ds-arc-agi-1-perfect-50-c642" --max-attempts 64 --subset evaluation
+```
+
+### ARC AGI 1 Perfect 50 Program inspection
+
+1. There are redundant functions appended for printing or doing checks. These could be removed.
+2. The longest program is ~1400 tokens long, so 2k tokens as a max-tokens is probably good.
+3. There are some similar programs, but the diversity is not bad.
+
+Next step is to inspect partials.
+
 ## Aug 21
 
 ### Testing prompt optimisation
