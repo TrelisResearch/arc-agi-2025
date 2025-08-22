@@ -20,6 +20,7 @@ def load_test_data():
 test_cases = load_test_data()
 task_loader = TaskLoader()
 
+
 @pytest.mark.parametrize("case", test_cases)
 def test_both_classifiers(case):
     arc_tester = ArcTester()
@@ -32,9 +33,11 @@ def test_both_classifiers(case):
     task_data = task_loader.load_task(task_id)
 
     # Test augmentation-based classifier
-    aug_result, aug_confidence = augmentation_classifier.is_transductive(code, task_data)
+    aug_result, aug_confidence = augmentation_classifier.is_transductive(
+        code, task_data
+    )
 
-    # Test code-based classifier  
+    # Test code-based classifier
     code_result, code_confidence = code_classifier.is_transductive(code, task_data)
 
     # Both should match expected result
