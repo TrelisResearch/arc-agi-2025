@@ -7,6 +7,22 @@ Lewis Reminders:
 
 ---
 ## Aug 22
+
+### TTT
+[x] Clean up the ipynb notebook.
+[x] Allow for ipynb notebook conversion - how to do this? how to pass in values?!?
+[ ] Get working in Runpod on H200.
+  [ ] Get an sglang server up and running and do a test inference.
+[ ] Parquet loading.
+  [ ] Parquet generation from duckdb. How to do that? Ask Lewis.
+  [ ] Load with huggingface from local (default to kaggle/working if in kaggle).
+[ ] Simplify all of the env variables being set.
+[ ] Thread everything together.
+
+[ ] Get working in kaggle
+  [ ] Qwen tuned needs to be available
+  [ ] Read in from parquet file
+
 ### Baseline classifier performance
 
 Now using (1-transductive confidence)^2 as penalty on voting.
@@ -16,6 +32,49 @@ Start a pod and run 64 attempts on arc agi 1 eval dataset with Trelis/Qwen3-4B_d
 export ARC_PROGRAMS_DB=./llm_python/programsdb/local-test-baseline-classifier.db
 uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Trelis/Qwen3-4B_ds-arc-agi-1-perfect-50-c642" --max-attempts 64 --subset evaluation
 ```
+Dataset: arc-prize-2024
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-1-perfect-50-c642
+Total tasks: 400
+Total time: 3142.6s
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 102,899,416
+Total cost: $18.979253
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 14.2%
+  Pass@2 (Train Majority):  14.5%
+  Oracle (Best Attempt):    16.0%
+  All Train Correct:        11.2%
+  Min 1 Train Correct:      28.7%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.2%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-test-baseline-classifier.db
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Trelis/Qwen3-4B_ds-arc-agi-1-perfect-50-c642" --max-attempts 8 --subset evaluation
+```
+Dataset: arc-prize-2024
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-1-perfect-50-c642
+Total tasks: 400
+Total time: 415.4s
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 12,870,145
+Total cost: $2.377037
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 7.2%
+  Pass@2 (Train Majority):  7.2%
+  Oracle (Best Attempt):    8.0%
+  All Train Correct:        5.8%
+  Min 1 Train Correct:      13.2%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.2%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
 ### ARC AGI 1 Perfect 50 Program inspection
 
@@ -161,18 +220,6 @@ Total cost: $1.919919
   - Total transductive attempts: 9 out of 117 (7.7%)
 
 The conclusion is that prompting doesn't help all that much.
-
-### Allowing for TTT
-[x] Clean up the ipynb notebook.
-[x] Allow for ipynb notebook conversion - how to do this? how to pass in values?!?
-[ ] Parquet loading.
-  [ ] Parquet generation from duckdb. How to do that? Ask Lewis.
-  [ ] Load with huggingface from local (default to kaggle/working if in kaggle).
-  [ ] Get ttt working in Runpod on H200.
-
-[ ] Get working in kaggle
-  [ ] Qwen tuned needs to be available
-  [ ] Read in from parquet file
 
 ### Notes on Transductive Investigations.
 - All-correct. These appear to rarely be transductive, although some of them are falsely flagged as transductive (very few, 5 out of thousands).
