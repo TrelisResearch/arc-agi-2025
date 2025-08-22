@@ -8,14 +8,14 @@ import numpy as np
 
 from llm_python.utils.task_loader import TaskData
 
-class CodeTransductionClassifierV2:
+class CodeTransductionClassifier:
     """
     Classifier that determines if a program is transductive based on code analysis.
     """
     
     def __init__(self):
         """Initialize the code-based transduction classifier."""
-        model_path = Path(__file__).parent / "code_classifier_v2.joblib"
+        model_path = Path(__file__).parent / "code_classifier.joblib"
         self.clf_v2 = joblib.load(model_path)
 
     def is_transductive(self, program: str, task_data: Optional[TaskData] = None) -> Tuple[bool, float]:
@@ -33,7 +33,7 @@ class CodeTransductionClassifierV2:
         X = pd.DataFrame([feats])
         pred = self.clf_v2.predict(X)[0]
         prob = self.clf_v2.predict_proba(X)[0, 1]
-        return pred, prob
+        return bool(pred), prob
 
 
 import re
