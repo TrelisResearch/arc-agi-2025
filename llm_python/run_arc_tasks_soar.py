@@ -159,6 +159,7 @@ class ARCTaskRunnerSimple:
         lora_adapter: Optional[str] = None,
         log_to_db: bool = True,
         db_path: Optional[str] = None,
+        no_transductive_penalty: bool = False,
     ):
         # Core configuration
         self.max_workers = max_workers
@@ -169,6 +170,7 @@ class ARCTaskRunnerSimple:
         self.log_to_db = log_to_db
         self.db_path = db_path
         self.prompt_version = prompt_version
+        self.no_transductive_penalty = no_transductive_penalty
         
         # Standard API timeout for network safety, no infrastructure timeouts
         api_timeout = 300  # 5 minutes for network safety only
@@ -1699,7 +1701,7 @@ class ARCTaskRunnerSimple:
                 top_predictions = compute_weighted_majority_voting(
                     all_attempts, 
                     top_k=2, 
-                    no_transductive_penalty=args.no_transductive_penalty
+                    no_transductive_penalty=self.no_transductive_penalty
                 )
             except Exception as e:
                 print(f"⚠️ Weighted voting failed for task {task_id}: {e}")
@@ -1788,7 +1790,42 @@ class ARCTaskRunnerSimple:
         print(f"  Backup file: {backup_path}")
         
         # Validate the submission file
-        validate_submission_file(submission_path, all_task_ids)
+        # Get challenges path based on dataset and subset
+        challenges_path = None
+        if dataset == "arc-prize-2024":
+            if subset == "evaluation":
+                challenges_path = "/workspace/arc-agi-2025/data/arc-prize-2024/arc-agi_evaluation_challenges.json"
+            elif subset == "test":
+                challenges_path = "/workspace/arc-agi-2025/data/arc-prize-2024/arc-agi_test_challenges.json"
+            elif subset == "training":
+                challenges_path = "/workspace/arc-agi-2025/data/arc-prize-2024/arc-agi_training_challenges.json"
+        elif dataset == "arc-prize-2025":
+            if subset == "evaluation":
+                challenges_path = "/workspace/arc-agi-2025/data/arc-prize-2025/arc-agi_evaluation_challenges.json"
+            elif subset == "test":
+                challenges_path = "/workspace/arc-agi-2025/data/arc-prize-2025/arc-agi_test_challenges.json"
+            elif subset == "training":
+                challenges_path = "/workspace/arc-agi-2025/data/arc-prize-2025/arc-agi_training_challenges.json"
+        elif dataset == "arc-agi-1":
+            if subset == "evaluation":
+                challenges_path = "/workspace/arc-agi-2025/data/arc-agi-1/arc-agi_evaluation_challenges.json"
+            elif subset == "test":
+                challenges_path = "/workspace/arc-agi-2025/data/arc-agi-1/arc-agi_test_challenges.json"
+            elif subset == "training":
+                challenges_path = "/workspace/arc-agi-2025/data/arc-agi-1/arc-agi_training_challenges.json"
+        elif dataset == "arc-agi-2":
+            if subset == "evaluation":
+                challenges_path = "/workspace/arc-agi-2025/data/arc-agi-2/arc-agi_evaluation_challenges.json"
+            elif subset == "test":
+                challenges_path = "/workspace/arc-agi-2025/data/arc-agi-2/arc-agi_test_challenges.json"
+            elif subset == "training":
+                challenges_path = "/workspace/arc-agi-2025/data/arc-agi-2/arc-agi_training_challenges.json"
+        
+        # Only validate if we have a challenges path
+        if challenges_path and os.path.exists(challenges_path):
+            validate_submission_file(submission_path, all_task_ids, challenges_path)
+        else:
+            print(f"⚠️ Skipping validation: challenges file not found for dataset {dataset}, subset {subset}")
 
 
 
@@ -1898,6 +1935,7 @@ def main():
         max_tokens=args.max_tokens,
         temperature=args.temperature,
         reasoning_effort=args.reasoning_effort,
+        no_transductive_penalty=args.no_transductive_penalty,
         qwen_no_think=args.qwen_no_think,
         prompt_version=args.prompt_version,
         unsafe_executor=args.unsafe_executor,
