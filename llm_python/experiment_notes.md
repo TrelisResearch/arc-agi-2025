@@ -15,6 +15,32 @@ Run with the transductive flag set to false:
 export ARC_PROGRAMS_DB=./llm_python/programsdb/local-trans-off.db
 uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542" --max-attempts 8 --subset evaluation --no-transductive-penalty
 ```
+Dataset: arc-prize-2024
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542
+Total tasks: 400
+Total time: 381.5s
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 12,772,224
+Total cost: $2.318285
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 8.0%
+  Pass@2 (Train Majority):  7.8%
+  Oracle (Best Attempt):    9.2%
+  All Train Correct:        5.5%
+  Min 1 Train Correct:      15.2%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.1%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+and then with 64 attempts:
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-trans-off.db
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542" --max-attempts 64 --max-workers 16 --subset evaluation --no-transductive-penalty
+```
+
 
 ### Run the partial 100 arc agi 1
 Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542
@@ -54,7 +80,25 @@ and try out the 1 epoch checkpoint - Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c7
 export ARC_PROGRAMS_DB=./llm_python/programsdb/local-partial-100-1-epoch.db
 uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c771" --max-attempts 64 --subset evaluation
 ```
+Dataset: arc-prize-2024
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c771
+Total tasks: 400
+Total time: 10725.4s
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 102,298,291
+Total cost: $18.639814
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 15.8%
+  Pass@2 (Train Majority):  15.8%
+  Oracle (Best Attempt):    19.2%
+  All Train Correct:        13.0%
+  Min 1 Train Correct:      33.8%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.1%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
 
 ### TTT
