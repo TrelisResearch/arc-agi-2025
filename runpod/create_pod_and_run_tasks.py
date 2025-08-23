@@ -65,7 +65,7 @@ def prompt_keep_pod(timeout=10):
     except Exception:
         return False
 
-def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="all_evaluation", max_attempts=64, no_transductive_penalty=False):
+def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="all_evaluation", max_attempts=64, no_transductive_penalty=False, max_workers=32):
     """Run ARC tasks - task runner handles its own graceful shutdown"""
     print(f"\n🎯 Running ARC tasks for {dataset} with subset {subset}...")
     
@@ -73,7 +73,7 @@ def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="
         "uv", "run", "python", "-m", "llm_python.run_arc_tasks_soar",
         "--dataset", dataset,
         "--subset", subset,
-        "--max_workers", "32",
+        "--max_workers", str(max_workers),
         "--max_attempts", str(max_attempts),
         "--model", model_path,
         "--base-url", base_url,
@@ -210,6 +210,10 @@ This script will:
     parser.add_argument('--no-transductive-penalty',
                        action='store_true',
                        help='Disable transductive penalty in voting (passed to run_arc_tasks_soar.py)')
+    parser.add_argument('--max-workers',
+                       type=int,
+                       default=32,
+                       help='Maximum number of parallel workers (default: 32)')
     
     args = parser.parse_args()
     
@@ -348,7 +352,7 @@ This script will:
         print(f"\n🎯 Step 2: Running ARC tasks for {args.dataset}")
         
         task_success = run_arc_tasks_with_graceful_handling(
-            args.dataset, args.model_path, base_url, args.subset, args.max_attempts, args.no_transductive_penalty
+            args.dataset, args.model_path, base_url, args.subset, args.max_attempts, args.no_transductive_penalty, args.max_workers
         )
         
         if task_success:

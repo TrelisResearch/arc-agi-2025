@@ -21,7 +21,6 @@ class ARCTaskValidator:
         if len(validated_tasks) != total_tasks:
             print(f"⚠️ {total_tasks - len(validated_tasks)} tasks failed validation, using {len(validated_tasks)} valid tasks")
         
-        print(f"✅ Task validation complete: {len(validated_tasks)} valid tasks")
         return validated_tasks
     
     @staticmethod

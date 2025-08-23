@@ -160,6 +160,7 @@ class ARCTaskRunnerSimple:
         unsafe_executor: bool = False,
         lora_adapter: Optional[str] = None,
         sample_name: Optional[str] = None,
+        no_transductive_penalty: bool = False,
     ):
         # Core configuration
         self.max_workers = max_workers
@@ -169,7 +170,8 @@ class ARCTaskRunnerSimple:
         self.debug = debug
         self.prompt_version = prompt_version
         self.dataset_collector = SoarDatasetCollector(sample_name)
-
+        self.no_transductive_penalty = no_transductive_penalty
+        
         # Standard API timeout for network safety, no infrastructure timeouts
         api_timeout = 300  # 5 minutes for network safety only
 
@@ -1756,9 +1758,9 @@ class ARCTaskRunnerSimple:
             # Use weighted voting to get top 2 predictions
             try:
                 top_predictions = compute_weighted_majority_voting(
-                    all_attempts,
-                    top_k=2,
-                    no_transductive_penalty=args.no_transductive_penalty,
+                    all_attempts, 
+                    top_k=2, 
+                    no_transductive_penalty=self.no_transductive_penalty
                 )
             except Exception as e:
                 print(f"⚠️ Weighted voting failed for task {task_id}: {e}")
@@ -1847,6 +1849,8 @@ class ARCTaskRunnerSimple:
 
         # Validate the submission file
         validate_submission_file(submission_path, all_task_ids)
+
+
 
 
 def main():
@@ -1957,6 +1961,7 @@ def main():
         max_tokens=args.max_tokens,
         temperature=args.temperature,
         reasoning_effort=args.reasoning_effort,
+        no_transductive_penalty=args.no_transductive_penalty,
         qwen_no_think=args.qwen_no_think,
         prompt_version=args.prompt_version,
         unsafe_executor=args.unsafe_executor,

@@ -9,15 +9,15 @@ from .validator import ARCTaskValidator
 
 
 def validate_submission_file(
-    submission_path: str, expected_task_ids: List[str], test_challenges_path: str
+    submission_path: str, expected_task_ids: List[str], challenges_path: str
 ) -> None:
     """
     Validate submission file format against competition guidelines.
 
     Args:
         submission_path: Path to submission.json file
-        expected_task_ids: List of expected task IDs (optional, derived from test_challenges_path if not provided)
-        test_challenges_path: Path to test challenges file (for validation and task ID extraction)
+        expected_task_ids: List of expected task IDs (optional, derived from challenges_path if not provided)
+        challenges_path: Path to challenges file (for validation and task ID extraction)
     """
     print(f"\n🔍 VALIDATING SUBMISSION: {submission_path}")
 
@@ -29,24 +29,24 @@ def validate_submission_file(
         with open(submission_path, "r") as f:
             submission = json.load(f)
 
-        # Load test challenges if provided for prediction count validation and task ID extraction
-        test_challenges = {}
-        if test_challenges_path:
+        # Load challenges if provided for prediction count validation and task ID extraction
+        challenges = {}
+        if challenges_path:
             try:
-                with open(test_challenges_path, "r") as f:
-                    test_challenges = json.load(f)
-                print(f"📁 Loaded test challenges: {len(test_challenges)} tasks")
+                with open(challenges_path, "r") as f:
+                    challenges = json.load(f)
+                print(f"📁 Loaded challenges: {len(challenges)} tasks")
 
-                # If no expected_task_ids provided, derive from test challenges (runtime scenario)
+                # If no expected_task_ids provided, derive from challenges (runtime scenario)
                 if expected_task_ids is None:
-                    expected_task_ids = list(test_challenges.keys())
+                    expected_task_ids = list(challenges.keys())
                     print(
-                        f"📋 Using task IDs from runtime test file: {len(expected_task_ids)} tasks"
+                        f"📋 Using task IDs from runtime challenges file: {len(expected_task_ids)} tasks"
                     )
 
             except Exception as e:
-                errors.append(f"Could not load test challenges file: {e}")
-                test_challenges = {}
+                errors.append(f"Could not load challenges file: {e}")
+                challenges = {}
                 if expected_task_ids is None:
                     errors.append("No task IDs available for validation")
                     return
@@ -70,10 +70,10 @@ def validate_submission_file(
                 )
 
             if extra_tasks:
-                if test_challenges_path:
-                    # Runtime scenario: extra tasks not in test file are serious errors
+                if challenges_path:
+                    # Runtime scenario: extra tasks not in challenges file are serious errors
                     errors.append(
-                        f"Submission contains task IDs not in test file: {sorted(list(extra_tasks))[:10]}{'...' if len(extra_tasks) > 10 else ''} ({len(extra_tasks)} total)"
+                        f"Submission contains task IDs not in challenges file: {sorted(list(extra_tasks))[:10]}{'...' if len(extra_tasks) > 10 else ''} ({len(extra_tasks)} total)"
                     )
                 else:
                     # Development scenario: just warn about extra tasks
@@ -83,7 +83,7 @@ def validate_submission_file(
 
             # Perfect match validation for runtime
             if (
-                test_challenges_path
+                challenges_path
                 and len(missing_tasks) == 0
                 and len(extra_tasks) == 0
             ):
@@ -106,9 +106,9 @@ def validate_submission_file(
                 errors.append(f"Task {task_id}: must have at least one prediction")
                 continue
 
-            # Check prediction count matches test inputs (if test challenges available)
-            if test_challenges and task_id in test_challenges:
-                expected_count = len(test_challenges[task_id].get("test", []))
+            # Check prediction count matches test inputs (if challenges available)
+            if challenges and task_id in challenges:
+                expected_count = len(challenges[task_id].get("test", []))
                 if len(predictions) != expected_count:
                     errors.append(
                         f"Task {task_id}: has {len(predictions)} predictions but task has {expected_count} test inputs"
@@ -151,7 +151,7 @@ def validate_submission_file(
         print(f"  Total tasks: {unique_tasks}")
         print(f"  Total predictions: {total_predictions}")
         print(f"  Empty predictions ([[0,0],[0,0]]): {empty_predictions_count}")
-        if test_challenges:
+        if challenges:
             print(f"  Prediction count mismatches: {prediction_count_errors}")
 
         # Report errors and warnings
