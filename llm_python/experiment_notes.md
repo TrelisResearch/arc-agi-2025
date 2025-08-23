@@ -40,7 +40,25 @@ and then with 64 attempts:
 export ARC_PROGRAMS_DB=./llm_python/programsdb/local-trans-off.db
 uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542" --max-attempts 64 --max-workers 16 --subset evaluation --no-transductive-penalty
 ```
+Dataset: arc-prize-2024
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542
+Total tasks: 400
+Total time: 4742.7s
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 102,196,139
+Total cost: $18.557287
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 14.5%
+  Pass@2 (Train Majority):  14.0%
+  Oracle (Best Attempt):    19.0%
+  All Train Correct:        13.2%
+  Min 1 Train Correct:      30.5%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
 ### Run the partial 100 arc agi 1
 Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542
