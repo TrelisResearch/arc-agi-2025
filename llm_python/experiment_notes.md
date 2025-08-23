@@ -8,15 +8,64 @@ Lewis Reminders:
 ---
 ## Aug 22
 
+### Does transductive filtering help?
+
+Run with the transductive flag set to false:
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-trans-off.db
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542" --max-attempts 8 --subset evaluation --no-transductive-penalty
+```
+
+### Run the partial 100 arc agi 1
+Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542
+
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local.db
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542" --max-attempts 8 --subset evaluation
+```
+Dataset: arc-prize-2024
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542
+Total tasks: 400
+Total time: 447.3s
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 12,773,548
+Total cost: $2.319079
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 7.2%
+  Pass@2 (Train Majority):  7.0%
+  Oracle (Best Attempt):    8.5%
+  All Train Correct:        6.0%
+  Min 1 Train Correct:      14.2%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+and then 64 attempts:
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local.db
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542" --max-attempts 64 --subset evaluation
+```
+
+and try out the 1 epoch checkpoint - Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c771:
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-partial-100-1-epoch.db
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c771" --max-attempts 64 --subset evaluation
+```
+
+
+
 ### TTT
 [x] Clean up the ipynb notebook.
 [x] Allow for ipynb notebook conversion - how to do this? how to pass in values?!?
-[ ] Get working in Runpod on H200.
-  [ ] Get an sglang server up and running and do a test inference.
-[ ] Parquet loading.
-  [ ] Parquet generation from duckdb. How to do that? Ask Lewis.
-  [ ] Load with huggingface from local (default to kaggle/working if in kaggle).
-[ ] Simplify all of the env variables being set.
+[x] Get working in Runpod on H200.
+  [x] Get an sglang server up and running and do a test inference.
+[x] Parquet loading.
+  [x] Parquet generation from duckdb. How to do that? Ask Lewis.
+  [x] Load with huggingface from local (default to kaggle/working if in kaggle).
+[x] Simplify all of the env variables being set.
 [ ] Thread everything together.
 
 [ ] Get working in kaggle
@@ -81,6 +130,50 @@ And re-run with the better classifier now 8 attempts on arc agi 1 eval dataset w
 export ARC_PROGRAMS_DB=./llm_python/programsdb/local-test-improved-classifier.db
 uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Trelis/Qwen3-4B_ds-arc-agi-1-perfect-50-c642" --max-attempts 8 --subset evaluation
 ```
+Dataset: arc-prize-2024
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-1-perfect-50-c642
+Total tasks: 400
+Total time: 405.5s
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 12,844,368
+Total cost: $2.361571
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 5.8%
+  Pass@2 (Train Majority):  5.5%
+  Oracle (Best Attempt):    6.8%
+  All Train Correct:        4.5%
+  Min 1 Train Correct:      13.0%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.1%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+and then 64 attempts:
+```bash
+export ARC_PROGRAMS_DB=./llm_python/programsdb/local-test-improved-classifier.db
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Trelis/Qwen3-4B_ds-arc-agi-1-perfect-50-c642" --max-attempts 64 --subset evaluation
+```
+Dataset: arc-prize-2024
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-1-perfect-50-c642
+Total tasks: 400
+Total time: 3946.7s
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 102,878,629
+Total cost: $18.966781
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 14.8%
+  Pass@2 (Train Majority):  14.5%
+  Oracle (Best Attempt):    16.5%
+  All Train Correct:        12.2%
+  Min 1 Train Correct:      28.0%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.2%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
 ### ARC AGI 1 Perfect 50 Program inspection
 

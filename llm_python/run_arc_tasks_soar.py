@@ -1696,7 +1696,11 @@ class ARCTaskRunnerSimple:
             
             # Use weighted voting to get top 2 predictions
             try:
-                top_predictions = compute_weighted_majority_voting(all_attempts, top_k=2)
+                top_predictions = compute_weighted_majority_voting(
+                    all_attempts, 
+                    top_k=2, 
+                    no_transductive_penalty=args.no_transductive_penalty
+                )
             except Exception as e:
                 print(f"⚠️ Weighted voting failed for task {task_id}: {e}")
                 # Fallback to first available predictions
@@ -1848,6 +1852,11 @@ def main():
         "--qwen-no-think",
         action="store_true",
         help="Disable thinking for Qwen models (Note: Not supported by DashScope commercial models)",
+    )
+    parser.add_argument(
+        "--no-transductive-penalty",
+        action="store_true",
+        help="Disable transductive penalty in voting (default: apply penalty)",
     )
     parser.add_argument(
         "--unsafe-executor",

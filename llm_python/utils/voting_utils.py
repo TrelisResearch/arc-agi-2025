@@ -113,14 +113,14 @@ def generic_voting(
     return top_k_predictions
 
 
-def compute_weighted_majority_voting(attempts: List[Dict], top_k: int = 2) -> List:
-    """Compute weighted majority voting based on count + 1000 * train_accuracy, with transductive confidence penalty"""
+def compute_weighted_majority_voting(attempts: List[Dict], top_k: int = 2, no_transductive_penalty: bool = False) -> List:
+    """Compute weighted majority voting based on count + 1000 * train_accuracy, with optional transductive confidence penalty"""
     def weight_func(att: Dict) -> float:
         train_acc = att.get('train_accuracy', 0.0)
         base_weight = 1.0 + 1000.0 * train_acc
         
-        # Apply transductive penalty using (1 - confidence)²
-        if att.get("is_transductive", False):
+        # Apply transductive penalty using (1 - confidence)² unless disabled
+        if not no_transductive_penalty and att.get("is_transductive", False):
             confidence = att.get("transduction_confidence", 1.0)  # Default to 1.0 if missing
             penalty = (1 - confidence) ** 2
             return base_weight * penalty

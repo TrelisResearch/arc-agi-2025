@@ -65,7 +65,7 @@ def prompt_keep_pod(timeout=10):
     except Exception:
         return False
 
-def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="all_evaluation", max_attempts=64):
+def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="all_evaluation", max_attempts=64, no_transductive_penalty=False):
     """Run ARC tasks - task runner handles its own graceful shutdown"""
     print(f"\n🎯 Running ARC tasks for {dataset} with subset {subset}...")
     
@@ -81,6 +81,9 @@ def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="
         "--max-tokens", "2000",
         "--qwen-no-think"
     ]
+    
+    if no_transductive_penalty:
+        cmd.append("--no-transductive-penalty")
     
     print(f"📝 Running command: {' '.join(cmd)}")
     
@@ -204,6 +207,9 @@ This script will:
                        default=64,
                        dest='max_attempts',
                        help='Maximum number of attempts for ARC tasks (default: 64)')
+    parser.add_argument('--no-transductive-penalty',
+                       action='store_true',
+                       help='Disable transductive penalty in voting (passed to run_arc_tasks_soar.py)')
     
     args = parser.parse_args()
     
@@ -342,7 +348,7 @@ This script will:
         print(f"\n🎯 Step 2: Running ARC tasks for {args.dataset}")
         
         task_success = run_arc_tasks_with_graceful_handling(
-            args.dataset, args.model_path, base_url, args.subset, args.max_attempts
+            args.dataset, args.model_path, base_url, args.subset, args.max_attempts, args.no_transductive_penalty
         )
         
         if task_success:
