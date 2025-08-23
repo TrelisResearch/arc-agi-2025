@@ -156,7 +156,7 @@ class TaskLoader:
             if training_tasks:
                 self._add_tasks_safely(training_tasks, dataset)
                 self.subsets[f"{dataset}/training"] = list(training_tasks.keys())
-                print(f"  Training: {len(training_tasks)} tasks")
+                # print(f"  {dataset}/training: {len(training_tasks)} tasks")  # Debug info
 
             # Load evaluation split
             eval_tasks = self._load_competition_split(dataset, "evaluation")
