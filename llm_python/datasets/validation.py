@@ -16,7 +16,13 @@ from llm_python.utils.grids import grids_equal
 from llm_python.utils.task_loader import get_task_loader
 
 
-def validate_soar_row(row: dict) -> List[str]:
+@dataclass
+class ValidateRowResult:
+    is_valid: bool
+    errors: List[str]
+
+
+def validate_soar_row(row: dict) -> ValidateRowResult:
     """
     Validate a single SOAR row for schema and business logic.
     Returns a list of error messages (empty if valid).
@@ -65,14 +71,29 @@ def validate_soar_row(row: dict) -> List[str]:
                 for i, grid in enumerate(row[field]):
                     if not isinstance(grid, list):
                         errors.append(f"{field}[{i}] must be a list (grid)")
+                    elif len(grid) == 0:
+                        errors.append(f"{field}[{i}] is an empty list")
+                    elif not isinstance(grid[0], list):
+                        errors.append(f"{field}[{i}] must be a list (grid)")
+                    elif len(grid) > 40:
+                        errors.append(f"{field}[{i}] exceeds max height of 40")
+                    elif not isinstance(grid[0], list):
+                        errors.append(f"{field}[{i}] must be a list (grid)")
+                    elif len(grid[0]) == 0:
+                        errors.append(f"{field}[{i}] is an empty list")
+                    elif len(grid[0]) > 40:
+                        errors.append(f"{field}[{i}] exceeds max width of 40")
                     else:
-                        for j, row_ in enumerate(grid):
-                            if not isinstance(row_, list):
+                        # Check all rows have the same width (proper 2D grid)
+                        for j, row in enumerate(grid):
+                            if not isinstance(row, list):
                                 errors.append(f"{field}[{i}][{j}] must be a list (row)")
-                            elif not all(isinstance(cell, int) for cell in row_):
+                            elif not all(isinstance(cell, int) for cell in row):
                                 errors.append(
                                     f"{field}[{i}][{j}] must contain only integers"
                                 )
+                            if not isinstance(row, list) or len(row) != len(grid[0]):
+                                errors.append(f"{field}[{i}] must be a proper 2D grid")
     if (
         "reasoning" in row
         and row["reasoning"] is not None
@@ -81,7 +102,7 @@ def validate_soar_row(row: dict) -> List[str]:
         errors.append("reasoning must be a string if provided")
     if "is_transductive" in row and not isinstance(row["is_transductive"], bool):
         errors.append("is_transductive must be a boolean")
-    return errors
+    return ValidateRowResult(is_valid=not errors, errors=errors)
 
 
 @dataclass
@@ -154,9 +175,9 @@ def validate_soar_dataframe(df: pd.DataFrame) -> ValidationResult:
     business_logic_issues = []
     # Row-level validation
     for idx, row in df.iterrows():
-        row_errors = validate_soar_row(row.to_dict())
-        if row_errors:
-            for err in row_errors:
+        row_validation_result = validate_soar_row(row.to_dict())
+        if not row_validation_result.is_valid:
+            for err in row_validation_result.errors:
                 business_logic_issues.append(f"Row {idx}: {err}")
     if business_logic_issues:
         business_logic_valid = False

@@ -8,7 +8,7 @@ import pandas as pd
 import pyarrow.parquet as pq
 from pathlib import Path
 from typing import Union
-from llm_python.programsdb.schema import PARQUET_SCHEMA
+from llm_python.datasets.schema import PARQUET_SCHEMA
 import pyarrow as pa
 
 def read_soar_parquet(path: Union[str, Path]) -> pd.DataFrame:

@@ -42,8 +42,8 @@ def strip_ansi_codes(text: str) -> str:
 
 def print_grids_horizontally(grids: List[List[List[int]]], labels: List[str] = None, use_colors: bool = True) -> str:
     """Print multiple grids side by side horizontally"""
-    if not grids:
-        return ""
+    # if not grids:
+    #     return ""
     
     # Convert each grid to lines
     grid_lines = []
@@ -198,8 +198,13 @@ def print_soar_dataset(file_path, train_filter="any", test_filter="any", use_col
             print()
             
             # Print outputs horizontally  
-            print("OUTPUTS:")
+            print("EXPECTED:")
             print(print_grids_horizontally(outputs, output_labels, use_colors))
+            print()
+
+            # Print outputs horizontally  
+            print("EXPECTED:")
+            print(print_grids_horizontally(row['predicted_train_output'], output_labels, use_colors))
             print()
         
         print("-" * 50)

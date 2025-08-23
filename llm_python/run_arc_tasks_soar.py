@@ -13,7 +13,8 @@ from typing import Dict, List, NotRequired, Optional, TypedDict, Union, Tuple, A
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor
 
-from llm_python.utils.task_loader import TaskData, TaskLoader, get_task_loader
+from llm_python.datasets.collector import SoarDatasetCollector
+from llm_python.utils.task_loader import TaskData, get_task_loader
 from llm_python.utils.arc_tester import ArcTester
 from llm_python.utils.prompt_utils import create_arc_prompt, extract_python_code
 from llm_python.utils.metrics_utils import (
@@ -30,7 +31,7 @@ from llm_python.utils.prompt_loader import PromptLoader
 from llm_python.utils.serialization import ResponseSerializer
 from llm_python.utils.api_client import ARCAPIClient
 from llm_python.utils.validator import ARCTaskValidator
-from llm_python.programsdb import maybe_log_program, ProgramSample
+from llm_python.datasets.schema import ProgramSample
 
 load_dotenv()
 
@@ -78,7 +79,6 @@ class AttemptDetail(TypedDict):
     transduction_confidence: float  # Confidence score for transduction classification
     transduction_reason: str  # Why it's considered transductive
 
-
     # Training results
     train_results: List[TrainResult]  # Results for each training example
     train_accuracy: float  # Fraction of training examples correct
@@ -113,7 +113,9 @@ class AttemptDetail(TypedDict):
     code_ran: bool  # Alias for program_extracted
 
     # Optional trimming metadata (for reducing file sizes)
-    error_summary: NotRequired[Optional[str]]  # Truncated error message for failed attempts
+    error_summary: NotRequired[
+        Optional[str]
+    ]  # Truncated error message for failed attempts
     data_trimmed: NotRequired[bool]  # Whether attempt data was trimmed
     trim_reason: NotRequired[str]  # Reason for trimming data
 
@@ -157,8 +159,7 @@ class ARCTaskRunnerSimple:
         prompt_version: str = "soar",
         unsafe_executor: bool = False,
         lora_adapter: Optional[str] = None,
-        log_to_db: bool = True,
-        db_path: Optional[str] = None,
+        sample_name: Optional[str] = None,
     ):
         # Core configuration
         self.max_workers = max_workers
@@ -166,22 +167,25 @@ class ARCTaskRunnerSimple:
         self.max_attempts = max_attempts
         self.run_number = run_number
         self.debug = debug
-        self.log_to_db = log_to_db
-        self.db_path = db_path
         self.prompt_version = prompt_version
-        
+        self.dataset_collector = SoarDatasetCollector(sample_name)
+
         # Standard API timeout for network safety, no infrastructure timeouts
         api_timeout = 300  # 5 minutes for network safety only
-        
+
         # Optional global timeout from environment variable
         global_timeout = None
         if "GLOBAL_TIMEOUT" in os.environ:
             try:
                 global_timeout = int(os.environ["GLOBAL_TIMEOUT"])
-                print(f"⏰ Global timeout set to {global_timeout}s via GLOBAL_TIMEOUT environment variable")
+                print(
+                    f"⏰ Global timeout set to {global_timeout}s via GLOBAL_TIMEOUT environment variable"
+                )
             except ValueError:
-                print("⚠️ Invalid GLOBAL_TIMEOUT value - must be integer seconds. Ignoring.")
-        
+                print(
+                    "⚠️ Invalid GLOBAL_TIMEOUT value - must be integer seconds. Ignoring."
+                )
+
         self.global_timeout = global_timeout
 
         # Warn about safety settings
@@ -190,7 +194,6 @@ class ARCTaskRunnerSimple:
             print(
                 "⚠️  WARNING: Using unrestricted executor - generated code will run directly on your system!"
             )
-
 
         # Initialize services
         self.api_client = ARCAPIClient(
@@ -204,11 +207,10 @@ class ARCTaskRunnerSimple:
             api_timeout=api_timeout,  # Standard timeout for network safety
         )
 
-
         # Initialize remaining components
         self.task_loader = get_task_loader()
         self.executor = ArcTester(
-            timeout=0.5,
+            timeout=1,
             executor_type=executor_type,
             max_output_chars=10_000,
             max_output_cells=1_800,
@@ -220,7 +222,6 @@ class ARCTaskRunnerSimple:
         self._cost_lock = threading.Lock()
         self.total_cost = 0.0
         self.total_tokens = 0
-
 
         # Health monitoring for long runs
         self.health_metrics = {
@@ -236,13 +237,12 @@ class ARCTaskRunnerSimple:
         print(
             f"⏰ API timeout: {api_timeout}s (network safety only, no infrastructure timeouts)"
         )
-        print(f"🗄️ Database logging: {'enabled' if self.log_to_db else 'disabled'}")
+        print(f"🗄️ Sampled programs will be logged to {self.dataset_collector.output_path()}")
 
     @property
     def model(self):
         """Get the model name from the API client"""
         return self.api_client.model
-
 
     @property
     def base_url(self):
@@ -342,7 +342,6 @@ class ARCTaskRunnerSimple:
             self.total_cost += cost
             self.total_tokens += tokens
 
-
     def _update_health_metrics(self, attempt_detail: AttemptDetail, exec_time: float):
         """Update health monitoring metrics (thread-safe)"""
         with self._cost_lock:  # Reuse existing lock for simplicity
@@ -421,9 +420,6 @@ class ARCTaskRunnerSimple:
     ):
         """Log successful programs to the local database"""
 
-        if not self.log_to_db:
-            return  # Database logging disabled
-
         try:
             # Only log programs that extracted successfully and have some correctness
             if not attempt_detail.get("program_extracted", False):
@@ -433,16 +429,6 @@ class ARCTaskRunnerSimple:
             program = attempt_detail.get("program", "").strip()
             if not program:
                 return
-
-            # Note: We still log the transductive flag but don't filter based on it
-            # This allows us to analyze transductive programs later
-            
-            # Check if program has at least one correct answer (train or test)
-            train_correct = sum(map(lambda x: x.get("correct", False), attempt_detail.get("train_results", [])))
-            test_correct = attempt_detail.get("test_correct_count", 0)
-
-            if train_correct == 0 and test_correct == 0:
-                return  # No correct answers, skip logging
 
             # Extract correctness arrays
             train_results = attempt_detail.get("train_results", [])
@@ -456,24 +442,9 @@ class ARCTaskRunnerSimple:
             ]
 
             # Extract predicted outputs (convert to lists if they're numpy arrays)
-            predicted_train_output = []
-            for i, result in enumerate(train_results):
-                pred = result.get("predicted", [])
-                if pred is not None and hasattr(pred, "tolist"):
-                    pred = pred.tolist()
-                # Clean train prediction to ensure valid ARC grid format
-                clean_pred = replace_invalid_grid(pred, task_id, f"train_{i}")
-                predicted_train_output.append(clean_pred)
-
-            predicted_test_output = []
-            for i, result in enumerate(test_results):
-                pred = result.get("predicted", [])
-                if pred is not None and hasattr(pred, "tolist"):
-                    pred = pred.tolist()
-                # Clean test prediction to ensure valid ARC grid format
-                clean_pred = replace_invalid_grid(pred, task_id, f"test_debug_{i}")
-                predicted_test_output.append(clean_pred)
-
+            predicted_train_output = [result.get("predicted", None) for result in train_results]
+            predicted_test_output = [result.get("predicted", None) for result in test_results]
+           
             # Extract reasoning from raw response if available
             reasoning = ""
             raw_response = attempt_detail.get("raw_response", {})
@@ -498,8 +469,7 @@ class ARCTaskRunnerSimple:
                 is_transductive=attempt_detail.get("is_transductive", False),
             )
 
-            # Log to database (maybe_log_program handles deduplication and validation)
-            maybe_log_program(program_sample, self.db_path)
+            self.dataset_collector.collect(program_sample)
 
         except Exception:
             # Don't let database logging errors crash the main execution
@@ -656,25 +626,26 @@ class ARCTaskRunnerSimple:
         # Extract and evaluate program
         program = self.extract_code_from_response(response) if response else ""
         program_extracted = bool(program and program.strip())
-        
+
         # Run transduction detection immediately after extraction
         is_transductive = False
         transduction_confidence = 0.0
         transduction_reason = ""
         if program_extracted:
             try:
-                is_transductive, transduction_confidence = self.transduction_classifier.is_transductive(program, task_data)
+                is_transductive, transduction_confidence = (
+                    self.transduction_classifier.is_transductive(program, task_data)
+                )
                 if is_transductive:
                     transduction_reason = f"Code-based transduction detected (confidence: {transduction_confidence:.3f})"
                 else:
-                    transduction_reason = f"Not transductive (confidence: {1-transduction_confidence:.3f})"
+                    transduction_reason = f"Not transductive (confidence: {1 - transduction_confidence:.3f})"
             except Exception as e:
                 transduction_reason = f"Transduction detection failed: {e}"
                 transduction_confidence = 0.5  # Default to uncertain if detection fails
         else:
             transduction_reason = "No program extracted"
             transduction_confidence = 0.0  # No program means not transductive
-
 
         # Evaluate on training examples
         train_results: List[TrainResult] = []
@@ -694,11 +665,7 @@ class ARCTaskRunnerSimple:
             # Check correctness based on actual execution results
             is_corr = (
                 (pred == ex["output"])
-                if (
-                    pred is not None
-                    and not err
-                    and not tout
-                )
+                if (pred is not None and not err and not tout)
                 else False
             )
             train_results.append(
@@ -733,7 +700,7 @@ class ARCTaskRunnerSimple:
             test_input = test_example["input"]
             # Check if we're in SUBMIT mode - test outputs may not be available
             submit_mode = os.getenv("SUBMIT", "").lower() == "true"
-            
+
             # Only access test_expected if not in SUBMIT mode
             if submit_mode:
                 test_expected = None  # No ground truth available in SUBMIT mode
@@ -747,14 +714,10 @@ class ARCTaskRunnerSimple:
                 test_pred, test_err, test_tout = (
                     self.executor.execute_program_with_timeout(program, test_input)
                 )
-                if (
-                    test_err
-                    and test_err != "no program"
-                ):
+                if test_err and test_err != "no program":
                     any_test_exec_error = True
                 if test_tout:
                     any_test_exec_timeout = True
-
 
             # Mark as correct/incorrect only when we have ground truth (not in SUBMIT mode)
             is_correct = (
@@ -768,7 +731,6 @@ class ARCTaskRunnerSimple:
                 )
                 else False
             )
-
 
             if is_correct:
                 test_correct_count += 1
@@ -784,7 +746,9 @@ class ARCTaskRunnerSimple:
                 }
             )
             # Clean prediction immediately to ensure valid ARC grid format
-            clean_test_pred = replace_invalid_grid(test_pred, task_id, f"test_{test_idx}")
+            clean_test_pred = replace_invalid_grid(
+                test_pred, task_id, f"test_{test_idx}"
+            )
             test_predictions.append(clean_test_pred)
 
         # Overall test correctness (all test cases must be correct)
@@ -795,7 +759,6 @@ class ARCTaskRunnerSimple:
             if len(task_data["test"]) > 0 and not submit_mode
             else False
         )
-
 
         # Store attempt details
         # Note: This dictionary structure matches the AttemptDetail TypedDict defined above
@@ -869,7 +832,10 @@ class ARCTaskRunnerSimple:
     # _add_transductive_detection method removed - transduction detection now happens during execution
 
     def run_subset(
-        self, subset_name: str, dataset: str = "arc-prize-2025", limit: Optional[int] = None
+        self,
+        subset_name: str,
+        dataset: str = "arc-prize-2025",
+        limit: Optional[int] = None,
     ) -> List[Dict]:
         """Run all tasks in a subset with true parallelization at the attempt level"""
         try:
@@ -890,25 +856,25 @@ class ARCTaskRunnerSimple:
                 total_tasks = len(tasks)
 
             print(f"✅ Task validation complete: {total_tasks} valid tasks")
-            
+
             # Sort tasks by total length (training + test examples)
             def calculate_task_length(task_tuple):
                 task_id, task_data = task_tuple
                 total_length = 0
                 # Add training examples length
-                if 'train' in task_data:
-                    for example in task_data['train']:
-                        if 'input' in example:
-                            total_length += len(str(example['input']))
-                        if 'output' in example:
-                            total_length += len(str(example['output']))
+                if "train" in task_data:
+                    for example in task_data["train"]:
+                        if "input" in example:
+                            total_length += len(str(example["input"]))
+                        if "output" in example:
+                            total_length += len(str(example["output"]))
                 # Add test examples length (only inputs since we don't have outputs)
-                if 'test' in task_data:
-                    for example in task_data['test']:
-                        if 'input' in example:
-                            total_length += len(str(example['input']))
+                if "test" in task_data:
+                    for example in task_data["test"]:
+                        if "input" in example:
+                            total_length += len(str(example["input"]))
                 return total_length
-            
+
             # Sort tasks from shortest to longest
             tasks = sorted(tasks, key=calculate_task_length)
             print(f"📏 Tasks sorted by length (shortest to longest)")
@@ -1004,7 +970,7 @@ class ARCTaskRunnerSimple:
                 "system": system_content,
                 "user": user_content,
             }
-            
+
             # Show the first task's prompt for debugging
             if not first_prompt_shown:
                 print(f"\n📝 FIRST TASK PROMPT ({task_id}):")
@@ -1023,8 +989,7 @@ class ARCTaskRunnerSimple:
         def attempt_wrapper(task_idx, task_id, task_data, attempt_num):
             nonlocal completed_attempts, completed_tasks
             attempt_start = time.time()
-            
-            
+
             try:
                 # Get the pre-created prompt for this task
                 full_prompt = task_results[task_id]["full_prompt"]
@@ -1046,7 +1011,6 @@ class ARCTaskRunnerSimple:
                         )
                         # Prompt is already stored at task level during initialization
                         completed_attempts += 1
-                        
 
                         # Check if task is complete
                         if len(task_results[task_id]["attempts"]) == self.max_attempts:
@@ -1092,20 +1056,24 @@ class ARCTaskRunnerSimple:
 
             while remaining:
                 time_elapsed = time.time() - start_time
-                
+
                 # Check global timeout
                 if self.global_timeout and time_elapsed > self.global_timeout:
-                    print(f"⏰ Global timeout reached ({self.global_timeout}s). Cancelling remaining attempts...")
+                    print(
+                        f"⏰ Global timeout reached ({self.global_timeout}s). Cancelling remaining attempts..."
+                    )
                     # Cancel remaining futures
                     cancelled_count = 0
                     for future in remaining:
                         if future.cancel():
                             cancelled_count += 1
-                    
+
                     completed_naturally = total_attempts - len(remaining)
-                    print(f"⏰ Timeout: {completed_naturally} attempts completed, {cancelled_count} cancelled, {len(remaining) - cancelled_count} already running")
+                    print(
+                        f"⏰ Timeout: {completed_naturally} attempts completed, {cancelled_count} cancelled, {len(remaining) - cancelled_count} already running"
+                    )
                     break
-                
+
                 try:
                     # Use a short timeout so we can log periodic progress
                     for future in as_completed(
@@ -1119,29 +1087,45 @@ class ARCTaskRunnerSimple:
                             print(f"🚨 Future #{completed_count} error: {future_e}")
                     # Periodic progress log
                     done_now = total_attempts - len(remaining)
-                    timeout_info = f" (timeout in {self.global_timeout - time_elapsed:.0f}s)" if self.global_timeout else ""
+                    timeout_info = (
+                        f" (timeout in {self.global_timeout - time_elapsed:.0f}s)"
+                        if self.global_timeout
+                        else ""
+                    )
                     print(
                         f"⏳ Progress: {done_now}/{total_attempts} attempts done; {len(remaining)} remaining{timeout_info}"
                     )
                 except KeyboardInterrupt:
-                    print(f"\n🛑 Cancellation requested - cancelling queued requests, waiting for in-flight requests...")
-                    
+                    print(
+                        f"\n🛑 Cancellation requested - cancelling queued requests, waiting for in-flight requests..."
+                    )
+
                     # Cancel futures that haven't started yet
                     cancelled_count = 0
                     for future in list(remaining):
-                        if future.cancel():  # Returns True if successfully cancelled (hadn't started)
+                        if (
+                            future.cancel()
+                        ):  # Returns True if successfully cancelled (hadn't started)
                             cancelled_count += 1
                             remaining.discard(future)
-                    
+
                     in_flight_count = len(remaining)
-                    print(f"   Cancelled {cancelled_count} queued requests, waiting for {in_flight_count} in-flight requests")
+                    print(
+                        f"   Cancelled {cancelled_count} queued requests, waiting for {in_flight_count} in-flight requests"
+                    )
                     if in_flight_count > 0:
-                        print(f"   (In-flight requests may take up to {self.api_client.api_timeout}s each to complete)")
+                        print(
+                            f"   (In-flight requests may take up to {self.api_client.api_timeout}s each to complete)"
+                        )
                     # Continue waiting for the actually running requests
                 except Exception:
                     # No futures completed in this window; print a heartbeat
                     done_now = total_attempts - len(remaining)
-                    timeout_info = f" (timeout in {self.global_timeout - time_elapsed:.0f}s)" if self.global_timeout else ""
+                    timeout_info = (
+                        f" (timeout in {self.global_timeout - time_elapsed:.0f}s)"
+                        if self.global_timeout
+                        else ""
+                    )
                     print(
                         f"⏳ No completions in last {progress_interval:.0f}s — {done_now}/{total_attempts} done; {len(remaining)} remaining{timeout_info}"
                     )
@@ -1149,9 +1133,13 @@ class ARCTaskRunnerSimple:
 
             elapsed_time = time.time() - start_time
             if self.global_timeout and elapsed_time > self.global_timeout:
-                print(f"⏰ Execution stopped after {elapsed_time:.1f}s due to global timeout")
+                print(
+                    f"⏰ Execution stopped after {elapsed_time:.1f}s due to global timeout"
+                )
             else:
-                print(f"✅ All {total_attempts} attempts completed in {elapsed_time:.1f}s")
+                print(
+                    f"✅ All {total_attempts} attempts completed in {elapsed_time:.1f}s"
+                )
 
             # Check final status - handle cancelled futures properly
             successful_attempts = 0
@@ -1249,7 +1237,7 @@ class ARCTaskRunnerSimple:
 
         # Check if we're in SUBMIT mode
         submit_mode = os.getenv("SUBMIT", "").lower() == "true"
-        
+
         if submit_mode:
             # In SUBMIT mode: create submission file and show limited summary
             self._print_submit_mode_summary(results, subset_name, dataset, elapsed_time)
@@ -1263,7 +1251,7 @@ class ARCTaskRunnerSimple:
     def _display_task_summary(self, task_id: str, task_result: Dict):
         """Display a brief summary of a completed task"""
         attempts = task_result["attempts"]
-        
+
         # Check if we're in SUBMIT mode (test outputs available for scoring)
         submit_mode = os.getenv("SUBMIT", "").lower() == "true"
 
@@ -1271,12 +1259,12 @@ class ARCTaskRunnerSimple:
             """
             Categorize each attempt into exactly ONE category (mutually exclusive).
             Priority order matters - first matching condition wins.
-            
+
             NORMAL MODE CATEGORIES (when test outputs available for evaluation):
             1. all-perfect: Both train AND test 100% correct
             2. test-perfect: All test correct (but not all train)
             3. test-partial: Some test correct (but not perfect)
-            
+
             BOTH MODES:
             4. transductive: Flagged as memorization/hardcoding (any training success)
             5. train-perfect: All train correct, no test success (non-transductive)
@@ -1292,33 +1280,35 @@ class ARCTaskRunnerSimple:
             15. api-fail: API call failed (non-timeout)
             16. other-fail: Any remaining edge cases
             """
-            
+
             # Test-based categories (only available when NOT in SUBMIT mode)
             # In SUBMIT mode, we don't have test outputs to evaluate against
             if not submit_mode:
                 test_correct = attempt.get("test_correct", False)
                 train_acc = attempt.get("train_accuracy", 0.0)
-                
+
                 if test_correct and train_acc == 1.0:
                     return "all-perfect"
                 if test_correct:
                     return "test-perfect"
                 if attempt.get("test_correct_count", 0) > 0:
                     return "test-partial"
-            
+
             # Transductive check (before train categories to separate memorization)
             if attempt.get("is_transductive", False):
                 return "transductive"
-            
+
             # Training-based categories (only for non-transductive)
             train_acc = attempt.get("train_accuracy", 0.0)
             if train_acc == 1.0:
                 return "train-perfect"
             if train_acc > 0:
                 return "train-partial"
-            
+
             # Failure categories (in order of specificity)
-            if attempt.get("train_exec_errors", 0) > 0 or attempt.get("test_exec_error", False):
+            if attempt.get("train_exec_errors", 0) > 0 or attempt.get(
+                "test_exec_error", False
+            ):
                 return "exec-error"
             if not attempt.get("program_extracted", False):
                 return "no-code"
@@ -1330,25 +1320,25 @@ class ARCTaskRunnerSimple:
                 return "api-timeout"
             if not attempt.get("api_success", True):
                 return "api-fail"
-            
+
             # Check for output-related failures
             test_predicted = attempt.get("test_predicted")
             if test_predicted is None:
                 return "no-outputs"
-            
+
             # If we have outputs but they're invalid (wrong format, size, etc.)
             # This catches cases where execution succeeded but outputs are malformed
             if not isinstance(test_predicted, list):
                 return "invalid-outputs"
-            
+
             # Check for logic/algorithm failures - code ran successfully but got wrong answers
             train_acc = attempt.get("train_accuracy", 0.0)
             if train_acc == 0.0 and attempt.get("program_extracted", False):
                 return "wrong-outputs"
-            
+
             # Catch-all for any remaining edge cases
             return "other-fail"
-        
+
         # Count attempts by category
         categories = {}
         for attempt in attempts:
@@ -1364,17 +1354,30 @@ class ARCTaskRunnerSimple:
         # Build summary showing total attempts and breakdown by category
         # Order categories by importance (best outcomes first)
         category_order = [
-            "all-perfect", "test-perfect", "test-partial",  # SUBMIT mode only
-            "train-perfect", "train-partial", "transductive",  # Training outcomes
-            "exec-error", "no-code", "max-length", "empty-response", "no-outputs", "invalid-outputs", "wrong-outputs", "api-timeout", "api-fail", "other-fail"  # Failures
+            "all-perfect",
+            "test-perfect",
+            "test-partial",  # SUBMIT mode only
+            "train-perfect",
+            "train-partial",
+            "transductive",  # Training outcomes
+            "exec-error",
+            "no-code",
+            "max-length",
+            "empty-response",
+            "no-outputs",
+            "invalid-outputs",
+            "wrong-outputs",
+            "api-timeout",
+            "api-fail",
+            "other-fail",  # Failures
         ]
-        
+
         # Build parts list with only non-zero categories
         parts = []
         for cat in category_order:
             if cat in categories and categories[cat] > 0:
                 parts.append(f"{categories[cat]} {cat}")
-        
+
         # Create the summary line
         summary = f"✅ {task_id}: {len(attempts)} attempts | {', '.join(parts)}"
 
@@ -1385,7 +1388,9 @@ class ARCTaskRunnerSimple:
         else:
             # Normal mode: show both train and test performance
             if best_attempt.get("test_correct", False):
-                summary += f" (best: {best_attempt.get('train_accuracy', 0.0):.1%} train)"
+                summary += (
+                    f" (best: {best_attempt.get('train_accuracy', 0.0):.1%} train)"
+                )
             else:
                 summary += f" (best: {best_attempt.get('train_accuracy', 0.0):.1%} train, test-failed)"
 
@@ -1459,8 +1464,13 @@ class ARCTaskRunnerSimple:
         )
         return trimmed
 
-
-    def _print_summary(self, results: List[Dict], subset_name: str, dataset: str, elapsed_time: Optional[float] = None):
+    def _print_summary(
+        self,
+        results: List[Dict],
+        subset_name: str,
+        dataset: str,
+        elapsed_time: Optional[float] = None,
+    ):
         """Print summary of all results to console"""
         # Calculate statistics
         total_tasks = len(results)
@@ -1499,7 +1509,9 @@ class ARCTaskRunnerSimple:
             print(f"Total time: {elapsed_time:.1f}s")
 
         print(
-            f"Successful API calls: {successful_api_calls}/{total_tasks} ({(successful_api_calls / total_tasks):.1%})" if total_tasks > 0 else f"Successful API calls: {successful_api_calls}/{total_tasks} (0.0%)"
+            f"Successful API calls: {successful_api_calls}/{total_tasks} ({(successful_api_calls / total_tasks):.1%})"
+            if total_tasks > 0
+            else f"Successful API calls: {successful_api_calls}/{total_tasks} (0.0%)"
         )
         print(f"Total tokens used: {self.total_tokens:,}")
         print(f"Total cost: ${self.total_cost:.6f}")
@@ -1535,7 +1547,13 @@ class ARCTaskRunnerSimple:
                 f"  API Failure Responses:    {percentage_metrics['api_failure_responses']:.1%}"
             )
 
-    def _print_submit_mode_summary(self, results: List[Dict], subset_name: str, dataset: str, elapsed_time: Optional[float] = None):
+    def _print_submit_mode_summary(
+        self,
+        results: List[Dict],
+        subset_name: str,
+        dataset: str,
+        elapsed_time: Optional[float] = None,
+    ):
         """Print limited summary for SUBMIT mode (no scoring metrics available)"""
         # Calculate basic statistics
         total_tasks = len(results)
@@ -1543,34 +1561,59 @@ class ARCTaskRunnerSimple:
         successful_api_calls = len(api_successes)
 
         # Calculate response-level and train metrics (test metrics unavailable without test outputs)
-        total_responses = sum(len(result.get("attempt_details", [])) for result in results)
+        total_responses = sum(
+            len(result.get("attempt_details", [])) for result in results
+        )
         max_length_responses = sum(
-            sum(1 for att in result.get("attempt_details", []) if att.get("hit_max_tokens", False))
+            sum(
+                1
+                for att in result.get("attempt_details", [])
+                if att.get("hit_max_tokens", False)
+            )
             for result in results
         )
         timeout_responses = sum(
-            sum(1 for att in result.get("attempt_details", []) if att.get("api_timeout", False))
+            sum(
+                1
+                for att in result.get("attempt_details", [])
+                if att.get("api_timeout", False)
+            )
             for result in results
         )
         api_failure_responses = sum(
-            sum(1 for att in result.get("attempt_details", []) if not att.get("api_success", True) and not att.get("api_timeout", False))
+            sum(
+                1
+                for att in result.get("attempt_details", [])
+                if not att.get("api_success", True)
+                and not att.get("api_timeout", False)
+            )
             for result in results
         )
         code_success_responses = sum(
-            sum(1 for att in result.get("attempt_details", []) if att.get("program_extracted", False))
+            sum(
+                1
+                for att in result.get("attempt_details", [])
+                if att.get("program_extracted", False)
+            )
             for result in results
         )
-        
+
         # Calculate train accuracy metrics (possible since we have train outputs)
         all_train_correct = sum(
-            1 for result in results 
-            if any(att.get("train_accuracy", 0.0) == 1.0 
-                   for att in result.get("attempt_details", []))
+            1
+            for result in results
+            if any(
+                att.get("train_accuracy", 0.0) == 1.0
+                for att in result.get("attempt_details", [])
+            )
         )
         min1_train_correct = sum(
-            1 for result in results 
-            if any(att.get("train_accuracy", 0.0) > 0.0 
-                   for att in result.get("attempt_details", []))
+            1
+            for result in results
+            if any(
+                att.get("train_accuracy", 0.0) > 0.0
+                for att in result.get("attempt_details", [])
+            )
         )
 
         # Print summary
@@ -1587,7 +1630,9 @@ class ARCTaskRunnerSimple:
             print(f"Total time: {elapsed_time:.1f}s")
 
         print(
-            f"Successful API calls: {successful_api_calls}/{total_tasks} ({(successful_api_calls / total_tasks):.1%})" if total_tasks > 0 else f"Successful API calls: {successful_api_calls}/{total_tasks} (0.0%)"
+            f"Successful API calls: {successful_api_calls}/{total_tasks} ({(successful_api_calls / total_tasks):.1%})"
+            if total_tasks > 0
+            else f"Successful API calls: {successful_api_calls}/{total_tasks} (0.0%)"
         )
         print(f"Total tokens used: {self.total_tokens:,}")
         print(f"Total cost: ${self.total_cost:.6f}")
@@ -1596,32 +1641,48 @@ class ARCTaskRunnerSimple:
         if total_responses > 0:
             print(f"\n📊 RESPONSE METRICS:")
             print(f"  Total responses: {total_responses}")
-            print(f"  Code extracted: {code_success_responses}/{total_responses} ({code_success_responses/total_responses:.1%})")
-            print(f"  Max length responses: {max_length_responses}/{total_responses} ({max_length_responses/total_responses:.1%})")
-            print(f"  Timeout responses: {timeout_responses}/{total_responses} ({timeout_responses/total_responses:.1%})")
-            print(f"  API failure responses: {api_failure_responses}/{total_responses} ({api_failure_responses/total_responses:.1%})")
-            
-            print(f"\n📊 TRAIN METRICS:")
-            print(f"  All train correct: {all_train_correct}/{total_tasks} ({all_train_correct/total_tasks:.1%})")
-            print(f"  Min 1 train correct: {min1_train_correct}/{total_tasks} ({min1_train_correct/total_tasks:.1%})")
-            print(f"\n⚠️  Note: Test accuracy metrics unavailable in SUBMIT mode (no test outputs)")
+            print(
+                f"  Code extracted: {code_success_responses}/{total_responses} ({code_success_responses / total_responses:.1%})"
+            )
+            print(
+                f"  Max length responses: {max_length_responses}/{total_responses} ({max_length_responses / total_responses:.1%})"
+            )
+            print(
+                f"  Timeout responses: {timeout_responses}/{total_responses} ({timeout_responses / total_responses:.1%})"
+            )
+            print(
+                f"  API failure responses: {api_failure_responses}/{total_responses} ({api_failure_responses / total_responses:.1%})"
+            )
 
-    def _create_submission_file(self, results: List[Dict], dataset: str, subset: str) -> None:
+            print(f"\n📊 TRAIN METRICS:")
+            print(
+                f"  All train correct: {all_train_correct}/{total_tasks} ({all_train_correct / total_tasks:.1%})"
+            )
+            print(
+                f"  Min 1 train correct: {min1_train_correct}/{total_tasks} ({min1_train_correct / total_tasks:.1%})"
+            )
+            print(
+                f"\n⚠️  Note: Test accuracy metrics unavailable in SUBMIT mode (no test outputs)"
+            )
+
+    def _create_submission_file(
+        self, results: List[Dict], dataset: str, subset: str
+    ) -> None:
         """Create submission file using weighted voting when SUBMIT mode is enabled"""
-        
+
         # Check environment variables
         submit_mode = os.getenv("SUBMIT", "").lower() == "true"
         if not submit_mode:
             return
-            
+
         submit_dir = os.getenv("SUBMIT_DIR", "/kaggle/working")
-        
+
         # Ensure submit directory exists
         os.makedirs(submit_dir, exist_ok=True)
-        
+
         print(f"\n🎯 SUBMIT MODE: Creating submission file")
         print(f"📁 Submit directory: {submit_dir}")
-        
+
         # Load ALL tasks from the dataset to ensure we include every task ID
         try:
             all_tasks = self.task_loader.get_subset_tasks(f"{dataset}/{subset}")
@@ -1631,18 +1692,18 @@ class ARCTaskRunnerSimple:
             print("   Using only tasks from results...")
             all_tasks = []  # Empty list if loading fails
             all_task_ids = [result["task_id"] for result in results]
-        
+
         submission = {}
         tasks_with_predictions = 0
         tasks_with_duplicated_attempts = 0
         tasks_with_empty_fallback = 0
-        
+
         # Create a lookup for results by task ID
         results_by_task_id = {result["task_id"]: result for result in results}
-        
-        # Create a lookup for task data by task ID  
+
+        # Create a lookup for task data by task ID
         task_data_by_id = {task_id: task_data for task_id, task_data in all_tasks}
-        
+
         # Process ALL task IDs (per submission guidelines)
         for task_id in all_task_ids:
             if task_id in results_by_task_id:
@@ -1655,7 +1716,7 @@ class ARCTaskRunnerSimple:
                 print(f"⚠️ No results for task {task_id}, using empty fallback")
                 # Try to get task data from lookup
                 task_data = task_data_by_id.get(task_id)
-                
+
                 if task_data is None:
                     # Default to single test output if we can't load task data
                     num_test_outputs = 1
@@ -1663,43 +1724,41 @@ class ARCTaskRunnerSimple:
                     num_test_outputs = len(task_data.get("test", []))
                     if num_test_outputs == 0:
                         num_test_outputs = 1
-                
+
                 submission[task_id] = []
                 for _ in range(num_test_outputs):
-                    submission[task_id].append({
-                        "attempt_1": [[0, 0], [0, 0]],
-                        "attempt_2": [[0, 0], [0, 0]]
-                    })
+                    submission[task_id].append(
+                        {"attempt_1": [[0, 0], [0, 0]], "attempt_2": [[0, 0], [0, 0]]}
+                    )
                 tasks_with_empty_fallback += 1
                 continue
-            
+
             # Process task with results
             attempts = result["attempt_details"]
-            
+
             # Use all attempts (transductive downweighted in voting)
             all_attempts = attempts
-            
+
             if not all_attempts:
                 # No attempts at all, use empty grids fallback
                 num_test_outputs = len(task_data.get("test", []))
                 if num_test_outputs == 0:
                     num_test_outputs = 1  # Default to 1 output if no test data
-                
+
                 submission[task_id] = []
                 for _ in range(num_test_outputs):
-                    submission[task_id].append({
-                        "attempt_1": [[0, 0], [0, 0]],
-                        "attempt_2": [[0, 0], [0, 0]]
-                    })
+                    submission[task_id].append(
+                        {"attempt_1": [[0, 0], [0, 0]], "attempt_2": [[0, 0], [0, 0]]}
+                    )
                 tasks_with_empty_fallback += 1
                 continue
-            
+
             # Use weighted voting to get top 2 predictions
             try:
                 top_predictions = compute_weighted_majority_voting(
-                    all_attempts, 
-                    top_k=2, 
-                    no_transductive_penalty=args.no_transductive_penalty
+                    all_attempts,
+                    top_k=2,
+                    no_transductive_penalty=args.no_transductive_penalty,
                 )
             except Exception as e:
                 print(f"⚠️ Weighted voting failed for task {task_id}: {e}")
@@ -1709,33 +1768,33 @@ class ARCTaskRunnerSimple:
                     pred = attempt.get("test_predicted")
                     if pred is not None:
                         top_predictions.append(pred)
-            
+
             # Handle different prediction formats (single vs multiple test outputs)
             num_test_outputs = len(task_data.get("test", []))
             if num_test_outputs == 0:
                 num_test_outputs = 1  # Default to 1 output if no test data
-            
+
             submission[task_id] = []
-            
+
             for test_idx in range(num_test_outputs):
                 attempt_1_grid = [[0, 0], [0, 0]]  # Default fallback
                 attempt_2_grid = [[0, 0], [0, 0]]  # Default fallback
-                
+
                 # Extract attempt 1
                 if len(top_predictions) > 0 and top_predictions[0] is not None:
                     pred_1 = top_predictions[0]
-                    
+
                     # With robust fix: pred_1 is always a list of grids
                     if isinstance(pred_1, list) and len(pred_1) > test_idx:
                         attempt_1_grid = pred_1[test_idx]
                     else:
                         # Fallback to default
                         attempt_1_grid = [[0, 0], [0, 0]]
-                
+
                 # Extract attempt 2
                 if len(top_predictions) > 1 and top_predictions[1] is not None:
                     pred_2 = top_predictions[1]
-                    
+
                     # With robust fix: pred_2 is always a list of grids
                     if isinstance(pred_2, list) and len(pred_2) > test_idx:
                         attempt_2_grid = pred_2[test_idx]
@@ -1747,34 +1806,33 @@ class ARCTaskRunnerSimple:
                     attempt_2_grid = attempt_1_grid
                     if test_idx == 0:  # Only log once per task
                         tasks_with_duplicated_attempts += 1
-                
+
                 # Note: grids are already cleaned during prediction generation, no need to clean again
-                
-                submission[task_id].append({
-                    "attempt_1": attempt_1_grid,
-                    "attempt_2": attempt_2_grid
-                })
-            
+
+                submission[task_id].append(
+                    {"attempt_1": attempt_1_grid, "attempt_2": attempt_2_grid}
+                )
+
             tasks_with_predictions += 1
-        
+
         # Generate submission filename (must be submission.json per guidelines)
         submission_filename = "submission.json"
         submission_path = os.path.join(submit_dir, submission_filename)
-        
+
         # Also create a backup with timestamp for tracking
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         model_name = self.model.replace("/", "_").replace(":", "_")
         backup_filename = f"submission_{dataset}_{subset}_{model_name}_{timestamp}.json"
         backup_path = os.path.join(submit_dir, backup_filename)
-        
+
         # Save submission file (official format)
-        with open(submission_path, 'w') as f:
+        with open(submission_path, "w") as f:
             json.dump(submission, f, indent=2)
-        
+
         # Save backup with timestamp for tracking
-        with open(backup_path, 'w') as f:
+        with open(backup_path, "w") as f:
             json.dump(submission, f, indent=2)
-        
+
         # Print summary
         total_tasks = len(all_task_ids)
         print(f"✅ Submission file created: {submission_filename}")
@@ -1786,11 +1844,9 @@ class ARCTaskRunnerSimple:
         print(f"  Tasks with empty fallback: {tasks_with_empty_fallback}")
         print(f"  Official file: {submission_path}")
         print(f"  Backup file: {backup_path}")
-        
+
         # Validate the submission file
         validate_submission_file(submission_path, all_task_ids)
-
-
 
 
 def main():
@@ -1802,7 +1858,11 @@ def main():
         default="arc-prize-2025",
         help="Dataset to use (e.g., arc-prize-2025, arc-agi-1, arc-agi-2)",
     )
-    parser.add_argument("--subset", default="training", help="Dataset subset to use (e.g., training, evaluation, unique_training_tasks)")
+    parser.add_argument(
+        "--subset",
+        default="training",
+        help="Dataset subset to use (e.g., training, evaluation, unique_training_tasks)",
+    )
     parser.add_argument("--model", default="gpt-4.1-mini", help="Model to use")
     parser.add_argument("--limit", type=int, help="Limit number of tasks to run")
     parser.add_argument(
@@ -1879,7 +1939,6 @@ def main():
 
     args = parser.parse_args()
 
-
     # Validation
     if args.max_workers < 1:
         parser.error("--max_workers must be at least 1")
@@ -1902,12 +1961,13 @@ def main():
         prompt_version=args.prompt_version,
         unsafe_executor=args.unsafe_executor,
         lora_adapter=args.lora_adapter,
-        log_to_db=args.log_to_db,
-        db_path=args.db_path,
+        sample_name=f"{args.model.replace('/', '_').replace(':', '_')}_{args.dataset}_{args.subset}",
     )
 
     # Run the task subset
     results = runner.run_subset(args.subset, args.dataset, args.limit)
+    runner.dataset_collector.flush()
+    print(f"All sampled programs saved to {runner.dataset_collector.output_path()}")
 
 
 if __name__ == "__main__":

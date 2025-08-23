@@ -1,0 +1,49 @@
+from typing import List, Optional, TypedDict
+import pyarrow as pa
+
+
+PARQUET_SCHEMA = pa.schema(
+    (
+        pa.field("task_id", pa.string(), nullable=False),  # Required
+        pa.field("reasoning", pa.string(), nullable=True),  # Optional - can be null
+        pa.field("code", pa.string(), nullable=False),  # Required
+        pa.field(
+            "correct_train_input", pa.list_(pa.bool_()), nullable=False
+        ),  # Required
+        pa.field(
+            "correct_test_input", pa.list_(pa.bool_()), nullable=False
+        ),  # Required
+        pa.field(
+            "predicted_train_output",
+            pa.list_(pa.list_(pa.list_(pa.int64()))),
+            nullable=False,
+        ),  # Required
+        pa.field(
+            "predicted_test_output",
+            pa.list_(pa.list_(pa.list_(pa.int64()))),
+            nullable=False,
+        ),  # Required
+        pa.field("model", pa.string(), nullable=False),  # Required
+        pa.field("is_transductive", pa.bool_(), nullable=False),  # Required
+    )
+)
+
+
+class ProgramSample(TypedDict):
+    """Schema for SOAR program examples stored in the database"""
+
+    task_id: str  # Task ID from ARC
+    reasoning: Optional[str]  # Reasoning trace if provided (optional)
+    code: str  # Program code that should define a `generate` function
+    correct_train_input: List[
+        bool
+    ]  # Training inputs where program produced correct output
+    correct_test_input: List[bool]  # Test inputs where program produced correct output
+    predicted_train_output: List[
+        List[List[int]]
+    ]  # Program's predicted outputs for training inputs
+    predicted_test_output: List[
+        List[List[int]]
+    ]  # Program's predicted outputs for test inputs
+    model: str  # What model generated this example
+    is_transductive: bool  # Whether program hardcodes outputs (transductive)

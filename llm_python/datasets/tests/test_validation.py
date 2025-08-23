@@ -83,12 +83,12 @@ class TestValidateSoarRow:
             "model": "test_model",
             "is_transductive": False,
         }
-        errors = validate_soar_row(row)
+        errors = validate_soar_row(row).errors
         assert errors == []
 
     def test_row_missing_fields(self):
         row = {"task_id": "task_001", "code": "def generate(): pass"}
-        errors = validate_soar_row(row)
+        errors = validate_soar_row(row).errors
         assert any("Missing required fields" in e for e in errors)
 
     def test_row_empty_code(self):
@@ -103,7 +103,7 @@ class TestValidateSoarRow:
             "model": "test_model",
             "is_transductive": False,
         }
-        errors = validate_soar_row(row)
+        errors = validate_soar_row(row).errors
         assert any("code must be a non-empty string" in e for e in errors)
 
     """Test the ValidationResult dataclass and its methods."""
