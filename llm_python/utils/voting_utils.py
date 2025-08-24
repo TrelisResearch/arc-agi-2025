@@ -6,7 +6,6 @@ import json
 import numpy as np
 from typing import Dict, List, Optional, Callable
 from collections import defaultdict, Counter
-from .validator import ARCTaskValidator
 
 
 def serialize_prediction_for_voting(test_pred) -> str:
@@ -40,32 +39,6 @@ def deserialize_prediction_from_voting(key: str):
 
 
 
-def filter_valid_predictions(attempts: List[Dict]) -> List[Dict]:
-    """Filter out attempts with invalid ARC grid predictions"""
-    valid_attempts = []
-    for att in attempts:
-        test_predicted = att.get('test_predicted')
-        
-        # Handle different prediction formats
-        if test_predicted is None:
-            continue
-            
-        # Check if prediction is valid (test_predicted should be a list of grids)
-        is_valid = True
-        if isinstance(test_predicted, list):
-            # Validate each grid in the list
-            for grid in test_predicted:
-                if grid is not None and not ARCTaskValidator.validate_prediction(grid, "voting_filter"):
-                    is_valid = False
-                    break
-        else:
-            # Invalid format - test_predicted should always be a list
-            is_valid = False
-        
-        if is_valid:
-            valid_attempts.append(att)
-    
-    return valid_attempts
 
 
 def generic_voting(

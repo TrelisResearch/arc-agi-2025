@@ -14,6 +14,7 @@ from llm_python.datasets.io import validate_soar_dataframe_schema, read_soar_par
 from llm_python.utils.arc_tester import ArcTester
 from llm_python.utils.grids import grids_equal
 from llm_python.utils.task_loader import get_task_loader
+from llm_python.utils.validator import ARCTaskValidator
 
 
 @dataclass
@@ -69,29 +70,9 @@ def validate_soar_row(row: dict) -> ValidateRowResult:
                 errors.append(f"{field} is an empty list")
             else:
                 for i, grid in enumerate(row[field]):
-                    if not isinstance(grid, list):
-                        errors.append(f"{field}[{i}] must be a list (grid)")
-                    elif len(grid) == 0:
-                        errors.append(f"{field}[{i}] is an empty list")
-                    elif not isinstance(grid[0], list):
-                        errors.append(f"{field}[{i}] must be a list (grid)")
-                    elif len(grid) > 30:
-                        errors.append(f"{field}[{i}] exceeds max height of 30")
-                    elif len(grid[0]) == 0:
-                        errors.append(f"{field}[{i}] has empty first row")
-                    elif len(grid[0]) > 30:
-                        errors.append(f"{field}[{i}] exceeds max width of 30")
-                    else:
-                        # Check all rows have the same width (proper 2D grid)
-                        for j, row in enumerate(grid):
-                            if not isinstance(row, list):
-                                errors.append(f"{field}[{i}][{j}] must be a list (row)")
-                            elif not all(isinstance(cell, int) for cell in row):
-                                errors.append(
-                                    f"{field}[{i}][{j}] must contain only integers"
-                                )
-                            if not isinstance(row, list) or len(row) != len(grid[0]):
-                                errors.append(f"{field}[{i}] must be a proper 2D grid")
+                    # Use ARCTaskValidator for comprehensive grid validation
+                    if not ARCTaskValidator.validate_prediction(grid, f"{field}[{i}]"):
+                        errors.append(f"{field}[{i}] failed ARC grid validation (must be valid 30x30 2D grid with integers 0-9)")
     if (
         "reasoning" in row
         and row["reasoning"] is not None
