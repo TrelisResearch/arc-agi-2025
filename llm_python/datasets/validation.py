@@ -75,14 +75,12 @@ def validate_soar_row(row: dict) -> ValidateRowResult:
                         errors.append(f"{field}[{i}] is an empty list")
                     elif not isinstance(grid[0], list):
                         errors.append(f"{field}[{i}] must be a list (grid)")
-                    elif len(grid) > 40:
-                        errors.append(f"{field}[{i}] exceeds max height of 40")
-                    elif not isinstance(grid[0], list):
-                        errors.append(f"{field}[{i}] must be a list (grid)")
+                    elif len(grid) > 30:
+                        errors.append(f"{field}[{i}] exceeds max height of 30")
                     elif len(grid[0]) == 0:
-                        errors.append(f"{field}[{i}] is an empty list")
-                    elif len(grid[0]) > 40:
-                        errors.append(f"{field}[{i}] exceeds max width of 40")
+                        errors.append(f"{field}[{i}] has empty first row")
+                    elif len(grid[0]) > 30:
+                        errors.append(f"{field}[{i}] exceeds max width of 30")
                     else:
                         # Check all rows have the same width (proper 2D grid)
                         for j, row in enumerate(grid):

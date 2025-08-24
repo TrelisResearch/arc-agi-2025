@@ -73,6 +73,7 @@ class AttemptDetail(TypedDict):
     # Program extraction and validation
     program_extracted: bool  # Whether code was extracted from response
     program: str  # Extracted Python code
+    outputs_valid: bool  # Whether all outputs pass ARC validation (30x30, proper format)
 
     # Transduction detection
     is_transductive: bool  # Whether program hardcodes outputs
@@ -423,11 +424,13 @@ class ARCTaskRunnerSimple:
         """Log successful programs to the local database"""
 
         try:
-            # Only log programs that extracted successfully and have some correctness
+            # Only log programs that extracted successfully and have valid outputs. Possibly this first check is redundant?
             if not attempt_detail.get("program_extracted", False):
-                print("Not logging missing extracted")
-                return
-
+                return  # No program to log
+            
+            if not attempt_detail.get("outputs_valid", False):
+                return  # Don't log programs with invalid outputs
+            
             program = attempt_detail.get("program", "").strip()
             if not program:
                 return
@@ -629,26 +632,6 @@ class ARCTaskRunnerSimple:
         program = self.extract_code_from_response(response) if response else ""
         program_extracted = bool(program and program.strip())
 
-        # Run transduction detection immediately after extraction
-        is_transductive = False
-        transduction_confidence = 0.0
-        transduction_reason = ""
-        if program_extracted:
-            try:
-                is_transductive, transduction_confidence = (
-                    self.transduction_classifier.is_transductive(program, task_data)
-                )
-                if is_transductive:
-                    transduction_reason = f"Code-based transduction detected (confidence: {transduction_confidence:.3f})"
-                else:
-                    transduction_reason = f"Not transductive (confidence: {1 - transduction_confidence:.3f})"
-            except Exception as e:
-                transduction_reason = f"Transduction detection failed: {e}"
-                transduction_confidence = 0.5  # Default to uncertain if detection fails
-        else:
-            transduction_reason = "No program extracted"
-            transduction_confidence = 0.0  # No program means not transductive
-
         # Evaluate on training examples
         train_results: List[TrainResult] = []
         train_correct = 0
@@ -747,11 +730,8 @@ class ARCTaskRunnerSimple:
                     "timed_out": test_tout,
                 }
             )
-            # Clean prediction immediately to ensure valid ARC grid format
-            clean_test_pred = replace_invalid_grid(
-                test_pred, task_id, f"test_{test_idx}"
-            )
-            test_predictions.append(clean_test_pred)
+            # Store raw prediction - don't clean here
+            test_predictions.append(test_pred)
 
         # Overall test correctness (all test cases must be correct)
         # In SUBMIT mode, we cannot determine correctness without ground truth
@@ -761,6 +741,37 @@ class ARCTaskRunnerSimple:
             if len(task_data["test"]) > 0 and not submit_mode
             else False
         )
+
+        # Validate all outputs meet ARC specification (30x30 max, proper format)
+        outputs_valid = program_extracted and all(
+            ARCTaskValidator.validate_prediction(result.get("predicted"))
+            for results_list in [train_results, test_results]
+            for result in results_list
+            if result.get("predicted") is not None
+        )
+
+        # Run transduction detection ONLY if outputs are valid
+        is_transductive = False
+        transduction_confidence = 0.0
+        transduction_reason = ""
+        if program_extracted and outputs_valid:
+            try:
+                is_transductive, transduction_confidence = (
+                    self.transduction_classifier.is_transductive(program, task_data)
+                )
+                if is_transductive:
+                    transduction_reason = f"Code-based transduction detected (confidence: {transduction_confidence:.3f})"
+                else:
+                    transduction_reason = f"Not transductive (confidence: {1 - transduction_confidence:.3f})"
+            except Exception as e:
+                transduction_reason = f"Transduction detection failed: {e}"
+                transduction_confidence = 0.5  # Default to uncertain if detection fails
+        elif not program_extracted:
+            transduction_reason = "No program extracted"
+            transduction_confidence = 0.0
+        else:
+            transduction_reason = "Invalid outputs - skipping transduction detection"
+            transduction_confidence = 0.0
 
         # Store attempt details
         # Note: This dictionary structure matches the AttemptDetail TypedDict defined above
@@ -772,6 +783,7 @@ class ARCTaskRunnerSimple:
             attempt_cost=attempt_cost,
             program_extracted=program_extracted,
             program=program,
+            outputs_valid=outputs_valid,
             is_transductive=is_transductive,
             transduction_confidence=transduction_confidence,
             transduction_reason=transduction_reason,
@@ -830,8 +842,6 @@ class ARCTaskRunnerSimple:
             or {"system": system_content, "user": user_content},
         }
         return result
-
-    # _add_transductive_detection method removed - transduction detection now happens during execution
 
     def run_subset(
         self,
@@ -1262,27 +1272,40 @@ class ARCTaskRunnerSimple:
             Categorize each attempt into exactly ONE category (mutually exclusive).
             Priority order matters - first matching condition wins.
 
-            NORMAL MODE CATEGORIES (when test outputs available for evaluation):
-            1. all-perfect: Both train AND test 100% correct
-            2. test-perfect: All test correct (but not all train)
-            3. test-partial: Some test correct (but not perfect)
+            OUTPUT VALIDITY CHECK (FIRST):
+            1. Check outputs_valid flag - if False, categorize by failure type:
+                - no-code: Failed to extract valid Python code  
+                - exec-error: Execution errors during train or test
+                - exec-timeout: Execution timeouts during train or test
+                - invalid-outputs: Code produced invalid outputs (wrong format/size >30x30)
 
-            BOTH MODES:
-            4. transductive: Flagged as memorization/hardcoding (any training success)
-            5. train-perfect: All train correct, no test success (non-transductive)
-            6. train-partial: Some train correct, no test success (non-transductive)
-            7. exec-error: Execution errors during train or test
-            8. no-code: Failed to extract valid Python code
-            9. max-length: Hit token limit during generation
-            10. empty-response: API returned empty response
-            11. no-outputs: Code ran but produced no test outputs
-            12. invalid-outputs: Code produced invalid outputs (wrong format/size)
-            13. wrong-outputs: Code ran successfully but got 0% train accuracy
-            14. api-timeout: API call timed out
-            15. api-fail: API call failed (non-timeout)
-            16. other-fail: Any remaining edge cases
+            WHEN TEST OUTPUTS AVAILABLE FOR SCORING (training/validation sets):
+            2. all-perfect: Both train AND test 100% correct
+            3. test-perfect: All test correct (but not all train)
+            4. test-partial: Some test correct (but not perfect)
+
+            ALWAYS AVAILABLE (when outputs valid):
+            5. transductive: Flagged as memorization/hardcoding (only for valid outputs)
+            6. train-perfect: All train correct, no test success (non-transductive)
+            7. train-partial: Some train correct, no test success (non-transductive)  
+            8. wrong-outputs: Valid execution but got 0% train accuracy
+
+            FALLBACK CATEGORIES:
+            9. max-length, empty-response, api-timeout, api-fail, other-fail
             """
 
+            # Check output validity first - invalid outputs mean broken program
+            if not attempt.get("outputs_valid", False):
+                # Check why outputs are invalid
+                if not attempt.get("program_extracted", False):
+                    return "no-code"
+                if attempt.get("train_exec_errors", 0) > 0 or attempt.get("test_exec_error", False):
+                    return "exec-error"
+                if attempt.get("train_exec_timeouts", 0) > 0 or attempt.get("test_exec_timeout", False):
+                    return "exec-timeout"
+                # If we got here, outputs exist but are invalid (wrong size/format)
+                return "invalid-outputs"
+            
             # Test-based categories (only available when NOT in SUBMIT mode)
             # In SUBMIT mode, we don't have test outputs to evaluate against
             if not submit_mode:
@@ -1296,47 +1319,32 @@ class ARCTaskRunnerSimple:
                 if attempt.get("test_correct_count", 0) > 0:
                     return "test-partial"
 
-            # Transductive check (before train categories to separate memorization)
+            # Transductive check (only for valid outputs)
             if attempt.get("is_transductive", False):
                 return "transductive"
 
-            # Training-based categories (only for non-transductive)
+            # Training-based categories (only for non-transductive with valid outputs)
             train_acc = attempt.get("train_accuracy", 0.0)
             if train_acc == 1.0:
                 return "train-perfect"
             if train_acc > 0:
                 return "train-partial"
+            if train_acc == 0.0:
+                return "wrong-outputs"  # Valid execution but wrong answers
 
-            # Failure categories (in order of specificity)
-            if attempt.get("train_exec_errors", 0) > 0 or attempt.get(
-                "test_exec_error", False
-            ):
-                return "exec-error"
-            if not attempt.get("program_extracted", False):
-                return "no-code"
+            # These should not happen if outputs_valid is True, but kept as fallback
             if attempt.get("hit_max_tokens", False):
+                print(f"Hitting max tokens fallback. This should not happen as outputs_valid is {attempt.get('outputs_valid', False)}")
                 return "max-length"
             if attempt.get("empty_response", False):
+                print(f"Hitting empty response fallback. This should not happen as outputs_valid is {attempt.get('outputs_valid', False)}")
                 return "empty-response"
             if attempt.get("api_timeout", False):
+                print(f"Hitting API timeout fallback. This should not happen as outputs_valid is {attempt.get('outputs_valid', False)}")
                 return "api-timeout"
             if not attempt.get("api_success", True):
+                print(f"Hitting API fail fallback. This should not happen as outputs_valid is {attempt.get('outputs_valid', False)}")
                 return "api-fail"
-
-            # Check for output-related failures
-            test_predicted = attempt.get("test_predicted")
-            if test_predicted is None:
-                return "no-outputs"
-
-            # If we have outputs but they're invalid (wrong format, size, etc.)
-            # This catches cases where execution succeeded but outputs are malformed
-            if not isinstance(test_predicted, list):
-                return "invalid-outputs"
-
-            # Check for logic/algorithm failures - code ran successfully but got wrong answers
-            train_acc = attempt.get("train_accuracy", 0.0)
-            if train_acc == 0.0 and attempt.get("program_extracted", False):
-                return "wrong-outputs"
 
             # Catch-all for any remaining edge cases
             return "other-fail"
@@ -1786,9 +1794,13 @@ class ARCTaskRunnerSimple:
                 if len(top_predictions) > 0 and top_predictions[0] is not None:
                     pred_1 = top_predictions[0]
 
-                    # With robust fix: pred_1 is always a list of grids
+                    # Since voting pre-filters to valid attempts, grids should already be valid
                     if isinstance(pred_1, list) and len(pred_1) > test_idx:
                         attempt_1_grid = pred_1[test_idx]
+                        # Defensive check: log if we somehow got invalid grids from voting
+                        if not ARCTaskValidator.validate_prediction(attempt_1_grid):
+                            print(f"⚠️ WARNING: Invalid grid from voting for {task_id} attempt 1 - this shouldn't happen!")
+                            attempt_1_grid = [[0, 0], [0, 0]]  # Fallback for safety
                     else:
                         # Fallback to default
                         attempt_1_grid = [[0, 0], [0, 0]]
@@ -1797,9 +1809,13 @@ class ARCTaskRunnerSimple:
                 if len(top_predictions) > 1 and top_predictions[1] is not None:
                     pred_2 = top_predictions[1]
 
-                    # With robust fix: pred_2 is always a list of grids
+                    # Since voting pre-filters to valid attempts, grids should already be valid
                     if isinstance(pred_2, list) and len(pred_2) > test_idx:
                         attempt_2_grid = pred_2[test_idx]
+                        # Defensive check: log if we somehow got invalid grids from voting
+                        if not ARCTaskValidator.validate_prediction(attempt_2_grid):
+                            print(f"⚠️ WARNING: Invalid grid from voting for {task_id} attempt 2 - this shouldn't happen!")
+                            attempt_2_grid = [[0, 0], [0, 0]]  # Fallback for safety
                     else:
                         # Fallback to default
                         attempt_2_grid = [[0, 0], [0, 0]]

@@ -6,6 +6,20 @@ Lewis Reminders:
 - Mathieu.
 
 ---
+## Aug 24
+
+### Allow fine-tuning from most recent parquet file
+
+### Allow submission file generation from up to last two parquet files
+
+### Test out how many responses are incomplete and saved to db.
+
+Run the partial 100 epoch 2 model with 8 attempts:
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c771" --max-attempts 8 --subset evaluation
+```
+
+
 ## Aug 22
 
 ### Does transductive filtering help?

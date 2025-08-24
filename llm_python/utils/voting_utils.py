@@ -115,6 +115,9 @@ def generic_voting(
 
 def compute_weighted_majority_voting(attempts: List[Dict], top_k: int = 2, no_transductive_penalty: bool = False) -> List:
     """Compute weighted majority voting based on count + 1000 * train_accuracy, with optional transductive confidence penalty"""
+    # Filter out attempts with invalid outputs
+    valid_attempts = [att for att in attempts if att.get('outputs_valid', True)]
+    
     def weight_func(att: Dict) -> float:
         train_acc = att.get('train_accuracy', 0.0)
         base_weight = 1.0 + 1000.0 * train_acc
@@ -127,12 +130,15 @@ def compute_weighted_majority_voting(attempts: List[Dict], top_k: int = 2, no_tr
         
         return base_weight
     
-    return generic_voting(attempts, weight_func, top_k)
+    return generic_voting(valid_attempts, weight_func, top_k)
 
 
 def compute_train_majority_voting(attempts: List[Dict], top_k: int = 2) -> List:
     """Compute train-majority voting for test outputs with transductive confidence penalty"""
-    if not attempts:
+    # Filter out attempts with invalid outputs
+    valid_attempts = [att for att in attempts if att.get('outputs_valid', True)]
+    
+    if not valid_attempts:
         return []
     
     # Calculate effective train score with transductive penalty
@@ -145,11 +151,11 @@ def compute_train_majority_voting(attempts: List[Dict], top_k: int = 2) -> List:
         return train_correct
     
     # Find best effective score
-    best_train_score = max(effective_train_score(att) for att in attempts)
+    best_train_score = max(effective_train_score(att) for att in valid_attempts)
     
     # Filter to best group
     best_group = [
-        att for att in attempts 
+        att for att in valid_attempts 
         if abs(effective_train_score(att) - best_train_score) < 0.001  # Small epsilon for float comparison
     ]
     

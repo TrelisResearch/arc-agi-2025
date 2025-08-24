@@ -56,7 +56,41 @@ class SoarDatasetCollector:
             self.flush_at += self.flush_every
 
     def flush(self):
-        df = pd.DataFrame(self.data)
+        # Explicitly normalize all samples to have consistent keys
+        # This ensures all dictionaries have the same structure for DataFrame creation
+        expected_keys = {"task_id", "reasoning", "code", "correct_train_input", 
+                        "correct_test_input", "predicted_train_output", 
+                        "predicted_test_output", "model", "is_transductive"}
+        
+        # Debug: Check for inconsistent samples before normalization
+        for i, sample in enumerate(self.data):
+            sample_keys = set(sample.keys())
+            if sample_keys != expected_keys:
+                missing = expected_keys - sample_keys
+                extra = sample_keys - expected_keys
+                logger.warning(
+                    f"Sample {i} has inconsistent keys - "
+                    f"missing: {missing}, extra: {extra}, "
+                    f"task_id: {sample.get('task_id', 'UNKNOWN')}"
+                )
+        
+        normalized_data = [
+            {
+                "task_id": sample.get("task_id"),
+                "reasoning": sample.get("reasoning"),  # Optional field - can be None
+                "code": sample.get("code"),
+                "correct_train_input": sample.get("correct_train_input"),
+                "correct_test_input": sample.get("correct_test_input"),
+                "predicted_train_output": sample.get("predicted_train_output"),
+                "predicted_test_output": sample.get("predicted_test_output"),
+                "model": sample.get("model"),
+                "is_transductive": sample.get("is_transductive"),
+            }
+            for sample in self.data
+        ]
+        
+        df = pd.DataFrame(normalized_data)
         validate_soar_dataframe(df)
         self.output_path().parent.mkdir(parents=True, exist_ok=True)
         write_soar_parquet(df, self.output_path())
+        self.data = []  # Clear the data after writing
