@@ -88,44 +88,52 @@ class ARCTaskValidator:
         return True
     
     @staticmethod
-    def _validate_grid(grid: Any, description: str) -> bool:
+    def _validate_grid(grid: Any, description: str, verbose: bool = False) -> bool:
         """Validate that a grid is a list of lists with consistent dimensions"""
         if not isinstance(grid, list):
-            print(f"❌ Invalid grid for {description}: not a list")
+            if verbose:
+                print(f"❌ Invalid grid for {description}: not a list")
             return False
         
         if len(grid) == 0:
-            print(f"❌ Empty grid for {description}")
+            if verbose:
+                print(f"❌ Empty grid for {description}")
             return False
         
         # Check first row to get expected width
         if not isinstance(grid[0], list):
-            print(f"❌ Invalid grid for {description}: first row not a list")
+            if verbose:
+                print(f"❌ Invalid grid for {description}: first row not a list")
             return False
         
         expected_width = len(grid[0])
         if expected_width == 0:
-            print(f"❌ Empty first row in grid for {description}")
+            if verbose:
+                print(f"❌ Empty first row in grid for {description}")
             return False
         
         # Check grid size limits (1x1 to 30x30 per ARC competition requirements)
         height = len(grid)
         width = expected_width
         if not (1 <= height <= 30):
-            print(f"❌ Invalid grid height for {description}: {height} (must be 1-30)")
+            if verbose:
+                print(f"❌ Invalid grid height for {description}: {height} (must be 1-30)")
             return False
         if not (1 <= width <= 30):
-            print(f"❌ Invalid grid width for {description}: {width} (must be 1-30)")
+            if verbose:
+                print(f"❌ Invalid grid width for {description}: {width} (must be 1-30)")
             return False
         
         # Validate all rows
         for i, row in enumerate(grid):
             if not isinstance(row, list):
-                print(f"❌ Invalid grid for {description}: row {i} not a list")
+                if verbose:
+                    print(f"❌ Invalid grid for {description}: row {i} not a list")
                 return False
             
             if len(row) != expected_width:
-                print(f"❌ Inconsistent grid width for {description}: row {i} has {len(row)} items, expected {expected_width}")
+                if verbose:
+                    print(f"❌ Inconsistent grid width for {description}: row {i} has {len(row)} items, expected {expected_width}")
                 return False
             
             # Check that all values are integers in range 0-9 (accept numpy types)
@@ -135,19 +143,21 @@ class ARCTaskValidator:
                     # Convert to Python int if it's a numeric type
                     cell_int = int(cell)
                 except (ValueError, TypeError):
-                    print(f"❌ Invalid cell value for {description} at [{i}][{j}]: {cell} (type: {type(cell)}, cannot convert to int)")
+                    if verbose:
+                        print(f"❌ Invalid cell value for {description} at [{i}][{j}]: {cell} (type: {type(cell)}, cannot convert to int)")
                     return False
                 
                 if not (0 <= cell_int <= 9):
-                    print(f"❌ Cell value out of range for {description} at [{i}][{j}]: {cell_int} (should be 0-9)")
+                    if verbose:
+                        print(f"❌ Cell value out of range for {description} at [{i}][{j}]: {cell_int} (should be 0-9)")
                     return False
         
         return True
     
     @staticmethod
-    def validate_prediction(prediction: Any, description: str = "prediction") -> bool:
+    def validate_prediction(prediction: Any, description: str = "prediction", verbose: bool = False) -> bool:
         """Validate that a prediction matches ARC grid format"""
-        return ARCTaskValidator._validate_grid(prediction, description)
+        return ARCTaskValidator._validate_grid(prediction, description, verbose)
 
 
 def replace_invalid_grid(grid: Union[List, None], task_id: str = "", attempt_name: str = "") -> List[List[int]]:
