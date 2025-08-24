@@ -18,6 +18,12 @@ Run the partial 100 epoch 2 model with 8 attempts:
 ```bash
 uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c771" --max-attempts 8 --subset evaluation
 ```
+or do a quick run with 120B OSS and openrouter, no pod creation needed:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2024 --subset evaluation --max_workers 32 --max_attempts 1 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --limit 8
+```
+
+
 
 
 ## Aug 22

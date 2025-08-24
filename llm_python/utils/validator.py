@@ -128,15 +128,18 @@ class ARCTaskValidator:
                 print(f"❌ Inconsistent grid width for {description}: row {i} has {len(row)} items, expected {expected_width}")
                 return False
             
-            # Check that all values are JSON-serializable Python integers 0-9
+            # Check that all values are integers in range 0-9 (accept numpy types)
             for j, cell in enumerate(row):
-                # Check for numpy types or other non-native types
-                if not isinstance(cell, int) or type(cell).__module__ != 'builtins':
-                    print(f"❌ Invalid cell value for {description} at [{i}][{j}]: {cell} (type: {type(cell)}, expected native Python int)")
+                # Accept both Python int and numpy integer types
+                try:
+                    # Convert to Python int if it's a numeric type
+                    cell_int = int(cell)
+                except (ValueError, TypeError):
+                    print(f"❌ Invalid cell value for {description} at [{i}][{j}]: {cell} (type: {type(cell)}, cannot convert to int)")
                     return False
                 
-                if not (0 <= cell <= 9):
-                    print(f"❌ Cell value out of range for {description} at [{i}][{j}]: {cell} (should be 0-9)")
+                if not (0 <= cell_int <= 9):
+                    print(f"❌ Cell value out of range for {description} at [{i}][{j}]: {cell_int} (should be 0-9)")
                     return False
         
         return True

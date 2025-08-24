@@ -1267,93 +1267,65 @@ class ARCTaskRunnerSimple:
         # Check if we're in SUBMIT mode (test outputs available for scoring)
         submit_mode = os.getenv("SUBMIT", "").lower() == "true"
 
-        def categorize_attempt(attempt):
-            """
-            Categorize each attempt into exactly ONE category (mutually exclusive).
-            Priority order matters - first matching condition wins.
 
-            OUTPUT VALIDITY CHECK (FIRST):
-            1. Check outputs_valid flag - if False, categorize by failure type:
-                - no-code: Failed to extract valid Python code  
-                - exec-error: Execution errors during train or test
-                - exec-timeout: Execution timeouts during train or test
-                - invalid-outputs: Code produced invalid outputs (wrong format/size >30x30)
+        # 1. OUTPUT VALIDITY CATEGORIES
+        total_attempts = len(attempts)
+        valid_outputs = sum(1 for att in attempts if att.get("outputs_valid", False))
+        no_programs = sum(1 for att in attempts if not att.get("program_extracted", False))
+        exec_failures = sum(1 for att in attempts if att.get("train_exec_errors", 0) > 0 or att.get("test_exec_error", False))
+        max_length = sum(1 for att in attempts if att.get("hit_max_tokens", False))
+        api_timeout = sum(1 for att in attempts if att.get("api_timeout", False))
+        invalid_outputs = sum(1 for att in attempts if att.get("program_extracted", False) and not att.get("outputs_valid", False))
+        
+        # 2. TEST CATEGORIES (if not submit mode)
+        test_perfect_total = test_perfect_trans = 0
+        test_partial_total = test_partial_trans = 0  
+        test_incorrect_total = test_incorrect_trans = 0
+        
+        if not submit_mode:
+            for att in attempts:
+                if not att.get("outputs_valid", False):
+                    continue
+                is_trans = att.get("is_transductive", False)
+                test_correct_count = att.get("test_correct_count", 0)
+                total_test = len(task_result["task_data"]["test"]) if "task_data" in task_result else 0
+                
+                if test_correct_count == total_test and total_test > 0:
+                    test_perfect_total += 1
+                    if is_trans:
+                        test_perfect_trans += 1
+                elif test_correct_count > 0:
+                    test_partial_total += 1
+                    if is_trans:
+                        test_partial_trans += 1
+                else:
+                    test_incorrect_total += 1
+                    if is_trans:
+                        test_incorrect_trans += 1
 
-            WHEN TEST OUTPUTS AVAILABLE FOR SCORING (training/validation sets):
-            2. all-perfect: Both train AND test 100% correct
-            3. test-perfect: All test correct (but not all train)
-            4. test-partial: Some test correct (but not perfect)
-
-            ALWAYS AVAILABLE (when outputs valid):
-            5. transductive: Flagged as memorization/hardcoding (only for valid outputs)
-            6. train-perfect: All train correct, no test success (non-transductive)
-            7. train-partial: Some train correct, no test success (non-transductive)  
-            8. wrong-outputs: Valid execution but got 0% train accuracy
-
-            FALLBACK CATEGORIES:
-            9. max-length, empty-response, api-timeout, api-fail, other-fail
-            """
-
-            # Check output validity first - invalid outputs mean broken program
-            if not attempt.get("outputs_valid", False):
-                # Check why outputs are invalid
-                if not attempt.get("program_extracted", False):
-                    return "no-code"
-                if attempt.get("train_exec_errors", 0) > 0 or attempt.get("test_exec_error", False):
-                    return "exec-error"
-                if attempt.get("train_exec_timeouts", 0) > 0 or attempt.get("test_exec_timeout", False):
-                    return "exec-timeout"
-                # If we got here, outputs exist but are invalid (wrong size/format)
-                return "invalid-outputs"
+        # 3. TRAIN CATEGORIES (includes transductive)
+        train_perfect_total = train_perfect_trans = 0
+        train_partial_total = train_partial_trans = 0
+        train_incorrect_total = train_incorrect_trans = 0
+        
+        for att in attempts:
+            if not att.get("outputs_valid", False):
+                continue
+            is_trans = att.get("is_transductive", False)
+            train_acc = att.get("train_accuracy", 0.0)
             
-            # Test-based categories (only available when NOT in SUBMIT mode)
-            # In SUBMIT mode, we don't have test outputs to evaluate against
-            if not submit_mode:
-                test_correct = attempt.get("test_correct", False)
-                train_acc = attempt.get("train_accuracy", 0.0)
-
-                if test_correct and train_acc == 1.0:
-                    return "all-perfect"
-                if test_correct:
-                    return "test-perfect"
-                if attempt.get("test_correct_count", 0) > 0:
-                    return "test-partial"
-
-            # Transductive check (only for valid outputs)
-            if attempt.get("is_transductive", False):
-                return "transductive"
-
-            # Training-based categories (only for non-transductive with valid outputs)
-            train_acc = attempt.get("train_accuracy", 0.0)
             if train_acc == 1.0:
-                return "train-perfect"
-            if train_acc > 0:
-                return "train-partial"
-            if train_acc == 0.0:
-                return "wrong-outputs"  # Valid execution but wrong answers
-
-            # These should not happen if outputs_valid is True, but kept as fallback
-            if attempt.get("hit_max_tokens", False):
-                print(f"Hitting max tokens fallback. This should not happen as outputs_valid is {attempt.get('outputs_valid', False)}")
-                return "max-length"
-            if attempt.get("empty_response", False):
-                print(f"Hitting empty response fallback. This should not happen as outputs_valid is {attempt.get('outputs_valid', False)}")
-                return "empty-response"
-            if attempt.get("api_timeout", False):
-                print(f"Hitting API timeout fallback. This should not happen as outputs_valid is {attempt.get('outputs_valid', False)}")
-                return "api-timeout"
-            if not attempt.get("api_success", True):
-                print(f"Hitting API fail fallback. This should not happen as outputs_valid is {attempt.get('outputs_valid', False)}")
-                return "api-fail"
-
-            # Catch-all for any remaining edge cases
-            return "other-fail"
-
-        # Count attempts by category
-        categories = {}
-        for attempt in attempts:
-            cat = categorize_attempt(attempt)
-            categories[cat] = categories.get(cat, 0) + 1
+                train_perfect_total += 1
+                if is_trans:
+                    train_perfect_trans += 1
+            elif train_acc > 0:
+                train_partial_total += 1
+                if is_trans:
+                    train_partial_trans += 1
+            else:
+                train_incorrect_total += 1
+                if is_trans:
+                    train_incorrect_trans += 1
 
         # Find best attempt for additional context
         best_attempt = max(
@@ -1361,46 +1333,77 @@ class ARCTaskRunnerSimple:
             key=lambda x: (x.get("test_correct", False), x.get("train_accuracy", 0.0)),
         )
 
-        # Build summary showing total attempts and breakdown by category
-        # Order categories by importance (best outcomes first)
-        category_order = [
-            "all-perfect",
-            "test-perfect",
-            "test-partial",  # SUBMIT mode only
-            "train-perfect",
-            "train-partial",
-            "transductive",  # Training outcomes
-            "exec-error",
-            "no-code",
-            "max-length",
-            "empty-response",
-            "no-outputs",
-            "invalid-outputs",
-            "wrong-outputs",
-            "api-timeout",
-            "api-fail",
-            "other-fail",  # Failures
-        ]
+        # Build the summary line with new structure
+        
+        # Helper function to format category with transductive breakdown
+        def format_with_trans(total, trans, category_name):
+            if total == 0:
+                return ""
+            if trans > 0:
+                return f"{total} {category_name} (of which {trans} trans)"
+            else:
+                return f"{total} {category_name}"
+        
+        # 1. OUTPUT VALIDITY section
+        validity_parts = []
+        if valid_outputs > 0:
+            validity_parts.append(f"{valid_outputs} valid outputs")
+        if no_programs > 0:
+            validity_parts.append(f"{no_programs} no programs")
+        if exec_failures > 0:
+            validity_parts.append(f"{exec_failures} execution failures")
+        if max_length > 0:
+            validity_parts.append(f"{max_length} max length")
+        if api_timeout > 0:
+            validity_parts.append(f"{api_timeout} api timeout")
+        if invalid_outputs > 0:
+            validity_parts.append(f"{invalid_outputs} invalid outputs")
+        
+        validity_section = ", ".join(validity_parts)
+        
+        # 2. TEST section (if not submit mode)
+        test_section = ""
+        if not submit_mode:
+            test_parts = []
+            test_perf = format_with_trans(test_perfect_total, test_perfect_trans, "test-perfect")
+            if test_perf:
+                test_parts.append(test_perf)
+            test_part = format_with_trans(test_partial_total, test_partial_trans, "test-partial")
+            if test_part:
+                test_parts.append(test_part)
+            test_incorr = format_with_trans(test_incorrect_total, test_incorrect_trans, "test-incorrect")
+            if test_incorr:
+                test_parts.append(test_incorr)
+            test_section = ", ".join(test_parts)
+        
+        # 3. TRAIN section
+        train_parts = []
+        train_perf = format_with_trans(train_perfect_total, train_perfect_trans, "train-perfect")
+        if train_perf:
+            train_parts.append(train_perf)
+        train_part = format_with_trans(train_partial_total, train_partial_trans, "train-partial")
+        if train_part:
+            train_parts.append(train_part)
+        train_incorr = format_with_trans(train_incorrect_total, train_incorrect_trans, "train-incorrect")
+        if train_incorr:
+            train_parts.append(train_incorr)
+        train_section = ", ".join(train_parts)
+        
+        # Assemble final summary
+        summary = f"✅ {task_id}: {total_attempts} attempts"
+        if validity_section:
+            summary += f" | {validity_section}"
+        if test_section:
+            summary += f" | {test_section}"
+        if train_section:
+            summary += f" | {train_section}"
 
-        # Build parts list with only non-zero categories
-        parts = []
-        for cat in category_order:
-            if cat in categories and categories[cat] > 0:
-                parts.append(f"{categories[cat]} {cat}")
-
-        # Create the summary line
-        summary = f"✅ {task_id}: {len(attempts)} attempts | {', '.join(parts)}"
-
-        # Add best attempt performance (separate from issues)
+        # Add best attempt performance
         if submit_mode:
-            # SUBMIT mode: only show train accuracy
             summary += f" (best: {best_attempt.get('train_accuracy', 0.0):.1%} train)"
         else:
-            # Normal mode: show both train and test performance
             if best_attempt.get("test_correct", False):
-                summary += (
-                    f" (best: {best_attempt.get('train_accuracy', 0.0):.1%} train)"
-                )
+                summary += f" (best: {best_attempt.get('train_accuracy', 0.0):.1%} train)"
             else:
                 summary += f" (best: {best_attempt.get('train_accuracy', 0.0):.1%} train, test-failed)"
 
@@ -1530,19 +1533,19 @@ class ARCTaskRunnerSimple:
         if results:
             print(f"\n📊 CORE METRICS:")
             print(
-                f"  Pass@2 (Weighted Voting): {percentage_metrics['weighted_voting_pass2']:.1%}"
+                f"  Pass@2 (Weighted Voting): {percentage_metrics['weighted_voting_pass2']:.1%} ({percentage_metrics['weighted_voting_pass2_excl']:.1%} excl. trans)"
             )
             print(
-                f"  Pass@2 (Train Majority):  {percentage_metrics['train_majority_pass2']:.1%}"
+                f"  Pass@2 (Train Majority):  {percentage_metrics['train_majority_pass2']:.1%} ({percentage_metrics['train_majority_pass2_excl']:.1%} excl. trans)"
             )
             print(
-                f"  Oracle (Best Attempt):    {percentage_metrics['all_test_correct']:.1%}"
+                f"  Oracle (Best Attempt):    {percentage_metrics['all_test_correct']:.1%} ({percentage_metrics['all_test_correct_excl']:.1%} excl. trans)"
             )
             print(
-                f"  All Train Correct:        {percentage_metrics['all_train_correct']:.1%}"
+                f"  All Train Correct:        {percentage_metrics['all_train_correct_incl']:.1%} ({percentage_metrics['all_train_correct']:.1%} excl. trans)"
             )
             print(
-                f"  Min 1 Train Correct:      {percentage_metrics['min1_train_correct']:.1%}"
+                f"  Min 1 Train Correct:      {percentage_metrics['min1_train_correct_incl']:.1%} ({percentage_metrics['min1_train_correct']:.1%} excl. trans)"
             )
             print(
                 f"  Min 1 Code Success:       {percentage_metrics['min1_code_success']:.1%}"

@@ -31,6 +31,10 @@ def calculate_task_metrics(
     all_test_correct = all_train_correct = 0
     min1_train_correct = min1_transductive = 0
     min1_code_success = 0
+    # exclusive counters (non-transductive only)
+    weighted_pass2_excl_total = train_majority_pass2_excl_total = all_test_correct_excl_total = 0
+    # inclusive train counters (for display)
+    all_train_correct_incl_total = min1_train_correct_incl_total = 0
     total_tasks = 0
 
     # response‑level counters
@@ -66,8 +70,12 @@ def calculate_task_metrics(
         if trans_count > 0:
             min1_transductive += 1
         
-        # Exclude transductive attempts from train metrics
-        non_trans = [att for att in attempts if not att.get("is_transductive", False)]
+        # Include all attempts with valid outputs (both transductive and non-transductive)
+        # Only exclude attempts with invalid outputs to ensure consistency with parquet filtering
+        valid_attempts = [att for att in attempts if att.get("outputs_valid", False)]
+        
+        # For train metrics, exclude transductive attempts (they hardcode so train accuracy is meaningless)
+        non_trans_valid = [att for att in valid_attempts if not att.get("is_transductive", False)]
 
         # ---------- min‑1 code success (extracted and executed without errors) ----------
         code_success = False
@@ -83,7 +91,7 @@ def calculate_task_metrics(
             min1_code_success += 1
 
         total_tasks += 1
-        if not non_trans:
+        if not valid_attempts:
             continue  # nothing to score
 
         # ---------- ground truth ----------
@@ -91,7 +99,7 @@ def calculate_task_metrics(
 
         # ---------- weighted voting pass@2 ----------
         try:
-            preds = compute_weighted_majority_voting(non_trans)   # list
+            preds = compute_weighted_majority_voting(valid_attempts)   # Pass all valid attempts
             # Compare predictions as lists of test outputs
             if any(p == gt for p in preds if p is not None):
                 weighted_pass2 += 1
@@ -100,7 +108,7 @@ def calculate_task_metrics(
 
         # ---------- train‑majority voting pass@2 ----------
         try:
-            preds = compute_train_majority_voting(non_trans)
+            preds = compute_train_majority_voting(valid_attempts)   # Pass all valid attempts
             # Compare predictions as lists of test outputs
             if any(p == gt for p in preds if p is not None):
                 train_majority_pass2 += 1
@@ -108,34 +116,67 @@ def calculate_task_metrics(
             pass
 
         # ---------- oracle all‑test (test-correct) ----------
-        # NOTE: test-correct and train-perfect are NOT mutually exclusive
-        # A program can be both test-correct AND train-perfect simultaneously
-        if any(att.get("all_test_correct", False) for att in non_trans):
+        # Oracle should consider ALL valid attempts, including transductive ones
+        # A transductive program that gets the right answer still counts as success
+        if any(att.get("all_test_correct", False) for att in valid_attempts):
             all_test_correct += 1
 
+        # ---------- exclusive metrics (non-transductive only) ----------
+        # Calculate what the metrics would be with only non-transductive programs
+        weighted_pass2_excl = train_majority_pass2_excl = all_test_correct_excl = 0
+        
+        # Weighted voting (non-trans only)
+        try:
+            preds = compute_weighted_majority_voting(non_trans_valid)
+            if any(p == gt for p in preds if p is not None):
+                weighted_pass2_excl = 1
+        except Exception:
+            pass
+
+        # Train-majority voting (non-trans only)  
+        try:
+            preds = compute_train_majority_voting(non_trans_valid)
+            if any(p == gt for p in preds if p is not None):
+                train_majority_pass2_excl = 1
+        except Exception:
+            pass
+
+        # Oracle (non-trans only)
+        if any(att.get("all_test_correct", False) for att in non_trans_valid):
+            all_test_correct_excl = 1
+
         # ---------- oracle train‑set metrics ----------
-        # CLASSIFICATION RULES (NOT mutually exclusive):
-        # - train-perfect: ALL training examples correct (subset of min-1-train-correct)
-        # - train-partial: some but NOT all training examples correct
-        # - min-1-train-correct: at least 1 training example correct (includes train-perfect)
-        # 
-        # MUTUAL EXCLUSIVITY:
-        # - train-perfect and train-partial are mutually exclusive (cannot be both)
-        # - min-1-train-correct includes train-perfect (train-perfect ⊆ min-1-train-correct)
-        # - test-correct can occur with any train status (independent classification)
-        any_all = any_min1 = False
-        for att in non_trans:
-            trs = att.get("train_results", [])
-            if not trs:
-                continue
-            if all(tr.get("correct", False) for tr in trs):
-                any_all = True  # train-perfect: ALL training examples correct
-            if any(tr.get("correct", False) for tr in trs):
-                any_min1 = True  # min-1-train-correct: at least 1 training example correct
-        if any_all:
-            all_train_correct += 1  # This task has a train-perfect program
-        if any_min1:
-            min1_train_correct += 1  # This task has min-1-train-correct (includes train-perfect)
+        # Helper function to avoid duplication
+        def check_train_metrics(attempts_list):
+            any_all = any_min1 = False
+            for att in attempts_list:
+                trs = att.get("train_results", [])
+                if not trs:
+                    continue
+                if all(tr.get("correct", False) for tr in trs):
+                    any_all = True
+                if any(tr.get("correct", False) for tr in trs):
+                    any_min1 = True
+            return any_all, any_min1
+        
+        # Exclusive (non-transductive only)
+        any_all_excl, any_min1_excl = check_train_metrics(non_trans_valid)
+        if any_all_excl:
+            all_train_correct += 1
+        if any_min1_excl:
+            min1_train_correct += 1
+            
+        # Inclusive (all valid attempts)
+        any_all_incl, any_min1_incl = check_train_metrics(valid_attempts)
+        all_train_correct_incl = 1 if any_all_incl else 0
+        min1_train_correct_incl = 1 if any_min1_incl else 0
+        
+        # Accumulate metrics
+        weighted_pass2_excl_total += weighted_pass2_excl
+        train_majority_pass2_excl_total += train_majority_pass2_excl
+        all_test_correct_excl_total += all_test_correct_excl
+        all_train_correct_incl_total += all_train_correct_incl
+        min1_train_correct_incl_total += min1_train_correct_incl
 
     # ------------------- assemble ---------------------
     return {
@@ -145,6 +186,12 @@ def calculate_task_metrics(
         "all_test_correct":       all_test_correct,
         "all_train_correct":      all_train_correct,
         "min1_train_correct":     min1_train_correct,
+        "all_train_correct_incl": all_train_correct_incl_total,
+        "min1_train_correct_incl": min1_train_correct_incl_total,
+        # exclusive metrics (non-transductive only)
+        "weighted_pass2_excl":    weighted_pass2_excl_total,
+        "train_majority_pass2_excl": train_majority_pass2_excl_total,
+        "all_test_correct_excl":  all_test_correct_excl_total,
         "min1_transductive":      min1_transductive,
         "min1_code_success":      min1_code_success,
         "total":                  total_tasks,
@@ -169,19 +216,23 @@ def format_metrics_display(metrics: Dict, layer: Optional[int] = None) -> str:
     tr   = metrics["total_responses"]
     ln = [
         f"\n{head}",
-        f"  All‑test correct (oracle): {metrics['all_test_correct']}/{total} "
+        f"  All‑test correct (oracle, incl. trans): {metrics['all_test_correct']}/{total} "
         f"({metrics['all_test_correct']/total:.1%})",
-        f"  Test correct (pass@2, weighted voting): "
+        f"  Test correct (pass@2, weighted voting, incl. trans): "
         f"{metrics['weighted_pass2']}/{total} "
         f"({metrics['weighted_pass2']/total:.1%})",
-        f"  Test correct (pass@2, train‑majority): "
+        f"  Test correct (pass@2, train‑majority, incl. trans): "
         f"{metrics['train_majority_pass2']}/{total} "
         f"({metrics['train_majority_pass2']/total:.1%})",
-        f"  All‑train correct (oracle): {metrics['all_train_correct']}/{total} "
+        f"  All‑train correct (oracle, incl. trans): {metrics['all_train_correct_incl']}/{total} "
+        f"({metrics['all_train_correct_incl']/total:.1%})",
+        f"  All‑train correct (oracle, excl. trans): {metrics['all_train_correct']}/{total} "
         f"({metrics['all_train_correct']/total:.1%})",
-        f"  Min‑1‑train correct (oracle): {metrics['min1_train_correct']}/{total} "
+        f"  Min‑1‑train correct (oracle, incl. trans): {metrics['min1_train_correct_incl']}/{total} "
+        f"({metrics['min1_train_correct_incl']/total:.1%})",
+        f"  Min‑1‑train correct (oracle, excl. trans): {metrics['min1_train_correct']}/{total} "
         f"({metrics['min1_train_correct']/total:.1%})",
-        f"  Min‑1‑code success: {metrics['min1_code_success']}/{total} "
+        f"  Min‑1‑code success (incl. trans): {metrics['min1_code_success']}/{total} "
         f"({metrics['min1_code_success']/total:.1%})",
         f"  Min‑1‑transductive: {metrics['min1_transductive']}/{total} "
         f"({metrics['min1_transductive']/total:.1%})",
@@ -216,6 +267,12 @@ def metrics_to_percentages(metrics: Dict) -> Dict:
         "all_test_correct":       metrics["all_test_correct"] / total,
         "all_train_correct":      metrics["all_train_correct"] / total,
         "min1_train_correct":     metrics["min1_train_correct"] / total,
+        "all_train_correct_incl": metrics["all_train_correct_incl"] / total,
+        "min1_train_correct_incl": metrics["min1_train_correct_incl"] / total,
+        # exclusive percentages
+        "weighted_voting_pass2_excl": metrics["weighted_pass2_excl"] / total,
+        "train_majority_pass2_excl": metrics["train_majority_pass2_excl"] / total,
+        "all_test_correct_excl":  metrics["all_test_correct_excl"] / total,
         "min1_transductive":      metrics["min1_transductive"] / total,
         "min1_code_success":      metrics["min1_code_success"] / total,
         "total_tasks":            total,
