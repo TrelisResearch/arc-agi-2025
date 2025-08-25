@@ -46,11 +46,65 @@ DataFrame validation failed: Format validation:
 3. Minor - there is a small descrepancy in weighted train correct (and possibly other metrics) around <0.5% pts between task-based scoring during the run AND scoring of the final submission file. A low-confidence guess is that this is due to duplicate (string-match) programs only being logged once.
 4. Minor - fine-tuning has not yet been tested using all four gpus, it currently uses only 1. Further fine-tuning has not been tested on 4xL4 (or Kaggle) with batch size 1 and longer sequences (tests today worked because the long ones were on H200 or there were so few TTT samples generated that the batch size had short completions and was small - note that batch size is now auto set to 1 on kaggle).
 
+### Splitter Mode
+
+Change this in prompt_utils.py:
+```python
+    # Add training examples - ONLY USE FIRST EXAMPLE
+    for i, example in enumerate(task_data['train'][:1], 1):  # Only process first training example
+```
+
+Running this in the splitter branch where we only feed the first example:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --unsafe-executor --base-url https://openrouter.ai/api/v1 --max_workers 16 --max_attempts 1 --model openai/gpt-oss-20b --qwen-no-think --max-tokens 32000
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: openai/gpt-oss-20b
+Total tasks: 120
+Total time: 855.8s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 534,296
+Total cost: $0.255645
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.8% (0.8% excl. trans)
+  Pass@2 (Train Majority):  0.8% (0.8% excl. trans)
+  Oracle (Best Attempt):    0.8% (0.8% excl. trans)
+  All Train Correct:        1.7% (1.7% excl. trans)
+  Min 1 Train Correct:      4.2% (4.2% excl. trans)
+  Min 1 Code Success:       29.2%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+and repeat with 8 attempts:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --unsafe-executor --base-url https://openrouter.ai/api/v1 --max_workers 16 --max_attempts 8 --model openai/gpt-oss-20b --qwen-no-think --max-tokens 32000
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: openai/gpt-oss-20b
+Total tasks: 120
+Total time: 4866.3s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 5,550,144
+Total cost: $2.690747
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 2.5% (2.5% excl. trans)
+  Pass@2 (Train Majority):  2.5% (2.5% excl. trans)
+  Oracle (Best Attempt):    2.5% (2.5% excl. trans)
+  All Train Correct:        3.3% (3.3% excl. trans)
+  Min 1 Train Correct:      20.0% (16.7% excl. trans)
+  Min 1 Code Success:       95.0%
+  Max Length Responses:     0.6%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
 ### Test of OSS on ARC AGI 2025 Evaluation using open router, single attempt, 16 workers, 32000 max tokens.
 
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --unsafe-executor --base-url https://openrouter.ai/api/v1 --max_workers 16 --max_attempts 1 --model openai/gpt-oss-20b --qwen-no-think --max-tokens 32000
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --unsafe-executor --base-url https://openrouter.ai/api/v1 --max_workers 16 --max_attempts 8 --model openai/gpt-oss-20b --qwen-no-think --max-tokens 32000
 ```
   Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
   Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
