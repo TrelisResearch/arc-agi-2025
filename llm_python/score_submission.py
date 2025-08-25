@@ -8,9 +8,9 @@ import json
 import argparse
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
-from collections import defaultdict
 
 from llm_python.utils.task_loader import get_task_loader
+from llm_python.utils.submission_validator import validate_submission_file
 
 
 def load_submission(submission_path: str) -> Dict:
@@ -104,7 +104,6 @@ def score_submission(submission: Dict, dataset: str, subset: str) -> Dict:
         }
     
     # Calculate final metrics
-    total_possible_predictions = pass_at_1_count + pass_at_2_count if total_predictions > 0 else 0
     
     pass_at_1_rate = pass_at_1_count / total_predictions if total_predictions > 0 else 0.0
     pass_at_2_rate = pass_at_2_count / total_predictions if total_predictions > 0 else 0.0
@@ -200,6 +199,15 @@ def main():
         return 1
     
     try:
+        # Load reference dataset to get expected task IDs for validation
+        task_loader = get_task_loader()
+        reference_tasks = task_loader.get_subset_tasks(f"{args.dataset}/{args.subset}")
+        expected_task_ids = [task_id for task_id, _ in reference_tasks]
+        
+        # Validate submission file structure
+        print(f"🔍 Validating submission file: {args.submission}")
+        validate_submission_file(args.submission, expected_task_ids, challenges_path=None)
+        
         # Load and score submission
         print(f"📂 Loading submission: {args.submission}")
         submission = load_submission(args.submission)

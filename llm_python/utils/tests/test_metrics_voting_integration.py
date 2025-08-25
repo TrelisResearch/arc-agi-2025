@@ -34,7 +34,8 @@ class TestMetricsVotingIntegration:
             "test_exec_timeout": False,
             "train_exec_errors": 0,
             "train_exec_timeouts": 0,
-            "is_transductive": False
+            "is_transductive": False,
+            "outputs_valid": True  # Required for voting logic
         }
     
     def test_single_test_case_voting_success(self):
@@ -201,6 +202,91 @@ class TestMetricsVotingIntegration:
         # [1, 2] (first row) vs [[1, 2], [3, 4]] (full grid)
         assert metrics["weighted_pass2"] == 1, "Should handle 2D grids correctly without taking first row"
         assert metrics["train_majority_pass2"] == 1, "Should handle 2D grids correctly without taking first row"
+    
+    def test_realistic_arc_task_structure(self):
+        """Test voting with realistic ARC task structure: multiple train examples, single test case"""
+        # Typical ARC task: single test case with 2x2 output
+        test_output = [[1, 2], [3, 4]]
+        task_data = self.create_task_data([test_output])
+        
+        # Create attempts with different training performance on multiple examples
+        attempts = [
+            # Attempt 1: Perfect on all 4 training examples
+            self.create_attempt(
+                [test_output], 
+                train_accuracy=1.0,
+                train_results=[
+                    {"correct": True}, {"correct": True}, 
+                    {"correct": True}, {"correct": True}
+                ]
+            ),
+            # Attempt 2: Good but not perfect (3/4 correct) 
+            self.create_attempt(
+                [[[0, 0], [0, 0]]], 
+                train_accuracy=0.75,
+                train_results=[
+                    {"correct": True}, {"correct": True}, 
+                    {"correct": True}, {"correct": False}
+                ]
+            ),
+            # Attempt 3: Poor performance (1/4 correct)
+            self.create_attempt(
+                [[[9, 9], [9, 9]]], 
+                train_accuracy=0.25,
+                train_results=[
+                    {"correct": True}, {"correct": False}, 
+                    {"correct": False}, {"correct": False}
+                ]
+            ),
+        ]
+        
+        results = [{
+            "task_data": task_data["task_data"],
+            "attempt_details": attempts
+        }]
+        
+        metrics = calculate_task_metrics(results)
+        
+        # The high-accuracy attempt with correct prediction should win
+        assert metrics["weighted_pass2"] == 1, "Voting should favor high train accuracy with correct prediction"
+        assert metrics["train_majority_pass2"] == 1, "Train majority voting should also succeed"
+        assert metrics["all_test_correct"] == 1, "Oracle should detect the correct attempt"
+        
+    def test_multiple_training_examples_edge_cases(self):
+        """Test edge cases with multiple training examples"""
+        test_output = [[1, 2], [3, 4]]
+        task_data = self.create_task_data([test_output])
+        
+        # Edge case: All attempts have same train accuracy but different train result patterns
+        attempts = [
+            # Same accuracy (0.6) but different patterns
+            self.create_attempt(
+                [test_output], 
+                train_accuracy=0.6,
+                train_results=[
+                    {"correct": True}, {"correct": True}, {"correct": True}, 
+                    {"correct": False}, {"correct": False}  # 3/5 correct
+                ]
+            ),
+            self.create_attempt(
+                [[[0, 0], [0, 0]]], 
+                train_accuracy=0.6,
+                train_results=[
+                    {"correct": False}, {"correct": True}, {"correct": True}, 
+                    {"correct": True}, {"correct": False}  # 3/5 correct
+                ]
+            ),
+        ]
+        
+        results = [{
+            "task_data": task_data["task_data"],
+            "attempt_details": attempts
+        }]
+        
+        metrics = calculate_task_metrics(results)
+        
+        # With same train accuracy, should still pick the correct prediction
+        assert metrics["weighted_pass2"] == 1, "Should pick correct prediction even with same train accuracy"
 
 
 if __name__ == "__main__":

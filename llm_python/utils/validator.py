@@ -151,6 +151,11 @@ class ARCTaskValidator:
                     if verbose:
                         print(f"❌ Cell value out of range for {description} at [{i}][{j}]: {cell_int} (should be 0-9)")
                     return False
+                
+                # Convert non-integer types (like bool, numpy types) to standard Python int
+                if not isinstance(cell, int) or cell != cell_int:
+                    print(f"⚠️ Converting cell value in {description} at [{i}][{j}]: {cell} (type: {type(cell)}) -> {cell_int}")
+                    row[j] = cell_int
         
         return True
     

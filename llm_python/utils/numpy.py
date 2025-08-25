@@ -12,8 +12,6 @@ def convert_numpy_types(obj: Any) -> Any:
         return int(obj)
     elif isinstance(obj, (np.floating, np.float64, np.float32)):
         return float(obj)
-    elif isinstance(obj, (np.bool_, bool)):
-        return bool(obj)
     elif isinstance(obj, list):
         return [convert_numpy_types(item) for item in obj]
     elif isinstance(obj, tuple):

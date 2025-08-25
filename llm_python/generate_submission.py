@@ -91,10 +91,6 @@ class SubmissionGenerator:
             else:
                 train_acc = 0.0
             
-            # Skip programs with no train examples correct
-            if train_acc == 0.0:
-                continue
-            
             # Convert test predictions using same function as task runner
             test_predicted = convert_numpy_types(row['predicted_test_output'])
             
@@ -110,7 +106,6 @@ class SubmissionGenerator:
                 'test_predicted': test_predicted,
                 'train_accuracy': float(train_acc),
                 'is_transductive': bool(row.get('is_transductive', False)),
-                'outputs_valid': True,  # Assume parquet data is already validated
                 'program_extracted': bool(row.get('code') and str(row.get('code', '')).strip()),
                 'test_exec_error': False,  # Assume no exec errors in parquet data
                 'test_exec_timeout': False,

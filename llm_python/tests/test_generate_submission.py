@@ -48,7 +48,7 @@ class TestSubmissionGenerator(unittest.TestCase):
             for i in range(num_attempts_per_task):
                 # Create realistic test data
                 correct_train = [True, False, True]  # Mixed training accuracy
-                predicted_test = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]]  # Multi-test output
+                predicted_test = [[[1, 2], [3, 4]]]  # Single test output to match mock
                 
                 data.append({
                     "task_id": task_id,

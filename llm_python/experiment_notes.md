@@ -1,8 +1,7 @@
 # Experiment Notes
 
 Lewis Reminders:
-- test transduction is now metadata. THESE PROGRAMS ARE BEING SAVED TO THE DB, BEWARE.
-- Discuss logs going into folders vs not going into folders.
+- There are small differences between submission scoring and task based. 0.5%. Possibly it's due to the odd case of a duplicate program only being written once. Not clear though.
 - Mathieu.
 
 ---
@@ -30,24 +29,29 @@ Dataset: arc-prize-2024
 Subset: evaluation
 Model: openai/gpt-oss-20b
 Total tasks: 4
-Total time: 174.4s
+Total time: 141.7s
 Successful API calls: 4/4 (100.0%)
-Total tokens used: 93,005
-Total cost: $0.045470
+Total tokens used: 100,239
+Total cost: $0.051365
 
 📊 CORE METRICS:
-  Pass@2 (Weighted Voting): 50.0% (25.0% excl. trans)
-  Pass@2 (Train Majority):  50.0% (25.0% excl. trans)
-  Oracle (Best Attempt):    50.0% (25.0% excl. trans)
-  All Train Correct:        50.0% (25.0% excl. trans)
-  Min 1 Train Correct:      50.0% (25.0% excl. trans)
-  Min 1 Code Success:       50.0%
+  Pass@2 (Weighted Voting): 75.0% (75.0% excl. trans)
+  Pass@2 (Train Majority):  75.0% (75.0% excl. trans)
+  Oracle (Best Attempt):    75.0% (75.0% excl. trans)
+  All Train Correct:        75.0% (75.0% excl. trans)
+  Min 1 Train Correct:      100.0% (75.0% excl. trans)
+  Min 1 Code Success:       100.0%
   Max Length Responses:     0.0%
   Timeout Responses:        0.0%
   API Failure Responses:    0.0%
 
-and then manually score via the parquet:
+✅ Successfully wrote 9 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250825_102832_openai_gpt-oss-20b_arc-prize-2024_evaluation.parquet
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250825_102832_openai_gpt-oss-20b_arc-prize-2024_evaluation.parquet
 
+Run with more limit:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2024 --subset evaluation --unsafe-executor --base-url https://openrouter.ai/api/v1 --max_workers 32 --max_attempts 4 --model openai/gpt-oss-20b --qwen-no-think --max-tokens 32000 --limit 20
+```
 
 
 ## Aug 24
