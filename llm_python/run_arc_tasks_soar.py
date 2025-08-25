@@ -1274,7 +1274,11 @@ class ARCTaskRunnerSimple:
         exec_failures = sum(1 for att in attempts if att.get("train_exec_errors", 0) > 0 or att.get("test_exec_error", False))
         max_length = sum(1 for att in attempts if att.get("hit_max_tokens", False))
         api_timeout = sum(1 for att in attempts if att.get("api_timeout", False))
-        invalid_outputs = sum(1 for att in attempts if att.get("program_extracted", False) and not att.get("outputs_valid", False))
+        # Invalid outputs: program extracted, no execution failure, but outputs invalid
+        invalid_outputs = sum(1 for att in attempts 
+                             if att.get("program_extracted", False) 
+                             and not att.get("outputs_valid", False)
+                             and not (att.get("train_exec_errors", 0) > 0 or att.get("test_exec_error", False)))
         
         # 2. TEST CATEGORIES (if not submit mode)
         test_perfect_total = test_perfect_trans = 0

@@ -26,7 +26,25 @@ And then run a check on gpt-oss for limit 4:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2024 --subset evaluation --unsafe-executor --base-url https://openrouter.ai/api/v1 --max_workers 32 --max_attempts 4 --model openai/gpt-oss-20b --qwen-no-think --max-tokens 32000 --limit 4
 ```
+Dataset: arc-prize-2024
+Subset: evaluation
+Model: openai/gpt-oss-20b
+Total tasks: 4
+Total time: 174.4s
+Successful API calls: 4/4 (100.0%)
+Total tokens used: 93,005
+Total cost: $0.045470
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 50.0% (25.0% excl. trans)
+  Pass@2 (Train Majority):  50.0% (25.0% excl. trans)
+  Oracle (Best Attempt):    50.0% (25.0% excl. trans)
+  All Train Correct:        50.0% (25.0% excl. trans)
+  Min 1 Train Correct:      50.0% (25.0% excl. trans)
+  Min 1 Code Success:       50.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
 and then manually score via the parquet:
 
