@@ -69,10 +69,9 @@ def validate_soar_row(row: dict) -> ValidateRowResult:
             elif len(row[field]) == 0:
                 errors.append(f"{field} is an empty list")
             else:
-                for i, grid in enumerate(row[field]):
-                    # Use ARCTaskValidator for comprehensive grid validation
-                    if not ARCTaskValidator.validate_prediction(grid, f"{field}[{i}]"):
-                        errors.append(f"{field}[{i}] failed ARC grid validation (must be valid 30x30 2D grid with integers 0-9)")
+                # Use common prediction validator
+                is_valid, validation_errors = ARCTaskValidator.validate_prediction_list(row[field], field)
+                errors.extend(validation_errors)
     if (
         "reasoning" in row
         and row["reasoning"] is not None

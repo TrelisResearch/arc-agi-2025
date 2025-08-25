@@ -21,11 +21,6 @@ from llm_python.utils.metrics_utils import (
     calculate_task_metrics,
     metrics_to_percentages,
 )
-from llm_python.utils.voting_utils import (
-    compute_weighted_majority_voting,
-)
-from llm_python.utils.submission_validator import validate_submission_file
-from llm_python.utils.validator import replace_invalid_grid
 from llm_python.transduction.code_classifier import CodeTransductionClassifier
 from llm_python.utils.prompt_loader import PromptLoader
 from llm_python.utils.serialization import ResponseSerializer
@@ -742,13 +737,16 @@ class ARCTaskRunnerSimple:
             else False
         )
 
-        # Validate all outputs meet ARC specification (30x30 max, proper format)
-        outputs_valid = program_extracted and all(
-            ARCTaskValidator.validate_prediction(result.get("predicted"))
+        # Validate all outputs meet ARC specification - collect all predictions
+        all_predictions = [
+            result.get("predicted")
             for results_list in [train_results, test_results]
             for result in results_list
-            if result.get("predicted") is not None
-        )
+        ]
+        
+        # Use common validator (rejects None predictions and invalid grids)
+        outputs_valid = program_extracted and all_predictions and \
+            ARCTaskValidator.validate_prediction_list(all_predictions, "outputs")[0]
 
         # Run transduction detection ONLY if outputs are valid
         is_transductive = False
@@ -1251,9 +1249,10 @@ class ARCTaskRunnerSimple:
         submit_mode = os.getenv("SUBMIT", "").lower() == "true"
 
         if submit_mode:
-            # In SUBMIT mode: create submission file and show limited summary
+            # In SUBMIT mode: show limited summary and suggest submission generation
             self._print_submit_mode_summary(results, subset_name, dataset, elapsed_time)
-            self._create_submission_file(results, dataset, subset_name)
+            print(f"\n🎯 To generate submission file, run:")
+            print(f"   uv run python llm_python/generate_submission.py --dataset {dataset} --subset {subset_name}")
         else:
             # Normal mode: print full summary to console only (no file saving)
             self._print_summary(results, subset_name, dataset, elapsed_time)
@@ -1678,196 +1677,6 @@ class ARCTaskRunnerSimple:
                 f"\n⚠️  Note: Test accuracy metrics unavailable in SUBMIT mode (no test outputs)"
             )
 
-    def _create_submission_file(
-        self, results: List[Dict], dataset: str, subset: str
-    ) -> None:
-        """Create submission file using weighted voting when SUBMIT mode is enabled"""
-
-        # Check environment variables
-        submit_mode = os.getenv("SUBMIT", "").lower() == "true"
-        if not submit_mode:
-            return
-
-        submit_dir = os.getenv("SUBMIT_DIR", "/kaggle/working")
-
-        # Ensure submit directory exists
-        os.makedirs(submit_dir, exist_ok=True)
-
-        print(f"\n🎯 SUBMIT MODE: Creating submission file")
-        print(f"📁 Submit directory: {submit_dir}")
-
-        # Load ALL tasks from the dataset to ensure we include every task ID
-        try:
-            all_tasks = self.task_loader.get_subset_tasks(f"{dataset}/{subset}")
-            all_task_ids = [task_id for task_id, _ in all_tasks]
-        except Exception as e:
-            print(f"⚠️ Could not load all tasks from {dataset}/{subset}: {e}")
-            print("   Using only tasks from results...")
-            all_tasks = []  # Empty list if loading fails
-            all_task_ids = [result["task_id"] for result in results]
-
-        submission = {}
-        tasks_with_predictions = 0
-        tasks_with_duplicated_attempts = 0
-        tasks_with_empty_fallback = 0
-
-        # Create a lookup for results by task ID
-        results_by_task_id = {result["task_id"]: result for result in results}
-
-        # Create a lookup for task data by task ID
-        task_data_by_id = {task_id: task_data for task_id, task_data in all_tasks}
-
-        # Process ALL task IDs (per submission guidelines)
-        for task_id in all_task_ids:
-            if task_id in results_by_task_id:
-                # We have results for this task
-                result = results_by_task_id[task_id]
-                task_data = result["task_data"]
-                attempts = result["attempt_details"]
-            else:
-                # No results for this task - create empty fallback
-                print(f"⚠️ No results for task {task_id}, using empty fallback")
-                # Try to get task data from lookup
-                task_data = task_data_by_id.get(task_id)
-
-                if task_data is None:
-                    # Default to single test output if we can't load task data
-                    num_test_outputs = 1
-                else:
-                    num_test_outputs = len(task_data.get("test", []))
-                    if num_test_outputs == 0:
-                        num_test_outputs = 1
-
-                submission[task_id] = []
-                for _ in range(num_test_outputs):
-                    submission[task_id].append(
-                        {"attempt_1": [[0, 0], [0, 0]], "attempt_2": [[0, 0], [0, 0]]}
-                    )
-                tasks_with_empty_fallback += 1
-                continue
-
-            # Process task with results
-            attempts = result["attempt_details"]
-
-            # Use all attempts (transductive downweighted in voting)
-            all_attempts = attempts
-
-            if not all_attempts:
-                # No attempts at all, use empty grids fallback
-                num_test_outputs = len(task_data.get("test", []))
-                if num_test_outputs == 0:
-                    num_test_outputs = 1  # Default to 1 output if no test data
-
-                submission[task_id] = []
-                for _ in range(num_test_outputs):
-                    submission[task_id].append(
-                        {"attempt_1": [[0, 0], [0, 0]], "attempt_2": [[0, 0], [0, 0]]}
-                    )
-                tasks_with_empty_fallback += 1
-                continue
-
-            # Use weighted voting to get top 2 predictions
-            try:
-                top_predictions = compute_weighted_majority_voting(
-                    all_attempts, 
-                    top_k=2, 
-                    no_transductive_penalty=self.no_transductive_penalty
-                )
-            except Exception as e:
-                print(f"⚠️ Weighted voting failed for task {task_id}: {e}")
-                # Fallback to first available predictions
-                top_predictions = []
-                for attempt in all_attempts[:2]:
-                    pred = attempt.get("test_predicted")
-                    if pred is not None:
-                        top_predictions.append(pred)
-
-            # Handle different prediction formats (single vs multiple test outputs)
-            num_test_outputs = len(task_data.get("test", []))
-            if num_test_outputs == 0:
-                num_test_outputs = 1  # Default to 1 output if no test data
-
-            submission[task_id] = []
-
-            for test_idx in range(num_test_outputs):
-                attempt_1_grid = [[0, 0], [0, 0]]  # Default fallback
-                attempt_2_grid = [[0, 0], [0, 0]]  # Default fallback
-
-                # Extract attempt 1
-                if len(top_predictions) > 0 and top_predictions[0] is not None:
-                    pred_1 = top_predictions[0]
-
-                    # Since voting pre-filters to valid attempts, grids should already be valid
-                    if isinstance(pred_1, list) and len(pred_1) > test_idx:
-                        attempt_1_grid = pred_1[test_idx]
-                        # Defensive check: log if we somehow got invalid grids from voting
-                        if not ARCTaskValidator.validate_prediction(attempt_1_grid):
-                            print(f"⚠️ WARNING: Invalid grid from voting for {task_id} attempt 1 - this shouldn't happen!")
-                            attempt_1_grid = [[0, 0], [0, 0]]  # Fallback for safety
-                    else:
-                        # Fallback to default
-                        attempt_1_grid = [[0, 0], [0, 0]]
-
-                # Extract attempt 2
-                if len(top_predictions) > 1 and top_predictions[1] is not None:
-                    pred_2 = top_predictions[1]
-
-                    # Since voting pre-filters to valid attempts, grids should already be valid
-                    if isinstance(pred_2, list) and len(pred_2) > test_idx:
-                        attempt_2_grid = pred_2[test_idx]
-                        # Defensive check: log if we somehow got invalid grids from voting
-                        if not ARCTaskValidator.validate_prediction(attempt_2_grid):
-                            print(f"⚠️ WARNING: Invalid grid from voting for {task_id} attempt 2 - this shouldn't happen!")
-                            attempt_2_grid = [[0, 0], [0, 0]]  # Fallback for safety
-                    else:
-                        # Fallback to default
-                        attempt_2_grid = [[0, 0], [0, 0]]
-                else:
-                    # Only one prediction available, duplicate it
-                    attempt_2_grid = attempt_1_grid
-                    if test_idx == 0:  # Only log once per task
-                        tasks_with_duplicated_attempts += 1
-
-                # Note: grids are already cleaned during prediction generation, no need to clean again
-
-                submission[task_id].append(
-                    {"attempt_1": attempt_1_grid, "attempt_2": attempt_2_grid}
-                )
-
-            tasks_with_predictions += 1
-
-        # Generate submission filename (must be submission.json per guidelines)
-        submission_filename = "submission.json"
-        submission_path = os.path.join(submit_dir, submission_filename)
-
-        # Also create a backup with timestamp for tracking
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        model_name = self.model.replace("/", "_").replace(":", "_")
-        backup_filename = f"submission_{dataset}_{subset}_{model_name}_{timestamp}.json"
-        backup_path = os.path.join(submit_dir, backup_filename)
-
-        # Save submission file (official format)
-        with open(submission_path, "w") as f:
-            json.dump(submission, f, indent=2)
-
-        # Save backup with timestamp for tracking
-        with open(backup_path, "w") as f:
-            json.dump(submission, f, indent=2)
-
-        # Print summary
-        total_tasks = len(all_task_ids)
-        print(f"✅ Submission file created: {submission_filename}")
-        print(f"📊 Submission Summary:")
-        print(f"  Total tasks in dataset: {total_tasks}")
-        print(f"  Tasks processed: {len(results)}")
-        print(f"  Tasks with predictions: {tasks_with_predictions}")
-        print(f"  Tasks with duplicated attempts: {tasks_with_duplicated_attempts}")
-        print(f"  Tasks with empty fallback: {tasks_with_empty_fallback}")
-        print(f"  Official file: {submission_path}")
-        print(f"  Backup file: {backup_path}")
-
-        # Validate the submission file
-        validate_submission_file(submission_path, all_task_ids)
 
 
 

@@ -158,6 +158,32 @@ class ARCTaskValidator:
     def validate_prediction(prediction: Any, description: str = "prediction", verbose: bool = False) -> bool:
         """Validate that a prediction matches ARC grid format"""
         return ARCTaskValidator._validate_grid(prediction, description, verbose)
+    
+    @staticmethod
+    def validate_prediction_list(predictions: List[Any], description: str = "predictions") -> Tuple[bool, List[str]]:
+        """
+        Validate a list of predictions for ARC tasks.
+        
+        Args:
+            predictions: List of predicted grids (may contain None for execution errors)
+            description: Description for error messages
+            
+        Returns:
+            (is_valid, errors): Tuple of validation status and list of error messages
+        """
+        errors = []
+        
+        if not predictions:
+            errors.append(f"{description}: No predictions provided")
+            return False, errors
+            
+        for i, pred in enumerate(predictions):
+            if pred is None:
+                errors.append(f"{description}[{i}]: Execution error (None prediction)")
+            elif not ARCTaskValidator.validate_prediction(pred, f"{description}[{i}]"):
+                errors.append(f"{description}[{i}]: Invalid ARC grid format")
+                
+        return len(errors) == 0, errors
 
 
 def replace_invalid_grid(grid: Union[List, None], task_id: str = "", attempt_name: str = "") -> List[List[int]]:

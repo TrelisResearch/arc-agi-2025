@@ -6,11 +6,72 @@ Lewis Reminders:
 - Mathieu.
 
 ---
+## Aug 25
+
+## Parquet testing
+Start upu a pod with the latest qwen model - just create_pod:
+```bash
+uv run runpod/create_pod.py sglang -- --model-path Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542
+```
+Then run the tasks:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2024 --subset evaluation --unsafe-executor --base-url http://103.196.86.37:16147/v1/ --max_workers 16 --max_attempts 8 --model Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542 --qwen-no-think --max-tokens 2000
+```
+
+
+and then check the parquet file for how many all train correct programs there are:
+
+
+And then run a check on gpt-oss for limit 4:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2024 --subset evaluation --unsafe-executor --base-url https://openrouter.ai/api/v1 --max_workers 32 --max_attempts 4 --model openai/gpt-oss-20b --qwen-no-think --max-tokens 32000 --limit 4
+```
+
+
+and then manually score via the parquet:
+
+
+
 ## Aug 24
 
 ### Allow fine-tuning from most recent parquet file
 
 ### Allow submission file generation from up to last two parquet files
+
+Understand why proper attempts are not logging:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2024 --subset evaluation --max_workers 32 --max_attempts 1 --model openai/gpt-oss-20b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --limit 4
+```
+seems to log fine to db...
+
+now try qwen:
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542" --max-attempts 8 --subset evaluation
+```
+Dataset: arc-prize-2024
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542
+Total tasks: 400
+Total time: 377.9s
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 12,761,169
+Total cost: $2.311652
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 8.5% (8.2% excl. trans)
+  Pass@2 (Train Majority):  8.2% (8.2% excl. trans)
+  Oracle (Best Attempt):    9.0% (8.8% excl. trans)
+  All Train Correct:        6.2% (6.2% excl. trans)
+  Min 1 Train Correct:      18.5% (18.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.1%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+and then run (and hardcode to just 100 limit in the background):
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542" --max-attempts 8 --subset evaluation
+```
 
 ### Test out how many responses are incomplete and saved to db.
 
@@ -18,11 +79,50 @@ Run the partial 100 epoch 2 model with 8 attempts:
 ```bash
 uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542" --max-attempts 8 --subset evaluation
 ```
+Dataset: arc-prize-2024
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542
+Total tasks: 400
+Total time: 392.0s
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 12,790,205
+Total cost: $2.329073
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 8.0% (7.5% excl. trans)
+  Pass@2 (Train Majority):  8.0% (7.5% excl. trans)
+  Oracle (Best Attempt):    9.0% (8.5% excl. trans)
+  All Train Correct:        6.5% (6.2% excl. trans)
+  Min 1 Train Correct:      16.5% (15.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.1%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  
 or do a quick run with 120B OSS and openrouter, no pod creation needed - just to see transductive performance:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2024 --subset evaluation --max_workers 32 --max_attempts 4 --model openai/gpt-oss-20b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
 ```
+Dataset: arc-prize-2024
+Subset: evaluation
+Model: openai/gpt-oss-20b
+Total tasks: 400
+Total time: 4261.9s
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 8,743,014
+Total cost: $4.242328
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 31.2% (27.8% excl. trans)
+  Pass@2 (Train Majority):  30.2% (27.5% excl. trans)
+  Oracle (Best Attempt):    31.2% (27.8% excl. trans)
+  All Train Correct:        31.5% (28.0% excl. trans)
+  Min 1 Train Correct:      38.2% (34.0% excl. trans)
+  Min 1 Code Success:       67.2%
+  Max Length Responses:     1.8%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250824_164149_openai_gpt-oss-20b_arc-prize-2024_evaluation.parquet
 
 
 

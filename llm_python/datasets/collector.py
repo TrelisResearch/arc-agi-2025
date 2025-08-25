@@ -90,7 +90,19 @@ class SoarDatasetCollector:
         ]
         
         df = pd.DataFrame(normalized_data)
-        validate_soar_dataframe(df)
-        self.output_path().parent.mkdir(parents=True, exist_ok=True)
-        write_soar_parquet(df, self.output_path())
-        self.data = []  # Clear the data after writing
+        
+        # Check validation result
+        validation_result = validate_soar_dataframe(df)
+        if not validation_result.is_valid():
+            logger.warning(f"DataFrame validation failed: {validation_result.summary()}")
+            # Continue anyway but log the issue
+        
+        try:
+            self.output_path().parent.mkdir(parents=True, exist_ok=True)
+            write_soar_parquet(df, self.output_path())
+            logger.warning(f"✅ Successfully wrote {len(df)} programs to {self.output_path()}")
+        except Exception as e:
+            logger.error(f"❌ FAILED to write parquet: {e}")
+            # Don't clear data on failure so it can be retried
+            return
+        
