@@ -3,6 +3,16 @@
 Lewis Reminders:
 - There are small differences between submission scoring and task based. 0.5%. Possibly it's due to the odd case of a duplicate program only being written once. Not clear though.
 - Mathieu.
+- Re incorrect programs:
+  - 94.15% of programs are all incorrect.
+  - 93.81% of non-transductive programs are all incorrect.
+
+
+
+
+
+
+
 
 ---
 ## Aug 25
