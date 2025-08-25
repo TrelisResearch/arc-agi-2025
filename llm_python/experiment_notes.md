@@ -17,6 +17,36 @@ Lewis Reminders:
 ---
 ## Aug 25
 
+### Daily Summary
+
+Completed:
+- TTT working now end to end, with two major bugs and one minor bug to resolve.
+- Overnight submission started with 256 attempts either side on the Qwen3-4B_ds-arc-agi-2-perfect-50-c970 model with TTT. Inference is bounded to 5 hours max on either side. Note that the run may fail due to issues above.
+
+Research Notes:
+- GPT-OSS 120B is weak on arc agi 2 and gets 0.8% weighted pass@2, min 1 train is only 5% (1.7% for the 20B model) - not obvious this model could help with generating partials at test time. Perhaps with fine-tuning? Probably is too big to fine-tune at inference time but may be a good generator.
+- Prelim results on arc-agi-2024-partial-100 model indicate that there are very few partials generated (only 7 tasks have partials on arc agi 2 with 64 attempts), making it hard for TTT to help. Unfortunately the second inference had significant issues.
+- Prelim results on arc-agi-2024-partial-100 model, allowing up to 4 incorrrect programs per task for ttt indicate 7/120 tasks had partials before TTT but only 4 had partials after TTT, suggesting degradation (but low confidence given errors seen).
+
+Key issues to resolve:
+1. MAJOR: On certain inference runs the server appears not to be timing out requests at 300 s (or perhaps the client side is failing) - this causes inference to hang and not to complete - it is hard to reproduce:
+```bash
+⏳ No completions in last 15s — 7679/7680 done; 1 remaining (timeout in 9042s)
+⏳ No completions in last 15s — 7679/7680 done; 1 remaining (timeout in 9027s)
+```
+2. BOOLs are appearing in output grids, which is not expected, especially at the point of writing to parquet OR of generating submissions because these grids should have been filtered by validation:
+```bash
+DataFrame validation failed: Format validation:
+    Total programs: 4502
+    Schema valid: FAIL
+    Business logic valid: PASS
+    Issues: 0
+    Schema error: Schema validation failed: ('Expected integer, got bool', 'Conversion failed for column predicted_train_output with type object')
+```
+3. Minor - there is a small descrepancy in weighted train correct (and possibly other metrics) around <0.5% pts between task-based scoring during the run AND scoring of the final submission file. A low-confidence guess is that this is due to duplicate (string-match) programs only being logged once.
+4. Minor - fine-tuning has not yet been tested using all four gpus, it currently uses only 1. Further fine-tuning has not been tested on 4xL4 (or Kaggle) with batch size 1 and longer sequences (tests today worked because the long ones were on H200 or there were so few TTT samples generated that the batch size had short completions and was small - note that batch size is now auto set to 1 on kaggle).
+
+
 ### Test of OSS on ARC AGI 2025 Evaluation using open router, single attempt, 16 workers, 32000 max tokens.
 
 ```bash
@@ -36,9 +66,25 @@ So, OSS struggles, let's try the 120B model:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --unsafe-executor --base-url https://openrouter.ai/api/v1 --max_workers 16 --max_attempts 1 --model openai/gpt-oss-120b --qwen-no-think --max-tokens 32000
 ```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: openai/gpt-oss-120b
+Total tasks: 120
+Total time: 365.1s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 1,323,116
+Total cost: $0.513246
 
-
-
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.8% (0.8% excl. trans)
+  Pass@2 (Train Majority):  0.8% (0.8% excl. trans)
+  Oracle (Best Attempt):    0.8% (0.8% excl. trans)
+  All Train Correct:        1.7% (1.7% excl. trans)
+  Min 1 Train Correct:      5.0% (5.0% excl. trans)
+  Min 1 Code Success:       76.7%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
 
 ## Parquet testing
