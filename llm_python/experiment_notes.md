@@ -17,6 +17,30 @@ Lewis Reminders:
 ---
 ## Aug 25
 
+### Test of OSS on ARC AGI 2025 Evaluation using open router, single attempt, 16 workers, 32000 max tokens.
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --unsafe-executor --base-url https://openrouter.ai/api/v1 --max_workers 16 --max_attempts 1 --model openai/gpt-oss-20b --qwen-no-think --max-tokens 32000
+```
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    0.0% (0.0% excl. trans)
+  All Train Correct:        0.8% (0.8% excl. trans)
+  Min 1 Train Correct:      1.7% (1.7% excl. trans)
+  Min 1 Code Success:       15.8%
+  Max Length Responses:     3.3%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+So, OSS struggles, let's try the 120B model:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --unsafe-executor --base-url https://openrouter.ai/api/v1 --max_workers 16 --max_attempts 1 --model openai/gpt-oss-120b --qwen-no-think --max-tokens 32000
+```
+
+
+
+
+
 ## Parquet testing
 Start upu a pod with the latest qwen model - just create_pod:
 ```bash

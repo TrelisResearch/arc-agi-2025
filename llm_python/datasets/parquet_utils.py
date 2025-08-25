@@ -8,6 +8,7 @@ for fine-tuning, replacing the DuckDB-based approach.
 import os
 from pathlib import Path
 from typing import Optional, Union, Dict, Any
+import pandas as pd
 from datasets import Dataset
 
 from llm_python.datasets.io import read_soar_parquet
@@ -46,19 +47,21 @@ def find_latest_parquet_file(parquet_path: Union[str, Path]) -> Path:
 
 def load_programs_for_finetuning(parquet_path: Union[str, Path], 
                                 max_rows: Optional[int] = None,
-                                filter_transductive: bool = True) -> Dataset:
+                                filter_transductive: bool = True,
+                                max_incorrect_per_task: int = 4) -> Dataset:
     """
     Load program data from parquet file(s) for fine-tuning.
     
-    Follows the same filtering logic as the original DuckDB approach:
-    - ONLY non-transductive programs (if filter_transductive=True)
-    - ALL success levels included (0% to 100% train/test correctness)
-    - Let the model learn from both successful and failed attempts
+    Follows filtering logic with fallback for incorrect programs:
+    - ONLY non-transductive programs (if filter_transductive=True)  
+    - Programs with ≥1 correct train example are always included
+    - If max_incorrect_per_task > 0, includes up to N shortest incorrect programs per task as fallback
     
     Args:
         parquet_path: Path to parquet file or directory containing parquet files
         max_rows: Maximum number of rows to load (None for all)
         filter_transductive: Whether to filter out transductive programs (default True)
+        max_incorrect_per_task: Max incorrect programs to include per task as fallback (default 4)
         
     Returns:
         Dataset containing program data compatible with fine-tuning format
@@ -86,8 +89,7 @@ def load_programs_for_finetuning(parquet_path: Union[str, Path],
         if len(df) == 0:
             raise ValueError("No non-transductive programs found for fine-tuning")
     
-    # Filter out all-incorrect programs (0% train accuracy)
-    initial_count = len(df)
+    # Separate correct and incorrect programs
     def has_train_success(x):
         if hasattr(x, 'any'):  # numpy array
             return x.any()
@@ -96,12 +98,45 @@ def load_programs_for_finetuning(parquet_path: Union[str, Path],
         else:
             return bool(x)
     
-    df = df[df['correct_train_input'].apply(has_train_success)].copy()
-    success_count = len(df)
-    print(f"🔍 Filtered out {initial_count - success_count} all-incorrect programs (kept {success_count} with ≥1 train correct)")
+    # Always include programs with ≥1 correct train example
+    correct_programs = df[df['correct_train_input'].apply(has_train_success)].copy()
+    
+    # Add incorrect programs as fallback (up to max_incorrect_per_task per task)
+    incorrect_programs_added = 0
+    if max_incorrect_per_task > 0:
+        incorrect_programs = df[~df['correct_train_input'].apply(has_train_success)].copy()
+        
+        if len(incorrect_programs) > 0:
+            # Group by task and select shortest incorrect programs per task
+            incorrect_fallback = []
+            
+            for task_id in incorrect_programs['task_id'].unique():
+                task_incorrect = incorrect_programs[incorrect_programs['task_id'] == task_id].copy()
+                
+                # Sort by code length (shortest first) and take up to max_incorrect_per_task
+                task_incorrect['code_length'] = task_incorrect['code'].fillna('').str.len()
+                task_incorrect = task_incorrect.sort_values('code_length')
+                selected = task_incorrect.head(max_incorrect_per_task)
+                
+                incorrect_fallback.append(selected.drop('code_length', axis=1))
+            
+            if incorrect_fallback:
+                incorrect_fallback_df = pd.concat(incorrect_fallback, ignore_index=True)
+                incorrect_programs_added = len(incorrect_fallback_df)
+                df = pd.concat([correct_programs, incorrect_fallback_df], ignore_index=True)
+            else:
+                df = correct_programs
+        else:
+            df = correct_programs
+    else:
+        df = correct_programs
+    
+    correct_count = len(correct_programs)
+    total_count = len(df)
+    print(f"🔍 Selected {correct_count} programs with ≥1 train correct + {incorrect_programs_added} shortest incorrect as fallback = {total_count} total")
     
     if len(df) == 0:
-        raise ValueError("No programs with correct training examples found")
+        raise ValueError("No programs found for fine-tuning (neither correct nor incorrect)")
     
     # Prepare data for fine-tuning format
     programs_data = []
@@ -205,14 +240,16 @@ def validate_parquet_for_finetuning(parquet_path: Union[str, Path]) -> bool:
 
 
 # Simple interface for the fine-tuning notebook
-def parquet_to_dataset(parquet_path: Union[str, Path], max_rows: Optional[int] = None) -> Dataset:
+def parquet_to_dataset(parquet_path: Union[str, Path], max_rows: Optional[int] = None, 
+                      max_incorrect_per_task: int = 4) -> Dataset:
     """
     Simple interface to load parquet data as Dataset for fine-tuning.
     
     This is the main function that the fine-tuning notebook should use
     as a drop-in replacement for the DuckDB function.
     """
-    return load_programs_for_finetuning(parquet_path, max_rows)
+    return load_programs_for_finetuning(parquet_path, max_rows, filter_transductive=True, 
+                                       max_incorrect_per_task=max_incorrect_per_task)
 
 
 if __name__ == "__main__":
