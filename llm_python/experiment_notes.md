@@ -6,7 +6,7 @@ Lewis Reminders:
 - Re incorrect programs:
   - 94.15% of programs are all incorrect.
   - 93.81% of non-transductive programs are all incorrect.
-
+- "code" vs "program" in parquet vs hf.
 
 
 

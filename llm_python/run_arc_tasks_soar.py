@@ -157,6 +157,7 @@ class ARCTaskRunnerSimple:
         lora_adapter: Optional[str] = None,
         sample_name: Optional[str] = None,
         no_transductive_penalty: bool = False,
+        parquet_output_dir: Optional[str] = None,
     ):
         # Core configuration
         self.max_workers = max_workers
@@ -165,7 +166,9 @@ class ARCTaskRunnerSimple:
         self.run_number = run_number
         self.debug = debug
         self.prompt_version = prompt_version
-        self.dataset_collector = SoarDatasetCollector(sample_name)
+        # Use custom output directory if provided, otherwise use default
+        output_dir = Path(parquet_output_dir) if parquet_output_dir else None
+        self.dataset_collector = SoarDatasetCollector(sample_name, output_dir=output_dir)
         self.no_transductive_penalty = no_transductive_penalty
         
         # Standard API timeout for network safety, no infrastructure timeouts
@@ -1772,6 +1775,11 @@ def main():
         type=str,
         help="Path to the local database file for storing programs",
     )
+    parser.add_argument(
+        "--parquet-output-dir",
+        type=str,
+        help="Directory where parquet files should be saved (overrides default location)",
+    )
 
     args = parser.parse_args()
 
@@ -1799,6 +1807,7 @@ def main():
         unsafe_executor=args.unsafe_executor,
         lora_adapter=args.lora_adapter,
         sample_name=f"{args.model.replace('/', '_').replace(':', '_')}_{args.dataset}_{args.subset}",
+        parquet_output_dir=args.parquet_output_dir,
     )
 
     # Run the task subset

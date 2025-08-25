@@ -15,12 +15,13 @@ _DEFAULT_DIR = Path(__file__).parent / "inference"
 logger = logging.getLogger(__name__)
 
 class SoarDatasetCollector:
-    def __init__(self, name: Optional[str], flush_every=100):
+    def __init__(self, name: Optional[str], flush_every=100, output_dir: Optional[Path] = None):
         self.data: list[ProgramSample] = []
         self.name = name
         self.timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
         self.flush_every = flush_every
         self.flush_at = flush_every
+        self.output_dir = output_dir or _DEFAULT_DIR
 
     def collect(self, item: ProgramSample) -> bool:
         validation_result = validate_soar_row(dict(item))
@@ -46,7 +47,7 @@ class SoarDatasetCollector:
 
     def output_path(self) -> Path:
         return (
-            _DEFAULT_DIR
+            self.output_dir
             / f"{self.timestamp}{'_' if self.name else ''}{self.name}.parquet"
         )
 
