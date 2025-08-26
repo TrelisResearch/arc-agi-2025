@@ -17,7 +17,57 @@ Lewis Reminders:
 ---
 ## Aug 26
 
-### 
+### TTT Run with 64 attempts either side of the arc-agi-1-partial-100 model
+
+Before TTT:
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542
+Total tasks processed: 120
+Total time: 1650.7s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 46,468,497
+Total cost: $8.106592
+
+📊 RESPONSE METRICS:
+  Total responses: 7663
+  Code extracted: 7661/7663 (100.0%)
+  Max length responses: 2/7663 (0.0%)
+  Timeout responses: 0/7663 (0.0%)
+  API failure responses: 0/7663 (0.0%)
+
+📊 TRAIN METRICS:
+  All train correct: 0/120 (0.0%)
+  Min 1 train correct: 3/120 (2.5%)
+
+After TTT:
+📊 RESPONSE METRICS:
+  Total responses: 7662
+  Code extracted: 7619/7662 (99.4%)
+  Max length responses: 44/7662 (0.6%)
+  Timeout responses: 0/7662 (0.0%)
+  API failure responses: 0/7662 (0.0%)
+
+📊 TRAIN METRICS:
+  All train correct: 0/120 (0.0%)
+  Min 1 train correct: 6/120 (5.0%)
+
+============================================================
+SUBMISSION SCORING RESULTS
+============================================================
+Dataset: arc-prize-2025
+Subset: evaluation
+Reference tasks: 120
+Tasks scored: 120
+Total predictions: 344
+
+📊 PREDICTION-LEVEL METRICS:
+  Pass@1 (first attempt): 1/344 (0.3%)
+  Pass@2 (either attempt): 1/344 (0.3%)
+
+📊 TASK-LEVEL METRICS:
+  Tasks Pass@1 (all outputs correct on first attempt): 1/120 (0.8%)
+  Tasks Pass@2 (all outputs correct on either attempt): 1/120 (0.8%)
 
 ### Check torch.distributed.run works on 4xL4.
 - adjust grad accum to 32 for kaggle.
@@ -32,7 +82,7 @@ Quite a tedious process:
           # Step 2: Run the actual fine-tuning
           log_and_print("🚀 Starting fine-tuning...", f)
           fine_tuning_cmd = [
-                "uv", "run", "python", "-u", "-m", "torch.distributed.run",
+                "uv", "run", "-u", "torchrun",
                 f"--nproc_per_node={num_gpus}",
                 "-m", "llm_python.fine-tuning.unsloth_arc_finetuning_soar",
                 "--config", "llm_python/fine-tuning/config.yaml",
@@ -105,6 +155,8 @@ elif not is_kaggle:
 ```
 
 9. Set `ddp_find_unused_parameters=False` in the SFTTrainer config.
+
+
 
 ### Check for bools in the dataset
 Confirming no bools in parquet files or hf dataset: Trelis/arc-agi-1-partial-100
