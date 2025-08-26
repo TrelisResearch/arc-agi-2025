@@ -86,6 +86,24 @@ accel.print(f"🔍 {self.name} - {self.description}")
         gradient_checkpointing_kwargs={"use_reentrant": False}
 ```
 
+8. You only want wandb on the main process:
+```python
+if not accel.is_main_process
+    os.environ["WANDB_DISABLED"] = "true"
+elif not is_kaggle:
+    import wandb
+
+    # 1. Log in (will prompt for your API key in notebook)
+    wandb.login()
+
+    # 2. Initialize a run and set the project
+    wandb.init(
+        project="arc-agi-2025",   # set your project name
+        entity="trelis",  # optional: your W&B username or team
+        name=run_name  # optional: custom run name
+    )
+```
+
 ### Check for bools in the dataset
 Confirming no bools in parquet files or hf dataset: Trelis/arc-agi-1-partial-100
 
