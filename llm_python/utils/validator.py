@@ -133,12 +133,12 @@ class ARCTaskValidator:
                 return False
             # Check that all values are integers in range 0-9 
             for j, cell in enumerate(row):
+                if not isinstance(cell, int) or isinstance(cell, bool):
+                    print(f"⚠️ Converting cell value in {description} at [{i}][{j}]: {cell} (type: {type(cell)})")
+                    return False
                 if not (0 <= cell <= 9):
                     if verbose:
                         print(f"❌ Cell value out of range for {description} at [{i}][{j}]: {cell} (should be 0-9)")
-                    return False
-                if not isinstance(cell, int) or isinstance(cell, bool):
-                    print(f"⚠️ Converting cell value in {description} at [{i}][{j}]: {cell} (type: {type(cell)})")
                     return False
         # After type checks, ensure proper 2D grid: all rows must be lists and have same width
         for i, row in enumerate(grid):
