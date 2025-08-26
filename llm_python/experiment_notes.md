@@ -23,6 +23,69 @@ Lewis Reminders:
 - adjust grad accum to 32 for kaggle.
 - test with 4xL4.
 
+Quite a tedious process:
+1. Use torch.distributed.run:
+```python
+          import os
+          os.environ["UNSLOTH_DISABLE_RL_PATCH"] = "1"
+
+          # Step 2: Run the actual fine-tuning
+          log_and_print("🚀 Starting fine-tuning...", f)
+          fine_tuning_cmd = [
+                "uv", "run", "python", "-u", "-m", "torch.distributed.run",
+                f"--nproc_per_node={num_gpus}",
+                "-m", "llm_python.fine-tuning.unsloth_arc_finetuning_soar",
+                "--config", "llm_python/fine-tuning/config.yaml",
+          ]
+```
+2. Turn off Unsloth RL patches - see above.
+3. Import the accelerator AND set the device map:
+```python
+from accelerate import Accelerator
+accel = Accelerator()
+
+local_rank = int(os.environ.get("LOCAL_RANK", 0))
+torch.cuda.set_device(local_rank)
+
+device_map = {"": accel.local_process_index}  # one GPU per rank
+
+model, tokenizer = FastLanguageModel.from_pretrained(
+    model_name = model_slug,
+    max_seq_length = model_max_length,
+    device_map=device_map,
+)
+```
+4. Wrap the saving of the model:
+```python
+# --- sync everyone before saving/merging ---
+accel.wait_for_everyone()
+
+# --- save / merge / push (only rank 0) ---
+if accel.is_main_process:
+    
+    if execution_mode == "final_only":
+        print("🔧 Final-only mode: Only processing the last checkpoint")
+        ...
+
+# final barrier so workers don’t exit early if they rely on files
+accel.wait_for_everyone()
+```
+5. Use `with accel.main_process_first():` for downloads and data. It gets the first rank to do it and then other ranks grab the cache.
+Typical use:
+- load_dataset(...) the first time (so only rank-0 hits the network).
+- .map(...) / .filter(...) that write a cache (load_from_cache_file=True).
+
+6. Add in accel.print instead of print statements.
+```python
+accel.print(f"🔍 {self.name} - {self.description}")
+```
+
+7. Turn off reentrancy on gradient checkpointing:
+```python
+        gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False}
+```
+
 ### Check for bools in the dataset
 Confirming no bools in parquet files or hf dataset: Trelis/arc-agi-1-partial-100
 
