@@ -24,12 +24,54 @@ We'll use openrouter. Starting off with one attempt and 32 workers with o4-mini:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset missing_1_solution --unsafe-executor --base-url https://openrouter.ai/api/v1 --max_workers 32 --max_attempts 1 --model gpt-5-mini --max-tokens 32000
 ```
+Dataset: arc-prize-2025
+Subset: missing_1_solution
+Model: gpt-5-mini
+Total tasks: 514
+Total time: 1966.3s
+Successful API calls: 514/514 (100.0%)
+Total tokens used: 5,898,802
+Total cost: $7.614638
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 9.7% (5.1% excl. trans)
+  Pass@2 (Train Majority):  9.7% (5.1% excl. trans)
+  Oracle (Best Attempt):    9.7% (5.1% excl. trans)
+  All Train Correct:        8.8% (5.1% excl. trans)
+  Min 1 Train Correct:      26.1% (12.5% excl. trans)
+  Min 1 Code Success:       95.9%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
 and then run with gpt-5-nano:
 
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset missing_1_solution --unsafe-executor --base-url https://openrouter.ai/api/v1 --max_workers 32 --max_attempts 1 --model gpt-5-nano --max-tokens 32000
+```
+Dataset: arc-prize-2025
+Subset: missing_1_solution
+Model: gpt-5-nano
+Total tasks: 514
+Total time: 1864.8s
+Successful API calls: 514/514 (100.0%)
+Total tokens used: 9,248,435
+Total cost: $2.865717
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 1.9% (1.6% excl. trans)
+  Pass@2 (Train Majority):  1.9% (1.6% excl. trans)
+  Oracle (Best Attempt):    1.9% (1.6% excl. trans)
+  All Train Correct:        2.7% (1.6% excl. trans)
+  Min 1 Train Correct:      15.2% (10.1% excl. trans)
+  Min 1 Code Success:       96.7%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+So the conclusion is to run with 8 attempts on gpt-5-mini:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset missing_1_solution --unsafe-executor --base-url https://openrouter.ai/api/v1 --max_workers 32 --max_attempts 8 --model gpt-5-mini --max-tokens 32000
 ```
 
 
