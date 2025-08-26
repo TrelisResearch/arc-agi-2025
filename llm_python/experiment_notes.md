@@ -15,6 +15,18 @@ Lewis Reminders:
 
 
 ---
+## Aug 26
+
+### 
+
+### Check torch.distributed.run works on 4xL4.
+- adjust grad accum to 32 for kaggle.
+- test with 4xL4.
+
+### Check for bools in the dataset
+
+
+
 ## Aug 25
 
 ### Daily Summary
