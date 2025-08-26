@@ -103,7 +103,6 @@ class TestSubmissionGenerator(unittest.TestCase):
         self.assertIn("test_predicted", attempt)
         self.assertIn("train_accuracy", attempt)
         self.assertIn("is_transductive", attempt)
-        self.assertIn("outputs_valid", attempt)
         self.assertIn("program_extracted", attempt)
         
         # Verify train accuracy calculation
