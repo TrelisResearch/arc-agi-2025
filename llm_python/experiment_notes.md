@@ -43,7 +43,7 @@ DataFrame validation failed: Format validation:
     Issues: 0
     Schema error: Schema validation failed: ('Expected integer, got bool', 'Conversion failed for column predicted_train_output with type object')
 ```
-3. Minor - there is a small descrepancy in weighted train correct (and possibly other metrics) around <0.5% pts between task-based scoring during the run AND scoring of the final submission file. A low-confidence guess is that this is due to duplicate (string-match) programs only being logged once.
+3. Minor - there is a small descrepancy in weighted train correct (and possibly other metrics) around <0.5% pts between task-based scoring during the run AND scoring of the final submission file. A low-confidence guess is that this is due to duplicate (string-match) programs only being logged once -UPDATE THIS CANNOT BE AN ISSUE AS WE DON'T DO DE-DUPLICATION.
 4. Minor - fine-tuning has not yet been tested using all four gpus, it currently uses only 1. Further fine-tuning has not been tested on 4xL4 (or Kaggle) with batch size 1 and longer sequences (tests today worked because the long ones were on H200 or there were so few TTT samples generated that the batch size had short completions and was small - note that batch size is now auto set to 1 on kaggle).
 
 ### Splitter Mode
