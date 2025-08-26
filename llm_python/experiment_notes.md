@@ -104,6 +104,8 @@ elif not is_kaggle:
     )
 ```
 
+9. Set `ddp_find_unused_parameters=False` in the SFTTrainer config.
+
 ### Check for bools in the dataset
 Confirming no bools in parquet files or hf dataset: Trelis/arc-agi-1-partial-100
 
