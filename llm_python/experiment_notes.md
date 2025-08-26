@@ -24,8 +24,7 @@ Lewis Reminders:
 - test with 4xL4.
 
 ### Check for bools in the dataset
-
-
+Confirming no bools in parquet files or hf dataset: Trelis/arc-agi-1-partial-100
 
 ## Aug 25
 
