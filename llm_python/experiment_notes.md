@@ -17,6 +17,24 @@ Lewis Reminders:
 ---
 ## Aug 26
 
+### Generate data on arc-prize-2025 missing_1_solution subset
+
+We'll use openrouter. Starting off with one attempt and 32 workers with o4-mini:
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset missing_1_solution --unsafe-executor --base-url https://openrouter.ai/api/v1 --max_workers 32 --max_attempts 1 --model gpt-5-mini --max-tokens 32000
+```
+
+
+and then run with gpt-5-nano:
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset missing_1_solution --unsafe-executor --base-url https://openrouter.ai/api/v1 --max_workers 32 --max_attempts 1 --model gpt-5-nano --max-tokens 32000
+```
+
+
+
+
 ### TTT Run with 64 attempts either side of the arc-agi-1-partial-100 model
 
 Before TTT:

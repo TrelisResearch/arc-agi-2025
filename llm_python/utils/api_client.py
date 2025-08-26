@@ -86,6 +86,12 @@ class ARCAPIClient:
         elif model_lower.startswith("o4-mini"):
             return (1.10, 4.40)
 
+        # GPT-5 models
+        elif model_lower.startswith("gpt-5-mini"):
+            return (0.25, 2.00)
+        elif model_lower.startswith("gpt-5-nano"):
+            return (0.05, 0.40)
+        
         # GPT-4 models
         elif model_lower.startswith("gpt-4.1-nano"):
             return (0.10, 0.40)
