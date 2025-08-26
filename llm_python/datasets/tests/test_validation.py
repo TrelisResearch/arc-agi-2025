@@ -141,6 +141,21 @@ class TestValidateSoarRow:
         )
         assert result.is_valid() is False
 
+    def test_row_predicted_output_with_bools_is_rejected(self):
+        row = {
+            "task_id": "task_bool",
+            "reasoning": None,
+            "code": "def generate(): return [[True, False], [False, True]]",
+            "correct_train_input": [True],
+            "correct_test_input": [True],
+            "predicted_train_output": [[[True, False], [False, True]]],
+            "predicted_test_output": [[[True, False], [False, True]]],
+            "model": "test_model",
+            "is_transductive": False,
+        }
+        result = validate_soar_row(row)
+        assert not result.is_valid
+
 
 class TestValidateSoarDataframe:
     """Test the main validation function."""

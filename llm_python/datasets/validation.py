@@ -70,7 +70,7 @@ def validate_soar_row(row: dict) -> ValidateRowResult:
                 errors.append(f"{field} is an empty list")
             else:
                 # Use common prediction validator
-                is_valid, validation_errors = ARCTaskValidator.validate_prediction_list(row[field], field)
+                _, validation_errors = ARCTaskValidator.validate_prediction_list(row[field], field)
                 errors.extend(validation_errors)
     if (
         "reasoning" in row

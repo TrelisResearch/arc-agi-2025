@@ -94,25 +94,19 @@ class ARCTaskValidator:
             if verbose:
                 print(f"❌ Invalid grid for {description}: not a list")
             return False
-        
         if len(grid) == 0:
             if verbose:
                 print(f"❌ Empty grid for {description}")
             return False
-        
-        # Check first row to get expected width
         if not isinstance(grid[0], list):
             if verbose:
                 print(f"❌ Invalid grid for {description}: first row not a list")
             return False
-        
         expected_width = len(grid[0])
         if expected_width == 0:
             if verbose:
                 print(f"❌ Empty first row in grid for {description}")
             return False
-        
-        # Check grid size limits (1x1 to 30x30 per ARC competition requirements)
         height = len(grid)
         width = expected_width
         if not (1 <= height <= 30):
@@ -123,40 +117,35 @@ class ARCTaskValidator:
             if verbose:
                 print(f"❌ Invalid grid width for {description}: {width} (must be 1-30)")
             return False
-        
         # Validate all rows
         for i, row in enumerate(grid):
             if not isinstance(row, list):
                 if verbose:
                     print(f"❌ Invalid grid for {description}: row {i} not a list")
                 return False
-            
+            if len(row) == 0:
+                if verbose:
+                    print(f"❌ Empty row in grid for {description}: row {i}")
+                return False
             if len(row) != expected_width:
                 if verbose:
                     print(f"❌ Inconsistent grid width for {description}: row {i} has {len(row)} items, expected {expected_width}")
                 return False
-            
-            # Check that all values are integers in range 0-9 (accept numpy types)
+            # Check that all values are integers in range 0-9 
             for j, cell in enumerate(row):
-                # Accept both Python int and numpy integer types
-                try:
-                    # Convert to Python int if it's a numeric type
-                    cell_int = int(cell)
-                except (ValueError, TypeError):
+                if not (0 <= cell <= 9):
                     if verbose:
-                        print(f"❌ Invalid cell value for {description} at [{i}][{j}]: {cell} (type: {type(cell)}, cannot convert to int)")
+                        print(f"❌ Cell value out of range for {description} at [{i}][{j}]: {cell} (should be 0-9)")
                     return False
-                
-                if not (0 <= cell_int <= 9):
-                    if verbose:
-                        print(f"❌ Cell value out of range for {description} at [{i}][{j}]: {cell_int} (should be 0-9)")
+                if not isinstance(cell, int) or isinstance(cell, bool):
+                    print(f"⚠️ Converting cell value in {description} at [{i}][{j}]: {cell} (type: {type(cell)})")
                     return False
-                
-                # Convert non-integer types (like bool, numpy types) to standard Python int
-                if not isinstance(cell, int) or cell != cell_int:
-                    print(f"⚠️ Converting cell value in {description} at [{i}][{j}]: {cell} (type: {type(cell)}) -> {cell_int}")
-                    row[j] = cell_int
-        
+        # After type checks, ensure proper 2D grid: all rows must be lists and have same width
+        for i, row in enumerate(grid):
+            if not isinstance(row, list) or len(row) != expected_width:
+                if verbose:
+                    print(f"❌ Grid is not a proper 2D grid for {description}: row {i}")
+                return False
         return True
     
     @staticmethod
