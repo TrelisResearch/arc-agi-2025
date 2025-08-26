@@ -119,6 +119,14 @@ print(f"Report to: {report_to}")
 # ---------------------------------------------------------------------
 # Cell 3
 # ---------------------------------------------------------------------
+import os
+
+if not config.get("training", {}).get("multi_gpu", False):
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"    # single GPU
+
+# ---------------------------------------------------------------------
+# Cell 4
+# ---------------------------------------------------------------------
 from huggingface_hub import HfFolder, login
 
 if not is_kaggle:
@@ -127,7 +135,7 @@ if not is_kaggle:
         login()                        # interactive prompt
 
 # ---------------------------------------------------------------------
-# Cell 4
+# Cell 5
 # ---------------------------------------------------------------------
 if not is_kaggle:
     import os
@@ -148,12 +156,12 @@ model, tokenizer = FastLanguageModel.from_pretrained(
 )
 
 # ---------------------------------------------------------------------
-# Cell 5
+# Cell 6
 # ---------------------------------------------------------------------
 print(f"model.max_seq_length: {model.max_seq_length}")
 
 # ---------------------------------------------------------------------
-# Cell 6
+# Cell 7
 # ---------------------------------------------------------------------
 model = FastLanguageModel.get_peft_model(
     model,
@@ -172,14 +180,14 @@ model = FastLanguageModel.get_peft_model(
 )
 
 # ---------------------------------------------------------------------
-# Cell 7
+# Cell 8
 # ---------------------------------------------------------------------
 # %%
 print(f"tokenizer.padding_side: {tokenizer.padding_side}")
 # %%
 
 # ---------------------------------------------------------------------
-# Cell 8
+# Cell 9
 # ---------------------------------------------------------------------
 # Import utils using standard project root detection
 from pathlib import Path
@@ -214,7 +222,7 @@ print("✅ Utils imported and initialized successfully")
 
 
 # ---------------------------------------------------------------------
-# Cell 9
+# Cell 10
 # ---------------------------------------------------------------------
 import re
 
@@ -239,7 +247,7 @@ print("✅ Added code cleaning and filtering functions")
 
 
 # ---------------------------------------------------------------------
-# Cell 10
+# Cell 11
 # ---------------------------------------------------------------------
 # Test cases
 test_code = """def solve(grid):
@@ -274,7 +282,7 @@ print(f"Cleaned length: {len(cleaned)} chars")
 print(f"Characters removed: {len(test_code) - len(cleaned)}")
 
 # ---------------------------------------------------------------------
-# Cell 11
+# Cell 12
 # ---------------------------------------------------------------------
 from pathlib import Path
 import json
@@ -482,7 +490,7 @@ def build_dataset() -> DatasetDict:
 data = build_dataset()
 
 # ---------------------------------------------------------------------
-# Cell 12
+# Cell 13
 # ---------------------------------------------------------------------
 import numpy as np
 from statistics import median
@@ -511,7 +519,7 @@ def length_stats(dataset, name=""):
 length_stats(data["train"],       "train")
 
 # ---------------------------------------------------------------------
-# Cell 13
+# Cell 14
 # ---------------------------------------------------------------------
 import random
 
@@ -679,7 +687,7 @@ def run_pre_training_data_integrity_tests(dataset_split="train", num_examples=NU
 data_integrity_results = run_pre_training_data_integrity_tests("train", NUM_TEST_EXAMPLES)
 
 # ---------------------------------------------------------------------
-# Cell 14
+# Cell 15
 # ---------------------------------------------------------------------
 def analyze_data_integrity_results(results):
     """
@@ -806,7 +814,7 @@ summary_stats = analyze_data_integrity_results(data_integrity_results)
 
 
 # ---------------------------------------------------------------------
-# Cell 15
+# Cell 16
 # ---------------------------------------------------------------------
 def examine_failure(results, example_index):
   """Examine a specific failing example in detail with grid visualization."""
@@ -931,12 +939,12 @@ print(f"📋 Summary stats saved in 'summary_stats' variable")
 print(f"📊 Detailed results saved in 'data_integrity_results' variable")
 
 # ---------------------------------------------------------------------
-# Cell 16
+# Cell 17
 # ---------------------------------------------------------------------
 examine_failure(data_integrity_results, 21)
 
 # ---------------------------------------------------------------------
-# Cell 17
+# Cell 18
 # ---------------------------------------------------------------------
 from datetime import datetime
 import re
@@ -983,7 +991,7 @@ if test_run:
 print(f"Run name will be {run_name}")
 
 # ---------------------------------------------------------------------
-# Cell 18
+# Cell 19
 # ---------------------------------------------------------------------
 import torch, subprocess, os, gc, time
 
@@ -1040,12 +1048,12 @@ else:
     raise ValueError(f"Unsupported model slug for Qwen template: {model_slug}")
 
 # ---------------------------------------------------------------------
-# Cell 19
+# Cell 20
 # ---------------------------------------------------------------------
 print(f"Response tag selected: {response_tag}")
 
 # ---------------------------------------------------------------------
-# Cell 20
+# Cell 21
 # ---------------------------------------------------------------------
 if not is_kaggle:
     import wandb
@@ -1062,7 +1070,7 @@ if not is_kaggle:
 
 
 # ---------------------------------------------------------------------
-# Cell 21
+# Cell 22
 # ---------------------------------------------------------------------
 from trl import SFTTrainer, SFTConfig
 import math
@@ -1161,7 +1169,7 @@ print(f"[setup] updates/epoch={updates_per_epoch} total_updates={total_updates} 
       f"output_dir={trainer.args.output_dir}")
 
 # ---------------------------------------------------------------------
-# Cell 22
+# Cell 23
 # ---------------------------------------------------------------------
 # @title Show current memory stats
 gpu_stats = torch.cuda.get_device_properties(0)
@@ -1171,7 +1179,7 @@ print(f"GPU = {gpu_stats.name}. Max memory = {max_memory} GB.")
 print(f"{start_gpu_memory} GB of memory reserved.")
 
 # ---------------------------------------------------------------------
-# Cell 23
+# Cell 24
 # ---------------------------------------------------------------------
 from unsloth.chat_templates import train_on_responses_only # or run the code above if not using unsloth
 
@@ -1185,22 +1193,22 @@ trainer = train_on_responses_only(
 )
 
 # ---------------------------------------------------------------------
-# Cell 24
+# Cell 25
 # ---------------------------------------------------------------------
 tokenizer.decode(trainer.train_dataset[0]["input_ids"])
 
 # ---------------------------------------------------------------------
-# Cell 25
+# Cell 26
 # ---------------------------------------------------------------------
 tokenizer.decode([tokenizer.pad_token_id if x == -100 else x for x in trainer.train_dataset[0]["labels"]]).replace(tokenizer.pad_token, " ")
 
 # ---------------------------------------------------------------------
-# Cell 26
+# Cell 27
 # ---------------------------------------------------------------------
 trainer_stats = trainer.train()
 
 # ---------------------------------------------------------------------
-# Cell 27
+# Cell 28
 # ---------------------------------------------------------------------
 # @title Show final memory and time stats
 used_memory = round(torch.cuda.max_memory_reserved() / 1024 / 1024 / 1024, 3)
@@ -1217,12 +1225,12 @@ print(f"Peak reserved memory % of max memory = {used_percentage} %.")
 print(f"Peak reserved memory for training % of max memory = {lora_percentage} %.")
 
 # ---------------------------------------------------------------------
-# Cell 28
+# Cell 29
 # ---------------------------------------------------------------------
 print(trainer_stats)
 
 # ---------------------------------------------------------------------
-# Cell 29
+# Cell 30
 # ---------------------------------------------------------------------
 if execution_mode == "full":
     print(f"Current working directory: {os.getcwd()}")
@@ -1231,7 +1239,7 @@ if execution_mode == "full":
     trainer.push_to_hub()
 
 # ---------------------------------------------------------------------
-# Cell 30
+# Cell 31
 # ---------------------------------------------------------------------
 # Checkpoint processing based on execution mode
 import os, re, torch
