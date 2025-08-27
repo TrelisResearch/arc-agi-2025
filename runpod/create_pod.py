@@ -346,12 +346,10 @@ def create_pod(config, extra_args):
     
     # Extract model name from arguments for better pod naming
     model_name = "unknown"
-    full_model_path = "unknown"
     if extra_args:
         for i, arg in enumerate(extra_args):
-            if arg == "--model-path" and i + 1 < len(extra_args):
-                full_model_path = extra_args[i + 1]
-                model_name = full_model_path.split('/')[-1]  # Get last part of model path
+            if arg in ["--model-path", "--model"] and i + 1 < len(extra_args):
+                model_name = extra_args[i + 1].split('/')[-1]  # Get last part of model path
                 break
     
     headers = {
@@ -398,11 +396,17 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s sglang -- --model-path Qwen/Qwen3-4B
-  %(prog)s sglang --regions us_only -- --model-path Qwen/Qwen3-4B --reasoning-parser qwen3
+  %(prog)s sglang Qwen/Qwen3-4B
+  %(prog)s vllm Trelis/Qwen3-4B --gpu-count 2
+  %(prog)s sglang Qwen/Qwen3-4B --regions us_only --gpu-count 4
 
 Template names are loaded from the templates/ folder. File extensions are optional.
-All arguments after '--' are passed directly to the docker command.
+The model path is automatically passed with the correct flag (--model-path for sglang, --model for vllm).
+
+GPU Configuration:
+- Use --gpu-count to specify number of GPUs (default: 1)
+- For sglang: sets --dp (data parallel) to match GPU count
+- For vllm: sets --data-parallel-size to match GPU count
 
 Region Configuration:
 - Default regions are defined in config.py and used automatically
@@ -420,6 +424,9 @@ The healthCheck section is automatically stripped before sending to RunPod.
     )
     
     parser.add_argument('template', help='Template name (from templates/ folder, extension optional)')
+    parser.add_argument('model', help='Model path (e.g., Qwen/Qwen3-4B or Trelis/model-name)')
+    parser.add_argument('--gpu-count', type=int, default=1,
+                       help='Number of GPUs to allocate (default: 1)')
     parser.add_argument('--no-health-check', action='store_true',
                        help='Skip health check after pod creation')
     parser.add_argument('--debug', action='store_true',
@@ -427,17 +434,11 @@ The healthCheck section is automatically stripped before sending to RunPod.
     parser.add_argument('--regions', 
                        choices=['default', 'us_only', 'eu_only', 'low_latency', 'cost_optimized'],
                        help='Region set to use (overrides template dataCenterIds)')
+    parser.add_argument('--kv-cache-dtype', type=str,
+                       help='KV cache data type (e.g., fp8_e5m2)')
     
-    # Parse arguments, splitting at '--'
-    if '--' in sys.argv:
-        script_args = sys.argv[1:sys.argv.index('--')]
-        extra_args = sys.argv[sys.argv.index('--') + 1:]
-    else:
-        script_args = sys.argv[1:]
-        extra_args = []
-    
-    # Parse script-specific arguments
-    args = parser.parse_args(script_args)
+    # Parse arguments
+    args = parser.parse_args()
     
     # Check for required environment variable
     if 'RUNPOD_API_KEY' not in os.environ:
@@ -449,6 +450,32 @@ The healthCheck section is automatically stripped before sending to RunPod.
     if not config:
         sys.exit(1)
     
+    # Build docker arguments based on template type
+    extra_args = []
+    
+    # Add model argument
+    if 'vllm' in args.template.lower():
+        extra_args.extend(['--model', args.model])
+        # Add data-parallel-size
+        extra_args.extend(['--data-parallel-size', str(args.gpu_count)])
+    else:
+        # Default to sglang style
+        extra_args.extend(['--model-path', args.model])
+        # Add dp (data parallel)
+        extra_args.extend(['--dp', str(args.gpu_count)])
+    
+    # Add kv-cache-dtype (use specified or default to fp8_e4m3)
+    kv_cache = args.kv_cache_dtype if args.kv_cache_dtype else 'fp8_e4m3'
+    extra_args.extend(['--kv-cache-dtype', kv_cache])
+    
+    # Print configuration info
+    print(f"🚀 Creating pod with model: {args.model}")
+    print(f"   GPUs: {args.gpu_count} (data parallel)")
+    print(f"   KV cache dtype: {kv_cache}")
+    
+    # Set GPU count in config
+    config['gpuCount'] = args.gpu_count
+    
     # Override regions if specified
     if args.regions:
         config['dataCenterIds'] = get_regions(args.regions)
@@ -457,14 +484,6 @@ The healthCheck section is automatically stripped before sending to RunPod.
     # Register signal handlers for graceful shutdown
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-    
-    # Extract model path for testing
-    full_model_path = "unknown"
-    if extra_args:
-        for i, arg in enumerate(extra_args):
-            if arg == "--model-path" and i + 1 < len(extra_args):
-                full_model_path = extra_args[i + 1]
-                break
     
     # Create the pod
     pod_id, health_check_config = create_pod(config, extra_args)
@@ -559,7 +578,7 @@ The healthCheck section is automatically stripped before sending to RunPod.
     # Stage 3: Health checks
     if not args.no_health_check and ports:
         health_check_passed = perform_health_check(
-            health_check_config, pod_id, ports, direct_ip, port_mappings, full_model_path
+            health_check_config, pod_id, ports, direct_ip, port_mappings, args.model
         )
         if health_check_passed:
             print("✅ Health check completed successfully!")

@@ -68,6 +68,14 @@ def prompt_keep_pod(timeout=10):
 def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="all_evaluation", max_attempts=64, no_transductive_penalty=False, max_workers=32):
     """Run ARC tasks - task runner handles its own graceful shutdown"""
     print(f"\n🎯 Running ARC tasks for {dataset} with subset {subset}...")
+    print(f"📊 Task Runner Configuration:")
+    print(f"   Max workers: {max_workers}")
+    print(f"   Max attempts: {max_attempts}")
+    print(f"   Max tokens: 2000 (default)")
+    print(f"   Qwen thinking: DISABLED (--qwen-no-think)")
+    print(f"   Executor: UNSAFE (runs directly, no sandboxing)")
+    if no_transductive_penalty:
+        print(f"   Transductive penalty: DISABLED")
     
     cmd = [
         "uv", "run", "python", "-m", "llm_python.run_arc_tasks_soar",
@@ -85,7 +93,7 @@ def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="
     if no_transductive_penalty:
         cmd.append("--no-transductive-penalty")
     
-    print(f"📝 Running command: {' '.join(cmd)}")
+    print(f"📝 Full command: {' '.join(cmd)}")
     
     # Start subprocess
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, 
@@ -173,9 +181,10 @@ Examples:
   %(prog)s arc-agi-2 Trelis/Qwen3-4B_dsarc-agi-2-custom-model --subset shortest_1
   %(prog)s arc-agi-1 Trelis/Qwen3-4B_model --subset all_evaluation --max_attempts 32
   %(prog)s arc-agi-2 Trelis/arc-1-fake-ttt-blended-c802-FP8-Dynamic --subset all_evaluation --kv-cache-dtype fp8_e5m2
+  %(prog)s arc-agi-1 Trelis/Qwen3-4B_model --gpu-count 4 --template sglang
 
 This script will:
-1. Create a RunPod pod with the specified model
+1. Create a RunPod pod with the specified model and GPU count
 2. Wait for the OpenAI endpoint to be ready
 3. Run ARC tasks on specified subset (default: all_evaluation) with configurable max attempts (default: 64)
 4. Keep the pod running until you press Ctrl+C
@@ -189,7 +198,11 @@ This script will:
                        help='Full model path (e.g., Trelis/Qwen3-4B_...)')
     parser.add_argument('--template', 
                        default='sglang',
-                       help='RunPod template to use (default: sglang)')
+                       help='RunPod template to use (default: sglang, also supports vllm)')
+    parser.add_argument('--gpu-count',
+                       type=int,
+                       default=1,
+                       help='Number of GPUs to allocate (default: 1)')
     parser.add_argument('--subset',
                        default='evaluation',
                        help='Dataset subset to run (default: evaluation)')
@@ -201,7 +214,7 @@ This script will:
                        help='Skip health check after pod creation')
     parser.add_argument('--kv-cache-dtype',
                        type=str,
-                       help='KV cache data type for sglang servers (e.g., fp8_e5m2)')
+                       help='KV cache data type for sglang/vllm servers (e.g., fp8_e5m2)')
     parser.add_argument('--max-attempts', '--max_attempts',
                        type=int,
                        default=64,
@@ -225,20 +238,25 @@ This script will:
     
     # Step 1: Create the pod
     print(f"🚀 Step 1: Creating RunPod pod with model {args.model_path}")
+    if args.gpu_count > 1:
+        print(f"   Using {args.gpu_count} GPUs for data parallelism")
     
     create_cmd = [
         "uv", "run", "python", "runpod/create_pod.py", 
         args.template,
-        "--",
-        "--model-path", args.model_path
+        args.model_path,  # Now passed as positional argument
     ]
+    
+    # Add GPU count if not default
+    if args.gpu_count != 1:
+        create_cmd.extend(["--gpu-count", str(args.gpu_count)])
+    
+    if args.no_health_check:
+        create_cmd.append("--no-health-check")
     
     # Add kv-cache-dtype parameter if provided
     if args.kv_cache_dtype:
         create_cmd.extend(["--kv-cache-dtype", args.kv_cache_dtype])
-    
-    if args.no_health_check:
-        create_cmd.insert(5, "--no-health-check")  # Insert after "create_pod.py"
     
     print(f"📝 Running: {' '.join(create_cmd)}")
     

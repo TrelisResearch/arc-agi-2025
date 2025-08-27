@@ -29,6 +29,25 @@ and start one with sglang as well:
 ```bash
 uv run python -m runpod.create_pod_and_run_tasks arc-prize-2024 Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542 --template sglang --subset evaluation --max-attempts 4 --max-workers 32
 ```
+Dataset: arc-prize-2024
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542
+Total tasks: 400
+Total time: 201.6s
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 6,392,530
+Total cost: $1.162993
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 6.0% (6.0% excl. trans)
+  Pass@2 (Train Majority):  6.0% (6.0% excl. trans)
+  Oracle (Best Attempt):    6.2% (6.2% excl. trans)
+  All Train Correct:        4.5% (4.5% excl. trans)
+  Min 1 Train Correct:      11.5% (10.8% excl. trans)
+  Min 1 Code Success:       99.8%
+  Max Length Responses:     0.1%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
 
 
