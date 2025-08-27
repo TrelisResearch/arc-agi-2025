@@ -73,7 +73,27 @@ So the conclusion is to run with 8 attempts on gpt-5-mini:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset missing_1_solution --unsafe-executor --base-url https://openrouter.ai/api/v1 --max_workers 32 --max_attempts 8 --model gpt-5-mini --max-tokens 32000
 ```
+Dataset: arc-prize-2025
+Subset: missing_1_solution
+Model: gpt-5-mini
+Total tasks: 514
+Total time: 16896.8s
+Successful API calls: 514/514 (100.0%)
+Total tokens used: 47,077,808
+Total cost: $60.688614
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 20.2% (15.4% excl. trans)
+  Pass@2 (Train Majority):  19.1% (15.2% excl. trans)
+  Oracle (Best Attempt):    25.9% (16.0% excl. trans)
+  All Train Correct:        24.5% (15.0% excl. trans)
+  Min 1 Train Correct:      51.2% (36.2% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 3945 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250826_224143_gpt-5-mini_arc-prize-2025_missing_1_solution.parquet
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250826_224143_gpt-5-mini_arc-prize-2025_missing_1_solution.parquet
 
 
 
