@@ -9,9 +9,15 @@ import json
 import yaml
 import socket
 from datetime import datetime
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Add the runpod directory to Python path for imports
+runpod_dir = Path(__file__).parent.absolute()
+if str(runpod_dir) not in sys.path:
+    sys.path.insert(0, str(runpod_dir))
 
 # Import shared configuration
 from config import DEFAULT_DATA_CENTERS, get_regions

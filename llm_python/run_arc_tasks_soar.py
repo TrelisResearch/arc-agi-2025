@@ -8,10 +8,12 @@ import threading
 import traceback
 import numpy as np
 import os
+import re
 from pathlib import Path
 from typing import Dict, List, NotRequired, Optional, TypedDict, Union, Tuple, Any
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor
+import requests
 
 from llm_python.datasets.collector import SoarDatasetCollector
 from llm_python.utils.task_loader import TaskData, get_task_loader
@@ -235,10 +237,21 @@ class ARCTaskRunnerSimple:
             "report_interval": 100,
         }
 
+        # vLLM metrics monitoring
+        self.metrics_url = None
+        self._metrics_thread = None
+        self._stop_metrics = False
+        self._extract_metrics_url_from_base_url()
+
         print(
             f"⏰ API timeout: {api_timeout}s (network safety only, no infrastructure timeouts)"
         )
         print(f"🗄️ Sampled programs will be logged to {self.dataset_collector.output_path()}")
+        
+        if self.metrics_url:
+            print(f"📊 vLLM metrics monitoring enabled ({self.metrics_url})", flush=True)
+        else:
+            print(f"📊 vLLM metrics monitoring disabled (base_url: {self.base_url})", flush=True)
 
     @property
     def model(self):
@@ -286,6 +299,123 @@ class ARCTaskRunnerSimple:
         return self.api_client.api_timeout
 
     # HF token handling moved to ARCAPIClient
+    
+    def _extract_metrics_url_from_base_url(self):
+        """Extract the metrics URL from the base URL if it's a vLLM server"""
+        if not self.base_url:
+            return
+        
+        try:
+            # vLLM serves metrics on the same port as the API server
+            # Just add /metrics to the base URL
+            base_url = self.base_url.rstrip('/')
+            if base_url.endswith('/v1'):
+                base_url = base_url[:-3]  # Remove /v1 suffix
+            potential_metrics_url = f"{base_url}/metrics"
+            
+            # Always enable metrics URL construction for potential vLLM servers
+            # We'll test connectivity later during actual monitoring
+            self.metrics_url = potential_metrics_url
+            
+            # Optional: Test if metrics endpoint is immediately available
+            try:
+                response = requests.get(potential_metrics_url, timeout=2)
+                if response.status_code == 200 and 'vllm:' in response.text:
+                    if self.debug:
+                        print(f"🔍 vLLM metrics confirmed at initialization: {potential_metrics_url}")
+                elif self.debug:
+                    print(f"🔍 Metrics endpoint found but no vLLM metrics detected (may not be ready yet)")
+            except Exception as e:
+                if self.debug:
+                    print(f"🔍 Metrics endpoint test failed during init (server may not be ready): {e}")
+                # Don't disable - server might not be ready yet
+                
+        except Exception:
+            # If extraction fails, disable metrics monitoring
+            self.metrics_url = None
+    
+    def _get_vllm_metrics(self):
+        """Fetch vLLM metrics from the metrics endpoint"""
+        if not self.metrics_url:
+            return None
+        
+        try:
+            response = requests.get(self.metrics_url, timeout=5)
+            response.raise_for_status()
+            
+            metrics_text = response.text
+            
+            # Parse relevant metrics using regex (handle Prometheus labels)
+            running_match = re.search(r'vllm:num_requests_running\{[^}]*\}\s+(\d+(?:\.\d+)?)', metrics_text)
+            waiting_match = re.search(r'vllm:num_requests_waiting\{[^}]*\}\s+(\d+(?:\.\d+)?)', metrics_text)
+            cache_usage_match = re.search(r'vllm:kv_cache_usage_perc\{[^}]*\}\s+(\d+(?:\.\d+)?)', metrics_text)
+            success_stop_match = re.search(r'vllm:request_success_total\{[^}]*finished_reason="stop"[^}]*\}\s+(\d+(?:\.\d+)?)', metrics_text)
+            success_length_match = re.search(r'vllm:request_success_total\{[^}]*finished_reason="length"[^}]*\}\s+(\d+(?:\.\d+)?)', metrics_text)
+            
+            running = int(float(running_match.group(1))) if running_match else 0
+            waiting = int(float(waiting_match.group(1))) if waiting_match else 0
+            cache_usage = float(cache_usage_match.group(1)) if cache_usage_match else 0.0
+            success_stop = int(float(success_stop_match.group(1))) if success_stop_match else 0
+            success_length = int(float(success_length_match.group(1))) if success_length_match else 0
+            
+            return {
+                'num_requests_running': running,
+                'num_requests_waiting': waiting,
+                'kv_cache_usage_perc': cache_usage,
+                'success_stop': success_stop,
+                'success_length': success_length
+            }
+            
+        except Exception as e:
+            if self.debug:
+                print(f"🔍 Failed to fetch vLLM metrics: {e}")
+            return None
+    
+    def _start_metrics_monitoring(self):
+        """Start the metrics monitoring thread"""
+        if not self.metrics_url:
+            print(f"📊 Skipping metrics monitoring: no metrics URL")
+            return
+        if self._metrics_thread:
+            print(f"📊 Metrics monitoring already running")
+            return
+        
+        print(f"📊 Starting metrics monitoring thread for {self.metrics_url}", flush=True)
+        
+        def monitor_metrics():
+            print(f"📊 Metrics thread started, polling {self.metrics_url} every 30s", flush=True)
+            while not self._stop_metrics:
+                try:
+                    metrics = self._get_vllm_metrics()
+                    if metrics:
+                        running = metrics['num_requests_running']
+                        waiting = metrics['num_requests_waiting']
+                        cache_pct = metrics['kv_cache_usage_perc'] * 100  # Convert to percentage
+                        success_stop = metrics['success_stop']
+                        success_length = metrics['success_length']
+                        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+                        print(f"📊 [{timestamp}] vLLM: {running}R/{waiting}W, Cache {cache_pct:.1f}%, Success {success_stop}+{success_length}", flush=True)
+                    else:
+                        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+                        print(f"📊 [{timestamp}] vLLM metrics fetch failed", flush=True)
+                except Exception as e:
+                    timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+                    print(f"📊 [{timestamp}] vLLM metrics error: {e}", flush=True)
+                
+                # Sleep for 30 seconds, but check stop flag every second
+                for _ in range(30):
+                    if self._stop_metrics:
+                        break
+                    time.sleep(1)
+        
+        self._metrics_thread = threading.Thread(target=monitor_metrics, daemon=True)
+        self._metrics_thread.start()
+    
+    def _stop_metrics_monitoring(self):
+        """Stop the metrics monitoring thread"""
+        self._stop_metrics = True
+        if self._metrics_thread:
+            self._metrics_thread.join(timeout=2)
 
     def _check_models_endpoint(self):
         """Check what models are available at the /models endpoint and validate arguments"""
@@ -948,6 +1078,9 @@ class ARCTaskRunnerSimple:
         print(executor_info)
 
         print("-" * 50)
+        
+        # Start vLLM metrics monitoring if available
+        self._start_metrics_monitoring()
 
         # Create attempt jobs with task-by-task prioritization for better GPU caching
         # This approach prioritizes completing tasks while still utilizing all workers
@@ -1188,6 +1321,9 @@ class ARCTaskRunnerSimple:
             )
 
         # All attempts should complete now without infrastructure timeouts
+        
+        # Stop vLLM metrics monitoring
+        self._stop_metrics_monitoring()
 
         # Convert task_results to the expected format for summary (including partial tasks)
         results = []

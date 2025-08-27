@@ -17,13 +17,37 @@ Lewis Reminders:
 ---
 ## Aug 27
 
-### Try to start a vllm pod
+### Inspect vllm metrics
+
+
+
+### Compare vllm to sglang
 
 Start a pod and run the task runner on arc-prize-2025 evaluation with --template vllm:
 
 ```bash
 uv run python -m runpod.create_pod_and_run_tasks arc-prize-2024 Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542 --template vllm --subset evaluation --max-attempts 4 --max-workers 32
 ```
+Dataset: arc-prize-2024
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542
+Total tasks: 400
+Total time: 185.8s
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 6,391,982
+Total cost: $1.162664
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 7.2% (7.2% excl. trans)
+  Pass@2 (Train Majority):  7.2% (7.2% excl. trans)
+  Oracle (Best Attempt):    7.2% (7.2% excl. trans)
+  All Train Correct:        6.0% (6.0% excl. trans)
+  Min 1 Train Correct:      13.8% (13.5% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.1%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250827_151543_Trelis_Qwen3-4B_ds-arc-agi-1-partial-100-c1542_arc-prize-2024_evaluation.parquet
 
 and start one with sglang as well:
 ```bash
@@ -50,11 +74,71 @@ Total cost: $1.162993
   API Failure Responses:    0.0%
 
 
+and try out two gpus with vllm:
 
+```bash
+uv run python -m runpod.create_pod_and_run_tasks arc-prize-2024 Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542 --template vllm --gpu-count 2 --subset evaluation --max-attempts 8 --max-workers 64
+```
+Dataset: arc-prize-2024
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542
+Total tasks: 400
+Total time: 208.7s
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 12,768,107
+Total cost: $2.315815
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 7.0% (7.0% excl. trans)
+  Pass@2 (Train Majority):  6.5% (6.5% excl. trans)
+  Oracle (Best Attempt):    7.8% (7.8% excl. trans)
+  All Train Correct:        5.5% (5.5% excl. trans)
+  Min 1 Train Correct:      15.0% (15.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+and two with sglang:
+
+```bash
+uv run python -m runpod.create_pod_and_run_tasks arc-prize-2024 Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542 --template sglang --gpu-count 2 --subset evaluation --max-attempts 8 --max-workers 64
+```
+Dataset: arc-prize-2024
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542
+Total tasks: 400
+Total time: 209.3s
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 12,787,772
+Total cost: $2.327614
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 9.0% (9.0% excl. trans)
+  Pass@2 (Train Majority):  9.0% (9.0% excl. trans)
+  Oracle (Best Attempt):    9.2% (9.2% excl. trans)
+  All Train Correct:        6.0% (6.0% excl. trans)
+  Min 1 Train Correct:      15.8% (15.2% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.1%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
 
 ## Aug 26
+
+### Test metrics with vllm pod
+
+We'll hit a qwen/qwen3-4b model with a vllm client and see if "reasoning" gets logged, we'll start a pod first with create_pod:
+
+```bash
+uv run python -m runpod.create_pod vllm Qwen/Qwen3-4B
+```
+now hit http://103.196.86.181:56252/v1 with 8 attempts and 32 workers and arc prize 2025 evaluation, just run tasks because we have the endpoint:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --unsafe-executor --base-url http://103.196.86.181:56252/v1 --max_workers 128 --max_attempts 64 --model Qwen/Qwen3-4B --max-tokens 32000
+```
+Seems I can even do 256 concurrent requests...
 
 ### Generate data on arc-prize-2025 missing_1_solution subset
 
