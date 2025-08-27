@@ -17,8 +17,12 @@ Lewis Reminders:
 ---
 ## Aug 27
 
-### Inspect vllm metrics
+Key learnings:
+- Can use 64 workers no problem for SGLang on Qwen. Means we could do around 150 attempts in 5 hours.
+- Possibly can do 16, maybe even 32 attempts in 5 hours on OSS. Probably 8 workers is ok, but not tested just yet.
 
+### Inspect vllm metrics
+Quickly test out the 20B OSS model on vllm running on tcp - 
 
 
 ### Compare vllm to sglang
@@ -179,7 +183,7 @@ uv run python -m runpod.create_pod vllm openai/gpt-oss-20b
 ```
 we can now hit it on - 103.196.86.181:51416:
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --unsafe-executor --base-url http://103.196.86.181:51416/v1 --max_workers 16 --max_attempts 16 --model openai/gpt-oss-20b --max-tokens 32000
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --unsafe-executor --base-url http://103.196.86.181:51416/v1 --max_workers 16 --max_attempts 4 --model openai/gpt-oss-20b --max-tokens 32000
 ```
 
 

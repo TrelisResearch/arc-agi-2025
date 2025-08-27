@@ -174,7 +174,7 @@ class ARCTaskRunnerSimple:
         self.no_transductive_penalty = no_transductive_penalty
         
         # Standard API timeout for network safety, no infrastructure timeouts
-        api_timeout = 300  # 5 minutes for network safety only
+        api_timeout = 600  # 10 minutes for network safety only
 
         # Optional global timeout from environment variable
         global_timeout = None
@@ -334,8 +334,8 @@ class ARCTaskRunnerSimple:
             # If extraction fails, disable metrics monitoring
             self.metrics_url = None
     
-    def _get_vllm_metrics(self):
-        """Fetch vLLM metrics from the metrics endpoint"""
+    def _get_llm_metrics(self):
+        """Fetch metrics from LLM server (vLLM or SGLang)"""
         if not self.metrics_url:
             return None
         
@@ -345,31 +345,73 @@ class ARCTaskRunnerSimple:
             
             metrics_text = response.text
             
-            # Parse relevant metrics using regex (handle Prometheus labels)
-            running_match = re.search(r'vllm:num_requests_running\{[^}]*\}\s+(\d+(?:\.\d+)?)', metrics_text)
-            waiting_match = re.search(r'vllm:num_requests_waiting\{[^}]*\}\s+(\d+(?:\.\d+)?)', metrics_text)
-            cache_usage_match = re.search(r'vllm:kv_cache_usage_perc\{[^}]*\}\s+(\d+(?:\.\d+)?)', metrics_text)
-            success_stop_match = re.search(r'vllm:request_success_total\{[^}]*finished_reason="stop"[^}]*\}\s+(\d+(?:\.\d+)?)', metrics_text)
-            success_length_match = re.search(r'vllm:request_success_total\{[^}]*finished_reason="length"[^}]*\}\s+(\d+(?:\.\d+)?)', metrics_text)
-            
-            running = int(float(running_match.group(1))) if running_match else 0
-            waiting = int(float(waiting_match.group(1))) if waiting_match else 0
-            cache_usage = float(cache_usage_match.group(1)) if cache_usage_match else 0.0
-            success_stop = int(float(success_stop_match.group(1))) if success_stop_match else 0
-            success_length = int(float(success_length_match.group(1))) if success_length_match else 0
-            
-            return {
-                'num_requests_running': running,
-                'num_requests_waiting': waiting,
-                'kv_cache_usage_perc': cache_usage,
-                'success_stop': success_stop,
-                'success_length': success_length
-            }
+            # Detect server type based on metric prefixes
+            if 'sglang:' in metrics_text:
+                return self._parse_sglang_metrics(metrics_text)
+            elif 'vllm:' in metrics_text:
+                return self._parse_vllm_metrics(metrics_text)
+            else:
+                if self.debug:
+                    print(f"🔍 Unknown LLM server type (no vllm: or sglang: metrics found)")
+                return None
             
         except Exception as e:
             if self.debug:
-                print(f"🔍 Failed to fetch vLLM metrics: {e}")
+                print(f"🔍 Failed to fetch LLM metrics: {e}")
             return None
+    
+    def _parse_vllm_metrics(self, metrics_text):
+        """Parse vLLM-specific metrics"""
+        # Parse vLLM metrics using regex (handle Prometheus labels)
+        running_match = re.search(r'vllm:num_requests_running\{[^}]*\}\s+(\d+(?:\.\d+)?)', metrics_text)
+        waiting_match = re.search(r'vllm:num_requests_waiting\{[^}]*\}\s+(\d+(?:\.\d+)?)', metrics_text)
+        cache_usage_match = re.search(r'vllm:gpu_cache_usage_perc\{[^}]*\}\s+(\d+(?:\.\d+)?)', metrics_text)
+        success_stop_match = re.search(r'vllm:request_success_total\{[^}]*finished_reason="stop"[^}]*\}\s+(\d+(?:\.\d+)?)', metrics_text)
+        success_length_match = re.search(r'vllm:request_success_total\{[^}]*finished_reason="length"[^}]*\}\s+(\d+(?:\.\d+)?)', metrics_text)
+        
+        running = int(float(running_match.group(1))) if running_match else 0
+        waiting = int(float(waiting_match.group(1))) if waiting_match else 0
+        cache_usage = float(cache_usage_match.group(1)) if cache_usage_match else 0.0
+        success_stop = int(float(success_stop_match.group(1))) if success_stop_match else 0
+        success_length = int(float(success_length_match.group(1))) if success_length_match else 0
+        
+        return {
+            'server_type': 'vLLM',
+            'num_requests_running': running,
+            'num_requests_waiting': waiting,
+            'cache_usage_perc': cache_usage,
+            'success_stop': success_stop,
+            'success_length': success_length,
+            'throughput': None  # vLLM doesn't expose real-time throughput
+        }
+    
+    def _parse_sglang_metrics(self, metrics_text):
+        """Parse SGLang-specific metrics"""
+        # Sum across all ranks for multi-GPU setups
+        running_matches = re.findall(r'sglang:num_running_reqs\{[^}]*\}\s+(\d+(?:\.\d+)?)', metrics_text)
+        queue_matches = re.findall(r'sglang:num_queue_reqs\{[^}]*\}\s+(\d+(?:\.\d+)?)', metrics_text)
+        usage_matches = re.findall(r'sglang:token_usage\{[^}]*\}\s+(\d+(?:\.\d+)?)', metrics_text)
+        throughput_matches = re.findall(r'sglang:gen_throughput\{[^}]*\}\s+(\d+(?:\.\d+)?)', metrics_text)
+        
+        # Get total requests counter
+        total_requests_match = re.search(r'sglang:num_requests_total\{[^}]*\}\s+(\d+(?:\.\d+)?)', metrics_text)
+        
+        # Sum values across all ranks
+        running = sum(int(float(x)) for x in running_matches) if running_matches else 0
+        waiting = sum(int(float(x)) for x in queue_matches) if queue_matches else 0
+        avg_cache_usage = sum(float(x) for x in usage_matches) / len(usage_matches) if usage_matches else 0.0
+        total_throughput = sum(float(x) for x in throughput_matches) if throughput_matches else 0.0
+        total_requests = int(float(total_requests_match.group(1))) if total_requests_match else 0
+        
+        return {
+            'server_type': 'SGLang',
+            'num_requests_running': running,
+            'num_requests_waiting': waiting,
+            'cache_usage_perc': avg_cache_usage,  # Already a percentage (0.01 = 1%)
+            'success_stop': total_requests,  # SGLang doesn't separate success types
+            'success_length': 0,
+            'throughput': total_throughput  # Real-time generation throughput
+        }
     
     def _start_metrics_monitoring(self):
         """Start the metrics monitoring thread"""
@@ -386,21 +428,31 @@ class ARCTaskRunnerSimple:
             print(f"📊 Metrics thread started, polling {self.metrics_url} every 30s", flush=True)
             while not self._stop_metrics:
                 try:
-                    metrics = self._get_vllm_metrics()
+                    metrics = self._get_llm_metrics()
                     if metrics:
+                        server_type = metrics['server_type']
                         running = metrics['num_requests_running']
-                        waiting = metrics['num_requests_waiting']
-                        cache_pct = metrics['kv_cache_usage_perc'] * 100  # Convert to percentage
+                        pending = metrics['num_requests_waiting']
+                        cache_pct = metrics['cache_usage_perc']
                         success_stop = metrics['success_stop']
                         success_length = metrics['success_length']
+                        throughput = metrics.get('throughput')
                         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-                        print(f"📊 [{timestamp}] vLLM: {running}R/{waiting}W, Cache {cache_pct:.1f}%, Success {success_stop}+{success_length}", flush=True)
+                        
+                        # Format display based on server type
+                        if server_type == 'SGLang':
+                            # SGLang: cache_usage is already percentage, show throughput
+                            throughput_str = f", {throughput:.1f}tok/s" if throughput and throughput > 0 else ""
+                            print(f"📊 [{timestamp}] SGLang: {running}R/{pending}Q, Cache {cache_pct*100:.1f}%, Reqs {success_stop}{throughput_str}", flush=True)
+                        else:  # vLLM
+                            # vLLM: convert cache from fraction to percentage, show success breakdown
+                            print(f"📊 [{timestamp}] vLLM: {running}R/{pending}P, Cache {cache_pct*100:.1f}%, Success {success_stop}+{success_length}", flush=True)
                     else:
                         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-                        print(f"📊 [{timestamp}] vLLM metrics fetch failed", flush=True)
+                        print(f"📊 [{timestamp}] LLM metrics fetch failed", flush=True)
                 except Exception as e:
                     timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-                    print(f"📊 [{timestamp}] vLLM metrics error: {e}", flush=True)
+                    print(f"📊 [{timestamp}] LLM metrics error: {e}", flush=True)
                 
                 # Sleep for 30 seconds, but check stop flag every second
                 for _ in range(30):
