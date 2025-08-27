@@ -15,6 +15,26 @@ Lewis Reminders:
 
 
 ---
+## Aug 27
+
+### Try to start a vllm pod
+
+Start a pod and run the task runner on arc-prize-2025 evaluation with --template vllm:
+
+```bash
+uv run python -m runpod.create_pod_and_run_tasks arc-prize-2024 Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542 --template vllm --subset evaluation --max-attempts 4 --max-workers 32
+```
+
+and start one with sglang as well:
+```bash
+uv run python -m runpod.create_pod_and_run_tasks arc-prize-2024 Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542 --template sglang --subset evaluation --max-attempts 4 --max-workers 32
+```
+
+
+
+
+
+
 ## Aug 26
 
 ### Generate data on arc-prize-2025 missing_1_solution subset
