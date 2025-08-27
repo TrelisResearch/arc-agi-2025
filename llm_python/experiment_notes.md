@@ -140,6 +140,52 @@ uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset
 ```
 Seems I can even do 256 concurrent requests...
 
+Let's now try the arc agi partial 100 model:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --unsafe-executor --base-url http://213.181.111.2:57538/v1 --max_workers 2 --max_attempts 16 --model Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542 --max-tokens 2000 --qwen-no-think
+```
+
+BIG issue, fp8 kv cache is not supported by vllm v1. And v0 does not support data parallel!
+
+So let's hit an sglang endpoint - 157.157.221.29:43539:
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --unsafe-executor --base-url http://157.157.221.29:43478/v1 --max_workers 2 --max_attempts 16 --model Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542 --max-tokens 2000 --qwen-no-think
+```
+Ok we can hit that on 157.157.221.29:43522:
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --unsafe-executor --base-url http://157.157.221.29:43469/v1 --max_workers 64 --max_attempts 4 --model Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542 --max-tokens 2000 --qwen-no-think
+```
+
+
+
+
+### Test out an openai oss endpoint with sglang
+Start a pod with openai/gpt-oss-20b:
+```bash
+uv run python -m runpod.create_pod sglang openai/gpt-oss-20b
+```
+we can now hit it on - 103.196.86.181:29850:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --unsafe-executor --base-url http://103.196.86.181:29850/v1 --max_workers 2 --max_attempts 16 --model openai/gpt-oss-20b --max-tokens 32000
+```
+This garbage because mxfp8 isn't supported yet...
+
+### Test out an openai oss endpoint with vllm
+Start a pod with openai/gpt-oss-20b:
+```bash
+uv run python -m runpod.create_pod vllm openai/gpt-oss-20b
+```
+we can now hit it on - 103.196.86.181:51416:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --unsafe-executor --base-url http://103.196.86.181:51416/v1 --max_workers 16 --max_attempts 16 --model openai/gpt-oss-20b --max-tokens 32000
+```
+
+
+
+
+
 ### Generate data on arc-prize-2025 missing_1_solution subset
 
 We'll use openrouter. Starting off with one attempt and 32 workers with o4-mini:
