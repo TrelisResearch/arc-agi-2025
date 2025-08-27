@@ -18,7 +18,7 @@ Lewis Reminders:
 ## Aug 27
 
 Key learnings:
-- Can use 64 workers no problem for SGLang on Qwen. Means we could do around 150 attempts in 5 hours.
+- Can use 64 workers no problem for SGLang on Qwen with L4. Means we could do around 150 attempts in 5 hours.
 - Possibly can do 16, maybe even 32 attempts in 5 hours on OSS. Probably 8 workers is ok, but not tested just yet.
 
 ### Inspect vllm metrics
