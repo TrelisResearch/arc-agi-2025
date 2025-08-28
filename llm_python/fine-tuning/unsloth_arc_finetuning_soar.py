@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Generated from: llm_python/fine-tuning/unsloth_arc_finetuning_soar.ipynb
+Generated from: unsloth_arc_finetuning_soar.ipynb
 """
 
 # ---------------------------------------------------------------------
@@ -1195,12 +1195,12 @@ trainer = train_on_responses_only(
 # ---------------------------------------------------------------------
 # Cell 25
 # ---------------------------------------------------------------------
-tokenizer.decode(trainer.train_dataset[0]["input_ids"])
+print(tokenizer.decode(trainer.train_dataset[0]["input_ids"]))
 
 # ---------------------------------------------------------------------
 # Cell 26
 # ---------------------------------------------------------------------
-tokenizer.decode([tokenizer.pad_token_id if x == -100 else x for x in trainer.train_dataset[0]["labels"]]).replace(tokenizer.pad_token, " ")
+print(tokenizer.decode([tokenizer.pad_token_id if x == -100 else x for x in trainer.train_dataset[0]["labels"]]).replace(tokenizer.pad_token, " "))
 
 # ---------------------------------------------------------------------
 # Cell 27
