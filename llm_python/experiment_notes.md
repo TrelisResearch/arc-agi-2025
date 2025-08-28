@@ -7,7 +7,7 @@ Lewis Reminders:
   - 94.15% of programs are all incorrect.
   - 93.81% of non-transductive programs are all incorrect.
 - "code" vs "program" in parquet vs hf.
-
+- checkpointing is quite inconsistent. There are quite a few in a row, then large gaps. We may have an hour of generation with no checkpoints saved to parquet.
 
 
 
@@ -15,6 +15,103 @@ Lewis Reminders:
 
 
 ---
+## Aug 29
+
+### The value of splitter
+
+Run OSS 20B with 64 attempts per task and 32k tokens max length, but with a splitter:
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --unsafe-executor --base-url https://openrouter.ai/api/v1 --max_workers 64 --max_attempts 64 --model openai/gpt-oss-20b --max-tokens 32000
+```
+Then re-run with splitter (will randomly choose anywhere from one to all examples per task).
+
+
+
+
+## Aug 28
+
+### Does GPT OSS Help a Lot?
+
+Run GPT OSS 20B for 128 attempts per task. Start by just doing one attempt per task with open router on arc-prize-2025 evaluation:
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --unsafe-executor --base-url https://openrouter.ai/api/v1 --max_workers 64 --max_attempts 1 --model openai/gpt-oss-20b --max-tokens 64000
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: openai/gpt-oss-20b
+Total tasks: 120
+Total time: 557.7s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 841,657
+Total cost: $0.099481
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    0.0% (0.0% excl. trans)
+  All Train Correct:        0.0% (0.0% excl. trans)
+  Min 1 Train Correct:      1.7% (1.7% excl. trans)
+  Min 1 Code Success:       30.0%
+  Max Length Responses:     0.8%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --unsafe-executor --base-url https://openrouter.ai/api/v1 --max_workers 64 --max_attempts 1 --model openai/gpt-oss-20b --max-tokens 100000
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: openai/gpt-oss-20b
+Total tasks: 120
+Total time: 619.2s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 954,196
+Total cost: $0.109875
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.8% (0.8% excl. trans)
+  Pass@2 (Train Majority):  0.8% (0.8% excl. trans)
+  Oracle (Best Attempt):    0.8% (0.8% excl. trans)
+  All Train Correct:        1.7% (1.7% excl. trans)
+  Min 1 Train Correct:      3.3% (3.3% excl. trans)
+  Min 1 Code Success:       32.5%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+and test out just 32k length as well:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --unsafe-executor --base-url https://openrouter.ai/api/v1 --max_workers 4 --max_attempts 1 --model openai/gpt-oss-20b --max-tokens 32000
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: openai/gpt-oss-20b
+Total tasks: 120
+Total time: 9072.9s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 583,979
+Total cost: $0.064223
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    0.0% (0.0% excl. trans)
+  All Train Correct:        0.8% (0.8% excl. trans)
+  Min 1 Train Correct:      3.3% (2.5% excl. trans)
+  Min 1 Code Success:       24.2%
+  Max Length Responses:     0.8%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+So that means 128 attempts will cost about $12, seems fine.
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --unsafe-executor --base-url https://openrouter.ai/api/v1 --max_workers 64 --max_attempts 128 --model openai/gpt-oss-20b --max-tokens 100000
+```
+...waiting on results...
+
 ## Aug 27
 
 Key learnings:
