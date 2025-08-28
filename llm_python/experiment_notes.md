@@ -6,13 +6,8 @@ Lewis Reminders:
 - Re incorrect programs:
   - 94.15% of programs are all incorrect.
   - 93.81% of non-transductive programs are all incorrect.
-- "code" vs "program" in parquet vs hf.
+- "code" vs "program" in parquet vs hf. THIS IS FOR RONAN TO FIX WITH SUBMISSION FILE CREATION! SHOULD BE DIRECTLY FROM PARQUET.
 - checkpointing is quite inconsistent. There are quite a few in a row, then large gaps. We may have an hour of generation with no checkpoints saved to parquet.
-
-
-
-
-
 
 ---
 ## Aug 29
@@ -110,7 +105,21 @@ So that means 128 attempts will cost about $12, seems fine.
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --unsafe-executor --base-url https://openrouter.ai/api/v1 --max_workers 64 --max_attempts 128 --model openai/gpt-oss-20b --max-tokens 100000
 ```
-...waiting on results...
+RUN CRASHED!!! AS I RESTARTED CURSOR.
+
+Dataset: arc-prize-2025
+Subset: evaluation
+Reference tasks: 120
+Tasks scored: 120
+Total predictions: 344
+
+📊 PREDICTION-LEVEL METRICS:
+  Pass@1 (first attempt): 4/344 (1.2%)
+  Pass@2 (either attempt): 4/344 (1.2%)
+
+📊 TASK-LEVEL METRICS:
+  Tasks Pass@1 (all outputs correct on first attempt): 2/120 (1.7%)
+  Tasks Pass@2 (all outputs correct on either attempt): 2/120 (1.7%)
 
 ## Aug 27
 
