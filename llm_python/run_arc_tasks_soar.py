@@ -191,7 +191,7 @@ class ARCTaskRunnerSimple:
                 )
 
         self.global_timeout = global_timeout
-        self.inactivity_timeout = 300  # Default inactivity timeout of 5 minutes
+        self.inactivity_timeout = 600  # Default inactivity timeout of 5 minutes
 
         # Warn about safety settings
         executor_type = "unrestricted" if unsafe_executor else "docker"
