@@ -191,6 +191,7 @@ class ARCTaskRunnerSimple:
                 )
 
         self.global_timeout = global_timeout
+        self.inactivity_timeout = 300  # Default inactivity timeout of 5 minutes
 
         # Warn about safety settings
         executor_type = "unrestricted" if unsafe_executor else "docker"
@@ -1257,12 +1258,13 @@ class ARCTaskRunnerSimple:
             completed_count = 0
             remaining = set(futures)
             progress_interval = 15.0
+            last_progress_time = time.time()
 
             while remaining:
                 time_elapsed = time.time() - start_time
 
-                # Check global timeout
-                if self.global_timeout and time_elapsed > self.global_timeout:
+                # Check global timeout or inactivity
+                if (self.global_timeout and time_elapsed > self.global_timeout) or (time.time() - last_progress_time > self.inactivity_timeout):
                     print(
                         f"⏰ Global timeout reached ({self.global_timeout}s). Cancelling remaining attempts..."
                     )
@@ -1285,6 +1287,7 @@ class ARCTaskRunnerSimple:
                     ):
                         remaining.discard(future)
                         completed_count += 1
+                        last_progress_time = time.time()
                         try:
                             _ = future.result()
                         except Exception as future_e:
