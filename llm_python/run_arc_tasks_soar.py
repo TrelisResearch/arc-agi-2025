@@ -16,6 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 import requests
 
 from llm_python.datasets.collector import SoarDatasetCollector
+from llm_python.utils.code import is_random
 from llm_python.utils.task_loader import TaskData, get_task_loader
 from llm_python.utils.arc_tester import ArcTester
 from llm_python.utils.prompt_utils import create_arc_prompt, extract_python_code
@@ -613,6 +614,10 @@ class ARCTaskRunnerSimple:
             
             program = attempt_detail.get("program", "").strip()
             if not program:
+                return
+
+            # Skip logging for random programs
+            if is_random(program):
                 return
 
             # Extract correctness arrays
