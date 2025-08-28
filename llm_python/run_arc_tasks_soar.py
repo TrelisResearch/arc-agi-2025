@@ -467,10 +467,9 @@ class ARCTaskRunnerSimple:
     
     def _stop_metrics_monitoring(self):
         """Stop the metrics monitoring thread"""
-        # TODO: This looks like it might be hanging for some reason, and not stopping the monitoring thread.
         self._stop_metrics = True
-        # if self._metrics_thread:
-        #     self._metrics_thread.join(timeout=2)
+        if self._metrics_thread:
+            self._metrics_thread.join(timeout=2)
 
     def _check_models_endpoint(self):
         """Check what models are available at the /models endpoint and validate arguments"""
@@ -1238,7 +1237,8 @@ class ARCTaskRunnerSimple:
                     )
                 return None
 
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+        executor = ThreadPoolExecutor(max_workers=2)
+        try:
             futures = [
                 executor.submit(
                     attempt_wrapper, task_idx, task_id, task_data, attempt_num
@@ -1384,7 +1384,9 @@ class ARCTaskRunnerSimple:
                 f"📊 Final status: {successful_attempts} successful, {failed_attempts} failed, {cancelled_attempts} cancelled"
             )
 
-        # All attempts should complete now without infrastructure timeouts
+        finally:
+            # We don't want to block execution if we have one stuck thread.
+            executor.shutdown(wait=False)
         
         # Stop vLLM metrics monitoring
         self._stop_metrics_monitoring()
