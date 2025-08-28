@@ -10,6 +10,12 @@ import base64
 import binascii
 from typing import Optional, Any, Tuple
 
+import resource
+
+MAX_VIRTUAL_MEMORY = 1024 * 1024 * 1024 # 1Gb
+
+def limit_virtual_memory():
+    resource.setrlimit(resource.RLIMIT_AS, (MAX_VIRTUAL_MEMORY, resource.RLIM_INFINITY))
 
 def execute_code_in_subprocess(code: str, timeout: Optional[float] = None) -> Tuple[Any, Optional[Exception]]:
     """
@@ -53,7 +59,8 @@ except Exception as e:
             [sys.executable, "-c", wrapper_code],
             capture_output=True,
             text=True,
-            timeout=timeout
+            timeout=timeout,
+            preexec_fn=limit_virtual_memory
         )
         
         # Parse the output to extract the result or error
