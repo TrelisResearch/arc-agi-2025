@@ -41,7 +41,6 @@ def create_arc_prompt(task_data: Dict, prompt_loader, prompt_version: str = "soa
         task_data: Dictionary containing 'train' and 'test' examples
         prompt_loader: PromptLoader instance for getting system message and prompt template
         prompt_version: Version of prompts to use (default: "soar")
-        include_test_outputs: Whether to include test outputs in prompt (for training only)
         splitter: Whether to randomly select and shuffle a subset of training examples
     
     Returns:
