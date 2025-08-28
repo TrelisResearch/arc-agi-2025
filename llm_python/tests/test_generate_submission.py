@@ -88,26 +88,32 @@ class TestSubmissionGenerator(unittest.TestCase):
         self.assertIn("task2", df["task_id"].values)
         self.assertIn("task3", df["task_id"].values)
     
-    def test_convert_parquet_to_attempts(self):
-        """Test conversion from parquet to attempt format"""
+    def test_convert_parquet_for_voting(self):
+        """Test conversion from parquet to voting format with transduction recomputation"""
         df = self.create_test_parquet_data(["task1"], 2)
         
-        results_by_task = self.generator.convert_parquet_to_attempts(df)
+        results_by_task = self.generator.convert_parquet_for_voting(df)
         
         # Verify structure
         self.assertIn("task1", results_by_task)
         self.assertEqual(len(results_by_task["task1"]), 2)
         
-        # Verify attempt structure
-        attempt = results_by_task["task1"][0]
-        self.assertIn("test_predicted", attempt)
-        self.assertIn("train_accuracy", attempt)
-        self.assertIn("is_transductive", attempt)
-        self.assertIn("program_extracted", attempt)
+        # Verify voting record structure - ONLY required fields
+        voting_record = results_by_task["task1"][0]
+        self.assertIn("test_predicted", voting_record)
+        self.assertIn("train_accuracy", voting_record)
+        self.assertIn("is_transductive", voting_record)
+        self.assertIn("transduction_confidence", voting_record)
+        
+        # Verify no unnecessary fields
+        self.assertNotIn("program_extracted", voting_record)
+        self.assertNotIn("test_exec_error", voting_record)
+        self.assertNotIn("test_exec_timeout", voting_record)
+        self.assertNotIn("outputs_valid", voting_record)
         
         # Verify train accuracy calculation
         expected_acc = 2/3  # [True, False, True] = 2 out of 3 correct
-        self.assertAlmostEqual(attempt["train_accuracy"], expected_acc)
+        self.assertAlmostEqual(voting_record["train_accuracy"], expected_acc)
     
     def test_find_recent_parquets_single_file(self):
         """Test finding parquets with single file input"""
@@ -219,7 +225,7 @@ class TestSubmissionGenerator(unittest.TestCase):
         
         # Create test data
         df = self.create_test_parquet_data(["task1"], 3)
-        results_by_task = self.generator.convert_parquet_to_attempts(df)
+        results_by_task = self.generator.convert_parquet_for_voting(df)
         
         # Mock task loader
         with patch('llm_python.generate_submission.get_task_loader') as mock_get_task_loader:

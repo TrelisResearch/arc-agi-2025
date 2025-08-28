@@ -12,7 +12,7 @@ import os
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from utils.prompt_utils import create_arc_prompt, _format_grid_for_prompt, _get_grid_shape_string
+from utils.prompt_utils import create_arc_prompt
 
 
 class MockPromptLoader:
@@ -169,22 +169,6 @@ class TestSplitterFunctionality:
         # Test examples should contain expected values (100-103 for first test)
         assert "[[100" in test_section_with_split[0]
         assert "[[101" in test_section_with_split[1] or "[[101" in test_section_with_split[0]
-    
-    def test_splitter_with_include_test_outputs(self):
-        """Splitter should work correctly when test outputs are included"""
-        task_data = create_sample_task_data(num_train=3, num_test=1)
-        prompt_loader = MockPromptLoader()
-        
-        _, user_msg = create_arc_prompt(
-            task_data, prompt_loader, 
-            prompt_version="soar", 
-            splitter=True,
-            include_test_outputs=True
-        )
-        
-        # Should have test output when include_test_outputs=True
-        assert "## Expected Test Output" in user_msg
-        assert "[[200" in user_msg  # Check for test output value
     
     def test_grid_formatting_preserved(self):
         """Ensure grid formatting is preserved with splitter"""

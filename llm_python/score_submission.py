@@ -7,7 +7,7 @@ Provides Pass@1 and Pass@2 accuracy metrics.
 import json
 import argparse
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Dict
 
 from llm_python.utils.task_loader import get_task_loader
 from llm_python.utils.submission_validator import validate_submission_file

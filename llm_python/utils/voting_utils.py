@@ -96,8 +96,12 @@ def compute_weighted_majority_voting(attempts: List[Dict], top_k: int = 2, no_tr
         base_weight = 1.0 + 1000.0 * train_acc
         
         # Apply transductive penalty using (1 - confidence)² unless disabled
-        if not no_transductive_penalty and att.get("is_transductive", False):
-            confidence = att.get("transduction_confidence", 1.0)  # Default to 1.0 if missing
+        if not no_transductive_penalty:
+            confidence = att.get("transduction_confidence")
+            if confidence is None:
+                # Log missing confidence and default to no penalty
+                print(f"⚠️ Missing transduction_confidence, defaulting to 0.0 (no penalty)")
+                confidence = 0.0
             penalty = (1 - confidence) ** 2
             return base_weight * penalty
         

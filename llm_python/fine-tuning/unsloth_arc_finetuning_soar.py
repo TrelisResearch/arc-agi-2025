@@ -365,7 +365,7 @@ def hf_train_dataset_to_chat_dataset(dataset_slug, split="train", max_rows=None)
       }
 
       # Use create_arc_prompt from utils
-      system_content, user_content = create_arc_prompt(task_data_for_prompt, prompt_loader, "soar", include_test_outputs=False)
+      system_content, user_content = create_arc_prompt(task_data_for_prompt, prompt_loader, "soar")
 
       messages = [
           {"role": "system", "content": system_content},
@@ -449,7 +449,7 @@ def build_dataset() -> DatasetDict:
           }
 
           # Use create_arc_prompt from utils
-          system_content, user_content = create_arc_prompt(task_data_for_prompt, prompt_loader, "soar", include_test_outputs=False)
+          system_content, user_content = create_arc_prompt(task_data_for_prompt, prompt_loader, "soar")
 
           messages = [
               {"role": "system", "content": system_content},

@@ -46,9 +46,27 @@ Then re-run with splitter (will randomly choose anywhere from one to all example
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --unsafe-executor --base-url https://openrouter.ai/api/v1 --max_workers 64 --max_attempts 64 --model openai/gpt-oss-20b --max-tokens 32000 --splitter
 ```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: openai/gpt-oss-20b
+Total tasks: 120
+Total time: 11198.4s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 38,197,150
+Total cost: $4.373607
 
-
-
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 2.5% (2.5% excl. trans)
+  Pass@2 (Train Majority):  2.5% (2.5% excl. trans)
+  Oracle (Best Attempt):    2.5% (2.5% excl. trans)
+  All Train Correct:        4.2% (4.2% excl. trans)
+  Min 1 Train Correct:      34.2% (30.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.8%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 2122 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250828_164809_openai_gpt-oss-20b_arc-prize-2025_evaluation.parquet
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250828_164809_openai_gpt-oss-20b_arc-prize-2025_evaluation.parquet
 
 ## Aug 28
 
