@@ -952,35 +952,12 @@ import re
 # Extract date and time using regex
 print("Extract training set date and time as dataset identifiers")
 
-if train_slug is None:
-  from datetime import datetime
-  train_slug = f"local_dataset_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-
-# Try pattern 1: timestamp at end (original pattern)
-match = re.search(r'(\d{8}_\d{6})', train_slug)
-if match:
-  timestamp = match.group(1)
-  date_str = timestamp[:8]
-  time_str = timestamp[9:]
-  print(f"Date: {date_str} (YYYYMMDD)")
-  print(f"Time: {time_str} (HHMMSS)")
+if data_source == 'parquet':
+    dataset_name = parquet_path.split('/')[-1]
+elif data_source == 'huggingface':
+    dataset_name = train_slug.split('/')[-1]  # Get name part after last slash
 else:
-  # Try pattern 2: SOAR dataset format (soar-YYYYMMDD_HHMMSS-rows)
-  match = re.search(r'soar-(\d{8}_\d{6})-\d+', train_slug)
-  if match:
-      timestamp = match.group(1)
-      date_str = timestamp[:8]
-      time_str = timestamp[9:]
-      print(f"Date: {date_str} (YYYYMMDD)")
-      print(f"Time: {time_str} (HHMMSS)")
-  else:
-      # No timestamp found - use dataset name
-      print("No timestamp found, using dataset name.")
-      dataset_name = train_slug.split('/')[-1]  # Get name part after last slash
-      date_str = dataset_name
-      time_str = ""
-
-dataset_name = "parquet-programs"  # Default name when using parquet source
+    dataset_name = "unknown"
 
 run_name = f"{model_slug.split('/')[-1]}_ds-{dataset_name}"
 
