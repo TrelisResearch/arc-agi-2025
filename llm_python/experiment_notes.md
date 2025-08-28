@@ -19,6 +19,27 @@ Run OSS 20B with 64 attempts per task and 32k tokens max length, but with a spli
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --unsafe-executor --base-url https://openrouter.ai/api/v1 --max_workers 64 --max_attempts 64 --model openai/gpt-oss-20b --max-tokens 32000
 ```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: openai/gpt-oss-20b
+Total tasks: 120
+Total time: 12839.5s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 35,334,843
+Total cost: $3.841826
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 1.7% (1.7% excl. trans)
+  Pass@2 (Train Majority):  1.7% (1.7% excl. trans)
+  Oracle (Best Attempt):    1.7% (1.7% excl. trans)
+  All Train Correct:        3.3% (3.3% excl. trans)
+  Min 1 Train Correct:      15.0% (15.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     1.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+
 Then re-run with splitter (will randomly choose anywhere from one to all examples per task).
 
 
