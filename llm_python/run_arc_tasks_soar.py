@@ -1237,7 +1237,7 @@ class ARCTaskRunnerSimple:
                     )
                 return None
 
-        executor = ThreadPoolExecutor(max_workers=2)
+        executor = ThreadPoolExecutor(self.max_workers)
         try:
             futures = [
                 executor.submit(
