@@ -1322,7 +1322,7 @@ class ARCTaskRunnerSimple:
                             f"   (In-flight requests may take up to {self.api_client.api_timeout}s each to complete)"
                         )
                     # Continue waiting for the actually running requests
-                except Exception:
+                except TimeoutError:
                     # No futures completed in this window; print a heartbeat
                     done_now = total_attempts - len(remaining)
                     timeout_info = (
@@ -1334,6 +1334,9 @@ class ARCTaskRunnerSimple:
                         f"⏳ No completions in last {progress_interval:.0f}s — {done_now}/{total_attempts} done; {len(remaining)} remaining{timeout_info}"
                     )
                     continue
+                except Exception as e:
+                    print(f"🚨 Unexpected error: {e}")
+                    traceback.print_exc()
 
             elapsed_time = time.time() - start_time
             if self.global_timeout and elapsed_time > self.global_timeout:
