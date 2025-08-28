@@ -66,55 +66,79 @@ class SubmissionGenerator:
         
         return combined_df
     
-    def convert_parquet_to_attempts(self, df: pd.DataFrame) -> Dict[str, List[Dict]]:
-        """Convert parquet DataFrame to the attempt format expected by voting logic"""
-        import numpy as np
-        from llm_python.utils.numpy import convert_numpy_types
+    def convert_parquet_for_voting(self, df: pd.DataFrame) -> Dict[str, List[Dict]]:
+        """Convert parquet DataFrame to minimal format needed by voting functions
         
+        Creates dictionaries with only the fields actually used by voting:
+        - test_predicted: The predictions to vote on (already proper Python lists from read_soar_parquet)
+        - train_accuracy: For weighting (calculated from correct_train_input)
+        - is_transductive: For penalty application
+        - transduction_confidence: Fresh confidence scores computed from code
+        
+        Note: read_soar_parquet uses dtype_backend='pyarrow' so nested lists are already
+        proper Python types, no numpy conversion needed.
+        """
+        from llm_python.transduction.code_classifier import CodeTransductionClassifier
+        
+        # Initialize transduction classifier for fresh scoring
+        classifier = CodeTransductionClassifier()
         results_by_task = {}
         
-        # Use to_dict to avoid iterrows numpy conversion issues
+        # Convert to dict for iteration (preserves PyArrow types from read_soar_parquet)
         records = df.to_dict('records')
         
         for row in records:
             task_id = str(row['task_id'])  # Ensure task_id is string
             
-            # Convert parquet row to attempt format
+            # Calculate train accuracy from correct_train_input
             correct_train = row['correct_train_input']
-            
-            # Handle train accuracy calculation with numpy arrays
-            if correct_train is not None:
-                if isinstance(correct_train, np.ndarray):
-                    train_acc = float(correct_train.sum() / len(correct_train)) if len(correct_train) > 0 else 0.0
-                else:
-                    train_acc = sum(correct_train) / len(correct_train) if len(correct_train) > 0 else 0.0
+            if correct_train and len(correct_train) > 0:
+                # correct_train is already a Python list thanks to read_soar_parquet
+                train_acc = float(sum(correct_train) / len(correct_train))
             else:
                 train_acc = 0.0
             
-            # Convert test predictions using same function as task runner
-            test_predicted = convert_numpy_types(row['predicted_test_output'])
+            # Recompute transduction classification from code
+            code = row.get('code', '')
+            is_transductive = False
+            transduction_confidence = 0.0
             
-            # Verify conversion worked
-            if self.debug and test_predicted:
-                import json
+            if code and str(code).strip():
                 try:
-                    json.dumps(test_predicted)
+                    # Fresh transduction scoring from the actual code
+                    is_transductive, transduction_confidence = classifier.is_transductive(str(code))
+                    if self.debug:
+                        old_trans = bool(row.get('is_transductive', False))
+                        if old_trans != is_transductive:
+                            print(f"📊 Task {task_id}: Transduction changed {old_trans} → {is_transductive} (conf: {transduction_confidence:.3f})")
                 except Exception as e:
-                    print(f"⚠️ Failed to convert predictions for {task_id}: {e}")
+                    if self.debug:
+                        print(f"⚠️ Failed to classify transduction for {task_id}: {e}")
+                    # Fall back to stored value if classification fails
+                    is_transductive = bool(row.get('is_transductive', False))
+                    transduction_confidence = 1.0 if is_transductive else 0.0
             
-            attempt = {
+            # Get test predictions - already proper Python lists from read_soar_parquet
+            test_predicted = row['predicted_test_output']
+            
+            # Create minimal voting record with ONLY required fields
+            voting_record = {
                 'test_predicted': test_predicted,
                 'train_accuracy': float(train_acc),
-                'is_transductive': bool(row.get('is_transductive', False)),
-                'program_extracted': bool(row.get('code') and str(row.get('code', '')).strip()),
-                'test_exec_error': False,  # Assume no exec errors in parquet data
-                'test_exec_timeout': False,
+                'is_transductive': bool(is_transductive),
+                'transduction_confidence': float(transduction_confidence),  # Fresh confidence score!
             }
             
             if task_id not in results_by_task:
                 results_by_task[task_id] = []
             
-            results_by_task[task_id].append(attempt)
+            results_by_task[task_id].append(voting_record)
+        
+        if self.debug:
+            # Summary of transduction recomputation
+            total_records = len(records)
+            total_transductive = sum(1 for r in results_by_task.values() for v in r if v['is_transductive'])
+            print(f"📊 Transduction summary: {total_transductive}/{total_records} marked as transductive after recomputation")
         
         return results_by_task
     
@@ -157,8 +181,8 @@ class SubmissionGenerator:
         # Load parquet data
         df = self.load_parquet_data(parquet_paths)
         
-        # Convert to attempt format
-        results_by_task = self.convert_parquet_to_attempts(df)
+        # Convert to voting format with fresh transduction scores
+        results_by_task = self.convert_parquet_for_voting(df)
         
         # Load ALL tasks from the dataset to ensure complete submission
         try:
