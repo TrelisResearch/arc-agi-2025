@@ -466,9 +466,10 @@ class ARCTaskRunnerSimple:
     
     def _stop_metrics_monitoring(self):
         """Stop the metrics monitoring thread"""
+        # TODO: This looks like it might be hanging for some reason, and not stopping the monitoring thread.
         self._stop_metrics = True
-        if self._metrics_thread:
-            self._metrics_thread.join(timeout=2)
+        # if self._metrics_thread:
+        #     self._metrics_thread.join(timeout=2)
 
     def _check_models_endpoint(self):
         """Check what models are available at the /models endpoint and validate arguments"""
@@ -1383,6 +1384,7 @@ class ARCTaskRunnerSimple:
         self._stop_metrics_monitoring()
 
         # Convert task_results to the expected format for summary (including partial tasks)
+        print("Converting task results to summary format...")
         results = []
         for task_id, task_data in tasks:
             if task_id in task_results and len(task_results[task_id]["attempts"]) > 0:
@@ -1440,6 +1442,8 @@ class ARCTaskRunnerSimple:
                 results.append(result)
             else:
                 print(f"⚠️ Task {task_id} has no valid attempts - skipping")
+
+        print(f"✅ Converted results for {len(results)}/{total_tasks} tasks")
 
         # Check if we're in SUBMIT mode
         submit_mode = os.getenv("SUBMIT", "").lower() == "true"
