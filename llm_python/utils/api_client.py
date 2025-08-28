@@ -33,7 +33,7 @@ class ARCAPIClient:
         self.api_key = self._get_api_key()
 
         # Initialize OpenAI client
-        client_timeout = self.api_timeout + 15  # Buffer for HTTP timeout
+        client_timeout = self.api_timeout
         if base_url:
             self.client = OpenAI(
                 api_key=self.api_key, base_url=base_url, timeout=client_timeout
@@ -200,7 +200,7 @@ class ARCAPIClient:
             kwargs.update(self.get_sampling_parameters())
 
             response = self.client.chat.completions.create(
-                timeout=self.api_timeout, **kwargs
+                **kwargs
             )
 
             if not response:
