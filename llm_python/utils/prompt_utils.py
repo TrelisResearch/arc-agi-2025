@@ -3,6 +3,7 @@ Utility functions for prompt preparation and code extraction from LLM responses.
 """
 
 import re
+import random
 from typing import Dict, List, Tuple
 
 def _format_grid_for_prompt(grid: List[List[int]]) -> str:
@@ -32,7 +33,7 @@ def _get_grid_shape_string(grid: List[List[int]]) -> str:
         return "0 by 0"
     return f"{len(grid[0])} by {len(grid)}"
 
-def create_arc_prompt(task_data: Dict, prompt_loader, prompt_version: str = "soar", include_test_outputs: bool = False) -> Tuple[str, str]:
+def create_arc_prompt(task_data: Dict, prompt_loader, prompt_version: str = "soar", include_test_outputs: bool = False, splitter: bool = False) -> Tuple[str, str]:
     """
     Create a prompt for the model to solve an ARC task.
     
@@ -41,6 +42,7 @@ def create_arc_prompt(task_data: Dict, prompt_loader, prompt_version: str = "soa
         prompt_loader: PromptLoader instance for getting system message and prompt template
         prompt_version: Version of prompts to use (default: "soar")
         include_test_outputs: Whether to include test outputs in prompt (for training only)
+        splitter: Whether to randomly select and shuffle a subset of training examples
     
     Returns:
         Tuple of (system_content, user_content)
@@ -48,8 +50,18 @@ def create_arc_prompt(task_data: Dict, prompt_loader, prompt_version: str = "soa
     # Format the task data
     task_content = ""
     
+    # Get training examples
+    train_examples = task_data['train'].copy()
+    
+    # Apply splitter logic if enabled
+    if splitter and len(train_examples) > 1:
+        # Select a random number of examples (between 1 and total available)
+        num_to_select = random.randint(1, len(train_examples))
+        # Randomly select and shuffle the examples
+        train_examples = random.sample(train_examples, num_to_select)
+    
     # Add training examples
-    for i, example in enumerate(task_data['train'], 1):
+    for i, example in enumerate(train_examples, 1):
         input_grid = example['input']
         output_grid = example['output']
         input_shape = _get_grid_shape_string(input_grid)

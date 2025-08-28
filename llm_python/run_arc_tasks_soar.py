@@ -161,6 +161,7 @@ class ARCTaskRunnerSimple:
         sample_name: Optional[str] = None,
         no_transductive_penalty: bool = False,
         parquet_output_dir: Optional[str] = None,
+        splitter: bool = False,
     ):
         # Core configuration
         self.max_workers = max_workers
@@ -169,6 +170,7 @@ class ARCTaskRunnerSimple:
         self.run_number = run_number
         self.debug = debug
         self.prompt_version = prompt_version
+        self.splitter = splitter
         # Use custom output directory if provided, otherwise use default
         output_dir = Path(parquet_output_dir) if parquet_output_dir else None
         self.dataset_collector = SoarDatasetCollector(sample_name, output_dir=output_dir)
@@ -249,6 +251,7 @@ class ARCTaskRunnerSimple:
             f"⏰ API timeout: {api_timeout}s (network safety only, no infrastructure timeouts)"
         )
         print(f"🗄️ Sampled programs will be logged to {self.dataset_collector.output_path()}")
+        
         
         if self.metrics_url:
             print(f"📊 vLLM metrics monitoring enabled ({self.metrics_url})", flush=True)
@@ -669,7 +672,7 @@ class ARCTaskRunnerSimple:
 
     def create_prompt(self, task_data: Dict) -> tuple[str, str]:
         """Create a prompt for the model to solve an ARC task"""
-        return create_arc_prompt(task_data, self.prompt_loader, self.prompt_version)
+        return create_arc_prompt(task_data, self.prompt_loader, self.prompt_version, splitter=self.splitter)
 
     def get_sampling_parameters(self) -> Dict:
         """Get the sampling parameters that will be used for API calls"""
@@ -1094,6 +1097,12 @@ class ARCTaskRunnerSimple:
         print(f"Model: {self.model}")
         print(f"API: All Attempts Mode ({self.max_attempts} attempts per task)")
         print(f"Mode: True parallelization - {total_attempts} total attempts")
+        
+        # Display splitter status prominently
+        if self.splitter:
+            print("🔀 Training Data Splitter: ENABLED (randomly selecting & shuffling training examples)")
+        else:
+            print("🔀 Training Data Splitter: DISABLED (using all training examples)")
 
         if self.max_workers > 1:
             print(f"Parallelization: ENABLED ({self.max_workers} workers)")
@@ -1196,8 +1205,14 @@ class ARCTaskRunnerSimple:
             attempt_start = time.time()
 
             try:
-                # Get the pre-created prompt for this task
-                full_prompt = task_results[task_id]["full_prompt"]
+                # Create fresh prompt for each attempt when splitter is enabled, 
+                # otherwise use pre-created prompt for consistency
+                if self.splitter:
+                    system_content, user_content = self.create_prompt(task_data)
+                    full_prompt = {"system": system_content, "user": user_content}
+                else:
+                    full_prompt = task_results[task_id]["full_prompt"]
+                
                 # No infrastructure timeout - let requests complete to avoid GPU overload
                 result = self.run_single_attempt(
                     task_id, task_data, attempt_num, dataset, subset_name, full_prompt
@@ -1983,6 +1998,11 @@ def main():
         type=str,
         help="Directory where parquet files should be saved (overrides default location)",
     )
+    parser.add_argument(
+        "--splitter",
+        action="store_true",
+        help="Randomly select and shuffle a subset of training input-output pairs",
+    )
 
     args = parser.parse_args()
 
@@ -2011,6 +2031,7 @@ def main():
         lora_adapter=args.lora_adapter,
         sample_name=f"{args.model.replace('/', '_').replace(':', '_')}_{args.dataset}_{args.subset}",
         parquet_output_dir=args.parquet_output_dir,
+        splitter=args.splitter,
     )
 
     # Run the task subset
