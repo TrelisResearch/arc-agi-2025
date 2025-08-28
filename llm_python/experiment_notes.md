@@ -38,9 +38,14 @@ Total cost: $3.841826
   Max Length Responses:     1.0%
   Timeout Responses:        0.0%
   API Failure Responses:    0.0%
+✅ Checkpointed 1561 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250828_115207_openai_gpt-oss-20b_arc-prize-2025_evaluation.parquet
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250828_115207_openai_gpt-oss-20b_arc-prize-2025_evaluation.parquet
 
+Then re-run with splitter (will randomly choose anywhere from one to all examples per task):
 
-Then re-run with splitter (will randomly choose anywhere from one to all examples per task).
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --unsafe-executor --base-url https://openrouter.ai/api/v1 --max_workers 64 --max_attempts 64 --model openai/gpt-oss-20b --max-tokens 32000 --splitter
+```
 
 
 
