@@ -19,15 +19,7 @@ uv run python -m runpod.create_pod_and_run_tasks arc-prize-2025 openai/gpt-oss-2
 ```
 but also one needs to set "--reasoning-parser gpt-oss" within the server startup command.
 
-That gives no programs, so let's jsut try and start a pod without starting the task runner:
-```bash
-uv run python -m runpod.create_pod sglang lmsys/gpt-oss-20b-bf16 --kv-cache-dtype auto
-```
-and then let's hit that with arc prize 2025 evaluation for --limit 4 and 64 workers and 4 attempts per task.
-```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --unsafe-executor --base-url http://103.196.86.163:16141/v1 --max_workers 64 --max_attempts 4 --model lmsys/gpt-oss-20b-bf16 --max-tokens 32000 --limit 4
-```
-
+Basically fp8 kvcache does not work, but otherwise, all works well with OSS.
 
 ## Aug 29
 
