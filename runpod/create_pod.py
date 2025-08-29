@@ -474,6 +474,12 @@ The healthCheck section is automatically stripped before sending to RunPod.
     kv_cache = args.kv_cache_dtype if args.kv_cache_dtype else 'fp8_e4m3'
     extra_args.extend(['--kv-cache-dtype', kv_cache])
     
+    # Check if this is a GPT-OSS model and add reasoning parser
+    model_lower = args.model.lower()
+    if 'gpt-oss' in model_lower and ('20b' in model_lower or '120b' in model_lower):
+        extra_args.extend(['--reasoning-parser', 'gpt-oss'])
+        print(f"🧠 Detected GPT-OSS model, adding --reasoning-parser gpt-oss")
+    
     # Print configuration info
     print(f"🚀 Creating pod with model: {args.model}")
     print(f"   GPUs: {args.gpu_count} (data parallel)")

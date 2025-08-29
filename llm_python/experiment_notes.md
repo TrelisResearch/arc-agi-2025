@@ -12,18 +12,21 @@ Lewis Reminders:
 ---
 ## Aug 30
 
-### Test the checkpoints from the arc-agi-2 run:
-Start a pod and test arc-prize-2025 evaluation with 64 attempts, 128 workers, 2 gpus and 2k tokens max length:
-
+### Test out OSS on sglang
+Start up and run inference for 4 attempmts on lmsys/gpt-oss-20b-bf16 for 8 attempts on arc agi 2 eval:
 ```bash
-uv run python -m runpod.create_pod_and_run_tasks arc-prize-2025 Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806 --template sglang --subset evaluation --max-attempts 64 --max-workers 256 --gpu-count 4 --splitter
+uv run python -m runpod.create_pod_and_run_tasks arc-prize-2025 openai/gpt-oss-20b --template sglang --subset evaluation --max-attempts 1 --max-workers 64 --gpu-count 1
 ```
-and then check the Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c1403 checkpoint too:
+but also one needs to set "--reasoning-parser gpt-oss" within the server startup command.
 
+That gives no programs, so let's jsut try and start a pod without starting the task runner:
 ```bash
-uv run python -m runpod.create_pod_and_run_tasks arc-prize-2025 Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c1403 --template sglang --subset evaluation --max-attempts 64 --max-workers 128 --gpu-count 4 --splitter
+uv run python -m runpod.create_pod sglang lmsys/gpt-oss-20b-bf16 --kv-cache-dtype auto
 ```
-
+and then let's hit that with arc prize 2025 evaluation for --limit 4 and 64 workers and 4 attempts per task.
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --unsafe-executor --base-url http://103.196.86.163:16141/v1 --max_workers 64 --max_attempts 4 --model lmsys/gpt-oss-20b-bf16 --max-tokens 32000 --limit 4
+```
 
 
 ## Aug 29
