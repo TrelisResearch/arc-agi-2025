@@ -10,6 +10,22 @@ Lewis Reminders:
 - checkpointing is quite inconsistent. There are quite a few in a row, then large gaps. We may have an hour of generation with no checkpoints saved to parquet.
 
 ---
+## Aug 30
+
+### Test the checkpoints from the arc-agi-2 run:
+Start a pod and test arc-prize-2025 evaluation with 64 attempts, 128 workers, 2 gpus and 2k tokens max length:
+
+```bash
+uv run python -m runpod.create_pod_and_run_tasks arc-prize-2025 Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806 --template sglang --subset evaluation --max-attempts 64 --max-workers 256 --gpu-count 4 --splitter
+```
+and then check the Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c1403 checkpoint too:
+
+```bash
+uv run python -m runpod.create_pod_and_run_tasks arc-prize-2025 Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c1403 --template sglang --subset evaluation --max-attempts 64 --max-workers 128 --gpu-count 4 --splitter
+```
+
+
+
 ## Aug 29
 
 ### The value of splitter

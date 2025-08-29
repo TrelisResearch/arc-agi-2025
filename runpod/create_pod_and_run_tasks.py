@@ -65,7 +65,7 @@ def prompt_keep_pod(timeout=10):
     except Exception:
         return False
 
-def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="all_evaluation", max_attempts=64, no_transductive_penalty=False, max_workers=32):
+def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="all_evaluation", max_attempts=64, no_transductive_penalty=False, max_workers=32, splitter=False):
     """Run ARC tasks - task runner handles its own graceful shutdown"""
     print(f"\n🎯 Running ARC tasks for {dataset} with subset {subset}...")
     print(f"📊 Task Runner Configuration:")
@@ -76,6 +76,8 @@ def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="
     print(f"   Executor: UNSAFE (runs directly, no sandboxing)")
     if no_transductive_penalty:
         print(f"   Transductive penalty: DISABLED")
+    if splitter:
+        print(f"   Training data splitter: ENABLED (randomly selecting & shuffling training examples)")
     
     cmd = [
         "uv", "run", "python", "-m", "llm_python.run_arc_tasks_soar",
@@ -92,6 +94,9 @@ def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="
     
     if no_transductive_penalty:
         cmd.append("--no-transductive-penalty")
+    
+    if splitter:
+        cmd.append("--splitter")
     
     print(f"📝 Full command: {' '.join(cmd)}")
     
@@ -227,6 +232,9 @@ This script will:
                        type=int,
                        default=32,
                        help='Maximum number of parallel workers (default: 32)')
+    parser.add_argument('--splitter',
+                       action='store_true',
+                       help='Randomly select and shuffle a subset of training input-output pairs')
     
     args = parser.parse_args()
     
@@ -370,7 +378,7 @@ This script will:
         print(f"\n🎯 Step 2: Running ARC tasks for {args.dataset}")
         
         task_success = run_arc_tasks_with_graceful_handling(
-            args.dataset, args.model_path, base_url, args.subset, args.max_attempts, args.no_transductive_penalty, args.max_workers
+            args.dataset, args.model_path, base_url, args.subset, args.max_attempts, args.no_transductive_penalty, args.max_workers, args.splitter
         )
         
         if task_success:
