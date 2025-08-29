@@ -11,6 +11,66 @@ Lewis Reminders:
 
 ---
 ## Aug 30
+### Try out OSS for 8 attempts and then TTT Qwen and inference for 128 attempts
+
+After 8 attempts with OSS:
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: openai/gpt-oss-20b
+Total tasks processed: 120
+Total time: 10475.8s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 19,170,580
+Total cost: $2.303416
+
+📊 RESPONSE METRICS:
+  Total responses: 960
+  Code extracted: 747/960 (77.8%)
+  Max length responses: 18/960 (1.9%)
+  Timeout responses: 0/960 (0.0%)
+  API failure responses: 0/960 (0.0%)
+
+📊 TRAIN METRICS:
+  All train correct: 4/120 (3.3%)
+  Min 1 train correct: 17/120 (14.2%)
+
+After TTT of Qwen with the above data:
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: /workspace/arc-agi-2025/llm_python/fine-tuning/Qwen3-4B_ds-arc-agi-2-partial-100-c2806_ds-inference-final
+Total tasks processed: 120
+Total time: 2426.4s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 92,990,650
+Total cost: $16.161731
+
+📊 RESPONSE METRICS:
+  Total responses: 15360
+  Code extracted: 15355/15360 (100.0%)
+  Max length responses: 5/15360 (0.0%)
+  Timeout responses: 0/15360 (0.0%)
+  API failure responses: 0/15360 (0.0%)
+
+📊 TRAIN METRICS:
+  All train correct: 1/120 (0.8%)
+  Min 1 train correct: 16/120 (13.3%)
+
+and then on submission:
+Dataset: arc-prize-2025
+Subset: evaluation
+Reference tasks: 120
+Tasks scored: 120
+Total predictions: 344
+
+📊 PREDICTION-LEVEL METRICS:
+  Pass@1 (first attempt): 3/344 (0.9%)
+  Pass@2 (either attempt): 4/344 (1.2%)
+
+📊 TASK-LEVEL METRICS:
+  Tasks Pass@1 (all outputs correct on first attempt): 3/120 (2.5%)
+  Tasks Pass@2 (all outputs correct on either attempt): 3/120 (2.5%)
+
+I have downloaded logs locally as OSS-8_Qwen-TTT_Qwen-128
 
 ### Test out OSS on sglang
 Start up and run inference for 4 attempmts on lmsys/gpt-oss-20b-bf16 for 8 attempts on arc agi 2 eval:
