@@ -9,8 +9,39 @@ Lewis Reminders:
 - "code" vs "program" in parquet vs hf. THIS IS FOR RONAN TO FIX WITH SUBMISSION FILE CREATION! SHOULD BE DIRECTLY FROM PARQUET.
 - checkpointing is quite inconsistent. There are quite a few in a row, then large gaps. We may have an hour of generation with no checkpoints saved to parquet.
 
+Todo:
+- Make data and model pushes private. [check it doesn't break things like kaggle! is HF_TOKEN set?]
+- Reach back out to openrouter on sponsorship again.
+
 ---
 ## Aug 30
+### Analysis of data generated before and after TTT
+#### Are the tasks well distributed?
+
+![Pre-TTT vs Post-TTT Comparison](/Users/ronanmcgovern/TR/arc-agi-2025/experimental/trelis_partial_100_analysis/arc-agi-2-partial-100.png)
+
+uv run python -m llm_python.score_submission --submission "/Users/ronanmcgovern/TR/arc-agi-2025/experimental/l4-replication/29-Aug-2025 Submission/submission-5.json" --dataset arc-prize-2025 --subset evaluation
+
+### Pre-TTT vs Post-TTT Comparison
+
+  Here's the side-by-side comparison of non-transductive submissions with correct training examples:
+
+  | Task ID  | Pre-TTT (≥1) | Pre-TTT (All) | Post-TTT (≥1) | Post-TTT (All) |
+  |----------|--------------|---------------|---------------|----------------|
+  | 135a2760 | 47           | 0             | 126           | 0              |
+  | 20270e3b | 2            | 0             | 9             | 0              |
+  | 332f06d7 | 2            | 0             | 26            | 0              |
+  | 4c7dc4dd | 1            | 1             | 15            | 8              |
+  | 53fb4810 | 0            | 0             | 1             | 0              |
+  | 5961cc34 | 2            | 0             | 52            | 0              |
+  | 8b7bacbf | 3            | 0             | 32            | 0              |
+  | 981571dc | 67           | 36            | 115           | 71             |
+  | b6f77b65 | 17           | 0             | 79            | 0              |
+  | db695cfb | 50           | 0             | 120           | 0              |
+  | TOTAL    | 191          | 37            | 575           | 79             |
+
+That one task 4c7dc4dd is transductive, but wasn't detected as such. So there was only one task that ended up correct. Unfortunately, TTT probably engrained that transductive example...
+
 ### Try out OSS for 8 attempts and then TTT Qwen and inference for 128 attempts
 
 After 8 attempts with OSS:
