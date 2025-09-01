@@ -2,17 +2,13 @@
 Test suite for the splitter functionality in SOAR task runner.
 """
 
-import pytest
 import random
-from unittest.mock import Mock, patch, MagicMock
-from typing import Dict, List
-import sys
-import os
+from typing import Dict
+from unittest.mock import patch
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+import pytest
 
-from utils.prompt_utils import create_arc_prompt
+from llm_python.utils.prompt_utils import create_arc_prompt
 
 
 class MockPromptLoader:
@@ -288,8 +284,9 @@ class TestArgparseIntegration:
     
     def test_splitter_argument_parsing(self):
         """Test that --splitter argument is properly parsed"""
-        from run_arc_tasks_soar import main
         import argparse
+
+        from run_arc_tasks_soar import main
         
         # Create parser (we'll test just the parser, not the full main)
         parser = argparse.ArgumentParser()

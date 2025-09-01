@@ -4,18 +4,12 @@ Tests for the submission generator script.
 """
 
 import json
-import os
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pandas as pd
-import numpy as np
-
-# Add the parent directory to sys.path to allow imports
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from llm_python.generate_submission import SubmissionGenerator
 from llm_python.datasets.io import write_soar_parquet

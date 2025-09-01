@@ -8,23 +8,18 @@ independently from the task runner.
 """
 
 import argparse
+import datetime
 import json
 import os
-import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Union
+from typing import Dict, List, Optional, Union
 
-import sys
 import pandas as pd
 
-# Add the parent directory to sys.path to allow imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from llm_python.datasets.io import read_soar_parquet
-from llm_python.utils.voting_utils import compute_weighted_majority_voting
-from llm_python.utils.submission_validator import validate_submission_file
-from llm_python.utils.validator import ARCTaskValidator
 from llm_python.utils.task_loader import get_task_loader
+from llm_python.utils.validator import ARCTaskValidator
+from llm_python.utils.voting_utils import compute_weighted_majority_voting
 
 
 class SubmissionGenerator:
