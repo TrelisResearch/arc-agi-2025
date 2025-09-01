@@ -79,9 +79,14 @@ class SoarDatasetCollector:
         with self._flush_lock:
             # Make a copy of the data to avoid mutation during flush
             data_copy = self.data.copy()
+            
+            # Skip flushing if no data to write
+            if not data_copy:
+                logger.info("No data to flush, skipping parquet write")
+                return
             expected_keys = {"row_id", "task_id", "reasoning", "code", "correct_train_input", 
                             "correct_test_input", "predicted_train_output", 
-                            "predicted_test_output", "model", "is_transductive"}
+                            "predicted_test_output", "model", "is_transductive", "refined_from_id"}
             
             # Debug: Check for inconsistent samples before normalization
             for i, sample in enumerate(data_copy):
@@ -107,6 +112,7 @@ class SoarDatasetCollector:
                     "predicted_test_output": sample.get("predicted_test_output"),
                     "model": sample.get("model"),
                     "is_transductive": sample.get("is_transductive"),
+                    "refined_from_id": sample.get("refined_from_id"),  # Optional field - can be None
                 }
                 for sample in data_copy
             ]

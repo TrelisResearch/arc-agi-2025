@@ -50,4 +50,4 @@ class ProgramSample(TypedDict):
     ]  # Program's predicted outputs for test inputs
     model: str  # What model generated this example
     is_transductive: bool  # Whether program hardcodes outputs (transductive)
-    refined_from_id: str  # Row ID of the example this was refined from (if applicable)
+    refined_from_id: Optional[str]  # Row ID of the example this was refined from (if applicable)

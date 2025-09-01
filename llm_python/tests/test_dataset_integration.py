@@ -53,7 +53,7 @@ class TestTaskRunnerDatasetIntegration:
                 }
                 
                 # This should not raise an exception
-                results = runner.run_subset(subset_name, limit=1)
+                results = runner.run_subset(subset_name, "arc-prize-2025", limit=1)
                 assert isinstance(results, list)
 
     @patch('datasets.load_dataset')
@@ -88,10 +88,10 @@ class TestTaskRunnerDatasetIntegration:
             }
             
             # Test loading HF dataset
-            results = runner.run_subset("username/test-dataset", limit=2)
+            results = runner.run_subset("username/test-dataset", "arc-prize-2025", limit=2)
             
-            # Verify it tried to load HF dataset
-            mock_load_dataset.assert_called_once_with("username/test-dataset", split="train")
+            # Verify it tried to load HF dataset (with dataset prefix)
+            mock_load_dataset.assert_called_once_with("arc-prize-2025/username/test-dataset", split="train")
             assert isinstance(results, list)
 
     @patch('llm_python.datasets.io.read_soar_parquet')
@@ -128,10 +128,10 @@ class TestTaskRunnerDatasetIntegration:
             }
             
             # Test loading parquet dataset
-            results = runner.run_subset("/path/to/data.parquet", limit=2)
+            results = runner.run_subset("/path/to/data.parquet", "arc-prize-2025", limit=2)
             
-            # Verify it tried to load parquet
-            mock_read_parquet.assert_called_once_with("/path/to/data.parquet")
+            # Verify it tried to load parquet (with dataset prefix)
+            mock_read_parquet.assert_called_once_with("arc-prize-2025//path/to/data.parquet")
             assert isinstance(results, list)
 
     def test_task_runner_fallback_behavior(self, runner):
@@ -164,7 +164,7 @@ class TestTaskRunnerDatasetIntegration:
                     }
                     
                     # Should fall back to traditional method
-                    results = runner.run_subset("training", dataset="arc-prize-2025", limit=1)
+                    results = runner.run_subset("training", "arc-prize-2025", limit=1)
                     
                     # Verify fallback was used
                     mock_traditional.assert_called_once_with("arc-prize-2025/training")
@@ -176,7 +176,7 @@ class TestTaskRunnerDatasetIntegration:
             with patch.object(runner.task_loader, 'get_subset_tasks', side_effect=ValueError("Traditional method failed")):
                 
                 # Both methods fail, should return error tuple
-                results = runner.run_subset("nonexistent-dataset", limit=1)
+                results = runner.run_subset("nonexistent-dataset", "arc-prize-2025", limit=1)
                 assert results == ([], None)
 
 
@@ -215,7 +215,7 @@ class TestTaskRunnerRealDataset:
                     "full_prompt": {"system": "test", "user": "test"}
                 }
                 
-                results = runner.run_subset("Trelis/arc-agi-partials-for-refinement", limit=1)
+                results = runner.run_subset("Trelis/arc-agi-partials-for-refinement", "arc-prize-2025", limit=1)
                 assert isinstance(results, list)
                 
         except Exception as e:

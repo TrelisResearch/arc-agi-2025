@@ -162,6 +162,7 @@ class ARCTaskRunnerSimple:
         no_transductive_penalty: bool = False,
         parquet_output_dir: Optional[str] = None,
         splitter: bool = False,
+        refinement_dataset: Optional[str] = None,
     ):
         # Core configuration
         self.max_workers = max_workers
@@ -171,6 +172,8 @@ class ARCTaskRunnerSimple:
         self.debug = debug
         self.prompt_version = prompt_version
         self.splitter = splitter
+        self.refinement_dataset = refinement_dataset
+        self.refine_mode = bool(refinement_dataset)  # Enable refinement mode if dataset provided
         # Use custom output directory if provided, otherwise use default
         output_dir = Path(parquet_output_dir) if parquet_output_dir else None
         self.dataset_collector = SoarDatasetCollector(sample_name, output_dir=output_dir)
@@ -338,6 +341,35 @@ class ARCTaskRunnerSimple:
         except Exception:
             # If extraction fails, disable metrics monitoring
             self.metrics_url = None
+    
+    def _select_best_program_for_refinement(self, programs):
+        """
+        Select the best program for refinement from available programs.
+        Priority: most correct training examples (but not all correct), then random tie-break.
+        """
+        import random
+        
+        # Calculate correctness score for each program
+        scored_programs = []
+        for program in programs:
+            correct_train = program.get('correct_train_input', [])
+            if isinstance(correct_train, list) and len(correct_train) > 0:
+                # Count correct training examples
+                correct_count = sum(1 for x in correct_train if x)
+                # Only consider programs that are not fully correct (already filtered, but double-check)
+                if correct_count > 0 and correct_count < len(correct_train):
+                    scored_programs.append((correct_count, program))
+        
+        if not scored_programs:
+            # Fallback: just pick randomly from all programs
+            print(f"🔍 No programs found for refinement, picking randomly from all programs")
+            return random.choice(programs) if programs else {}
+        
+        # Sort by correct count (descending), then randomize ties
+        max_score = max(score for score, _ in scored_programs)
+        best_programs = [prog for score, prog in scored_programs if score == max_score]
+        
+        return random.choice(best_programs)
     
     def _get_llm_metrics(self):
         """Fetch metrics from LLM server (vLLM or SGLang)"""
@@ -604,7 +636,7 @@ class ARCTaskRunnerSimple:
         )
 
     def _maybe_log_program_to_database(
-        self, task_id: str, attempt_detail: AttemptDetail
+        self, task_id: str, attempt_detail: AttemptDetail, refined_from_id: Optional[str] = None
     ):
         """Log successful programs to the local database"""
 
@@ -661,6 +693,7 @@ class ARCTaskRunnerSimple:
                 predicted_test_output=predicted_test_output,
                 model=self.model,
                 is_transductive=attempt_detail.get("is_transductive", False),
+                refined_from_id=refined_from_id,
             )
 
             self.dataset_collector.collect(program_sample)
@@ -669,9 +702,15 @@ class ARCTaskRunnerSimple:
             # Don't let database logging errors crash the main execution
             traceback.print_exc()
 
-    def create_prompt(self, task_data: Dict) -> tuple[str, str]:
+    def create_prompt(self, task_data: Dict, draft_program: Optional[str] = None) -> tuple[str, str]:
         """Create a prompt for the model to solve an ARC task"""
-        return create_arc_prompt(task_data, self.prompt_loader, self.prompt_version, splitter=self.splitter)
+        if self.refine_mode and draft_program is not None:
+            # Use refinement prompt with draft program
+            from llm_python.utils.prompt_utils import create_arc_refinement_prompt
+            return create_arc_refinement_prompt(task_data, draft_program, self.prompt_loader, self.prompt_version, splitter=self.splitter)
+        else:
+            # Use regular prompt
+            return create_arc_prompt(task_data, self.prompt_loader, self.prompt_version, splitter=self.splitter)
 
     def get_sampling_parameters(self) -> Dict:
         """Get the sampling parameters that will be used for API calls"""
@@ -709,6 +748,7 @@ class ARCTaskRunnerSimple:
         dataset: Optional[str] = None,
         subset: Optional[str] = None,
         full_prompt: Optional[Dict] = None,
+        refined_from_id: Optional[str] = None,
     ) -> SingleAttemptResult:
         """Run a single attempt for an ARC task"""
         system_content = full_prompt["system"]
@@ -1021,7 +1061,7 @@ class ARCTaskRunnerSimple:
             self._print_health_report()
 
         # Log successful programs to database
-        self._maybe_log_program_to_database(task_id, attempt_detail)
+        self._maybe_log_program_to_database(task_id, attempt_detail, refined_from_id)
 
         result: SingleAttemptResult = {
             "task_id": task_id,
@@ -1043,11 +1083,11 @@ class ARCTaskRunnerSimple:
     ) -> List[Dict]:
         """Run all tasks in a subset with true parallelization at the attempt level"""
         try:
-            # Try new dataset loading first (supports HF/parquet), fall back to traditional
+            # Always load tasks from dataset/subset (no more mode-specific loading)
+            print(f"Loading subset: {dataset}/{subset_name}")
             try:
-                print(f"Loading subset: {subset_name}")
-                tasks = self.task_loader.get_dataset_subset(subset_name, max_rows=limit)
-                # If successful, we already have the limit applied
+                # Try new dataset loading first (supports HF/parquet)
+                tasks = self.task_loader.get_dataset_subset(f"{dataset}/{subset_name}", max_rows=limit)
             except ValueError:
                 # Fall back to traditional subset loading
                 print(f"Falling back to traditional subset loading: {dataset}/{subset_name}")
@@ -1056,6 +1096,43 @@ class ARCTaskRunnerSimple:
                     tasks = tasks[:limit]
             
             total_tasks = len(tasks)
+            
+            # If refinement mode, load program data separately and augment tasks
+            program_lookup = {}
+            if self.refine_mode:
+                print(f"Loading refinement programs from: {self.refinement_dataset}")
+                try:
+                    program_data = self.task_loader.get_program_data_for_refinement(self.refinement_dataset)
+                    program_lookup = program_data
+                    print(f"📊 Loaded refinement programs for {len(program_lookup)} tasks")
+                except Exception as e:
+                    print(f"⚠️ Failed to load refinement dataset: {e}")
+                    print("⚠️ Falling back to normal mode for all tasks")
+            
+            # Convert to format expected by downstream code
+            # Always convert to 3-tuple format for consistency (task_id, task_data, programs)
+            augmented_tasks = []
+            fallback_count = 0
+            
+            if self.refine_mode and program_lookup:
+                # Refinement mode: some tasks have programs, others use empty list
+                for task_id, task_data in tasks:
+                    if task_id in program_lookup:
+                        # Task has refinement programs available
+                        augmented_tasks.append((task_id, task_data, program_lookup[task_id]['programs']))
+                    else:
+                        # No refinement programs - use empty list 
+                        augmented_tasks.append((task_id, task_data, []))
+                        fallback_count += 1
+                
+                if fallback_count > 0:
+                    print(f"⚠️ {fallback_count}/{total_tasks} tasks have no refinement programs, will use normal prompts")
+            else:
+                # Normal mode: all tasks use empty programs list
+                for task_id, task_data in tasks:
+                    augmented_tasks.append((task_id, task_data, []))
+            
+            tasks = augmented_tasks
 
             # Validate task data integrity to prevent corruption issues
             validated_tasks = ARCTaskValidator.validate_tasks(tasks)
@@ -1071,7 +1148,8 @@ class ARCTaskRunnerSimple:
 
             # Sort tasks by total length (training + test examples)
             def calculate_task_length(task_tuple):
-                task_id, task_data = task_tuple
+                task_id, task_data, programs = task_tuple
+                    
                 total_length = 0
                 # Add training examples length
                 if "train" in task_data:
@@ -1172,7 +1250,9 @@ class ARCTaskRunnerSimple:
             # For this batch, interleave attempts to maximize prefix caching
             # while still allowing parallelization across tasks in the batch
             for attempt_num in range(self.max_attempts):
-                for task_idx_in_batch, (task_id, task_data) in enumerate(batch_tasks):
+                for task_idx_in_batch, task_tuple in enumerate(batch_tasks):
+                    # Always 3-tuple format
+                    task_id, task_data, programs = task_tuple
                     task_idx = batch_start + task_idx_in_batch
                     attempt_jobs.append((task_idx, task_id, task_data, attempt_num))
 
@@ -1184,24 +1264,50 @@ class ARCTaskRunnerSimple:
 
         # Initialize task results with task data and prompts (create once per task)
         first_prompt_shown = False
-        for task_id, task_data in tasks:
-            task_results[task_id]["task_data"] = task_data
-            system_content, user_content = self.create_prompt(task_data)
-            task_results[task_id]["full_prompt"] = {
-                "system": system_content,
-                "user": user_content,
-            }
+        
+        # Handle consistent 3-tuple format and set up prompts
+        for task_tuple in tasks:
+            # Always 3-tuple format: (task_id, task_data, programs)
+            task_id, task_data, programs = task_tuple
+            
+            if programs:  # Task has refinement programs available
+                # Select best program for refinement (most correct training examples, then random)
+                selected_program = self._select_best_program_for_refinement(programs)
+                draft_code = selected_program.get('code', '')
+                
+                task_results[task_id]["task_data"] = task_data
+                task_results[task_id]["selected_program"] = selected_program  # Store for logging
+                system_content, user_content = self.create_prompt(task_data, draft_program=draft_code)
+                task_results[task_id]["full_prompt"] = {
+                    "system": system_content,
+                    "user": user_content,
+                }
+            else:
+                # Normal mode: task has no programs available
+                task_results[task_id]["task_data"] = task_data
+                system_content, user_content = self.create_prompt(task_data)
+                task_results[task_id]["full_prompt"] = {
+                    "system": system_content,
+                    "user": user_content,
+                }
 
-            # Show the first task's prompt for debugging
-            if not first_prompt_shown:
-                print(f"\n📝 FIRST TASK PROMPT ({task_id}):")
-                print("=" * 80)
-                print("SYSTEM:")
-                print(system_content)
-                print("\nUSER:")
-                print(user_content)
-                print("=" * 80)
-                first_prompt_shown = True
+        # Show the first task's prompt for debugging
+        if not first_prompt_shown and task_results:
+            first_task_id = next(iter(task_results.keys()))
+            first_prompt = task_results[first_task_id]["full_prompt"]
+            mode_str = "REFINEMENT" if self.refine_mode else "REGULAR"
+            print(f"\n📝 FIRST TASK {mode_str} PROMPT ({first_task_id}):")
+            print("=" * 80)
+            print("SYSTEM:")
+            print(first_prompt['system'])
+            print("\nUSER:")
+            print(first_prompt['user'])
+            if self.refine_mode and "selected_program" in task_results[first_task_id]:
+                draft_program = task_results[first_task_id]["selected_program"].get('code', '')
+                # print(f"\nDRAFT PROGRAM TO REFINE:")
+                # print(draft_program)
+            print("=" * 80)
+            first_prompt_shown = True
 
         completed_attempts = 0
         completed_tasks = 0
@@ -1215,14 +1321,27 @@ class ARCTaskRunnerSimple:
                 # Create fresh prompt for each attempt when splitter is enabled, 
                 # otherwise use pre-created prompt for consistency
                 if self.splitter:
-                    system_content, user_content = self.create_prompt(task_data)
+                    if self.refine_mode:
+                        # In refinement mode, we need to get the selected program again
+                        selected_program = task_results[task_id]["selected_program"]
+                        draft_code = selected_program.get('code', '')
+                        system_content, user_content = self.create_prompt(task_data, draft_program=draft_code)
+                    else:
+                        system_content, user_content = self.create_prompt(task_data)
                     full_prompt = {"system": system_content, "user": user_content}
                 else:
                     full_prompt = task_results[task_id]["full_prompt"]
                 
+                # Get refined_from_id if in refinement mode
+                refined_from_id = None
+                if self.refine_mode and task_id in task_results:
+                    selected_program = task_results[task_id].get("selected_program")
+                    if selected_program:
+                        refined_from_id = selected_program.get("row_id")
+                
                 # No infrastructure timeout - let requests complete to avoid GPU overload
                 result = self.run_single_attempt(
-                    task_id, task_data, attempt_num, dataset, subset_name, full_prompt
+                    task_id, task_data, attempt_num, dataset, subset_name, full_prompt, refined_from_id
                 )
                 attempt_duration = time.time() - attempt_start
                 if attempt_duration > 60:  # Log slow attempts
@@ -1417,7 +1536,8 @@ class ARCTaskRunnerSimple:
         # Convert task_results to the expected format for summary (including partial tasks)
         print("Converting task results to summary format...")
         results = []
-        for task_id, task_data in tasks:
+        for task_tuple in tasks:
+            task_id, task_data, programs = task_tuple
             if task_id in task_results and len(task_results[task_id]["attempts"]) > 0:
                 # Sort attempts by attempt number
                 attempts = sorted(
@@ -2013,6 +2133,11 @@ def main():
         action="store_true",
         help="Randomly select and shuffle a subset of training input-output pairs",
     )
+    parser.add_argument(
+        "--refinement-ds",
+        type=str,
+        help="Refinement dataset: HuggingFace dataset or parquet file containing draft programs to refine. Uses programs with at least one (but not all) correct training examples. Enables refinement prompts with draft code.",
+    )
 
     args = parser.parse_args()
 
@@ -2021,6 +2146,13 @@ def main():
         parser.error("--max_workers must be at least 1")
     if args.temperature is not None and not (0.0 <= args.temperature <= 2.0):
         parser.error("--temperature must be between 0.0 and 2.0")
+    if args.refinement_ds:
+        # Refinement mode requires HF/parquet dataset for source programs (not traditional subsets)
+        from llm_python.utils.task_loader import TaskLoader, get_default_data_root
+        temp_loader = TaskLoader(get_default_data_root())
+        dataset_type = temp_loader._detect_dataset_type(args.refinement_ds)
+        if dataset_type == "traditional":
+            parser.error("--refinement-ds requires HuggingFace dataset or parquet file. Traditional subsets not supported for refinement programs.")
 
     # Create runner and run tasks
     runner = ARCTaskRunnerSimple(
@@ -2042,6 +2174,7 @@ def main():
         sample_name=f"{args.model.replace('/', '_').replace(':', '_')}_{args.dataset}_{args.subset}",
         parquet_output_dir=args.parquet_output_dir,
         splitter=args.splitter,
+        refinement_dataset=args.refinement_ds,
     )
 
     # Run the task subset
