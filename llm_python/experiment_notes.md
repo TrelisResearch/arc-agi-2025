@@ -32,12 +32,52 @@ Get a baseline with no feedback using openrouter on the GPT OSS 120B model, on t
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset trelis_partial_100_tricky_10 --max_workers 32 --max_attempts 8 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
 ```
+Dataset: arc-prize-2025
+Subset: trelis_partial_100_tricky_10
+Model: openai/gpt-oss-120b
+Total tasks: 249
+Total time: 3959.5s
+Successful API calls: 249/249 (100.0%)
+Total tokens used: 17,186,698
+Total cost: $7.760642
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 61.8% (55.8% excl. trans)
+  Pass@2 (Train Majority):  59.0% (55.4% excl. trans)
+  Oracle (Best Attempt):    65.1% (57.4% excl. trans)
+  All Train Correct:        59.4% (51.8% excl. trans)
+  Min 1 Train Correct:      81.1% (75.5% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 1603 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250901_181225_openai_gpt-oss-120b_arc-prize-2025_trelis_partial_100_tricky_10.parquet
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250901_181225_openai_gpt-oss-120b_arc-prize-2025_trelis_partial_100_tricky_10.parquet
 and repeat then pulling from  --refinement-ds Trelis/arc-agi-partials-for-refinement:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset trelis_partial_100_tricky_10 --max_workers 32 --max_attempts 8 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds Trelis/arc-agi-partials-for-refinement
 ```
+Dataset: arc-prize-2025
+Subset: trelis_partial_100_tricky_10
+Model: openai/gpt-oss-120b
+Total tasks: 249
+Total time: 3686.5s
+Successful API calls: 249/249 (100.0%)
+Total tokens used: 16,680,672
+Total cost: $7.235734
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 62.7% (59.8% excl. trans)
+  Pass@2 (Train Majority):  59.4% (57.8% excl. trans)
+  Oracle (Best Attempt):    64.7% (61.0% excl. trans)
+  All Train Correct:        62.7% (57.4% excl. trans)
+  Min 1 Train Correct:      89.2% (84.7% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 1623 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250901_181241_openai_gpt-oss-120b_arc-prize-2025_trelis_partial_100_tricky_10.parquet
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250901_181241_openai_gpt-oss-120b_arc-prize-2025_trelis_partial_100_tricky_10.parquet
 
 ### Feedback analysis
 
