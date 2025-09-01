@@ -344,32 +344,10 @@ class ARCTaskRunnerSimple:
     
     def _select_best_program_for_refinement(self, programs):
         """
-        Select the best program for refinement from available programs.
-        Priority: most correct training examples (but not all correct), then random tie-break.
+        Select a random program for refinement from available programs.
         """
         import random
-        
-        # Calculate correctness score for each program
-        scored_programs = []
-        for program in programs:
-            correct_train = program.get('correct_train_input', [])
-            if isinstance(correct_train, list) and len(correct_train) > 0:
-                # Count correct training examples
-                correct_count = sum(1 for x in correct_train if x)
-                # Only consider programs that are not fully correct (already filtered, but double-check)
-                if correct_count > 0 and correct_count < len(correct_train):
-                    scored_programs.append((correct_count, program))
-        
-        if not scored_programs:
-            # Fallback: just pick randomly from all programs
-            print(f"🔍 No programs found for refinement, picking randomly from all programs")
-            return random.choice(programs) if programs else {}
-        
-        # Sort by correct count (descending), then randomize ties
-        max_score = max(score for score, _ in scored_programs)
-        best_programs = [prog for score, prog in scored_programs if score == max_score]
-        
-        return random.choice(best_programs)
+        return random.choice(programs) if programs else {}
     
     def _get_llm_metrics(self):
         """Fetch metrics from LLM server (vLLM or SGLang)"""

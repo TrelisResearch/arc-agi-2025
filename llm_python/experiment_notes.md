@@ -20,14 +20,20 @@ Todo:
 [ ] Get a fine-tuning run going on arc-agi-2-tricky-partial-10
 [ ] Understand whether partials get upgraded with TTT.
 
+### Feedback analysis on trelis_partial_100_tricky_10
+
+
+
 ### Feedback analysis
 
-Generate a new subset of hard tasks. Possibly we can use the missing subset as a list of fairly hard tasks, some of which will have partials available.
+Generate a new subset of hard tasks. Possibly we can use the missing subset as a list of fairly hard tasks, some of which will have partials available. WARNING, THE BELOW WERE DONE SELECTING FROM THE MOST-CORRECT EXAMPLES.
 
 Get a baseline with no feedback using openrouter on the GPT OSS 120B model, on the Trelis/arc-agi-partials-for-refinement dataset. We'll just run 100.
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset missing_1_solution --max_workers 32 --max_attempts 8 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --limit 100
 ```
+
+
 and then add in refinement:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset missing_1_solution --max_workers 32 --max_attempts 8 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --limit 100 --refinement-ds Trelis/arc-agi-partials-for-refinement
@@ -87,8 +93,28 @@ Total cost: $8.161312
 
 Compare that with the model trained on arc-agi-1 only:
 ```bash
-uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542" --max-attempts 64 --subset evaluation
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542" --max-attempts 64 --subset evaluation --gpu-count 2 --max-workers 128
 ```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542
+Total tasks: 120
+Total time: 291.8s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 19,058,383
+Total cost: $3.343186
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    0.0% (0.0% excl. trans)
+  All Train Correct:        0.8% (0.8% excl. trans)
+  Min 1 Train Correct:      2.5% (2.5% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250901_180145_Trelis_Qwen3-4B_ds-arc-agi-1-partial-100-c1542_arc-prize-2025_evaluation.parquet
 
 ### Do partials get upgraded with TTT?
 Conclusion: Training on partials with k of n correct, results in more programs at higher k, but there is no discovery of programs reaching higher k than in the TTT-training set (at least, not found so far!), which is perhaps even more negative a result than on the surface because just sampling should give some chance at finding higher k programs, even without TTT.

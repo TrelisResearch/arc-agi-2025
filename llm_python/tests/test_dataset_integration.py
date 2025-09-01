@@ -14,13 +14,15 @@ class TestTaskRunnerDatasetIntegration:
     @pytest.fixture
     def runner(self):
         """Create a minimal task runner for testing"""
-        return ARCTaskRunnerSimple(
-            model="gpt-4o-mini",
-            max_workers=1,
-            max_attempts=1,
-            debug=False,
-            unsafe_executor=True,  # Use unsafe executor for testing to avoid Docker dependency
-        )
+        with patch('llm_python.utils.api_client.OpenAI') as mock_openai:
+            mock_openai.return_value = MagicMock()
+            return ARCTaskRunnerSimple(
+                model="gpt-4o-mini",
+                max_workers=1,
+                max_attempts=1,
+                debug=False,
+                unsafe_executor=True,  # Use unsafe executor for testing to avoid Docker dependency
+            )
 
     def test_task_runner_traditional_subset(self, runner):
         """Test that task runner still works with traditional subsets"""
@@ -186,13 +188,15 @@ class TestTaskRunnerRealDataset:
     @pytest.mark.integration
     def test_trelis_dataset_real(self):
         """Test with real Trelis dataset if accessible"""
-        runner = ARCTaskRunnerSimple(
-            model="gpt-4o-mini",
-            max_workers=1,
-            max_attempts=1,
-            debug=False,
-            unsafe_executor=True,
-        )
+        with patch('llm_python.utils.api_client.OpenAI') as mock_openai:
+            mock_openai.return_value = MagicMock()
+            runner = ARCTaskRunnerSimple(
+                model="gpt-4o-mini",
+                max_workers=1,
+                max_attempts=1,
+                debug=False,
+                unsafe_executor=True,
+            )
         
         try:
             # This will only work if user has access to the dataset
@@ -224,13 +228,15 @@ class TestTaskRunnerRealDataset:
     @pytest.mark.integration 
     def test_dataset_type_detection_integration(self):
         """Test dataset type detection with real data"""
-        runner = ARCTaskRunnerSimple(
-            model="gpt-4o-mini", 
-            max_workers=1,
-            max_attempts=1,
-            debug=False,
-            unsafe_executor=True,
-        )
+        with patch('llm_python.utils.api_client.OpenAI') as mock_openai:
+            mock_openai.return_value = MagicMock()
+            runner = ARCTaskRunnerSimple(
+                model="gpt-4o-mini", 
+                max_workers=1,
+                max_attempts=1,
+                debug=False,
+                unsafe_executor=True,
+            )
         
         loader = runner.task_loader
         
