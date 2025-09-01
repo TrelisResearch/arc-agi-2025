@@ -21,15 +21,11 @@ Todo:
 [X] Understand whether partials get upgraded with TTT. SEEMS LIKE NOT EASILY, IF AT ALL!
 
 ### Feedback analysis on the "Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-tricky-10-c120" model
-Start a pod AND run the task runner:
+Really, we need to run it on a parquet file where we have partials... /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250901_150014_Trelis_Qwen3-4B_ds-arc-agi-2-partial-100-tricky-10-c120_arc-prize-2025_evaluation.parquet:
 ```bash
-uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-tricky-10-c120" --max-attempts 64 --subset trelis_partial_100_tricky_10 --gpu-count 2 --max-workers 128
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-tricky-10-c120" --max-attempts 64 --subset evaluation --gpu-count 2 --max-workers 128 --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250901_150014_Trelis_Qwen3-4B_ds-arc-agi-2-partial-100-tricky-10-c120_arc-prize-2025_evaluation.parquet
 ```
-and then with refinement using  --refinement-ds Trelis/arc-agi-partials-for-refinement:
-```bash
-uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-tricky-10-c120" --max-attempts 64 --subset trelis_partial_100_tricky_10 --gpu-count 2 --max-workers 128 --refinement-ds Trelis/arc-agi-partials-for-refinement
-```
-
+Looks like 6.6% train partial. 
 
 ### Feedback analysis on trelis_partial_100_tricky_10
 Get a baseline with no feedback using openrouter on the GPT OSS 120B model, on the tricky dataset dataset. We'll just run 100.
