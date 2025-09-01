@@ -87,6 +87,28 @@ return "completed"
             assert error is None
             assert result == 'context test'
 
+    def test_memory_limit_enforced(self):
+        """Test that allocating >512MB fails due to memory limits."""
+        with UnrestrictedExecutor() as executor:
+            # Try to allocate a list of ~130 million floats (~1GB)
+            result, error = executor.execute_code(
+                """
+import os
+# Request 600 MiB of memory.
+memory_to_allocate = 600 * 1024 * 1024
+arr = bytearray(memory_to_allocate)
+
+# Crucially, write to the bytearray to force the OS to commit
+# physical RAM pages. This makes the RSS increase.
+# We can do this efficiently with os.urandom.
+arr[:] = os.urandom(memory_to_allocate)
+
+return len(arr) # This line should never be reached.
+"""
+            )
+            # Should fail: either error is set, or result contains 'MemoryError'
+            assert error is not None or (isinstance(result, str) and 'MemoryError' in result)
+
 
 class TestExecutorFactory:
     """Test the executor factory functions."""
