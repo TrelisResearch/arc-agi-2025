@@ -79,7 +79,7 @@ class SoarDatasetCollector:
         with self._flush_lock:
             # Make a copy of the data to avoid mutation during flush
             data_copy = self.data.copy()
-            expected_keys = {"task_id", "reasoning", "code", "correct_train_input", 
+            expected_keys = {"row_id", "task_id", "reasoning", "code", "correct_train_input", 
                             "correct_test_input", "predicted_train_output", 
                             "predicted_test_output", "model", "is_transductive"}
             

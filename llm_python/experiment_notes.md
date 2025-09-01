@@ -23,6 +23,36 @@ Todo:
 ### Finding tricky tasks
 Focusing on tasks with 10 or less all-correct, as a proxy for difficulty.
 
+Test out performance on Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-tricky-10-c120 with 64 attempts on the arc agi 2 evaluation dataset:
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-tricky-10-c120" --max-attempts 64 --subset evaluation
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-tricky-10-c120
+Total tasks: 120
+Total time: 1243.6s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 47,238,425
+Total cost: $8.526725
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.8% (0.8% excl. trans)
+  Pass@2 (Train Majority):  0.8% (0.8% excl. trans)
+  Oracle (Best Attempt):    0.8% (0.8% excl. trans)
+  All Train Correct:        0.8% (0.8% excl. trans)
+  Min 1 Train Correct:      5.0% (3.3% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.4%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250901_150014_Trelis_Qwen3-4B_ds-arc-agi-2-partial-100-tricky-10-c120_arc-prize-2025_evaluation.parquet
+
+And compare that with our best arc-prize-2025-partial-100 model:
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806" --max-attempts 64 --subset evaluation
+```
+
 ### Do partials get upgraded with TTT?
 Conclusion: Training on partials with k of n correct, results in more programs at higher k, but there is no discovery of programs reaching higher k than in the TTT-training set (at least, not found so far!), which is perhaps even more negative a result than on the surface because just sampling should give some chance at finding higher k programs, even without TTT.
 
