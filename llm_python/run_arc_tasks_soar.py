@@ -1043,10 +1043,18 @@ class ARCTaskRunnerSimple:
     ) -> List[Dict]:
         """Run all tasks in a subset with true parallelization at the attempt level"""
         try:
-            print(f"Loading subset: {dataset}/{subset_name}")
-            tasks = self.task_loader.get_subset_tasks(f"{dataset}/{subset_name}")
-            if limit:
-                tasks = tasks[:limit]
+            # Try new dataset loading first (supports HF/parquet), fall back to traditional
+            try:
+                print(f"Loading subset: {subset_name}")
+                tasks = self.task_loader.get_dataset_subset(subset_name, max_rows=limit)
+                # If successful, we already have the limit applied
+            except ValueError:
+                # Fall back to traditional subset loading
+                print(f"Falling back to traditional subset loading: {dataset}/{subset_name}")
+                tasks = self.task_loader.get_subset_tasks(f"{dataset}/{subset_name}")
+                if limit:
+                    tasks = tasks[:limit]
+            
             total_tasks = len(tasks)
 
             # Validate task data integrity to prevent corruption issues
@@ -1920,7 +1928,7 @@ def main():
     parser.add_argument(
         "--subset",
         default="training",
-        help="Dataset subset to use (e.g., training, evaluation, unique_training_tasks)",
+        help="Dataset subset to use. Supports: (1) Traditional subsets like 'training', 'evaluation' (2) HuggingFace datasets like 'username/dataset-name' (3) Parquet files/directories like '/path/to/data.parquet'",
     )
     parser.add_argument("--model", default="gpt-4.1-mini", help="Model to use")
     parser.add_argument("--limit", type=int, help="Limit number of tasks to run")

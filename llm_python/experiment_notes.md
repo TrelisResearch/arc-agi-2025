@@ -20,6 +20,17 @@ Todo:
 [ ] Get a fine-tuning run going on arc-agi-2-tricky-partial-10
 [ ] Understand whether partials get upgraded with TTT.
 
+### Feedback analysis
+
+Get a baseline with no feedback using openrouter on the GPT OSS 120B model, on the Trelis/arc-agi-partials-for-refinement dataset. We'll just run 100.
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset Trelis/arc-agi-partials-for-refinement --subset Trelis/arc-agi-partials-for-refinement --max_workers 32 --max_attempts 8 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --limit 100
+```
+Actually these probably aren't hard enough, so we should consider using Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-tricky-10-c120 instead - which still isn't ideal because quite a few have only got correct programs, which makes feedback harder:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset Trelis/arc-agi-partials-for-refinement --subset Trelis/arc-agi-2-partial-100-tricky-10 --max_workers 32 --max_attempts 8 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
+```
+
 ### Finding tricky tasks
 Focusing on tasks with 10 or less all-correct, as a proxy for difficulty.
 

@@ -279,6 +279,117 @@ class TaskLoader:
 
         return stats
 
+    def _detect_dataset_type(self, identifier: str) -> str:
+        """Detect if identifier is parquet file/directory, HuggingFace dataset, or traditional subset"""
+        from pathlib import Path
+        
+        path = Path(identifier)
+        
+        # Check if it's a parquet file or directory containing parquet files
+        if path.exists():
+            if path.is_file() and path.suffix == '.parquet':
+                return "parquet"
+            elif path.is_dir() and any(path.glob("*.parquet")):
+                return "parquet"
+        
+        # Check if it's a path that should be parquet but doesn't exist
+        if identifier.endswith('.parquet') or 'parquet' in identifier.lower():
+            return "parquet"
+        
+        # Check if it's a known traditional subset first
+        if identifier in self.subsets:
+            return "traditional"
+        
+        # Check if it looks like a HuggingFace dataset (contains slash and not a known subset)
+        if "/" in identifier and identifier not in self.subsets:
+            return "huggingface"
+        
+        # Otherwise assume it's a traditional subset
+        return "traditional"
+
+    def get_dataset_subset(self, identifier: str, max_rows: Optional[int] = None) -> List[Tuple[str, TaskData]]:
+        """Get tasks from HuggingFace dataset, parquet file, or traditional subset.
+        
+        For HF/parquet datasets, extracts unique task_ids and looks up the actual
+        task data from the cached tasks. For traditional subsets, uses existing logic.
+        
+        Args:
+            identifier: Dataset identifier (HF dataset slug, parquet path, or traditional subset name)
+            max_rows: Maximum number of rows to load from dataset (for HF/parquet only)
+            
+        Returns:
+            List of (task_id, task_data) tuples matching existing interface
+            
+        Raises:
+            ValueError: If dataset type not supported or tasks not found
+        """
+        dataset_type = self._detect_dataset_type(identifier)
+        
+        if dataset_type == "traditional":
+            # Use existing logic for traditional subsets
+            tasks = self.get_subset_tasks(identifier)
+            if max_rows and len(tasks) > max_rows:
+                tasks = tasks[:max_rows]
+            return tasks
+        
+        elif dataset_type == "parquet":
+            # Load parquet and extract unique task_ids
+            from llm_python.datasets.io import read_soar_parquet
+            
+            try:
+                df = read_soar_parquet(identifier)
+                if max_rows and len(df) > max_rows:
+                    df = df.head(max_rows)
+                task_ids = df['task_id'].unique().tolist()
+                print(f"📊 Extracted {len(task_ids)} unique task IDs from parquet dataset")
+            except Exception as e:
+                raise ValueError(f"Failed to load parquet dataset '{identifier}': {e}")
+        
+        elif dataset_type == "huggingface":
+            # Load HF dataset and extract unique task_ids
+            try:
+                from datasets import load_dataset
+                ds = load_dataset(identifier, split="train")
+                if max_rows and max_rows < len(ds):
+                    ds = ds.select(range(max_rows))
+                
+                # Handle datasets with row_id column
+                if 'task_id' in ds.column_names:
+                    task_ids = list(set(ds['task_id']))
+                elif 'row_id' in ds.column_names:
+                    # Use row_id as task_id if task_id not present
+                    task_ids = list(set(ds['row_id']))
+                else:
+                    raise ValueError("Dataset must contain either 'task_id' or 'row_id' column")
+                
+                print(f"📊 Extracted {len(task_ids)} unique task IDs from HuggingFace dataset")
+            except Exception as e:
+                raise ValueError(f"Failed to load HuggingFace dataset '{identifier}': {e}")
+        
+        else:
+            raise ValueError(f"Unsupported dataset type: {dataset_type}")
+        
+        # Look up actual task data from cached tasks
+        tasks = []
+        missing_tasks = []
+        
+        for task_id in task_ids:
+            if task_id in self.tasks:
+                tasks.append((task_id, self.tasks[task_id]))
+            else:
+                missing_tasks.append(task_id)
+        
+        if missing_tasks:
+            print(
+                f"Warning: {len(missing_tasks)} task IDs from dataset not found in cached tasks: {missing_tasks[:5]}{'...' if len(missing_tasks) > 5 else ''}"
+            )
+        
+        if not tasks:
+            raise ValueError(f"No valid tasks found for dataset '{identifier}'")
+        
+        print(f"✅ Successfully loaded {len(tasks)} tasks from {dataset_type} dataset")
+        return tasks
+
 
 def get_default_data_root() -> str:
     # Compute data_root if not provided
