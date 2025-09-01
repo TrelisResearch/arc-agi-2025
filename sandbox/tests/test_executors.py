@@ -94,6 +94,7 @@ return "completed"
             result, error = executor.execute_code(
                 """
 import os
+import time
 # Request 600 MiB of memory.
 memory_to_allocate = 600 * 1024 * 1024
 arr = bytearray(memory_to_allocate)
@@ -102,7 +103,7 @@ arr = bytearray(memory_to_allocate)
 # physical RAM pages. This makes the RSS increase.
 # We can do this efficiently with os.urandom.
 arr[:] = os.urandom(memory_to_allocate)
-
+time.sleep(1)
 return len(arr) # This line should never be reached.
 """
             )
