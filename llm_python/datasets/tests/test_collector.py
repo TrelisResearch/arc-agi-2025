@@ -14,6 +14,7 @@ def temp_output_dir():
 
 def minimal_sample():
     return {
+        "row_id": "abcdef",
         "task_id": "task_001",
         "reasoning": None,
         "code": "def generate(): return [[1]]",

@@ -9,11 +9,15 @@ from llm_python.datasets.io import write_soar_parquet
 from llm_python.datasets.schema import ProgramSample
 from llm_python.datasets.validation import validate_soar_dataframe, validate_soar_row
 from llm_python.utils.code import normalize_code
-
+import secrets
 _DEFAULT_DIR = Path(__file__).parent / "inference"
 
 
 logger = logging.getLogger(__name__)
+
+def generate_unique_hex_id(hex_length=32):
+    # 32 hex chars = 128 bits, collision probability is negligible for 10M rows
+    return secrets.token_hex(hex_length // 2)
 
 class SoarDatasetCollector:
     def __init__(self, name: Optional[str], flush_every=1000, output_dir: Optional[Path] = None):
@@ -29,18 +33,21 @@ class SoarDatasetCollector:
         self._flush_thread: Optional[threading.Thread] = None
 
     def collect(self, item: ProgramSample) -> bool:
-        validation_result = validate_soar_row(dict(item))
+        normalized = self.normalize_row(item)
+        validation_result = validate_soar_row(dict(normalized))
         if not validation_result.is_valid:
             logger.info(f"Invalid row, skipping collection due to errors: {validation_result.errors}")
             return False
 
-        normalized = self.normalize_row(item)
         self.data.append(normalized)
         self.maybe_flush_async()
         return True
 
     def normalize_row(self, item: ProgramSample) -> ProgramSample:
         copy = item.copy()
+
+        # Add a UUID.
+        copy["row_id"] = generate_unique_hex_id()
 
         # Normalize the code
         if copy["code"]:
@@ -90,6 +97,7 @@ class SoarDatasetCollector:
             
             normalized_data = [
                 {
+                    "row_id": sample.get("row_id"),
                     "task_id": sample.get("task_id"),
                     "reasoning": sample.get("reasoning"),  # Optional field - can be None
                     "code": sample.get("code"),

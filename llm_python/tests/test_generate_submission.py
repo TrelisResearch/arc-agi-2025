@@ -51,6 +51,7 @@ class TestSubmissionGenerator(unittest.TestCase):
                 predicted_test = [[[1, 2], [3, 4]]]  # Single test output to match mock
                 
                 data.append({
+                    "row_id": "abcdef",
                     "task_id": task_id,
                     "reasoning": f"Test reasoning for {task_id} attempt {i}",
                     "code": f"# Test code for {task_id}\nprint('hello')",

@@ -4,6 +4,7 @@ import pyarrow as pa
 
 PARQUET_SCHEMA = pa.schema(
     (
+        pa.field("row_id", pa.string(), nullable=False),  # Required
         pa.field("task_id", pa.string(), nullable=False),  # Required
         pa.field("reasoning", pa.string(), nullable=True),  # Optional - can be null
         pa.field("code", pa.string(), nullable=False),  # Required
@@ -25,13 +26,15 @@ PARQUET_SCHEMA = pa.schema(
         ),  # Required
         pa.field("model", pa.string(), nullable=False),  # Required
         pa.field("is_transductive", pa.bool_(), nullable=False),  # Required
+        pa.field("refined_from_id", pa.string(), nullable=True),  # Optional
+
     )
 )
 
 
 class ProgramSample(TypedDict):
     """Schema for SOAR program examples stored in the database"""
-
+    row_id: str  # Unique row ID for this example
     task_id: str  # Task ID from ARC
     reasoning: Optional[str]  # Reasoning trace if provided (optional)
     code: str  # Program code that should define a `generate` function
@@ -47,3 +50,4 @@ class ProgramSample(TypedDict):
     ]  # Program's predicted outputs for test inputs
     model: str  # What model generated this example
     is_transductive: bool  # Whether program hardcodes outputs (transductive)
+    refined_from_id: str  # Row ID of the example this was refined from (if applicable)

@@ -31,6 +31,16 @@ def read_soar_parquet(path: Union[str, Path]) -> pd.DataFrame:
     
     return df
 
+def _add_missing_nullable_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Return a shallow copy of df with missing nullable columns from PARQUET_SCHEMA added as nulls.
+    """
+    df_copy = df.copy()
+    for field in PARQUET_SCHEMA:
+        if field.name not in df_copy.columns and field.nullable:
+            df_copy[field.name] = pd.NA
+    return df_copy
+
 def write_soar_parquet(df: pd.DataFrame, path: Union[str, Path]) -> None:
     """
     Write parquet file with proper schema preservation and enforcement.
@@ -42,11 +52,9 @@ def write_soar_parquet(df: pd.DataFrame, path: Union[str, Path]) -> None:
         path: Output path
     """
     
-    # Convert to PyArrow table with strict schema enforcement
-    # Schema validation happens automatically here
-    table = pa.Table.from_pandas(df, schema=PARQUET_SCHEMA)
-    
-    # Write with PyArrow to ensure schema compliance
+    # Use a shallow copy with missing nullable columns added
+    df_for_write = _add_missing_nullable_columns(df)
+    table = pa.Table.from_pandas(df_for_write, schema=PARQUET_SCHEMA)
     pq.write_table(table, path)
 
 
@@ -63,15 +71,10 @@ def validate_soar_dataframe_schema(df: pd.DataFrame) -> None:
     Raises:
         ValueError: If schema validation fails
     """
+    # Use a shallow copy with missing nullable columns added
+    df_for_validate = _add_missing_nullable_columns(df)
     try:
-        # Convert the full DataFrame with schema validation
-        # This validates:
-        # - Column names and types match schema
-        # - Nullability constraints across all rows
-        # - Data type compatibility for all values
-        pa.Table.from_pandas(df, schema=PARQUET_SCHEMA)
-            
+        pa.Table.from_pandas(df_for_validate, schema=PARQUET_SCHEMA)
     except (pa.ArrowInvalid, pa.ArrowTypeError, KeyError, ValueError) as e:
-        # PyArrow provides detailed error messages about schema mismatches
         raise ValueError(f"Schema validation failed: {e}")
 
