@@ -14,6 +14,19 @@ Todo:
 - Reach back out to openrouter on sponsorship again.
 
 ---
+## Sept 2 2025
+### Measure what "hard" means
+Start by running gpt-5-nano for two attempts on the arc-prize-2025 training dataset AND the evaluation dataset.
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training --max_workers 32 --max_attempts 2 --model gpt-5-nano --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
+```
+
+
+then evaluation:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 2 --model gpt-5-nano --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
+```
+
 ## Sep 1 2025
 Todo:
 [X] Understand the client timeout. POSTED AN ISSUE.
