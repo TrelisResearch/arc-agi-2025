@@ -21,23 +21,68 @@ Todo:
 [ ] Understand whether partials get upgraded with TTT.
 
 ### Feedback analysis on trelis_partial_100_tricky_10
+Get a baseline with no feedback using openrouter on the GPT OSS 120B model, on the tricky dataset dataset. We'll just run 100.
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset trelis_partial_100_tricky_10 --max_workers 32 --max_attempts 8 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
+```
 
+and repeat then pulling from  --refinement-ds Trelis/arc-agi-partials-for-refinement:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset trelis_partial_100_tricky_10 --max_workers 32 --max_attempts 8 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds Trelis/arc-agi-partials-for-refinement
+```
 
 
 ### Feedback analysis
 
-Generate a new subset of hard tasks. Possibly we can use the missing subset as a list of fairly hard tasks, some of which will have partials available. WARNING, THE BELOW WERE DONE SELECTING FROM THE MOST-CORRECT EXAMPLES.
+Generate a new subset of hard tasks. Possibly we can use the missing subset as a list of fairly hard tasks, some of which will have partials available. WARNING, THE BELOW WERE DONE SELECTING FROM THE MOST-CORRECT EXAMPLES (excl. all-correct), but this does reduce diversity quite a lot, most likely as there are far fewer programs that are close to correct than just one correct.
 
 Get a baseline with no feedback using openrouter on the GPT OSS 120B model, on the Trelis/arc-agi-partials-for-refinement dataset. We'll just run 100.
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset missing_1_solution --max_workers 32 --max_attempts 8 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --limit 100
 ```
+Dataset: arc-prize-2025
+Subset: missing_1_solution
+Model: openai/gpt-oss-120b
+Total tasks: 100
+Total time: 2022.7s
+Successful API calls: 100/100 (100.0%)
+Total tokens used: 7,726,079
+Total cost: $3.183362
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 17.0% (14.0% excl. trans)
+  Pass@2 (Train Majority):  17.0% (14.0% excl. trans)
+  Oracle (Best Attempt):    19.0% (15.0% excl. trans)
+  All Train Correct:        17.0% (12.0% excl. trans)
+  Min 1 Train Correct:      37.0% (31.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
 and then add in refinement:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset missing_1_solution --max_workers 32 --max_attempts 8 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --limit 100 --refinement-ds Trelis/arc-agi-partials-for-refinement
 ```
+Dataset: arc-prize-2025
+Subset: missing_1_solution
+Model: openai/gpt-oss-120b
+Total tasks: 100
+Total time: 1874.9s
+Successful API calls: 100/100 (100.0%)
+Total tokens used: 7,543,054
+Total cost: $3.037527
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 11.0% (11.0% excl. trans)
+  Pass@2 (Train Majority):  11.0% (11.0% excl. trans)
+  Oracle (Best Attempt):    11.0% (11.0% excl. trans)
+  All Train Correct:        12.0% (10.0% excl. trans)
+  Min 1 Train Correct:      44.0% (43.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
 ### Finding tricky tasks and pre-training on them. How does the model perform vs the superking dataset?
 Focusing on tasks with 10 or less all-correct, as a proxy for difficulty.
