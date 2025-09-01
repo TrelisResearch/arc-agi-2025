@@ -289,7 +289,7 @@ class TestSubmissionGeneratorCLI(unittest.TestCase):
         """Test that CLI help works"""
         import subprocess
         result = subprocess.run([
-            'uv', 'run', 'python', 'llm_python/generate_submission.py', '--help'
+            'uv', 'run', 'python', "-m", 'llm_python.generate_submission', '--help'
         ], capture_output=True, text=True, cwd=Path(__file__).parent.parent.parent)
         
         self.assertEqual(result.returncode, 0)
