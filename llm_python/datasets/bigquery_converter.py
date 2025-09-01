@@ -71,9 +71,6 @@ def convert_bigquery_to_soar(
     # Create DataFrame from successfully converted data
     final_dataset = pd.DataFrame(converted_data)
 
-    # Add missing columns with default values for schema compliance
-    final_dataset["reasoning"] = ""  # Empty reasoning for now
-
     # Reorder columns to match schema
     schema_columns = [
         "row_id",
