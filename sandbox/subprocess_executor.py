@@ -20,10 +20,9 @@ def execute_code_in_subprocess(
     Executes a Python code string in a memory and time-constrained subprocess.
 
     This function uses the best available mechanism for the host OS:
-    - On Linux: Uses `systemd-run` to leverage kernel cgroups for strict and
-      reliable memory limiting.
-    - On macOS: Falls back to using `ulimit -m`, which is a "best-effort"
-      approach and may not be strictly enforced by the OS.
+    - On Linux with systemd: Uses `systemd-run` for strict, cgroup-based limits.
+    - On other Linux systems & macOS: Falls back to using `ulimit -m`, a
+      "best-effort" approach that works in environments like GitHub Actions CI.
     - Other OS: Not supported.
 
     Args:
@@ -61,7 +60,7 @@ except Exception as e:
         # --- OS-Specific Sandbox Implementation ---
         
         #
-        # ** LINUX (systemd-run / cgroups) - PREFERRED METHOD **
+        # ** PREFERRED: Linux with systemd (cgroups) **
         #
         if sys.platform == "linux" and shutil.which("systemd-run"):
             command_args = [
@@ -75,14 +74,14 @@ except Exception as e:
                 encoded_user_code
             ]
         #
-        # ** MACOS (ulimit) - FALLBACK METHOD **
+        # ** FALLBACK: Linux without systemd, or macOS (ulimit) **
+        # This branch will be used by GitHub Actions CI runners.
         #
-        elif sys.platform == "darwin":
-            # Note: `ulimit -m` on macOS is a "best-effort" and less reliable
-            # than cgroups on Linux.
+        elif sys.platform in ["linux", "darwin"]:
             memory_limit_kb = MEMORY_LIMIT_MB * 1024
             encoded_runner_script = base64.b64encode(runner_script.encode('utf-8')).decode('utf-8')
             
+            # Note: `base64 -d` is standard on Linux and macOS.
             ulimit_command = f"""
 ulimit -m {memory_limit_kb};
 runner_script=$(echo {encoded_runner_script} | base64 -d);
