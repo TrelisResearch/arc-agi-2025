@@ -65,7 +65,7 @@ def prompt_keep_pod(timeout=10):
     except Exception:
         return False
 
-def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="all_evaluation", max_attempts=64, no_transductive_penalty=False, max_workers=32, splitter=False, max_tokens=2000):
+def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="all_evaluation", max_attempts=64, no_transductive_penalty=False, max_workers=32, splitter=False, max_tokens=2000, refinement_ds=None):
     """Run ARC tasks - task runner handles its own graceful shutdown"""
     print(f"\n🎯 Running ARC tasks for {dataset} with subset {subset}...")
     print(f"📊 Task Runner Configuration:")
@@ -83,6 +83,8 @@ def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="
         print(f"   Transductive penalty: DISABLED")
     if splitter:
         print(f"   Training data splitter: ENABLED (randomly selecting & shuffling training examples)")
+    if refinement_ds:
+        print(f"   Refinement mode: ENABLED (using programs from {refinement_ds})")
     
     cmd = [
         "uv", "run", "python", "-m", "llm_python.run_arc_tasks_soar",
@@ -105,6 +107,9 @@ def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="
     
     if splitter:
         cmd.append("--splitter")
+    
+    if refinement_ds:
+        cmd.extend(["--refinement-ds", refinement_ds])
     
     print(f"📝 Full command: {' '.join(cmd)}")
     
@@ -247,6 +252,9 @@ This script will:
                        type=int,
                        default=2000,
                        help='Maximum tokens for model generation (default: 2000)')
+    parser.add_argument('--refinement-ds',
+                       type=str,
+                       help='Refinement dataset: HuggingFace dataset or parquet file containing draft programs to refine')
     
     args = parser.parse_args()
     
@@ -396,7 +404,7 @@ This script will:
         print(f"\n🎯 Step 2: Running ARC tasks for {args.dataset}")
         
         task_success = run_arc_tasks_with_graceful_handling(
-            args.dataset, args.model_path, base_url, args.subset, args.max_attempts, args.no_transductive_penalty, args.max_workers, args.splitter, args.max_tokens
+            args.dataset, args.model_path, base_url, args.subset, args.max_attempts, args.no_transductive_penalty, args.max_workers, args.splitter, args.max_tokens, args.refinement_ds
         )
         
         if task_success:
