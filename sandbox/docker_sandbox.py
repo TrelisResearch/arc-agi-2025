@@ -27,7 +27,7 @@ class DockerSandboxExecutor(BaseExecutor):
     Executor that runs Python code in a Docker container for isolation.
     """
     
-    def __init__(self, image_name: str = "python-sandbox:v2", container_port: int = 7934):
+    def __init__(self, image_name: str = "python-sandbox:v3", container_port: int = 7934):
         """
         Initialize the Docker sandbox executor.
         
