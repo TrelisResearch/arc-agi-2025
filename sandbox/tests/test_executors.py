@@ -90,7 +90,6 @@ return "completed"
     def test_memory_limit_enforced(self):
         """Test that allocating >512MB fails due to memory limits."""
         with UnrestrictedExecutor() as executor:
-            # Try to allocate a list of ~130 million floats (~1GB)
             result, error = executor.execute_code(
                 """
 import os
