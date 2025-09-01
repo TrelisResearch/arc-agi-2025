@@ -14,6 +14,104 @@ Todo:
 - Reach back out to openrouter on sponsorship again.
 
 ---
+## Sep 1 2025
+Todo:
+[ ] Understand the client timeout.
+[ ] Get a fine-tuning run going on arc-agi-2-tricky-partial-10
+[ ] Understand whether partials get upgraded with TTT.
+
+### Finding tricky tasks
+Focusing on tasks with 10 or less all-correct, as a proxy for difficulty.
+
+### Do partials get upgraded with TTT?
+Conclusion: Training on partials with k of n correct, results in more programs at higher k, but there is no discovery of programs reaching higher k than in the TTT-training set (at least, not found so far!), which is perhaps even more negative a result than on the surface because just sampling should give some chance at finding higher k programs, even without TTT.
+
+for task 135a2760 (non-transductive programs only):
+
+  File 1 (Trelis_Qwen3-4B):
+
+  - Total non-transductive programs: 105
+  - 0 correct: 58 programs (55.2%)
+  - 1 correct: 47 programs (44.8%)
+  - 2 correct: 0 programs (0.0%)
+  - 3 correct: 0 programs (0.0%)
+
+  File 2 (fine-tuning):
+
+  - Total non-transductive programs: 127
+  - 0 correct: 1 program (0.8%)
+  - 1 correct: 126 programs (99.2%)
+  - 2 correct: 0 programs (0.0%)
+  - 3 correct: 0 programs (0.0%)
+
+  Key insights:
+  - Maximum possible correct solutions per program: 3 (2 train inputs + 1 test input)
+  - Neither model achieves 2 or 3 correct solutions for any program
+  - Fine-tuning dramatically improves 1-correct performance (44.8% → 99.2%)
+  - Both models cap out at exactly 1 correct solution per program for this task
+
+for task 981571dc (non-transductive programs only):
+
+  File 1 (Trelis_Qwen3-4B):
+
+  - Total non-transductive programs: 117
+  - 0 correct: 50 programs (42.7%)
+  - 1 correct: 25 programs (21.4%)
+  - 2 correct: 2 programs (1.7%)
+  - 3 correct: 4 programs (3.4%)
+  - 4 correct: 36 programs (30.8%)
+  - 5 correct: 0 programs (0.0%)
+
+  File 2 (fine-tuning):
+
+  - Total non-transductive programs: 128
+  - 0 correct: 13 programs (10.2%)
+  - 1 correct: 37 programs (28.9%)
+  - 2 correct: 1 program (0.8%)
+  - 3 correct: 6 programs (4.7%)
+  - 4 correct: 71 programs (55.5%)
+  - 5 correct: 0 programs (0.0%)
+
+  Key insights:
+  - Maximum possible correct solutions per program: 5 (4 train inputs + 1 test input)
+  - Task 981571dc shows much more diverse correctness distribution than 135a2760
+  - Fine-tuning significantly improves overall success rate (57.3% → 89.8%)
+  - Fine-tuning dramatically increases 4-correct programs (30.8% → 55.5%)
+  - Neither model achieves perfect 5-correct solutions
+  - This task allows for more partial success compared to 135a2760
+
+for task 4c7dc4dd (non-transductive programs only):
+
+  File 1 (Trelis_Qwen3-4B):
+
+  - Total non-transductive programs: 42
+  - 0 correct: 41 programs (97.6%)
+  - 1 correct: 0 programs (0.0%)
+  - 2 correct: 1 program (2.4%)
+  - 3 correct: 0 programs (0.0%)
+  - 4 correct: 0 programs (0.0%)
+
+  File 2 (fine-tuning):
+
+  - Total non-transductive programs: 90
+  - 0 correct: 75 programs (83.3%)
+  - 1 correct: 7 programs (7.8%)
+  - 2 correct: 8 programs (8.9%)
+  - 3 correct: 0 programs (0.0%)
+  - 4 correct: 0 programs (0.0%)
+
+  Key insights:
+  - Maximum possible correct solutions per program: 4 (3 train inputs + 1 test input)
+  - Task 4c7dc4dd appears to be very challenging for both models
+  - Fine-tuning shows significant improvement (2.4% → 16.7% success rate)
+  - Base model only achieves 2-correct (no 1-correct programs)
+  - Fine-tuning enables both 1-correct and 2-correct solutions
+  - Neither model achieves 3 or 4 correct solutions
+  - This is the most difficult of the three tasks analyzed
+
+### OpenAI client timeout
+Issue posted [here](https://github.com/openai/openai-python/issues/2599).
+
 ## Aug 30
 ### Analysis of data generated before and after TTT
 #### Are the tasks well distributed?
