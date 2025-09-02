@@ -20,16 +20,60 @@ Todo:
 [ ] Make data pushes private.
 [ ] Test feedback including output grids.
 
+### Making the dataset quite a lot harder
+We'll run with eight attempts and remove all tasks that have at least min 1 train correct:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 64 --max_attempts 8 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
+```
+...
+
 ### Measure what's hard (again) to get a calibrated dataset.
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 32 --max_attempts 2 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
 ```
+Dataset: arc-prize-2025
+Subset: training-hard
+Model: openai/gpt-oss-120b
+Total tasks: 294
+Total time: 1731.2s
+Successful API calls: 294/294 (100.0%)
+Total tokens used: 6,147,381
+Total cost: $2.614696
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 8.5% (6.1% excl. trans)
+  Pass@2 (Train Majority):  8.5% (6.1% excl. trans)
+  Oracle (Best Attempt):    8.5% (6.1% excl. trans)
+  All Train Correct:        6.5% (4.8% excl. trans)
+  Min 1 Train Correct:      13.3% (9.5% excl. trans)
+  Min 1 Code Success:       91.5%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
 and we'll run as well on the evaluation subset to see how many openai/gpt-oss-120b gets right:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 2 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
 ```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: openai/gpt-oss-120b
+Total tasks: 120
+Total time: 650.4s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 2,844,863
+Total cost: $1.154914
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 1.7% (1.7% excl. trans)
+  Pass@2 (Train Majority):  1.7% (1.7% excl. trans)
+  Oracle (Best Attempt):    1.7% (1.7% excl. trans)
+  All Train Correct:        2.5% (2.5% excl. trans)
+  Min 1 Train Correct:      7.5% (7.5% excl. trans)
+  Min 1 Code Success:       90.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
 ### Measuring what's hard AND whether feedback helps. Programs still not hard enough...
 We'll run now using OSS 120b from openrouter on the training-gpt-5-nano-hard dataset, first without feedback:
