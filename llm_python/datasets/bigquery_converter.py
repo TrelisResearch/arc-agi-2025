@@ -39,6 +39,7 @@ def convert_bigquery_to_soar(
         try:
             converted_data.append(
                 {
+                    "row_id": row["row_id"],
                     "task_id": row["task_id"],
                     "code": row["code"],
                     "model": row["model"],
@@ -54,6 +55,8 @@ def convert_bigquery_to_soar(
                     "correct_test_input": _extract_boolean_values(
                         _convert_bq_nested_structure(row["correct_test_input"])
                     ),
+                    "is_transductive": row.get("is_transductive", False),
+                    "reasoning": row.get("reasoning", "")
                 }
             )
 
@@ -68,11 +71,9 @@ def convert_bigquery_to_soar(
     # Create DataFrame from successfully converted data
     final_dataset = pd.DataFrame(converted_data)
 
-    # Add missing columns with default values for schema compliance
-    final_dataset["reasoning"] = ""  # Empty reasoning for now
-
     # Reorder columns to match schema
     schema_columns = [
+        "row_id",
         "task_id",
         "reasoning",
         "code",
@@ -81,6 +82,7 @@ def convert_bigquery_to_soar(
         "predicted_train_output",
         "predicted_test_output",
         "model",
+        "is_transductive"
     ]
     final_dataset = pd.DataFrame(final_dataset[schema_columns])
 

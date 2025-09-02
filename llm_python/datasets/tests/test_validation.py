@@ -73,6 +73,7 @@ class TestCorrectnessValidationResult:
 class TestValidateSoarRow:
     def test_row_valid(self):
         row = {
+            "row_id": "abcdef",
             "task_id": "task_001",
             "reasoning": None,
             "code": "def generate(): return [[1]]",
@@ -222,6 +223,7 @@ class TestValidateSoarDataframe:
         """Test business logic validation catches empty lists."""
         df = pd.DataFrame(
             {
+                "row_id": ["abcdef"],
                 "task_id": ["task_001"],
                 "reasoning": [None],
                 "code": ["def generate(): return []"],
@@ -319,6 +321,7 @@ def generate(input_grid):
         expected_output2 = [[6]]  # If input was [[5]]
         df = pd.DataFrame(
             {
+                "row_id": ["abcdef"],
                 "task_id": ["fake_task_123"],  # Non-existent task ID
                 "reasoning": ["Adds 1 to all values"],
                 "code": [program_code],

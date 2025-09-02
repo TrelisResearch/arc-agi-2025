@@ -9,22 +9,404 @@ Lewis Reminders:
 - "code" vs "program" in parquet vs hf. THIS IS FOR RONAN TO FIX WITH SUBMISSION FILE CREATION! SHOULD BE DIRECTLY FROM PARQUET.
 - checkpointing is quite inconsistent. There are quite a few in a row, then large gaps. We may have an hour of generation with no checkpoints saved to parquet.
 
+Todo:
+- Make data and model pushes private. [check it doesn't break things like kaggle! is HF_TOKEN set?]
+- Reach back out to openrouter on sponsorship again.
+
 ---
+## Sept 2 2025
+### Measure what "hard" means
+Start by running gpt-5-nano for two attempts on the arc-prize-2025 training dataset AND the evaluation dataset.
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training --max_workers 32 --max_attempts 2 --model gpt-5-nano --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
+```
+
+
+then evaluation:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 2 --model gpt-5-nano --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
+```
+
+## Sep 1 2025
+Todo:
+[X] Understand the client timeout. POSTED AN ISSUE.
+[X] Get a fine-tuning run going on arc-agi-2-tricky-partial-10. DONE. SEEMS AS STRONG AS FINE-TUNING ON ALL DATA.
+[X] Understand whether partials get upgraded with TTT. SEEMS LIKE NOT EASILY, IF AT ALL!
+
+### Feedback analysis on the "Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-tricky-10-c120" model
+Really, we need to run it on a parquet file where we have partials... /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250901_150014_Trelis_Qwen3-4B_ds-arc-agi-2-partial-100-tricky-10-c120_arc-prize-2025_evaluation.parquet:
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-tricky-10-c120" --max-attempts 64 --subset evaluation --gpu-count 2 --max-workers 128 --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250901_150014_Trelis_Qwen3-4B_ds-arc-agi-2-partial-100-tricky-10-c120_arc-prize-2025_evaluation.parquet
+```
+Looks like 6.6% train partial. 
+
+### Feedback analysis on trelis_partial_100_tricky_10
+Get a baseline with no feedback using openrouter on the GPT OSS 120B model, on the tricky dataset dataset. We'll just run 100.
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset trelis_partial_100_tricky_10 --max_workers 32 --max_attempts 8 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
+```
+Dataset: arc-prize-2025
+Subset: trelis_partial_100_tricky_10
+Model: openai/gpt-oss-120b
+Total tasks: 249
+Total time: 3959.5s
+Successful API calls: 249/249 (100.0%)
+Total tokens used: 17,186,698
+Total cost: $7.760642
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 61.8% (55.8% excl. trans)
+  Pass@2 (Train Majority):  59.0% (55.4% excl. trans)
+  Oracle (Best Attempt):    65.1% (57.4% excl. trans)
+  All Train Correct:        59.4% (51.8% excl. trans)
+  Min 1 Train Correct:      81.1% (75.5% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 1603 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250901_181225_openai_gpt-oss-120b_arc-prize-2025_trelis_partial_100_tricky_10.parquet
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250901_181225_openai_gpt-oss-120b_arc-prize-2025_trelis_partial_100_tricky_10.parquet
+and repeat then pulling from  --refinement-ds Trelis/arc-agi-partials-for-refinement:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset trelis_partial_100_tricky_10 --max_workers 32 --max_attempts 8 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds Trelis/arc-agi-partials-for-refinement
+```
+Dataset: arc-prize-2025
+Subset: trelis_partial_100_tricky_10
+Model: openai/gpt-oss-120b
+Total tasks: 249
+Total time: 3686.5s
+Successful API calls: 249/249 (100.0%)
+Total tokens used: 16,680,672
+Total cost: $7.235734
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 62.7% (59.8% excl. trans)
+  Pass@2 (Train Majority):  59.4% (57.8% excl. trans)
+  Oracle (Best Attempt):    64.7% (61.0% excl. trans)
+  All Train Correct:        62.7% (57.4% excl. trans)
+  Min 1 Train Correct:      89.2% (84.7% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 1623 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250901_181241_openai_gpt-oss-120b_arc-prize-2025_trelis_partial_100_tricky_10.parquet
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250901_181241_openai_gpt-oss-120b_arc-prize-2025_trelis_partial_100_tricky_10.parquet
+
+### Feedback analysis
+
+Generate a new subset of hard tasks. Possibly we can use the missing subset as a list of fairly hard tasks, some of which will have partials available. WARNING, THE BELOW WERE DONE SELECTING FROM THE MOST-CORRECT EXAMPLES (excl. all-correct), but this does reduce diversity quite a lot, most likely as there are far fewer programs that are close to correct than just one correct.
+
+Get a baseline with no feedback using openrouter on the GPT OSS 120B model, on the Trelis/arc-agi-partials-for-refinement dataset. We'll just run 100.
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset missing_1_solution --max_workers 32 --max_attempts 8 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --limit 100
+```
+Dataset: arc-prize-2025
+Subset: missing_1_solution
+Model: openai/gpt-oss-120b
+Total tasks: 100
+Total time: 2022.7s
+Successful API calls: 100/100 (100.0%)
+Total tokens used: 7,726,079
+Total cost: $3.183362
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 17.0% (14.0% excl. trans)
+  Pass@2 (Train Majority):  17.0% (14.0% excl. trans)
+  Oracle (Best Attempt):    19.0% (15.0% excl. trans)
+  All Train Correct:        17.0% (12.0% excl. trans)
+  Min 1 Train Correct:      37.0% (31.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+and then add in refinement:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset missing_1_solution --max_workers 32 --max_attempts 8 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --limit 100 --refinement-ds Trelis/arc-agi-partials-for-refinement
+```
+Dataset: arc-prize-2025
+Subset: missing_1_solution
+Model: openai/gpt-oss-120b
+Total tasks: 100
+Total time: 1874.9s
+Successful API calls: 100/100 (100.0%)
+Total tokens used: 7,543,054
+Total cost: $3.037527
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 11.0% (11.0% excl. trans)
+  Pass@2 (Train Majority):  11.0% (11.0% excl. trans)
+  Oracle (Best Attempt):    11.0% (11.0% excl. trans)
+  All Train Correct:        12.0% (10.0% excl. trans)
+  Min 1 Train Correct:      44.0% (43.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+### Finding tricky tasks and pre-training on them. How does the model perform vs the superking dataset?
+Focusing on tasks with 10 or less all-correct, as a proxy for difficulty.
+
+Test out performance on Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-tricky-10-c120 with 64 attempts on the arc agi 2 evaluation dataset:
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-tricky-10-c120" --max-attempts 64 --subset evaluation
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-tricky-10-c120
+Total tasks: 120
+Total time: 1243.6s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 47,238,425
+Total cost: $8.526725
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.8% (0.8% excl. trans)
+  Pass@2 (Train Majority):  0.8% (0.8% excl. trans)
+  Oracle (Best Attempt):    0.8% (0.8% excl. trans)
+  All Train Correct:        0.8% (0.8% excl. trans)
+  Min 1 Train Correct:      5.0% (3.3% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.4%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250901_150014_Trelis_Qwen3-4B_ds-arc-agi-2-partial-100-tricky-10-c120_arc-prize-2025_evaluation.parquet
+
+And compare that with our best arc-prize-2025-partial-100 model:
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806" --max-attempts 64 --subset evaluation
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806
+Total tasks: 120
+Total time: 1037.0s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 46,629,403
+Total cost: $8.161312
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.8% (0.8% excl. trans)
+  Pass@2 (Train Majority):  0.8% (0.8% excl. trans)
+  Oracle (Best Attempt):    0.8% (0.8% excl. trans)
+  All Train Correct:        0.8% (0.8% excl. trans)
+  Min 1 Train Correct:      5.0% (4.2% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.1%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+Compare that with the model trained on arc-agi-1 only:
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542" --max-attempts 64 --subset evaluation --gpu-count 2 --max-workers 128
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542
+Total tasks: 120
+Total time: 291.8s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 19,058,383
+Total cost: $3.343186
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    0.0% (0.0% excl. trans)
+  All Train Correct:        0.8% (0.8% excl. trans)
+  Min 1 Train Correct:      2.5% (2.5% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250901_180145_Trelis_Qwen3-4B_ds-arc-agi-1-partial-100-c1542_arc-prize-2025_evaluation.parquet
+
+### Do partials get upgraded with TTT?
+Conclusion: Training on partials with k of n correct, results in more programs at higher k, but there is no discovery of programs reaching higher k than in the TTT-training set (at least, not found so far!), which is perhaps even more negative a result than on the surface because just sampling should give some chance at finding higher k programs, even without TTT.
+
+for task 135a2760 (non-transductive programs only):
+
+  File 1 (Trelis_Qwen3-4B):
+
+  - Total non-transductive programs: 105
+  - 0 correct: 58 programs (55.2%)
+  - 1 correct: 47 programs (44.8%)
+  - 2 correct: 0 programs (0.0%)
+  - 3 correct: 0 programs (0.0%)
+
+  File 2 (fine-tuning):
+
+  - Total non-transductive programs: 127
+  - 0 correct: 1 program (0.8%)
+  - 1 correct: 126 programs (99.2%)
+  - 2 correct: 0 programs (0.0%)
+  - 3 correct: 0 programs (0.0%)
+
+  Key insights:
+  - Maximum possible correct solutions per program: 3 (2 train inputs + 1 test input)
+  - Neither model achieves 2 or 3 correct solutions for any program
+  - Fine-tuning dramatically improves 1-correct performance (44.8% → 99.2%)
+  - Both models cap out at exactly 1 correct solution per program for this task
+
+for task 981571dc (non-transductive programs only):
+
+  File 1 (Trelis_Qwen3-4B):
+
+  - Total non-transductive programs: 117
+  - 0 correct: 50 programs (42.7%)
+  - 1 correct: 25 programs (21.4%)
+  - 2 correct: 2 programs (1.7%)
+  - 3 correct: 4 programs (3.4%)
+  - 4 correct: 36 programs (30.8%)
+  - 5 correct: 0 programs (0.0%)
+
+  File 2 (fine-tuning):
+
+  - Total non-transductive programs: 128
+  - 0 correct: 13 programs (10.2%)
+  - 1 correct: 37 programs (28.9%)
+  - 2 correct: 1 program (0.8%)
+  - 3 correct: 6 programs (4.7%)
+  - 4 correct: 71 programs (55.5%)
+  - 5 correct: 0 programs (0.0%)
+
+  Key insights:
+  - Maximum possible correct solutions per program: 5 (4 train inputs + 1 test input)
+  - Task 981571dc shows much more diverse correctness distribution than 135a2760
+  - Fine-tuning significantly improves overall success rate (57.3% → 89.8%)
+  - Fine-tuning dramatically increases 4-correct programs (30.8% → 55.5%)
+  - Neither model achieves perfect 5-correct solutions
+  - This task allows for more partial success compared to 135a2760
+
+for task 4c7dc4dd (non-transductive programs only):
+
+  File 1 (Trelis_Qwen3-4B):
+
+  - Total non-transductive programs: 42
+  - 0 correct: 41 programs (97.6%)
+  - 1 correct: 0 programs (0.0%)
+  - 2 correct: 1 program (2.4%)
+  - 3 correct: 0 programs (0.0%)
+  - 4 correct: 0 programs (0.0%)
+
+  File 2 (fine-tuning):
+
+  - Total non-transductive programs: 90
+  - 0 correct: 75 programs (83.3%)
+  - 1 correct: 7 programs (7.8%)
+  - 2 correct: 8 programs (8.9%)
+  - 3 correct: 0 programs (0.0%)
+  - 4 correct: 0 programs (0.0%)
+
+  Key insights:
+  - Maximum possible correct solutions per program: 4 (3 train inputs + 1 test input)
+  - Task 4c7dc4dd appears to be very challenging for both models
+  - Fine-tuning shows significant improvement (2.4% → 16.7% success rate)
+  - Base model only achieves 2-correct (no 1-correct programs)
+  - Fine-tuning enables both 1-correct and 2-correct solutions
+  - Neither model achieves 3 or 4 correct solutions
+  - This is the most difficult of the three tasks analyzed
+
+### OpenAI client timeout
+Issue posted [here](https://github.com/openai/openai-python/issues/2599).
+
 ## Aug 30
+### Analysis of data generated before and after TTT
+#### Are the tasks well distributed?
 
-### Test the checkpoints from the arc-agi-2 run:
-Start a pod and test arc-prize-2025 evaluation with 64 attempts, 128 workers, 2 gpus and 2k tokens max length:
+![Pre-TTT vs Post-TTT Comparison](/Users/ronanmcgovern/TR/arc-agi-2025/experimental/trelis_partial_100_analysis/arc-agi-2-partial-100.png)
 
+uv run python -m llm_python.score_submission --submission "/Users/ronanmcgovern/TR/arc-agi-2025/experimental/l4-replication/29-Aug-2025 Submission/submission-5.json" --dataset arc-prize-2025 --subset evaluation
+
+### Pre-TTT vs Post-TTT Comparison
+
+  Here's the side-by-side comparison of non-transductive submissions with correct training examples:
+
+  | Task ID  | Pre-TTT (≥1) | Pre-TTT (All) | Post-TTT (≥1) | Post-TTT (All) |
+  |----------|--------------|---------------|---------------|----------------|
+  | 135a2760 | 47           | 0             | 126           | 0              |
+  | 20270e3b | 2            | 0             | 9             | 0              |
+  | 332f06d7 | 2            | 0             | 26            | 0              |
+  | 4c7dc4dd | 1            | 1             | 15            | 8              |
+  | 53fb4810 | 0            | 0             | 1             | 0              |
+  | 5961cc34 | 2            | 0             | 52            | 0              |
+  | 8b7bacbf | 3            | 0             | 32            | 0              |
+  | 981571dc | 67           | 36            | 115           | 71             |
+  | b6f77b65 | 17           | 0             | 79            | 0              |
+  | db695cfb | 50           | 0             | 120           | 0              |
+  | TOTAL    | 191          | 37            | 575           | 79             |
+
+That one task 4c7dc4dd is transductive, but wasn't detected as such. So there was only one task that ended up correct. Unfortunately, TTT probably engrained that transductive example...
+
+### Try out OSS for 8 attempts and then TTT Qwen and inference for 128 attempts
+
+After 8 attempts with OSS:
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: openai/gpt-oss-20b
+Total tasks processed: 120
+Total time: 10475.8s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 19,170,580
+Total cost: $2.303416
+
+📊 RESPONSE METRICS:
+  Total responses: 960
+  Code extracted: 747/960 (77.8%)
+  Max length responses: 18/960 (1.9%)
+  Timeout responses: 0/960 (0.0%)
+  API failure responses: 0/960 (0.0%)
+
+📊 TRAIN METRICS:
+  All train correct: 4/120 (3.3%)
+  Min 1 train correct: 17/120 (14.2%)
+
+After TTT of Qwen with the above data:
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: /workspace/arc-agi-2025/llm_python/fine-tuning/Qwen3-4B_ds-arc-agi-2-partial-100-c2806_ds-inference-final
+Total tasks processed: 120
+Total time: 2426.4s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 92,990,650
+Total cost: $16.161731
+
+📊 RESPONSE METRICS:
+  Total responses: 15360
+  Code extracted: 15355/15360 (100.0%)
+  Max length responses: 5/15360 (0.0%)
+  Timeout responses: 0/15360 (0.0%)
+  API failure responses: 0/15360 (0.0%)
+
+📊 TRAIN METRICS:
+  All train correct: 1/120 (0.8%)
+  Min 1 train correct: 16/120 (13.3%)
+
+and then on submission:
+Dataset: arc-prize-2025
+Subset: evaluation
+Reference tasks: 120
+Tasks scored: 120
+Total predictions: 344
+
+📊 PREDICTION-LEVEL METRICS:
+  Pass@1 (first attempt): 3/344 (0.9%)
+  Pass@2 (either attempt): 4/344 (1.2%)
+
+📊 TASK-LEVEL METRICS:
+  Tasks Pass@1 (all outputs correct on first attempt): 3/120 (2.5%)
+  Tasks Pass@2 (all outputs correct on either attempt): 3/120 (2.5%)
+
+I have downloaded logs locally as OSS-8_Qwen-TTT_Qwen-128
+
+### Test out OSS on sglang
+Start up and run inference for 4 attempmts on lmsys/gpt-oss-20b-bf16 for 8 attempts on arc agi 2 eval:
 ```bash
-uv run python -m runpod.create_pod_and_run_tasks arc-prize-2025 Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806 --template sglang --subset evaluation --max-attempts 64 --max-workers 256 --gpu-count 4 --splitter
+uv run python -m runpod.create_pod_and_run_tasks arc-prize-2025 openai/gpt-oss-20b --template sglang --subset evaluation --max-attempts 1 --max-workers 64 --gpu-count 1
 ```
-and then check the Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c1403 checkpoint too:
+but also one needs to set "--reasoning-parser gpt-oss" within the server startup command.
 
-```bash
-uv run python -m runpod.create_pod_and_run_tasks arc-prize-2025 Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c1403 --template sglang --subset evaluation --max-attempts 64 --max-workers 128 --gpu-count 4 --splitter
-```
-
-
+Basically fp8 kvcache does not work, but otherwise, all works well with OSS.
 
 ## Aug 29
 

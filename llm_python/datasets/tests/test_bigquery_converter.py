@@ -56,6 +56,7 @@ def test_convert_bigquery_to_soar():
     bq_data = pd.DataFrame(
         [
             {
+                "row_id": "abcdef",
                 "task_id": "test_task_1",
                 "code": "def generate(input): return input",
                 "model": "test_model",
@@ -98,6 +99,8 @@ def test_convert_bigquery_to_soar():
                     "list": [{"element": True}, {"element": False}]
                 },
                 "correct_test_input": {"list": [{"element": True}]},
+                "reasoning": "This is a test reasoning",
+                "is_transductive": True
             }
         ]
     )
@@ -105,8 +108,12 @@ def test_convert_bigquery_to_soar():
     result_df = convert_bigquery_to_soar(bq_data, show_progress=False)
 
     assert len(result_df) == 1
+    assert result_df.iloc[0]["row_id"] == "abcdef"
     assert result_df.iloc[0]["task_id"] == "test_task_1"
     assert result_df.iloc[0]["predicted_train_output"] == [[[1, 2], [3, 4]]]
     assert result_df.iloc[0]["predicted_test_output"] == [[[5, 6]]]
     assert result_df.iloc[0]["correct_train_input"] == [True, False]
     assert result_df.iloc[0]["correct_test_input"] == [True]
+    assert result_df.iloc[0]["reasoning"] == "This is a test reasoning"
+    assert result_df.iloc[0]["is_transductive"]
+

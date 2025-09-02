@@ -2,17 +2,14 @@
 Test suite for the splitter functionality in SOAR task runner.
 """
 
-import pytest
 import random
-from unittest.mock import Mock, patch, MagicMock
-from typing import Dict, List
-import sys
-import os
+from typing import Dict
+from unittest.mock import patch
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+import pytest
 
-from utils.prompt_utils import create_arc_prompt
+from llm_python.utils.prompt_utils import create_arc_prompt
+from llm_python.run_arc_tasks_soar import ARCTaskRunnerSimple, main
 
 
 class MockPromptLoader:
@@ -288,7 +285,6 @@ class TestArgparseIntegration:
     
     def test_splitter_argument_parsing(self):
         """Test that --splitter argument is properly parsed"""
-        from run_arc_tasks_soar import main
         import argparse
         
         # Create parser (we'll test just the parser, not the full main)
@@ -333,16 +329,15 @@ class TestArgparseIntegration:
 
 class TestRunnerIntegration:
     """Test integration with ARCTaskRunnerSimple"""
-    
-    @patch('run_arc_tasks_soar.ARCAPIClient')
-    @patch('run_arc_tasks_soar.ArcTester')
-    @patch('run_arc_tasks_soar.PromptLoader')
-    @patch('run_arc_tasks_soar.SoarDatasetCollector')
-    @patch('run_arc_tasks_soar.CodeTransductionClassifier')
-    def test_runner_initialization_with_splitter(self, mock_classifier, mock_collector, 
+
+    @patch('llm_python.run_arc_tasks_soar.ARCAPIClient')
+    @patch('llm_python.run_arc_tasks_soar.ArcTester')
+    @patch('llm_python.run_arc_tasks_soar.PromptLoader')
+    @patch('llm_python.run_arc_tasks_soar.SoarDatasetCollector')
+    @patch('llm_python.run_arc_tasks_soar.CodeTransductionClassifier')
+    def test_runner_initialization_with_splitter(self, mock_classifier, mock_collector,
                                                  mock_prompt_loader, mock_tester, mock_api_client):
         """Test that ARCTaskRunnerSimple properly initializes with splitter"""
-        from run_arc_tasks_soar import ARCTaskRunnerSimple
         
         # Create runner with splitter enabled
         runner = ARCTaskRunnerSimple(
@@ -359,18 +354,17 @@ class TestRunnerIntegration:
             splitter=False
         )
         assert runner2.splitter == False
-    
-    @patch('run_arc_tasks_soar.create_arc_prompt')
-    @patch('run_arc_tasks_soar.ARCAPIClient')
-    @patch('run_arc_tasks_soar.ArcTester')
-    @patch('run_arc_tasks_soar.PromptLoader')
-    @patch('run_arc_tasks_soar.SoarDatasetCollector')
-    @patch('run_arc_tasks_soar.CodeTransductionClassifier')
+
+    @patch('llm_python.run_arc_tasks_soar.create_arc_prompt')
+    @patch('llm_python.run_arc_tasks_soar.ARCAPIClient')
+    @patch('llm_python.run_arc_tasks_soar.ArcTester')
+    @patch('llm_python.run_arc_tasks_soar.PromptLoader')
+    @patch('llm_python.run_arc_tasks_soar.SoarDatasetCollector')
+    @patch('llm_python.run_arc_tasks_soar.CodeTransductionClassifier')
     def test_create_prompt_passes_splitter(self, mock_classifier, mock_collector,
                                           mock_prompt_loader, mock_tester, mock_api_client,
                                           mock_create_arc_prompt):
         """Test that create_prompt method passes splitter flag correctly"""
-        from run_arc_tasks_soar import ARCTaskRunnerSimple
         
         # Setup mock
         mock_create_arc_prompt.return_value = ("system", "user")

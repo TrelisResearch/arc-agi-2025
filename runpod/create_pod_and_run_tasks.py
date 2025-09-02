@@ -65,19 +65,26 @@ def prompt_keep_pod(timeout=10):
     except Exception:
         return False
 
-def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="all_evaluation", max_attempts=64, no_transductive_penalty=False, max_workers=32, splitter=False):
+def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="all_evaluation", max_attempts=64, no_transductive_penalty=False, max_workers=32, splitter=False, max_tokens=2000, refinement_ds=None):
     """Run ARC tasks - task runner handles its own graceful shutdown"""
     print(f"\n🎯 Running ARC tasks for {dataset} with subset {subset}...")
     print(f"📊 Task Runner Configuration:")
     print(f"   Max workers: {max_workers}")
     print(f"   Max attempts: {max_attempts}")
-    print(f"   Max tokens: 2000 (default)")
-    print(f"   Qwen thinking: DISABLED (--qwen-no-think)")
+    print(f"   Max tokens: {max_tokens}")
+    
+    # Check if this is a Qwen model
+    is_qwen_model = 'qwen' in model_path.lower()
+    if is_qwen_model:
+        print(f"   Qwen thinking: DISABLED (--qwen-no-think)")
+    
     print(f"   Executor: UNSAFE (runs directly, no sandboxing)")
     if no_transductive_penalty:
         print(f"   Transductive penalty: DISABLED")
     if splitter:
         print(f"   Training data splitter: ENABLED (randomly selecting & shuffling training examples)")
+    if refinement_ds:
+        print(f"   Refinement mode: ENABLED (using programs from {refinement_ds})")
     
     cmd = [
         "uv", "run", "python", "-m", "llm_python.run_arc_tasks_soar",
@@ -88,15 +95,21 @@ def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="
         "--model", model_path,
         "--base-url", base_url,
         "--unsafe-executor",
-        "--max-tokens", "2000",
-        "--qwen-no-think"
+        "--max-tokens", str(max_tokens),
     ]
+    
+    # Only add --qwen-no-think for Qwen models
+    if is_qwen_model:
+        cmd.append("--qwen-no-think")
     
     if no_transductive_penalty:
         cmd.append("--no-transductive-penalty")
     
     if splitter:
         cmd.append("--splitter")
+    
+    if refinement_ds:
+        cmd.extend(["--refinement-ds", refinement_ds])
     
     print(f"📝 Full command: {' '.join(cmd)}")
     
@@ -235,6 +248,13 @@ This script will:
     parser.add_argument('--splitter',
                        action='store_true',
                        help='Randomly select and shuffle a subset of training input-output pairs')
+    parser.add_argument('--max-tokens',
+                       type=int,
+                       default=2000,
+                       help='Maximum tokens for model generation (default: 2000)')
+    parser.add_argument('--refinement-ds',
+                       type=str,
+                       help='Refinement dataset: HuggingFace dataset or parquet file containing draft programs to refine')
     
     args = parser.parse_args()
     
@@ -243,6 +263,12 @@ This script will:
         print("❌ Error: RUNPOD_API_KEY environment variable not set!")
         sys.exit(1)
     
+    # Auto-adjust max_tokens for GPT-OSS models if not explicitly set by user
+    model_lower = args.model_path.lower()
+    if 'gpt-oss' in model_lower and ('20b' in model_lower or '120b' in model_lower):
+        if args.max_tokens == 2000:  # Only if user didn't override the default
+            args.max_tokens = 32000
+            print(f"🧠 Detected GPT-OSS model, auto-setting max_tokens to {args.max_tokens}")
     
     # Step 1: Create the pod
     print(f"🚀 Step 1: Creating RunPod pod with model {args.model_path}")
@@ -378,7 +404,7 @@ This script will:
         print(f"\n🎯 Step 2: Running ARC tasks for {args.dataset}")
         
         task_success = run_arc_tasks_with_graceful_handling(
-            args.dataset, args.model_path, base_url, args.subset, args.max_attempts, args.no_transductive_penalty, args.max_workers, args.splitter
+            args.dataset, args.model_path, base_url, args.subset, args.max_attempts, args.no_transductive_penalty, args.max_workers, args.splitter, args.max_tokens, args.refinement_ds
         )
         
         if task_success:

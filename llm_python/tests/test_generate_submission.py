@@ -4,18 +4,12 @@ Tests for the submission generator script.
 """
 
 import json
-import os
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pandas as pd
-import numpy as np
-
-# Add the parent directory to sys.path to allow imports
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from llm_python.generate_submission import SubmissionGenerator
 from llm_python.datasets.io import write_soar_parquet
@@ -51,6 +45,7 @@ class TestSubmissionGenerator(unittest.TestCase):
                 predicted_test = [[[1, 2], [3, 4]]]  # Single test output to match mock
                 
                 data.append({
+                    "row_id": "abcdef",
                     "task_id": task_id,
                     "reasoning": f"Test reasoning for {task_id} attempt {i}",
                     "code": f"# Test code for {task_id}\nprint('hello')",
@@ -294,7 +289,7 @@ class TestSubmissionGeneratorCLI(unittest.TestCase):
         """Test that CLI help works"""
         import subprocess
         result = subprocess.run([
-            'uv', 'run', 'python', 'llm_python/generate_submission.py', '--help'
+            'uv', 'run', 'python', "-m", 'llm_python.generate_submission', '--help'
         ], capture_output=True, text=True, cwd=Path(__file__).parent.parent.parent)
         
         self.assertEqual(result.returncode, 0)

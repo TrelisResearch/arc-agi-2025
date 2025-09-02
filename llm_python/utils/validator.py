@@ -8,15 +8,19 @@ class ARCTaskValidator:
     """Validates ARC task data integrity and structure"""
     
     @staticmethod
-    def validate_tasks(tasks: List[Tuple[str, Dict]]) -> List[Tuple[str, Dict]]:
-        """Validate a list of tasks and return only valid ones"""
+    def validate_tasks(tasks: List[Union[Tuple[str, Dict], Tuple[str, Dict, Any]]]) -> List[Union[Tuple[str, Dict], Tuple[str, Dict, Any]]]:
+        """Validate a list of tasks and return only valid ones. Expects consistent 3-tuple format (task_id, task_data, programs)."""
         total_tasks = len(tasks)
         print(f"🔍 Validating {total_tasks} tasks...")
         
         validated_tasks = []
-        for task_id, task_data in tasks:
-            if ARCTaskValidator.validate_single_task(task_id, task_data):
-                validated_tasks.append((task_id, task_data))
+        for task_tuple in tasks:
+            if len(task_tuple) == 3:
+                task_id, task_data, programs = task_tuple
+                if ARCTaskValidator.validate_single_task(task_id, task_data):
+                    validated_tasks.append(task_tuple)
+            else:
+                print(f"❌ Invalid task tuple format for task (expected 3 elements, got {len(task_tuple)})")
         
         if len(validated_tasks) != total_tasks:
             print(f"⚠️ {total_tasks - len(validated_tasks)} tasks failed validation, using {len(validated_tasks)} valid tasks")
