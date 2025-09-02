@@ -163,6 +163,8 @@ class ARCTaskRunnerSimple:
         parquet_output_dir: Optional[str] = None,
         splitter: bool = False,
         refinement_dataset: Optional[str] = None,
+        include_outputs: bool = False,
+        include_outputs_diff: bool = False,
     ):
         # Core configuration
         self.max_workers = max_workers
@@ -174,6 +176,8 @@ class ARCTaskRunnerSimple:
         self.splitter = splitter
         self.refinement_dataset = refinement_dataset
         self.refine_mode = bool(refinement_dataset)  # Enable refinement mode if dataset provided
+        self.include_outputs = include_outputs
+        self.include_outputs_diff = include_outputs_diff
         # Use custom output directory if provided, otherwise use default
         output_dir = Path(parquet_output_dir) if parquet_output_dir else None
         self.dataset_collector = SoarDatasetCollector(sample_name, output_dir=output_dir)
@@ -680,15 +684,25 @@ class ARCTaskRunnerSimple:
             # Don't let database logging errors crash the main execution
             traceback.print_exc()
 
-    def create_prompt(self, task_data: Dict, draft_program: Optional[str] = None) -> tuple[str, str]:
+    def create_prompt(self, task_data: Dict, draft_program: Optional[str] = None, predicted_outputs: Optional[Dict] = None) -> tuple[str, str]:
         """Create a prompt for the model to solve an ARC task"""
-        if self.refine_mode and draft_program is not None:
-            # Use refinement prompt with draft program
-            from llm_python.utils.prompt_utils import create_arc_refinement_prompt
-            return create_arc_refinement_prompt(task_data, draft_program, self.prompt_loader, self.prompt_version, splitter=self.splitter)
-        else:
-            # Use regular prompt
-            return create_arc_prompt(task_data, self.prompt_loader, self.prompt_version, splitter=self.splitter)
+        # Determine output mode based on flags
+        output_mode = None
+        if self.include_outputs:
+            output_mode = "full"
+        elif self.include_outputs_diff:
+            output_mode = "diff"
+        
+        # Use unified prompt function for both regular and refinement modes
+        return create_arc_prompt(
+            task_data=task_data,
+            prompt_loader=self.prompt_loader,
+            prompt_version=self.prompt_version,
+            splitter=self.splitter,
+            draft_program=draft_program,
+            predicted_outputs=predicted_outputs,
+            output_mode=output_mode
+        )
 
     def get_sampling_parameters(self) -> Dict:
         """Get the sampling parameters that will be used for API calls"""
@@ -1253,9 +1267,18 @@ class ARCTaskRunnerSimple:
                 selected_program = self._select_best_program_for_refinement(programs)
                 draft_code = selected_program.get('code', '')
                 
+                # Extract predicted outputs if needed for output modes
+                # Only include train outputs since test outputs won't be available during actual runs
+                predicted_outputs = None
+                if self.include_outputs or self.include_outputs_diff:
+                    predicted_outputs = {
+                        'train': selected_program.get('predicted_train_output', [])
+                    }
+                
                 task_results[task_id]["task_data"] = task_data
                 task_results[task_id]["selected_program"] = selected_program  # Store for logging
-                system_content, user_content = self.create_prompt(task_data, draft_program=draft_code)
+                task_results[task_id]["predicted_outputs"] = predicted_outputs  # Store for splitter mode
+                system_content, user_content = self.create_prompt(task_data, draft_program=draft_code, predicted_outputs=predicted_outputs)
                 task_results[task_id]["full_prompt"] = {
                     "system": system_content,
                     "user": user_content,
@@ -1303,7 +1326,8 @@ class ARCTaskRunnerSimple:
                         # In refinement mode, we need to get the selected program again
                         selected_program = task_results[task_id]["selected_program"]
                         draft_code = selected_program.get('code', '')
-                        system_content, user_content = self.create_prompt(task_data, draft_program=draft_code)
+                        predicted_outputs = task_results[task_id].get("predicted_outputs")  # Use stored outputs
+                        system_content, user_content = self.create_prompt(task_data, draft_program=draft_code, predicted_outputs=predicted_outputs)
                     else:
                         system_content, user_content = self.create_prompt(task_data)
                     full_prompt = {"system": system_content, "user": user_content}
@@ -2116,6 +2140,16 @@ def main():
         type=str,
         help="Refinement dataset: HuggingFace dataset or parquet file containing draft programs to refine. Uses programs with at least one (but not all) correct training examples. Enables refinement prompts with draft code.",
     )
+    parser.add_argument(
+        "--include-outputs",
+        action="store_true",
+        help="Include the draft program's predicted outputs in refinement prompts to show the LLM its errors",
+    )
+    parser.add_argument(
+        "--include-outputs-diff",
+        action="store_true",
+        help="Include a succinct diff of predicted vs expected outputs in refinement prompts (more compact than full outputs)",
+    )
 
     args = parser.parse_args()
 
@@ -2124,6 +2158,10 @@ def main():
         parser.error("--max_workers must be at least 1")
     if args.temperature is not None and not (0.0 <= args.temperature <= 2.0):
         parser.error("--temperature must be between 0.0 and 2.0")
+    if args.include_outputs and args.include_outputs_diff:
+        parser.error("--include-outputs and --include-outputs-diff are mutually exclusive")
+    if (args.include_outputs or args.include_outputs_diff) and not args.refinement_ds:
+        parser.error("--include-outputs and --include-outputs-diff require --refinement-ds")
     if args.refinement_ds:
         # Refinement mode requires HF/parquet dataset for source programs (not traditional subsets)
         from llm_python.utils.task_loader import TaskLoader, get_default_data_root
@@ -2153,6 +2191,8 @@ def main():
         parquet_output_dir=args.parquet_output_dir,
         splitter=args.splitter,
         refinement_dataset=args.refinement_ds,
+        include_outputs=args.include_outputs,
+        include_outputs_diff=args.include_outputs_diff,
     )
 
     # Run the task subset

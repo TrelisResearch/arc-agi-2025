@@ -15,17 +15,95 @@ Todo:
 
 ---
 ## Sept 2 2025
+[ ] Measure what "difficult" means, using gpt-5-nano.
+[ ] Most-train on tricky and then inference.
+[ ] Make data pushes private.
+[ ] Test feedback including output grids.
+
+### Measuring what's hard AND whether feedback helps
+We'll run now using OSS 120b from openrouter on the training-gpt-5-nano-hard dataset, first without feedback:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-gpt-5-nano-hard --max_workers 32 --max_attempts 2 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
+```
+
+Then we'll run with refinement (and score a combined parquet) using diffs:
+
+
 ### Measure what "hard" means
 Start by running gpt-5-nano for two attempts on the arc-prize-2025 training dataset AND the evaluation dataset.
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training --max_workers 32 --max_attempts 2 --model gpt-5-nano --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
 ```
+Dataset: arc-prize-2025
+Subset: training
+Model: gpt-5-nano
+Total tasks: 1000
+Total time: 5441.7s
+Successful API calls: 1000/1000 (100.0%)
+Total tokens used: 31,140,398
+Total cost: $10.412785
 
-
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 37.0% (32.0% excl. trans)
+  Pass@2 (Train Majority):  35.9% (31.8% excl. trans)
+  Oracle (Best Attempt):    37.0% (32.0% excl. trans)
+  All Train Correct:        37.6% (31.6% excl. trans)
+  Min 1 Train Correct:      54.9% (45.6% excl. trans)
+  Min 1 Code Success:       99.9%
+  Max Length Responses:     0.1%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 1927 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250901_214154_gpt-5-nano_arc-prize-2025_training.parquet
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250901_214154_gpt-5-nano_arc-prize-2025_training.parquet
 then evaluation:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 2 --model gpt-5-nano --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
 ```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: gpt-5-nano
+Total tasks: 120
+Total time: 1012.1s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 4,222,657
+Total cost: $1.209824
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 1.7% (1.7% excl. trans)
+  Pass@2 (Train Majority):  1.7% (1.7% excl. trans)
+  Oracle (Best Attempt):    1.7% (1.7% excl. trans)
+  All Train Correct:        2.5% (2.5% excl. trans)
+  Min 1 Train Correct:      10.0% (7.5% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 229 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250901_214159_gpt-5-nano_arc-prize-2025_evaluation.parquet
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250901_214159_gpt-5-nano_arc-prize-2025_evaluation.parquet
+
+Now run on a dataset with any tasks getting at least one train correct excluded, to try and work towards a hard dataset - results here without prompting regarding avoiding transductive content:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-gpt-5-nano-hard --max_workers 32 --max_attempts 2 --model gpt-5-nano --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
+```
+Dataset: arc-prize-2025
+Subset: training-gpt-5-nano-hard
+Model: gpt-5-nano
+Total tasks: 447
+Total time: 2839.8s
+Successful API calls: 447/447 (100.0%)
+Total tokens used: 16,261,933
+Total cost: $5.235566
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 4.3% (2.5% excl. trans)
+  Pass@2 (Train Majority):  4.3% (2.5% excl. trans)
+  Oracle (Best Attempt):    4.3% (2.5% excl. trans)
+  All Train Correct:        5.1% (2.5% excl. trans)
+  Min 1 Train Correct:      15.0% (7.8% excl. trans)
+  Min 1 Code Success:       99.8%
+  Max Length Responses:     0.2%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
 
 ## Sep 1 2025
 Todo:
