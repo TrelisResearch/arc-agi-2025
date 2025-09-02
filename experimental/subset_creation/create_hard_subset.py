@@ -13,19 +13,23 @@ from llm_python.datasets.io import read_soar_parquet
 import pandas as pd
 
 def main():
-    # Read all three parquet files
+    # Read all four parquet files
     nano_path = Path("/Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250901_214154_gpt-5-nano_arc-prize-2025_training.parquet")
     oss_hard_path = Path("/Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_094825_openai_gpt-oss-120b_arc-prize-2025_training-gpt-5-nano-hard.parquet")
-    oss_new_path = Path("/Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_105628_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet")
+    oss_run2_path = Path("/Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_105628_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet")
+    oss_run3_path = Path("/Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_113816_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet")
     
     print(f"Reading gpt-5-nano parquet: {nano_path}")
     df_nano = read_soar_parquet(nano_path)
     
-    print(f"Reading gpt-oss-120b (first run) parquet: {oss_hard_path}")
+    print(f"Reading gpt-oss-120b (run 1) parquet: {oss_hard_path}")
     df_oss_1 = read_soar_parquet(oss_hard_path)
     
-    print(f"Reading gpt-oss-120b (second run) parquet: {oss_new_path}")
-    df_oss_2 = read_soar_parquet(oss_new_path)
+    print(f"Reading gpt-oss-120b (run 2) parquet: {oss_run2_path}")
+    df_oss_2 = read_soar_parquet(oss_run2_path)
+    
+    print(f"Reading gpt-oss-120b (run 3) parquet: {oss_run3_path}")
+    df_oss_3 = read_soar_parquet(oss_run3_path)
     
     def analyze_model_performance(df, model_name):
         """Analyze model performance, considering only non-transductive programs."""
@@ -65,20 +69,21 @@ def main():
     
     # Analyze all models
     nano_success, nano_failed = analyze_model_performance(df_nano, "gpt-5-nano")
-    oss1_success, oss1_failed = analyze_model_performance(df_oss_1, "gpt-oss-120b (first run)")
-    oss2_success, oss2_failed = analyze_model_performance(df_oss_2, "gpt-oss-120b (second run)")
+    oss1_success, oss1_failed = analyze_model_performance(df_oss_1, "gpt-oss-120b (run 1)")
+    oss2_success, oss2_failed = analyze_model_performance(df_oss_2, "gpt-oss-120b (run 2)")
+    oss3_success, oss3_failed = analyze_model_performance(df_oss_3, "gpt-oss-120b (run 3)")
     
     # Combine all successful tasks from any model/run
-    all_successful_tasks = nano_success.union(oss1_success).union(oss2_success)
+    all_successful_tasks = nano_success.union(oss1_success).union(oss2_success).union(oss3_success)
     
     # Find intersection - tasks ALL models completely failed on (non-transductive)
-    hard_tasks = sorted(list(nano_failed.intersection(oss1_failed).intersection(oss2_failed)))
+    hard_tasks = sorted(list(nano_failed.intersection(oss1_failed).intersection(oss2_failed).intersection(oss3_failed)))
     
     print(f"\n=== Combined analysis (non-transductive programs only) ===")
     print(f"Total tasks with any success across all models/runs: {len(all_successful_tasks)}")
     print(f"Tasks failed by ALL models/runs: {len(hard_tasks)}")
-    print(f"Tasks failed by gpt-5-nano only: {len(nano_failed - oss1_success - oss2_success)}")
-    print(f"Tasks failed by gpt-oss-120b runs only: {len(oss1_failed.intersection(oss2_failed) - nano_success)}")
+    print(f"Tasks failed by gpt-5-nano only: {len(nano_failed - oss1_success - oss2_success - oss3_success)}")
+    print(f"Tasks failed by gpt-oss-120b runs only: {len(oss1_failed.intersection(oss2_failed).intersection(oss3_failed) - nano_success)}")
     
     # Sort task IDs for consistent ordering
     hard_tasks.sort()
@@ -100,11 +105,12 @@ def main():
         "source_files": [
             "20250901_214154_gpt-5-nano_arc-prize-2025_training.parquet",
             "20250902_094825_openai_gpt-oss-120b_arc-prize-2025_training-gpt-5-nano-hard.parquet",
-            "20250902_105628_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet"
+            "20250902_105628_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet",
+            "20250902_113816_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet"
         ],
         "description": "Tasks from arc-prize-2025 training set where ALL models got ZERO train examples correct in non-transductive programs only",
         "filtering_criteria": "Only non-transductive programs considered. Transductive programs ignored.",
-        "models_tested": ["gpt-5-nano", "gpt-oss-120b (2 runs)"],
+        "models_tested": ["gpt-5-nano", "gpt-oss-120b (3 runs)"],
         "total_tasks": len(hard_tasks),
         "task_ids": hard_tasks
     }
