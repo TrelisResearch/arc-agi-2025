@@ -73,25 +73,111 @@ Total cost: $18.297518
 ✅ Checkpointed 3041 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_142348_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet
 All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_142348_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet
 
+--- WARNING - ALL RESULTS BELOW ARE ONLY ON A PARTIAL RUN SO THE RESULTS LOOK VERY HIGH! ---
+
 We'll then run again because we'll need to run with 32 attempts as a control:
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 16 --max_attempts 32 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 32 --max_attempts 32 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
 ```
+Dataset: arc-prize-2025
+Subset: training-hard
+Model: openai/gpt-oss-120b
+Total tasks: 33
+Total time: 4614.7s
+Successful API calls: 33/33 (100.0%)
+Total tokens used: 8,571,883
+Total cost: $4.330647
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 33.3% (24.2% excl. trans)
+  Pass@2 (Train Majority):  30.3% (24.2% excl. trans)
+  Oracle (Best Attempt):    33.3% (27.3% excl. trans)
+  All Train Correct:        27.3% (21.2% excl. trans)
+  Min 1 Train Correct:      45.5% (33.3% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 741 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_163830_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_163830_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet
 
 and then we'll run with feedback using diffs, passing in the parquet from above.
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 16 --max_attempts 32 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_142348_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet --include-outputs-diff
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 32 --max_attempts 32 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_142348_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet --include-outputs-diff
 ```
+Dataset: arc-prize-2025
+Subset: training-hard
+Model: openai/gpt-oss-120b
+Total tasks: 34
+Total time: 4879.5s
+Successful API calls: 34/34 (100.0%)
+Total tokens used: 8,439,680
+Total cost: $4.212228
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 23.5% (20.6% excl. trans)
+  Pass@2 (Train Majority):  20.6% (17.6% excl. trans)
+  Oracle (Best Attempt):    29.4% (26.5% excl. trans)
+  All Train Correct:        23.5% (20.6% excl. trans)
+  Min 1 Train Correct:      47.1% (41.2% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 740 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_163908_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_163908_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet
 
 and then we'll run with feedback using full outputs, passing in the parquet from above.
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 16 --max_attempts 32 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_142348_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet --include-outputs
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 32 --max_attempts 32 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_142348_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet --include-outputs
 ```
+Dataset: arc-prize-2025
+Subset: training-hard
+Model: openai/gpt-oss-120b
+Total tasks: 35
+Total time: 4865.1s
+Successful API calls: 35/35 (100.0%)
+Total tokens used: 8,560,871
+Total cost: $4.261421
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 17.1% (17.1% excl. trans)
+  Pass@2 (Train Majority):  11.4% (11.4% excl. trans)
+  Oracle (Best Attempt):    22.9% (22.9% excl. trans)
+  All Train Correct:        20.0% (17.1% excl. trans)
+  Min 1 Train Correct:      40.0% (34.3% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 754 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_163933_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_163933_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet
 
 and then we'll run with only programs:
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 16 --max_attempts 32 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_142348_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 32 --max_attempts 32 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_142348_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet
 ```
+Dataset: arc-prize-2025
+Subset: training-hard
+Model: openai/gpt-oss-120b
+Total tasks: 33
+Total time: 4894.8s
+Successful API calls: 33/33 (100.0%)
+Total tokens used: 8,593,699
+Total cost: $4.314196
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 15.2% (12.1% excl. trans)
+  Pass@2 (Train Majority):  12.1% (9.1% excl. trans)
+  Oracle (Best Attempt):    21.2% (18.2% excl. trans)
+  All Train Correct:        18.2% (12.1% excl. trans)
+  Min 1 Train Correct:      36.4% (27.3% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 742 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_163939_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_163939_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet
 
 ### Ablating feedback on the training-hard dataset with 2 attempts and the GPT-OSS-120B model
 
