@@ -129,8 +129,6 @@ You should analyze:
 {draft_program}
 ```"""
         
-        if predicted_outputs and output_mode:
-            draft_program_section += "\n\n# Analysis: The draft program's outputs are shown above with each training example."
     else:
         refinement_instructions = ""
         refinement_requirements = ""

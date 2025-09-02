@@ -21,20 +21,79 @@ Todo:
 [ ] Test feedback including output grids.
 
 ### Ablating feedback on the training-hard dataset with 32 attempts and the GPT-OSS-120B model
+OOOPS THIS WAS ACTUALLY USING REFINEMENTS...
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 64 --max_attempts 32 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds Trelis/arc-agi-partials-for-refinement
 ```
+Dataset: arc-prize-2025
+Subset: training-hard
+Model: openai/gpt-oss-120b
+Total tasks: 137
+Total time: 4656.4s
+Successful API calls: 137/137 (100.0%)
+Total tokens used: 47,459,828
+Total cost: $19.004315
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 13.9% (13.9% excl. trans)
+  Pass@2 (Train Majority):  13.9% (14.6% excl. trans)
+  Oracle (Best Attempt):    17.5% (16.8% excl. trans)
+  All Train Correct:        16.8% (15.3% excl. trans)
+  Min 1 Train Correct:      38.0% (35.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 3322 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_122615_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_122615_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet
+
+Running a baseline test:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 64 --max_attempts 32 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
+```
+Dataset: arc-prize-2025
+Subset: training-hard
+Model: openai/gpt-oss-120b
+Total tasks: 137
+Total time: 5135.7s
+Successful API calls: 137/137 (100.0%)
+Total tokens used: 44,920,183
+Total cost: $18.297518
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 8.8% (8.0% excl. trans)
+  Pass@2 (Train Majority):  8.0% (7.3% excl. trans)
+  Oracle (Best Attempt):    11.7% (8.8% excl. trans)
+  All Train Correct:        8.0% (7.3% excl. trans)
+  Min 1 Train Correct:      24.8% (19.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 3041 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_142348_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_142348_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet
 
 We'll then run again because we'll need to run with 32 attempts as a control:
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 64 --max_attempts 32 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds Trelis/arc-agi-partials-for-refinement
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 16 --max_attempts 32 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
 ```
 
 and then we'll run with feedback using diffs, passing in the parquet from above.
-
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 16 --max_attempts 32 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_142348_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet --include-outputs-diff
+```
 
 and then we'll run with feedback using full outputs, passing in the parquet from above.
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 16 --max_attempts 32 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_142348_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet --include-outputs
+```
 
+and then we'll run with only programs:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 16 --max_attempts 32 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_142348_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet
+```
+
+### Ablating feedback on the training-hard dataset with 2 attempts and the GPT-OSS-120B model
 
 
 ### Making the dataset quite a lot harder
