@@ -13,38 +13,58 @@ from llm_python.datasets.io import read_soar_parquet
 import pandas as pd
 
 def main():
-    # Read the parquet file
-    parquet_path = Path("/Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250901_214154_gpt-5-nano_arc-prize-2025_training.parquet")
+    # Read both parquet files
+    nano_path = Path("/Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250901_214154_gpt-5-nano_arc-prize-2025_training.parquet")
+    oss_path = Path("/Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_094825_openai_gpt-oss-120b_arc-prize-2025_training-gpt-5-nano-hard.parquet")
     
-    print(f"Reading parquet file: {parquet_path}")
-    df = read_soar_parquet(parquet_path)
+    print(f"Reading gpt-5-nano parquet: {nano_path}")
+    df_nano = read_soar_parquet(nano_path)
     
-    print(f"Total rows in parquet: {len(df)}")
-    print(f"Columns: {df.columns.tolist()}")
+    print(f"Reading gpt-oss-120b parquet: {oss_path}")
+    df_oss = read_soar_parquet(oss_path)
     
-    # Check if 'correct_train_input' contains at least one True value for each row
-    # This indicates at least one train example was correctly predicted
-    any_train_correct_list = []
-    for idx in range(len(df)):
-        val = df.iloc[idx]['correct_train_input']
+    # Analyze gpt-5-nano performance
+    print(f"\n=== gpt-5-nano analysis ===")
+    print(f"Total rows: {len(df_nano)}")
+    print(f"Columns: {df_nano.columns.tolist()}")
+    
+    # Check gpt-5-nano performance
+    any_train_correct_nano = []
+    for idx in range(len(df_nano)):
+        val = df_nano.iloc[idx]['correct_train_input']
         result = isinstance(val, list) and bool(val) and any(val)
-        any_train_correct_list.append(result)
+        any_train_correct_nano.append(result)
     
-    df['any_train_correct'] = any_train_correct_list
+    df_nano['any_train_correct'] = any_train_correct_nano
+    nano_task_stats = df_nano.groupby('task_id')['any_train_correct'].max()
+    nano_failed_tasks = set(nano_task_stats[nano_task_stats == False].index)
     
-    # Group by task_id and check if any program got any_train_correct
-    task_stats = df.groupby('task_id').agg({
-        'any_train_correct': 'max',  # True if any program got at least one train correct
-        'row_id': 'count'  # Number of programs per task
-    }).rename(columns={'row_id': 'num_programs'})
+    print(f"gpt-5-nano tasks with zero train correct: {len(nano_failed_tasks)}")
     
-    print(f"\nTotal unique tasks: {len(task_stats)}")
+    # Analyze gpt-oss-120b performance  
+    print(f"\n=== gpt-oss-120b analysis ===")
+    print(f"Total rows: {len(df_oss)}")
     
-    # Find tasks where NO program got any_train_correct (completely failed tasks)
-    hard_tasks = task_stats[task_stats['any_train_correct'] == False].index.tolist()
+    # Check gpt-oss-120b performance
+    any_train_correct_oss = []
+    for idx in range(len(df_oss)):
+        val = df_oss.iloc[idx]['correct_train_input']
+        result = isinstance(val, list) and bool(val) and any(val)
+        any_train_correct_oss.append(result)
     
-    print(f"Tasks where NO program got any train correct: {len(hard_tasks)}")
-    print(f"Tasks where at least one program got min 1 train correct: {len(task_stats) - len(hard_tasks)}")
+    df_oss['any_train_correct'] = any_train_correct_oss
+    oss_task_stats = df_oss.groupby('task_id')['any_train_correct'].max()
+    oss_failed_tasks = set(oss_task_stats[oss_task_stats == False].index)
+    
+    print(f"gpt-oss-120b tasks with zero train correct: {len(oss_failed_tasks)}")
+    
+    # Find intersection - tasks both models completely failed
+    hard_tasks = sorted(list(nano_failed_tasks.intersection(oss_failed_tasks)))
+    
+    print(f"\n=== Combined analysis ===")
+    print(f"Tasks failed by BOTH models: {len(hard_tasks)}")
+    print(f"Tasks failed by gpt-5-nano only: {len(nano_failed_tasks - oss_failed_tasks)}")
+    print(f"Tasks failed by gpt-oss-120b only: {len(oss_failed_tasks - nano_failed_tasks)}")
     
     # Sort task IDs for consistent ordering
     hard_tasks.sort()
@@ -63,8 +83,12 @@ def main():
     
     # Create details JSON file with metadata
     details = {
-        "source": "20250901_214154_gpt-5-nano_arc-prize-2025_training.parquet",
-        "description": "Tasks from arc-prize-2025 training set where gpt-5-nano got ZERO train examples correct in all attempts",
+        "source_files": [
+            "20250901_214154_gpt-5-nano_arc-prize-2025_training.parquet",
+            "20250902_094825_openai_gpt-oss-120b_arc-prize-2025_training-gpt-5-nano-hard.parquet"
+        ],
+        "description": "Tasks from arc-prize-2025 training set where BOTH gpt-5-nano AND gpt-oss-120b got ZERO train examples correct in all attempts",
+        "models_tested": ["gpt-5-nano", "gpt-oss-120b"],
         "total_tasks": len(hard_tasks),
         "task_ids": hard_tasks
     }
@@ -90,18 +114,8 @@ def main():
         json.dump(details, f, indent=2)
     print(f"Created: {std_json_file}")
     
-    # Print some statistics about the hard tasks
-    print("\n=== Statistics for hard tasks ===")
-    hard_df = df[df['task_id'].isin(hard_tasks)]
-    
-    print(f"Total programs for hard tasks: {len(hard_df)}")
-    print(f"Average programs per hard task: {len(hard_df) / len(hard_tasks):.2f}")
-    
-    # Check performance metrics for hard tasks
-    print(f"Any train correct rate for hard tasks: {hard_df['any_train_correct'].mean():.2%}")
-    print("(Should be 0.0% since these are tasks with zero train examples correct)")
-    
-    print("\n✅ Done! New subset 'training-gpt-5-nano-hard' created with {} tasks".format(len(hard_tasks)))
+    print(f"\n✅ Done! Updated subset 'training-gpt-5-nano-hard' with {len(hard_tasks)} tasks")
+    print("These are tasks that completely failed for BOTH gpt-5-nano AND gpt-oss-120b")
 
 if __name__ == "__main__":
     main()

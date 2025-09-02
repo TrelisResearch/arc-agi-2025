@@ -20,14 +20,43 @@ Todo:
 [ ] Make data pushes private.
 [ ] Test feedback including output grids.
 
-### Measuring what's hard AND whether feedback helps
+### Measure what's hard (again) to get a calibrated dataset.
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 32 --max_attempts 2 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
+```
+
+and we'll run as well on the evaluation subset to see how many openai/gpt-oss-120b gets right:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 2 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
+```
+
+
+### Measuring what's hard AND whether feedback helps. Programs still not hard enough...
 We'll run now using OSS 120b from openrouter on the training-gpt-5-nano-hard dataset, first without feedback:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-gpt-5-nano-hard --max_workers 32 --max_attempts 2 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000
 ```
+Dataset: arc-prize-2025
+Subset: training-gpt-5-nano-hard
+Model: openai/gpt-oss-120b
+Total tasks: 447
+Total time: 1759.3s
+Successful API calls: 447/447 (100.0%)
+Total tokens used: 9,102,680
+Total cost: $4.004989
 
-Then we'll run with refinement (and score a combined parquet) using diffs:
-
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 13.4% (10.3% excl. trans)
+  Pass@2 (Train Majority):  12.3% (10.3% excl. trans)
+  Oracle (Best Attempt):    13.4% (10.3% excl. trans)
+  All Train Correct:        12.5% (10.1% excl. trans)
+  Min 1 Train Correct:      21.9% (15.7% excl. trans)
+  Min 1 Code Success:       89.7%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 630 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_094825_openai_gpt-oss-120b_arc-prize-2025_training-gpt-5-nano-hard.parquet
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_094825_openai_gpt-oss-120b_arc-prize-2025_training-gpt-5-nano-hard.parquet
 
 ### Measure what "hard" means
 Start by running gpt-5-nano for two attempts on the arc-prize-2025 training dataset AND the evaluation dataset.
