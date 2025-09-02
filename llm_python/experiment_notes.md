@@ -20,6 +20,23 @@ Todo:
 [ ] Make data pushes private.
 [ ] Test feedback including output grids.
 
+### Ablating feedback on the training-hard dataset with 32 attempts and the GPT-OSS-120B model
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 64 --max_attempts 32 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds Trelis/arc-agi-partials-for-refinement
+```
+
+We'll then run again because we'll need to run with 32 attempts as a control:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 64 --max_attempts 32 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds Trelis/arc-agi-partials-for-refinement
+```
+
+and then we'll run with feedback using diffs, passing in the parquet from above.
+
+
+and then we'll run with feedback using full outputs, passing in the parquet from above.
+
+
+
 ### Making the dataset quite a lot harder
 We'll run with eight attempts and remove all tasks that have at least min 1 train correct:
 ```bash
@@ -72,6 +89,21 @@ Total cost: $1.271197
   API Failure Responses:    0.0%
 ✅ Checkpointed 208 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_121352_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet
 All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_121352_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet
+
+Here are the statistics for the 137 training-hard tasks in the Trelis/arc-agi-2-partial-100 dataset:
+
+  Results:
+  - Tasks with at least ONE train example correct: 59/137 (43%)
+  - Tasks with ALL train examples correct: 26/137 (19%)
+  - Tasks with perfect solution (all train AND test correct): 22/137 (16%)
+
+  This means:
+  - 78 tasks (57%) have zero train examples correct in the Trelis dataset
+  - 111 tasks (81%) don't have all train examples correct
+  - 115 tasks (84%) don't have a perfect solution
+
+  So the Trelis dataset manages to get at least partial success on 59 of the hardest tasks, but only achieves perfect
+  solutions on 22 of them.
 
 ### Measure what's hard (again) to get a calibrated dataset.
 ```bash
