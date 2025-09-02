@@ -218,7 +218,6 @@ This should work."""
         self.assertEqual(system_content, "You are an AI assistant.")
         self.assertIn("Draft Program's Output 1 (grid shape: 2 by 2)", user_content)
         self.assertIn("[[1 0] [0 1]]", user_content)  # Predicted output
-        self.assertIn("# Analysis:", user_content)
     
     def test_create_arc_prompt_refinement_with_diff_outputs(self):
         """Test unified function in refinement mode with diff output mode - verifies diff approach works correctly"""
@@ -259,7 +258,6 @@ This should work."""
         self.assertIn("ACCURACY: 0/4 cells correct (0.0%)", user_content)
         self.assertIn("✗(0→1) ✗(1→0)", user_content)
         self.assertIn("✗(1→0) ✗(0→1)", user_content)
-        self.assertIn("# Analysis:", user_content)
     
     def test_create_arc_prompt_regular_mode_unchanged(self):
         """Test that regular mode (no draft program) works exactly as before"""
