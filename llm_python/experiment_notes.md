@@ -61,6 +61,27 @@ PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-202
   --max-workers 64 --max-attempts 64 --subset evaluation \
   > qwen3_4b_training_hard_evaluation_64x_1_epoch.log 2>&1 &
 ```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806_ds-arc-agi-2-training-hard-curriculum-c131
+Total tasks: 120
+Total time: 1120.3s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 46,923,870
+Total cost: $8.376008
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.8% (0.8% excl. trans)
+  Pass@2 (Train Majority):  0.8% (0.8% excl. trans)
+  Oracle (Best Attempt):    0.8% (0.8% excl. trans)
+  All Train Correct:        0.8% (0.8% excl. trans)
+  Min 1 Train Correct:      5.0% (5.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.1%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 3712 programs to /workspace/arc-agi-2025/llm_python/datasets/inference/20250903_174341_Trelis_Qwen3-4B_ds-arc-agi-2-partial-100-c2806_ds-arc-agi-2-training-hard-curriculum-c131_arc-prize-2025_evaluation.parquet
+All sampled programs saved to /workspace/arc-agi-2025/llm_python/datasets/inference/20250903_174341_Trelis_Qwen3-4B_ds-arc-agi-2-partial-100-c2806_ds-arc-agi-2-training-hard-curriculum-c131_arc-prize-2025_evaluation.parquet
 
 ### Get data on training-hard refinements with gpt-5-mini
 ```bash
