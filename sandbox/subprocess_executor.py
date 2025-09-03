@@ -11,7 +11,11 @@ import os
 import threading
 import time
 from typing import Optional, Any, Tuple
-import psutil
+
+try:
+    import psutil
+except ImportError:
+    psutil = None
 
 from sandbox.concurrency import ConcurrencyGate
 
