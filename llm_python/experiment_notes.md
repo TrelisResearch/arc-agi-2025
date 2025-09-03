@@ -18,19 +18,48 @@ Todo:
 ### Fine-tuning on training-hard
 Now that we have Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806_ds-arc-agi-2-training-hard-curriculum-c262 tuned, let's run inference on it. Start with just 8 attempts. 64 workers. Start a pod and run inference with the same script:
 ```bash
-nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 \
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 \
   Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806_ds-arc-agi-2-training-hard-curriculum-c262 \
   --max-workers 64 --max-attempts 8 --subset evaluation \
   > qwen3_4b_training_hard_evaluation.log 2>&1 &
 ```
-...
+Seems to only get 1/120 all-correct.
 
 and then run with 64 attempts:
 ```bash
-nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 \
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 \
   Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806_ds-arc-agi-2-training-hard-curriculum-c262 \
   --max-workers 64 --max-attempts 64 --subset evaluation \
-  > qwen3_4b_training_hard_evaluation.log 2>&1 &
+  > qwen3_4b_training_hard_evaluation_64x.log 2>&1 &
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806_ds-arc-agi-2-training-hard-curriculum-c262
+Total tasks: 120
+Total time: 1055.1s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 46,900,777
+Total cost: $8.362153
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.8% (0.8% excl. trans)
+  Pass@2 (Train Majority):  0.8% (0.8% excl. trans)
+  Oracle (Best Attempt):    0.8% (0.8% excl. trans)
+  All Train Correct:        0.8% (0.8% excl. trans)
+  Min 1 Train Correct:      5.8% (5.8% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.1%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 4320 programs to /workspace/arc-agi-2025/llm_python/datasets/inference/20250903_173508_Trelis_Qwen3-4B_ds-arc-agi-2-partial-100-c2806_ds-arc-agi-2-training-hard-curriculum-c262_arc-prize-2025_evaluation.parquet
+All sampled programs saved to /workspace/arc-agi-2025/llm_python/datasets/inference/20250903_173508_Trelis_Qwen3-4B_ds-arc-agi-2-partial-100-c2806_ds-arc-agi-2-training-hard-curriculum-c262_arc-prize-2025_evaluation.parque
+
+and we'll run with the 1 epoch version too:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 \
+  Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806_ds-arc-agi-2-training-hard-curriculum-c131 \
+  --max-workers 64 --max-attempts 64 --subset evaluation \
+  > qwen3_4b_training_hard_evaluation_64x_1_epoch.log 2>&1 &
 ```
 
 ### Get data on training-hard refinements with gpt-5-mini
