@@ -3,6 +3,7 @@
 import json
 import argparse
 import datetime
+import sys
 import time
 import threading
 import traceback
@@ -17,6 +18,7 @@ import requests
 
 from llm_python.datasets.collector import SoarDatasetCollector
 from llm_python.utils.code import is_random
+from llm_python.utils.shutdown import ensure_system_exit
 from llm_python.utils.task_loader import TaskData, get_task_loader
 from llm_python.utils.arc_tester import ArcTester
 from llm_python.utils.prompt_utils import create_arc_prompt, extract_python_code
@@ -2202,4 +2204,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    exit_code = 0
+    try:
+        main()
+    except Exception as e:
+        print(f"An unexpected error occurred in main: {e}", file=sys.stderr)
+        exit_code = 1
+    finally:
+        ensure_system_exit(exit_code)
