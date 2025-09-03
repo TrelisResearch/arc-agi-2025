@@ -14,6 +14,65 @@ Todo:
 - Reach back out to openrouter on sponsorship again.
 
 ---
+## Sept 3 2025
+### Fine-tuning on training-hard
+Now that we have Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806_ds-arc-agi-2-training-hard-curriculum-c262 tuned, let's run inference on it. Start with just 8 attempts. 64 workers. Start a pod and run inference with the same script:
+```bash
+nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 \
+  Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806_ds-arc-agi-2-training-hard-curriculum-c262 \
+  --max-workers 64 --max-attempts 8 --subset evaluation \
+  > qwen3_4b_training_hard_evaluation.log 2>&1 &
+```
+...
+
+and then run with 64 attempts:
+```bash
+nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 \
+  Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806_ds-arc-agi-2-training-hard-curriculum-c262 \
+  --max-workers 64 --max-attempts 64 --subset evaluation \
+  > qwen3_4b_training_hard_evaluation.log 2>&1 &
+```
+
+### Get data on training-hard refinements with gpt-5-mini
+```bash
+  nohup uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 \
+  --subset training-hard --max_workers 64 --max_attempts 64 \
+  --model gpt-5-mini --base-url https://openrouter.ai/api/v1 \
+  --unsafe-executor --max-tokens 64000 \
+  --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250902_142348_openai_gpt-oss-120b_arc-prize-2025_training-hard.parquet \
+  --include-outputs-diff > gpt5_mini_refine_diff.log 2>&1 &
+```
+Dataset: arc-prize-2025
+Subset: training-hard
+Model: gpt-5-mini
+Total tasks: 137
+Total time: 11424.4s
+Successful API calls: 137/137 (100.0%)
+Total tokens used: 95,386,947
+Total cost: $111.858062
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 26.3% (23.4% excl. trans)
+  Pass@2 (Train Majority):  25.5% (24.1% excl. trans)
+  Oracle (Best Attempt):    34.3% (27.0% excl. trans)
+  All Train Correct:        28.5% (20.4% excl. trans)
+  Min 1 Train Correct:      54.0% (42.3% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+All sampled programs saved to /workspace/arc-agi-2025/llm_python/datasets/inference/20250903_120046_gpt-5-mini_arc-prize-2025_training-hard.parquet
+
+  All-Correct Programs (both train AND test perfect):
+
+  - 28 tasks out of 137 have at least one all-correct program
+  - That's 20.4% of training-hard tasks
+
+  At Least One Training Example Correct:
+
+  - 58 tasks out of 137 have at least one program that gets ≥1 training example correct
+  - That's 42.3% of training-hard tasks
+
 ## Sept 2 2025
 [x] Measure what "difficult" means, using gpt-5-nano and GPT-OSS-120B.
 [ ] Most-train on tricky and then inference.
