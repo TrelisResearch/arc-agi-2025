@@ -3,6 +3,8 @@ from pathlib import Path
 import pandas as pd
 import os
 
+from llm_python.datasets.io import read_soar_parquet, write_soar_parquet
+
 
 def download_superking(output_path: str = "/tmp/superking.parquet") -> str:
     # GCS bucket and path
@@ -27,23 +29,37 @@ def download_superking(output_path: str = "/tmp/superking.parquet") -> str:
 
         print(f"Found {len(parquet_blobs)} parquet files in {gcs_prefix}")
 
-        # Download all parquet files
+        # Download all parquet files, skipping if already present and unchanged
         local_files = []
+        skipped = 0
+        downloaded = 0
         for blob in parquet_blobs:
-            filename = blob.name.split("/")[-1]  # Get just the filename
+            filename = blob.name.split("/")[-1]
             local_path = f"{local_download_dir}/{filename}"
 
-            print(f"  Downloading {blob.name} -> {local_path}")
+            # Check if file exists and matches remote size
+            if os.path.exists(local_path):
+                local_size = os.path.getsize(local_path)
+                if local_size == blob.size:
+                    print(f"  Skipping {blob.name} (already downloaded, size matches)")
+                    local_files.append(local_path)
+                    skipped += 1
+                    continue
+                else:
+                    print(f"  Redownloading {blob.name} (local size {local_size} != remote size {blob.size})")
+            else:
+                print(f"  Downloading {blob.name} -> {local_path}")
             blob.download_to_filename(local_path)
             local_files.append(local_path)
+            downloaded += 1
 
-        print(f"Downloaded {len(local_files)} files")
+        print(f"Downloaded {downloaded} files, skipped {skipped} files (already present and unchanged)")
 
         # Combine all parquet files into a single DataFrame
         print("Combining parquet files...")
         dataframes = []
         for file_path in local_files:
-            df_part = pd.read_parquet(file_path)
+            df_part = read_soar_parquet(file_path)
             print(f"  {file_path}: {len(df_part):,} rows")
             dataframes.append(df_part)
 
@@ -55,12 +71,8 @@ def download_superking(output_path: str = "/tmp/superking.parquet") -> str:
         print(f"Number of rows: {len(raw_data)}")
 
         # Save combined dataset to local parquet for analysis
-        raw_data.to_parquet(output_path, index=False)
+        write_soar_parquet(raw_data, output_path)
         print(f"Saved combined dataset to: {output_path}")
-
-        for file_path in local_files:
-            os.remove(file_path)
-        os.rmdir(local_download_dir)
 
     except Exception as e:
         print(f"Error downloading data: {e}")
