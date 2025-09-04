@@ -12,8 +12,26 @@ Lewis Reminders:
 Todo:
 - Make data and model pushes private. [check it doesn't break things like kaggle! is HF_TOKEN set?]
 - Reach back out to openrouter on sponsorship again.
+- Why are there programs getting saved to reasoning.
 
 ---
+## Sept 4 2025
+### Generate better refinement data
+We'll start by just running 1 attempt with julien31/Soar-qwen-14b by starting a pod and running the tasks:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "julien31/Soar-qwen-14b" --max-attempts 1 --subset training --refinement-ds Trelis/arc-agi-2-partial-20 > julien31_soar_qwen_14b_training.log 2>&1 &
+```
+
+Then going to run this with 64 attempts:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "julien31/Soar-qwen-14b" --max-attempts 128 --max-workers 64 --subset training --refinement-ds Trelis/arc-agi-2-partial-20 > julien31_soar_qwen_14b_training_128x.log 2>&1 &
+```
+and run as well with OSS-120B with openrouter, just run the tasks:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training --max_workers 64 --max_attempts 64 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds Trelis/arc-agi-2-partial-20 > gpt_oss_120b_training_64x.log 2>&1 &
+```
+
+
 ## Sept 3 2025
 ### Fine-tuning on training-hard
 Now that we have Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806_ds-arc-agi-2-training-hard-curriculum-c262 tuned, let's run inference on it. Start with just 8 attempts. 64 workers. Start a pod and run inference with the same script:
