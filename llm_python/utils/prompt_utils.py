@@ -59,7 +59,7 @@ def create_arc_prompt(
     """
     # Determine if we're in refinement mode
     refinement_mode = draft_program is not None
-    
+
     # Format the task data
     task_content = ""
     
@@ -85,7 +85,9 @@ def create_arc_prompt(
         task_content += f"## Output {i} (grid shape: {output_shape}):\n{output_str}\n"
         
         # Add predicted outputs if available and requested (refinement mode)
-        if refinement_mode and predicted_outputs and output_mode and 'train' in predicted_outputs:
+        if refinement_mode and output_mode in ("full", "diff"):
+            if predicted_outputs is None or "train" not in predicted_outputs:
+                raise ValueError("Predicted outputs for 'train' are required in refinement full/diff mode.")
             predicted_train = predicted_outputs['train']
             if i <= len(predicted_train):
                 predicted_grid = predicted_train[i-1]  # Convert to 0-based index
