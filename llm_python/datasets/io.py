@@ -11,7 +11,7 @@ from typing import Union
 from llm_python.datasets.schema import PARQUET_SCHEMA
 import pyarrow as pa
 
-def read_soar_parquet(path: Union[str, Path]) -> pd.DataFrame:
+def read_soar_parquet(path: Union[str, Path], schema=PARQUET_SCHEMA) -> pd.DataFrame:
     """
     Read parquet file with proper type handling and schema enforcement.
     
@@ -27,21 +27,21 @@ def read_soar_parquet(path: Union[str, Path]) -> pd.DataFrame:
     
     # Read with schema enforcement and dtype_backend='pyarrow'
     # Schema validation happens automatically here
-    df = pd.read_parquet(path, dtype_backend='pyarrow', schema=PARQUET_SCHEMA)
+    df = pd.read_parquet(path, dtype_backend='pyarrow', schema=schema)
     
     return df
 
-def _add_missing_nullable_columns(df: pd.DataFrame) -> pd.DataFrame:
+def _add_missing_nullable_columns(df: pd.DataFrame, schema=PARQUET_SCHEMA) -> pd.DataFrame:
     """
     Return a shallow copy of df with missing nullable columns from PARQUET_SCHEMA added as nulls.
     """
     df_copy = df.copy()
-    for field in PARQUET_SCHEMA:
+    for field in schema:
         if field.name not in df_copy.columns and field.nullable:
             df_copy[field.name] = pd.NA
     return df_copy
 
-def write_soar_parquet(df: pd.DataFrame, path: Union[str, Path]) -> None:
+def write_soar_parquet(df: pd.DataFrame, path: Union[str, Path], schema=PARQUET_SCHEMA) -> None:
     """
     Write parquet file with proper schema preservation and enforcement.
     
@@ -54,11 +54,11 @@ def write_soar_parquet(df: pd.DataFrame, path: Union[str, Path]) -> None:
     
     # Use a shallow copy with missing nullable columns added
     df_for_write = _add_missing_nullable_columns(df)
-    table = pa.Table.from_pandas(df_for_write, schema=PARQUET_SCHEMA)
+    table = pa.Table.from_pandas(df_for_write, schema=schema)
     pq.write_table(table, path)
 
 
-def validate_soar_dataframe_schema(df: pd.DataFrame) -> None:
+def validate_soar_dataframe_schema(df: pd.DataFrame, schema=PARQUET_SCHEMA) -> None:
     """
     Validate DataFrame matches expected ProgramSample schema using PyArrow.
     
@@ -74,7 +74,7 @@ def validate_soar_dataframe_schema(df: pd.DataFrame) -> None:
     # Use a shallow copy with missing nullable columns added
     df_for_validate = _add_missing_nullable_columns(df)
     try:
-        pa.Table.from_pandas(df_for_validate, schema=PARQUET_SCHEMA)
+        pa.Table.from_pandas(df_for_validate, schema=schema)
     except (pa.ArrowInvalid, pa.ArrowTypeError, KeyError, ValueError) as e:
         raise ValueError(f"Schema validation failed: {e}")
 

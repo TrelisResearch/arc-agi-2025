@@ -10,7 +10,14 @@ from .. import create_executor
 # Try to import Docker executor (may not be available)
 try:
     from ..docker_sandbox import DockerSandboxExecutor
-    DOCKER_AVAILABLE = True
+    import docker
+    # Check if Docker is actually running
+    try:
+        client = docker.from_env()
+        client.ping()
+        DOCKER_AVAILABLE = True
+    except:
+        DOCKER_AVAILABLE = False
 except ImportError:
     DOCKER_AVAILABLE = False
 

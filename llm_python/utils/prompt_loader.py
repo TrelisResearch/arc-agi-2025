@@ -43,9 +43,6 @@ class PromptLoader:
         """Get the code request prompt"""
         return self.load_prompt("code-request", version)
     
-    def get_refine_initial_turn_prompt(self, version: str = "v1") -> str:
-        """Get the refinement initial turn prompt template"""
-        return self.load_prompt("refine-initial-turn", version)
     
     def list_available_versions(self, prompt_type: str) -> list:
         """List all available versions for a prompt type"""

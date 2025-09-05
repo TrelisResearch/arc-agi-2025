@@ -11,7 +11,7 @@ from typing import Optional, Dict, Any
 
 def analyze_dataset_statistics(
     df: pd.DataFrame, 
-    dataset_name: str,
+    dataset_name: str = "unknown",
     subset_mapping: Optional[Dict[str, str]] = None
 ) -> None:
     """
