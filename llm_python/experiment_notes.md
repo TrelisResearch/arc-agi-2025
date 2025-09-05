@@ -15,6 +15,15 @@ Todo:
 - Why are there programs getting saved to reasoning.
 
 ---
+## Sept 5 2025
+### Re-test the fine-tuned model with more data
+Start a pod and test: Trelis/Qwen3-4B_ds-arc-agi-2-partial-20-c976
+
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-2-partial-20-c976" --max-attempts 64 --max-workers 64 --subset evaluation > qwen3_4b_partial_20_evaluation.log 2>&1 &
+```
+
+
 ## Sept 4 2025
 ### Generate better refinement data
 We'll start by just running 1 attempt with julien31/Soar-qwen-14b by starting a pod and running the tasks:
