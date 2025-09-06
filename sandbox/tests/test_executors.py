@@ -156,6 +156,7 @@ class TestExecutorFactory:
         with pytest.raises(ValueError, match="Unknown executor type"):
             create_executor("invalid_type")
     
+    @pytest.mark.docker
     @pytest.mark.skipif(not DOCKER_AVAILABLE, reason="Docker not available")
     def test_create_docker_executor(self):
         """Test creating Docker executor (only if Docker is available)."""
@@ -165,6 +166,7 @@ class TestExecutorFactory:
         executor.cleanup()
 
 
+@pytest.mark.docker
 @pytest.mark.skipif(not DOCKER_AVAILABLE, reason="Docker not available")
 class TestDockerExecutor:
     """Test the Docker sandbox executor (only if Docker is available)."""
