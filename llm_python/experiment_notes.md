@@ -15,6 +15,15 @@ Todo:
 - Why are there programs getting saved to reasoning.
 
 ---
+## Sept 6th 2025
+First start a pod with "Trelis/Qwen3-4B_ds-arc-agi-1-refinement-finetuning-partialplus-c552" and run with a single attempt on evaluation of arc-prize-2025:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-1-refinement-finetuning-partialplus-c552" --max-attempts 1 --subset evaluation --refinement-ds /workspace/arc-agi-2025/llm_python/datasets/inference/20250905_084834_gpt-5-mini_arc-prize-2025_evaluation.parquet --include-outputs > qwen3_4b_partialplus_evaluation_refine_1_outputs.log 2>&1 &
+```
+
+
+### Magic 7 - don't refine if there are 7 all-train correct non-transductive programs for a task
+
 ## Sept 5 2025
 ### Run refinements on ARC-AGI-2 Eval.
 

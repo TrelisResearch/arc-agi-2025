@@ -185,24 +185,10 @@ class ARCTaskRunnerSimple:
         self.dataset_collector = SoarDatasetCollector(sample_name, output_dir=output_dir)
         self.no_transductive_penalty = no_transductive_penalty
         
-        # Standard API timeout for network safety, no infrastructure timeouts
-        api_timeout = 600  # 10 minutes for network safety only
+        # Timeout configuration
+        api_timeout = 600  # 10 minutes per API request
+        self.inactivity_timeout = 600  # 10 minutes inactivity timeout for execution
 
-        # Optional global timeout from environment variable
-        global_timeout = None
-        if "GLOBAL_TIMEOUT" in os.environ:
-            try:
-                global_timeout = int(os.environ["GLOBAL_TIMEOUT"])
-                print(
-                    f"⏰ Global timeout set to {global_timeout}s via GLOBAL_TIMEOUT environment variable"
-                )
-            except ValueError:
-                print(
-                    "⚠️ Invalid GLOBAL_TIMEOUT value - must be integer seconds. Ignoring."
-                )
-
-        self.global_timeout = global_timeout
-        self.inactivity_timeout = 600  # Default inactivity timeout of 5 minutes
 
         # Warn about safety settings
         executor_type = "unrestricted" if unsafe_executor else "docker"
@@ -220,7 +206,7 @@ class ARCTaskRunnerSimple:
             reasoning_effort=reasoning_effort,
             qwen_no_think=qwen_no_think,
             lora_adapter=lora_adapter,
-            api_timeout=api_timeout,  # Standard timeout for network safety
+            api_timeout=api_timeout,  # API timeout enforced by OpenAI client
         )
 
         # Initialize remaining components
@@ -257,7 +243,7 @@ class ARCTaskRunnerSimple:
         self._extract_metrics_url_from_base_url()
 
         print(
-            f"⏰ API timeout: {api_timeout}s (network safety only, no infrastructure timeouts)"
+            f"⏰ API timeout: {api_timeout}s per request (enforced by OpenAI client)"
         )
         print(f"🗄️ Sampled programs will be logged to {self.dataset_collector.output_path()}")
         
@@ -1205,10 +1191,10 @@ class ARCTaskRunnerSimple:
         else:
             print("Parallelization: DISABLED (sequential execution)")
 
-        # No infrastructure timeouts to avoid GPU overload
+        # Timeout configuration
         print("")
         print(
-            "✅ No infrastructure timeouts - requests complete naturally to avoid GPU overload"
+            f"⏰ API timeout: {self.api_timeout}s per request, inactivity timeout: {self.inactivity_timeout}s for execution"
         )
         print("")
 
@@ -1343,7 +1329,7 @@ class ARCTaskRunnerSimple:
                     if selected_program:
                         refined_from_id = selected_program.get("row_id")
                 
-                # No infrastructure timeout - let requests complete to avoid GPU overload
+                # Individual API timeouts handled by OpenAI client
                 result = self.run_single_attempt(
                     task_id, task_data, attempt_num, dataset, subset_name, full_prompt, refined_from_id
                 )
@@ -1407,12 +1393,11 @@ class ARCTaskRunnerSimple:
             last_progress_time = time.time()
 
             while remaining:
-                time_elapsed = time.time() - start_time
 
-                # Check global timeout or inactivity
-                if (self.global_timeout and time_elapsed > self.global_timeout) or (time.time() - last_progress_time > self.inactivity_timeout):
+                # Check for inactivity timeout (no completions in a long time)
+                if time.time() - last_progress_time > self.inactivity_timeout:
                     print(
-                        f"⏰ Global timeout reached ({self.global_timeout}s). Cancelling remaining attempts..."
+                        f"⏰ Inactivity timeout reached ({self.inactivity_timeout}s with no completions). Cancelling remaining attempts..."
                     )
                     # Cancel remaining futures
                     cancelled_count = 0
@@ -1440,13 +1425,8 @@ class ARCTaskRunnerSimple:
                             print(f"🚨 Future #{completed_count} error: {future_e}")
                     # Periodic progress log
                     done_now = total_attempts - len(remaining)
-                    timeout_info = (
-                        f" (timeout in {self.global_timeout - time_elapsed:.0f}s)"
-                        if self.global_timeout
-                        else ""
-                    )
                     print(
-                        f"⏳ Progress: {done_now}/{total_attempts} attempts done; {len(remaining)} remaining{timeout_info}"
+                        f"⏳ Progress: {done_now}/{total_attempts} attempts done; {len(remaining)} remaining"
                     )
                 except KeyboardInterrupt:
                     print(
@@ -1474,13 +1454,8 @@ class ARCTaskRunnerSimple:
                 except TimeoutError:
                     # No futures completed in this window; print a heartbeat
                     done_now = total_attempts - len(remaining)
-                    timeout_info = (
-                        f" (timeout in {self.global_timeout - time_elapsed:.0f}s)"
-                        if self.global_timeout
-                        else ""
-                    )
                     print(
-                        f"⏳ No completions in last {progress_interval:.0f}s — {done_now}/{total_attempts} done; {len(remaining)} remaining{timeout_info}"
+                        f"⏳ No completions in last {progress_interval:.0f}s — {done_now}/{total_attempts} done; {len(remaining)} remaining"
                     )
                     continue
                 except Exception as e:
@@ -1488,14 +1463,9 @@ class ARCTaskRunnerSimple:
                     traceback.print_exc()
 
             elapsed_time = time.time() - start_time
-            if self.global_timeout and elapsed_time > self.global_timeout:
-                print(
-                    f"⏰ Execution stopped after {elapsed_time:.1f}s due to global timeout"
-                )
-            else:
-                print(
-                    f"✅ All {total_attempts} attempts completed in {elapsed_time:.1f}s"
-                )
+            print(
+                f"✅ All {total_attempts} attempts completed in {elapsed_time:.1f}s"
+            )
 
             # Check final status - handle cancelled futures properly
             successful_attempts = 0
@@ -1524,7 +1494,7 @@ class ARCTaskRunnerSimple:
                 )
 
             if cancelled_attempts > 0:
-                print(f"🛑 {cancelled_attempts} attempts were cancelled due to timeout")
+                print(f"🛑 {cancelled_attempts} attempts were cancelled due to inactivity timeout")
 
             print(
                 f"📊 Final status: {successful_attempts} successful, {failed_attempts} failed, {cancelled_attempts} cancelled"
