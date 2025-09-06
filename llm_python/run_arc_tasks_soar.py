@@ -336,10 +336,13 @@ class ARCTaskRunnerSimple:
     
     def _select_best_program_for_refinement(self, programs):
         """
-        Select a random program for refinement from available programs.
+        Select the best program for refinement using smart ranking:
+        1. Rank by train correctness percentage (descending)  
+        2. Tie-break by code length (ascending - prefer shorter code)
+        3. Take top 10 programs, then random selection from those
         """
-        import random
-        return random.choice(programs) if programs else {}
+        from llm_python.utils.refinement_utils import select_best_program_for_refinement
+        return select_best_program_for_refinement(programs, top_k=10, debug=self.debug)
     
     def _get_llm_metrics(self):
         """Fetch metrics from LLM server (vLLM or SGLang)"""

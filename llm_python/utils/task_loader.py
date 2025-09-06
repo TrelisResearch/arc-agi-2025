@@ -424,33 +424,18 @@ class TaskLoader:
                 if max_rows and len(df) > max_rows:
                     df = df.head(max_rows)
                 
-                # Filter programs for refinement:
+                # Filter programs for refinement using new strategy:
                 # 1. Exclude transductive programs
-                # 2. Exclude programs that solve ALL training examples (fully correct)
-                # 3. Exclude programs that solve NONE of the training examples (completely wrong)
-                def is_valid_for_refinement(row):
-                    # Skip transductive programs
-                    if row.get('is_transductive', False):
-                        return False
-                    
-                    correct_train_input = row['correct_train_input']
-                    if hasattr(correct_train_input, 'tolist'):
-                        correct_train_input = correct_train_input.tolist()
-                    
-                    if isinstance(correct_train_input, list):
-                        # Must have at least one correct and at least one incorrect
-                        # (not all correct, not all incorrect)
-                        return any(correct_train_input) and not all(correct_train_input)
-                    else:
-                        # Single value case - skip if fully correct or fully incorrect
-                        return False
+                # 2. Exclude programs that solve ALL training examples (100% correct - nothing to improve)
+                # 3. Include ALL other programs (0% correct might have useful partial logic)
+                from llm_python.utils.refinement_utils import is_program_valid_for_refinement
                 
-                valid_df = df[df.apply(is_valid_for_refinement, axis=1)].copy()
+                valid_df = df[df.apply(is_program_valid_for_refinement, axis=1)].copy()
                 
                 if len(valid_df) == 0:
-                    raise ValueError("No valid programs found for refinement (need partially correct, non-transductive programs)")
+                    raise ValueError("No valid programs found for refinement (need non-transductive, non-perfect programs)")
                 
-                print(f"📊 Found {len(valid_df)} refineable programs out of {len(df)} total programs (partially correct, non-transductive)")
+                print(f"📊 Found {len(valid_df)} refineable programs out of {len(df)} total programs (non-transductive, non-perfect)")
                 
                 # Group by task_id and collect program data
                 for _, row in valid_df.iterrows():
@@ -494,31 +479,18 @@ class TaskLoader:
                 if task_id_col not in df.columns:
                     raise ValueError("Dataset must contain either 'task_id' or 'row_id' column")
                 
-                # Filter programs for refinement (same logic as parquet)
-                def is_valid_for_refinement(row):
-                    # Skip transductive programs
-                    if row.get('is_transductive', False):
-                        return False
-                    
-                    correct_train_input = row['correct_train_input']
-                    if hasattr(correct_train_input, 'tolist'):
-                        correct_train_input = correct_train_input.tolist()
-                    
-                    if isinstance(correct_train_input, list):
-                        # Must have at least one correct and at least one incorrect
-                        return any(correct_train_input) and not all(correct_train_input)
-                    else:
-                        return False
+                # Filter programs for refinement using new strategy (same logic as parquet)
+                from llm_python.utils.refinement_utils import is_program_valid_for_refinement
                 
                 if 'correct_train_input' not in df.columns:
                     raise ValueError("Dataset must contain 'correct_train_input' column for refinement mode")
                     
-                valid_df = df[df.apply(is_valid_for_refinement, axis=1)].copy()
+                valid_df = df[df.apply(is_program_valid_for_refinement, axis=1)].copy()
                 
                 if len(valid_df) == 0:
-                    raise ValueError("No valid programs found for refinement (need partially correct, non-transductive programs)")
+                    raise ValueError("No valid programs found for refinement (need non-transductive, non-perfect programs)")
                 
-                print(f"📊 Found {len(valid_df)} programs that are not fully correct and non-transductive for refinement out of {len(df)} total programs")
+                print(f"📊 Found {len(valid_df)} programs that are non-transductive and non-perfect for refinement out of {len(df)} total programs")
                 
                 # Group by task_id and collect program data
                 for _, row in valid_df.iterrows():
