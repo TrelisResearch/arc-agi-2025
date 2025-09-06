@@ -42,10 +42,64 @@ Total cost: $0.127010
 ✅ Checkpointed 68 programs to /workspace/arc-agi-2025/llm_python/datasets/inference/20250906_182523_Trelis_Qwen3-4B_ds-arc-agi-1-refinement-finetuning-partialplus-c552_arc-prize-2025_evaluation.parquet
 All sampled programs saved to /workspace/arc-agi-2025/llm_python/datasets/inference/20250906_182523_Trelis_Qwen3-4B_ds-arc-agi-1-refinement-finetuning-partialplus-c552_arc-prize-2025_evaluation.parquet
 
+### Create data for refining from incorrect programs
+Use 128 attempts on arc-prize-2025 training split, first we need to create data so we'll run with Trelis/Qwen3-4B_ds-arc-agi-2-partial-20-c976:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-2-partial-20-c976" --max-attempts 128 --subset training > qwen3_4b_partial_20_training_128x.log 2>&1 &
+```
+
+
 ### Rank top 10 partials+incorrects for refinement
 ```bash
 PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-1-refinement-finetuning-partialplus-c552" --max-attempts 1 --subset evaluation --refinement-ds /workspace/arc-agi-2025/llm_python/datasets/inference/20250905_084834_gpt-5-mini_arc-prize-2025_evaluation.parquet --include-outputs > qwen3_4b_partialplus_evaluation_refine_1_outputs_top10.log 2>&1 &
 ```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-1-refinement-finetuning-partialplus-c552
+Total tasks: 120
+Total time: 37.6s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 740,682
+Total cost: $0.127714
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    0.0% (0.0% excl. trans)
+  All Train Correct:        0.0% (0.0% excl. trans)
+  Min 1 Train Correct:      5.8% (5.8% excl. trans)
+  Min 1 Code Success:       61.7%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 72 programs to /workspace/arc-agi-2025/llm_python/datasets/inference/20250906_211822_Trelis_Qwen3-4B_ds-arc-agi-1-refinement-finetuning-partialplus-c552_arc-prize-2025_evaluation.parquet
+All sampled programs saved to /workspace/arc-agi-2025/llm_python/datasets/inference/20250906_211822_Trelis_Qwen3-4B_ds-arc-agi-1-refinement-finetuning-partialplus-c552_arc-prize-2025_evaluation.parquet
+
+Now try doing 64 attempts:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-1-refinement-finetuning-partialplus-c552" --max-attempts 64 --subset evaluation --refinement-ds /workspace/arc-agi-2025/llm_python/datasets/inference/20250905_084834_gpt-5-mini_arc-prize-2025_evaluation.parquet --include-outputs > qwen3_4b_partialplus_evaluation_refine_64_outputs_top10.log 2>&1 &
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-1-refinement-finetuning-partialplus-c552
+Total tasks: 120
+Total time: 1455.1s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 47,366,148
+Total cost: $8.149068
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    0.0% (0.0% excl. trans)
+  All Train Correct:        0.0% (0.0% excl. trans)
+  Min 1 Train Correct:      10.8% (10.8% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.2%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 4778 programs to /workspace/arc-agi-2025/llm_python/datasets/inference/20250906_212444_Trelis_Qwen3-4B_ds-arc-agi-1-refinement-finetuning-partialplus-c552_arc-prize-2025_evaluation.parquet
+All sampled programs saved to /workspace/arc-agi-2025/llm_python/datasets/inference/20250906_212444_Trelis_Qwen3-4B_ds-arc-agi-1-refinement-finetuning-partialplus-c552_arc-prize-2025_evaluation.parquet
 
 ## Sept 5 2025
 ### Run refinements on ARC-AGI-2 Eval.
