@@ -538,6 +538,64 @@ class TaskLoader:
         
         print(f"✅ Successfully loaded program data for {len(valid_programs_by_task)} tasks for refinement")
         return valid_programs_by_task
+    
+    def get_all_programs_for_early_stopping(self, identifier: str) -> Dict[str, int]:
+        """Get count of all non-transductive all-train-correct programs by task_id for early stopping.
+        
+        This loads ALL programs from the dataset (not filtered for refinement) and counts
+        only the non-transductive all-train-correct ones.
+        
+        Args:
+            identifier: Dataset identifier (HF dataset slug, parquet file, or traditional subset name)
+            
+        Returns:
+            Dict mapping task_id -> count of non-transductive all-train-correct programs
+        """
+        dataset_type = self._detect_dataset_type(identifier)
+        
+        if dataset_type == "huggingface":
+            # Load the full HuggingFace dataset without filtering
+            try:
+                import datasets
+                dataset = datasets.load_dataset(identifier, split="train")
+                df = dataset.to_pandas()
+            except ImportError:
+                raise ImportError("datasets library not installed. Install with: pip install datasets")
+                
+        elif dataset_type == "parquet":
+            # Load full parquet without filtering
+            import pandas as pd
+            df = pd.read_parquet(identifier)
+            
+        else:
+            raise ValueError(f"Early stopping count only supported for HuggingFace and Parquet datasets, got: {dataset_type}")
+        
+        if 'task_id' not in df.columns or 'correct_train_input' not in df.columns or 'is_transductive' not in df.columns:
+            raise ValueError("Dataset must contain 'task_id', 'correct_train_input', and 'is_transductive' columns")
+        
+        # Count all-train-correct non-transductive programs per task
+        task_counts = {}
+        for _, row in df.iterrows():
+            task_id = row['task_id']
+            
+            # Count only non-transductive all-train-correct programs
+            if not row.get('is_transductive', False):
+                correct_train_input = row.get('correct_train_input', [])
+                if hasattr(correct_train_input, 'tolist'):
+                    correct_train_input = correct_train_input.tolist()
+                
+                # Check if all-train-correct (opposite of refinement filtering)
+                if isinstance(correct_train_input, list) and len(correct_train_input) > 0:
+                    if all(correct_train_input):  # All-train-correct
+                        task_counts[task_id] = task_counts.get(task_id, 0) + 1
+                else:
+                    # Single value case
+                    if bool(correct_train_input):  # All-train-correct
+                        task_counts[task_id] = task_counts.get(task_id, 0) + 1
+        
+        print(f"📊 Found {sum(task_counts.values())} all-train-correct non-transductive programs across {len(task_counts)} tasks for early stopping")
+        
+        return task_counts
 
 
 def get_default_data_root() -> str:

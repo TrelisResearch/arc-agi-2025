@@ -364,16 +364,19 @@ class ARCTaskRunnerSimple:
             return len(correct_train_input) > 0 and all(correct_train_input)
         return bool(correct_train_input)  # Single boolean value
 
-    def _count_all_train_correct_programs(self, task_id: str, current_results: dict, refinement_programs: dict) -> int:
+    def _count_all_train_correct_programs(self, task_id: str, current_results: dict, refinement_programs: dict, early_stop_counts: dict = None) -> int:
         """
         Count non-transductive all-train-correct programs for a task from:
-        1. Refinement dataset programs 
+        1. Refinement dataset programs (using pre-computed counts)
         2. Current execution results
         """
         count = 0
         
-        # Count from refinement dataset programs
-        if task_id in refinement_programs:
+        # Count from refinement dataset (using pre-computed counts if available)
+        if early_stop_counts and task_id in early_stop_counts:
+            count += early_stop_counts[task_id]
+        elif task_id in refinement_programs:
+            # Fallback to old method if pre-computed counts not available
             for program in refinement_programs[task_id]['programs']:
                 if (not program.get('is_transductive', False) and 
                     self._is_all_train_correct(program.get('correct_train_input', []))):
@@ -388,7 +391,7 @@ class ARCTaskRunnerSimple:
                     
         return count
 
-    def _should_skip_task_attempts(self, task_id: str, current_results: dict, refinement_programs: dict) -> bool:
+    def _should_skip_task_attempts(self, task_id: str, current_results: dict, refinement_programs: dict, early_stop_counts: dict = None) -> bool:
         """
         Check if we should skip dispatching attempts for a task because it has
         reached the early stopping threshold of non-transductive all-train-correct programs.
@@ -396,7 +399,7 @@ class ARCTaskRunnerSimple:
         if self.early_stop_threshold <= 0:
             return False  # Early stopping disabled
             
-        count = self._count_all_train_correct_programs(task_id, current_results, refinement_programs)
+        count = self._count_all_train_correct_programs(task_id, current_results, refinement_programs, early_stop_counts)
         
         if count >= self.early_stop_threshold:
             if self.debug:
@@ -1143,12 +1146,18 @@ class ARCTaskRunnerSimple:
             
             # If refinement mode, load program data separately and augment tasks
             program_lookup = {}
+            early_stop_counts = {}
             if self.refine_mode:
                 print(f"Loading refinement programs from: {self.refinement_dataset}")
                 try:
                     program_data = self.task_loader.get_program_data_for_refinement(self.refinement_dataset)
                     program_lookup = program_data
                     print(f"📊 Loaded refinement programs for {len(program_lookup)} tasks")
+                    
+                    # Also load all-train-correct program counts for early stopping
+                    if self.early_stop_threshold > 0:
+                        early_stop_counts = self.task_loader.get_all_programs_for_early_stopping(self.refinement_dataset)
+                        
                 except Exception as e:
                     print(f"⚠️ Failed to load refinement dataset: {e}")
                     print("⚠️ Falling back to normal mode for all tasks")
@@ -1300,7 +1309,7 @@ class ARCTaskRunnerSimple:
                     task_idx = batch_start + task_idx_in_batch
                     
                     # Pre-filtering: Skip task if it already has enough all-train-correct programs
-                    if self._should_skip_task_attempts(task_id, {}, program_lookup):
+                    if self._should_skip_task_attempts(task_id, {}, program_lookup, early_stop_counts):
                         continue  # Skip all attempts for this task
                     
                     attempt_jobs.append((task_idx, task_id, task_data, attempt_num))
@@ -1377,7 +1386,7 @@ class ARCTaskRunnerSimple:
 
             try:
                 # Dynamic early stopping: Check if threshold reached during execution
-                if self._should_skip_task_attempts(task_id, task_results, program_lookup):
+                if self._should_skip_task_attempts(task_id, task_results, program_lookup, early_stop_counts):
                     if self.debug:
                         print(f"🛑 Skipping {task_id} attempt {attempt_num + 1}: threshold reached during execution")
                     
@@ -1704,7 +1713,8 @@ class ARCTaskRunnerSimple:
         # 1. OUTPUT VALIDITY CATEGORIES
         total_attempts = len(attempts)
         valid_outputs = sum(1 for att in attempts if att.get("outputs_valid", False))
-        no_programs = sum(1 for att in attempts if not att.get("program_extracted", False))
+        skipped_attempts = sum(1 for att in attempts if att.get("skipped", False))
+        no_programs = sum(1 for att in attempts if not att.get("program_extracted", False) and not att.get("skipped", False))
         exec_failures = sum(1 for att in attempts if att.get("train_exec_errors", 0) > 0 or att.get("test_exec_error", False))
         max_length = sum(1 for att in attempts if att.get("hit_max_tokens", False))
         api_timeout = sum(1 for att in attempts if att.get("api_timeout", False))
@@ -1785,6 +1795,8 @@ class ARCTaskRunnerSimple:
         validity_parts = []
         if valid_outputs > 0:
             validity_parts.append(f"{valid_outputs} valid outputs")
+        if skipped_attempts > 0:
+            validity_parts.append(f"{skipped_attempts} skipped")
         if no_programs > 0:
             validity_parts.append(f"{no_programs} no programs")
         if exec_failures > 0:

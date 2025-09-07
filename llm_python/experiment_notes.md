@@ -34,6 +34,11 @@ We'll run a quick test on arc prize 2025 evaluation with openrouter endpoint and
 PYTHONUNBUFFERED=1 nohup uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 64 --max_attempts 2 --model openai/gpt-oss-20b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --early-stop-threshold 7 --refinement-ds Trelis/arc-agi-2-partial-20 --include-outputs > gpt_oss_20b_training_hard_early_stop_7.log 2>&1 &
 ```
 
+and try as well just on training:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training --max_workers 64 --max_attempts 2 --model openai/gpt-oss-20b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --early-stop-threshold 7 --refinement-ds Trelis/arc-agi-2-partial-20 --include-outputs > gpt_oss_20b_training_early_stop_7.log 2>&1 &
+```
+
 ## Sept 6th 2025
 First start a pod with "Trelis/Qwen3-4B_ds-arc-agi-1-refinement-finetuning-partialplus-c552" and run with a single attempt on evaluation of arc-prize-2025:
 ```bash
