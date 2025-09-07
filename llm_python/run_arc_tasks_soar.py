@@ -348,10 +348,18 @@ class ARCTaskRunnerSimple:
 
     def _is_all_train_correct(self, correct_train_input):
         """Check if a program is all-train-correct (100% accuracy on training examples)"""
-        if not correct_train_input:
+        # Handle empty/None cases safely
+        if correct_train_input is None:
             return False
+        
+        # Convert numpy arrays to lists first to avoid ambiguous truth value errors
         if hasattr(correct_train_input, 'tolist'):
             correct_train_input = correct_train_input.tolist()
+        
+        # Now safe to check for empty after conversion
+        if not correct_train_input:
+            return False
+            
         if isinstance(correct_train_input, list):
             return len(correct_train_input) > 0 and all(correct_train_input)
         return bool(correct_train_input)  # Single boolean value
