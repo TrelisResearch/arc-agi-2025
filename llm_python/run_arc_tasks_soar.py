@@ -167,6 +167,7 @@ class ARCTaskRunnerSimple:
         refinement_dataset: Optional[str] = None,
         include_outputs: bool = False,
         include_outputs_diff: bool = False,
+        early_stop_threshold: int = 7,
     ):
         # Core configuration
         self.max_workers = max_workers
@@ -180,6 +181,7 @@ class ARCTaskRunnerSimple:
         self.refine_mode = bool(refinement_dataset)  # Enable refinement mode if dataset provided
         self.include_outputs = include_outputs
         self.include_outputs_diff = include_outputs_diff
+        self.early_stop_threshold = early_stop_threshold
         # Use custom output directory if provided, otherwise use default
         output_dir = Path(parquet_output_dir) if parquet_output_dir else None
         self.dataset_collector = SoarDatasetCollector(sample_name, output_dir=output_dir)
@@ -343,6 +345,57 @@ class ARCTaskRunnerSimple:
         """
         from llm_python.utils.refinement_utils import select_best_program_for_refinement
         return select_best_program_for_refinement(programs, top_k=10, debug=self.debug)
+
+    def _is_all_train_correct(self, correct_train_input):
+        """Check if a program is all-train-correct (100% accuracy on training examples)"""
+        if not correct_train_input:
+            return False
+        if hasattr(correct_train_input, 'tolist'):
+            correct_train_input = correct_train_input.tolist()
+        if isinstance(correct_train_input, list):
+            return len(correct_train_input) > 0 and all(correct_train_input)
+        return bool(correct_train_input)  # Single boolean value
+
+    def _count_all_train_correct_programs(self, task_id: str, current_results: dict, refinement_programs: dict) -> int:
+        """
+        Count non-transductive all-train-correct programs for a task from:
+        1. Refinement dataset programs 
+        2. Current execution results
+        """
+        count = 0
+        
+        # Count from refinement dataset programs
+        if task_id in refinement_programs:
+            for program in refinement_programs[task_id]['programs']:
+                if (not program.get('is_transductive', False) and 
+                    self._is_all_train_correct(program.get('correct_train_input', []))):
+                    count += 1
+        
+        # Count from current execution attempts
+        if task_id in current_results and 'attempts' in current_results[task_id]:
+            for attempt in current_results[task_id]['attempts']:
+                if (attempt.get('train_accuracy', 0.0) == 1.0 and 
+                    not attempt.get('is_transductive', False)):
+                    count += 1
+                    
+        return count
+
+    def _should_skip_task_attempts(self, task_id: str, current_results: dict, refinement_programs: dict) -> bool:
+        """
+        Check if we should skip dispatching attempts for a task because it has
+        reached the early stopping threshold of non-transductive all-train-correct programs.
+        """
+        if self.early_stop_threshold <= 0:
+            return False  # Early stopping disabled
+            
+        count = self._count_all_train_correct_programs(task_id, current_results, refinement_programs)
+        
+        if count >= self.early_stop_threshold:
+            if self.debug:
+                print(f"🛑 Skipping task {task_id}: {count} all-train-correct programs >= threshold {self.early_stop_threshold}")
+            return True
+            
+        return False
     
     def _get_llm_metrics(self):
         """Fetch metrics from LLM server (vLLM or SGLang)"""
@@ -1237,6 +1290,11 @@ class ARCTaskRunnerSimple:
                     # Always 3-tuple format
                     task_id, task_data, programs = task_tuple
                     task_idx = batch_start + task_idx_in_batch
+                    
+                    # Pre-filtering: Skip task if it already has enough all-train-correct programs
+                    if self._should_skip_task_attempts(task_id, {}, program_lookup):
+                        continue  # Skip all attempts for this task
+                    
                     attempt_jobs.append((task_idx, task_id, task_data, attempt_num))
 
         # Track results by task - use thread-safe defaultdict to prevent race conditions
@@ -1310,6 +1368,46 @@ class ARCTaskRunnerSimple:
             attempt_start = time.time()
 
             try:
+                # Dynamic early stopping: Check if threshold reached during execution
+                if self._should_skip_task_attempts(task_id, task_results, program_lookup):
+                    if self.debug:
+                        print(f"🛑 Skipping {task_id} attempt {attempt_num + 1}: threshold reached during execution")
+                    
+                    # Create a dummy result to maintain consistent structure
+                    dummy_result = {
+                        "task_id": task_id,
+                        "attempt_detail": {
+                            # Early stopping fields
+                            "skipped": True,
+                            "skip_reason": "early_stop_threshold_reached",
+                            "attempt_number": attempt_num + 1,
+                            
+                            # Required fields for reporting (with safe defaults)
+                            "program_extracted": False,
+                            "program": "",
+                            "train_accuracy": 0.0,
+                            "train_exec_errors": 0,
+                            "train_exec_timeouts": 0,
+                            "test_correct": False,
+                            "api_success": True,  # Didn't fail, just skipped
+                            "api_timeout": False,
+                            "empty_response": False,
+                            "hit_max_tokens": False,
+                            "outputs_valid": False,
+                            "is_transductive": False,
+                            "transduction_confidence": 0.0,
+                            "transduction_reason": "skipped_early_stop",
+                            "train_results": [],
+                            "test_results": [],
+                            "all_test_correct": False,
+                            "code_ran": False,
+                        }
+                    }
+                    
+                    with count_lock:
+                        completed_attempts += 1
+                    
+                    return dummy_result
                 # Create fresh prompt for each attempt when splitter is enabled, 
                 # otherwise use pre-created prompt for consistency
                 if self.splitter:
@@ -2125,6 +2223,12 @@ def main():
         action="store_true",
         help="Include a succinct diff of predicted vs expected outputs in refinement prompts (more compact than full outputs)",
     )
+    parser.add_argument(
+        "--early-stop-threshold",
+        type=int,
+        default=7,
+        help="Stop dispatching new attempts for a task when it has this many non-transductive all-train-correct programs (default: 7)",
+    )
 
     args = parser.parse_args()
 
@@ -2168,6 +2272,7 @@ def main():
         refinement_dataset=args.refinement_ds,
         include_outputs=args.include_outputs,
         include_outputs_diff=args.include_outputs_diff,
+        early_stop_threshold=args.early_stop_threshold,
     )
 
     # Run the task subset
