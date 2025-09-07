@@ -1,18 +1,30 @@
 # Experiment Notes
 
+Big picture status:
+- SOAR near-term data improvements:
+  1. Re-compile SuperKing with the new examples of incorrect -> correct via refinement.
+  2. Re-train Qwen on aa2 train with a. qwen3-4b AND b. GPT-OSS-20B.
+    - Requires partialplus 20 aa2 training, incl. refinements. (Worth finding out how many refinements are in that dataset.)
+  3. Re-sample + refine aa2-eval with the trained models from #2.
+    - Refinement requires best 20 aa2 eval dataset. (or can just run using the parquet from re-sampling.)
+  4. Curriculum post-train on aa2-eval (hopefully we get get more of the aa2-eval tasks correct).
+    - Requires partialplus 20 aa2 eval dataset.
+  5. Submit whichever model scores higher (both will inference at a similar speed).
+- SOAR long-term improvements:
+  1. Have gpt-5-mini re-write all programs in a unified consistent style.
+  2. Co-train the model to do a) grids -> programs, b) programs -> grids, c) grids + draft program -> refined program, d) multiple programs -> compounded program. Use this model to create tasks calibrated to aa2 difficulty (based on gpt-5-mini performance).
+
 Lewis Reminders:
-- There are small differences between submission scoring and task based. 0.5%. Possibly it's due to the odd case of a duplicate program only being written once. Not clear though.
-- Mathieu.
-- Re incorrect programs:
-  - 94.15% of programs are all incorrect.
-  - 93.81% of non-transductive programs are all incorrect.
-- "code" vs "program" in parquet vs hf. THIS IS FOR RONAN TO FIX WITH SUBMISSION FILE CREATION! SHOULD BE DIRECTLY FROM PARQUET.
-- checkpointing is quite inconsistent. There are quite a few in a row, then large gaps. We may have an hour of generation with no checkpoints saved to parquet.
+- Dataset prep:
+  - Add a deduplication for programs?
+  - Do we think partials help?
+
+Ronan:
+- Why are there programs getting saved to reasoning? for qwen?
 
 Todo:
-- Make data and model pushes private. [check it doesn't break things like kaggle! is HF_TOKEN set?]
 - Reach back out to openrouter on sponsorship again.
-- Why are there programs getting saved to reasoning.
+- Mathieu; Hazem.
 
 ---
 ## Sept 6th 2025
@@ -47,7 +59,59 @@ Use 128 attempts on arc-prize-2025 training split, first we need to create data 
 ```bash
 PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-2-partial-20-c976" --max-attempts 128 --subset training > qwen3_4b_partial_20_training_128x.log 2>&1 &
 ```
+Dataset: arc-prize-2025
+Subset: training
+Model: Trelis/Qwen3-4B_ds-arc-agi-2-partial-20-c976
+Total tasks: 1000
+Total time: 20058.9s
+Successful API calls: 1000/1000 (100.0%)
+Total tokens used: 410,864,996
+Total cost: $77.310530
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 55.4% (55.0% excl. trans)
+  Pass@2 (Train Majority):  55.2% (54.9% excl. trans)
+  Oracle (Best Attempt):    57.6% (57.1% excl. trans)
+  All Train Correct:        54.5% (53.6% excl. trans)
+  Min 1 Train Correct:      73.1% (72.5% excl. trans)
+  Min 1 Code Success:       99.7%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 83847 programs to /workspace/arc-agi-2025/llm_python/datasets/inference/20250906_220523_Trelis_Qwen3-4B_ds-arc-agi-2-partial-20-c976_arc-prize-2025_training.parquet
+All sampled programs saved to /workspace/arc-agi-2025/llm_python/datasets/inference/20250906_220523_Trelis_Qwen3-4B_ds-arc-agi-2-partial-20-c976_arc-prize-2025_training.parquet
+Graceful exit starting, process will be force terminated in 10 seconds.
+
+and now we can run the refinement qwen model pointing to that parquet:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-1-refinement-finetuning-partialplus-c552" --max-attempts 128 --subset training --refinement-ds /workspace/arc-agi-2025/llm_python/datasets/inference/20250906_220523_Trelis_Qwen3-4B_ds-arc-agi-2-partial-20-c976_arc-prize-2025_training.parquet > qwen3_4b_partialplus_training_128x_refine.log 2>&1 &
+```
+Dataset: arc-prize-2025
+Subset: training
+Model: Trelis/Qwen3-4B_ds-arc-agi-1-refinement-finetuning-partialplus-c552
+Total tasks: 1000
+Total time: 16890.8s
+Successful API calls: 1000/1000 (100.0%)
+Total tokens used: 435,740,473
+Total cost: $77.087305
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 23.6% (23.4% excl. trans)
+  Pass@2 (Train Majority):  22.9% (22.9% excl. trans)
+  Oracle (Best Attempt):    25.1% (24.7% excl. trans)
+  All Train Correct:        16.7% (16.5% excl. trans)
+  Min 1 Train Correct:      46.5% (46.4% excl. trans)
+  Min 1 Code Success:       99.9%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 101386 programs to /workspace/arc-agi-2025/llm_python/datasets/inference/20250907_071645_Trelis_Qwen3-4B_ds-arc-agi-1-refinement-finetuning-partialplus-c552_arc-prize-2025_training.parquet
+All sampled programs saved to /workspace/arc-agi-2025/llm_python/datasets/inference/20250907_071645_Trelis_Qwen3-4B_ds-arc-agi-1-refinement-finetuning-partialplus-c552_arc-prize-2025_training.parquet
+
+and repeat again this time including outputs:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-1-refinement-finetuning-partialplus-c552" --max-attempts 128 --subset training --refinement-ds /workspace/arc-agi-2025/llm_python/datasets/inference/20250906_220523_Trelis_Qwen3-4B_ds-arc-agi-2-partial-20-c976_arc-prize-2025_training.parquet --include-outputs > qwen3_4b_partialplus_training_128x_refine_outputs.log 2>&1 &
+```
 
 ### Rank top 10 partials+incorrects for refinement
 ```bash
