@@ -21,7 +21,7 @@ from sandbox.concurrency import ConcurrencyGate
 
 # Untrusted execution can runaway with memory quicker than we can kill processes, so we need a hard limit on concurrency here.
 CPU_COUNT = os.cpu_count() or 1
-MAX_CONCURRENT_PROCESSES = max(1, CPU_COUNT // 2)
+MAX_CONCURRENT_PROCESSES = max(1, CPU_COUNT // 4)
 sandbox_process_gate = ConcurrencyGate(MAX_CONCURRENT_PROCESSES)
 
 
@@ -57,7 +57,7 @@ def _monitor_memory(
 
 
 def execute_code_in_subprocess(
-    code: str, timeout: Optional[float] = None, memory_limit_mb: int = 512
+    code: str, timeout: Optional[float] = None, memory_limit_mb: int = 128
 ) -> Tuple[Any, Optional[Exception]]:
     """
     Executes a Python code string in a memory and time-constrained subprocess.

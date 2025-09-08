@@ -167,6 +167,7 @@ class ARCTaskRunnerSimple:
         refinement_dataset: Optional[str] = None,
         include_outputs: bool = False,
         include_outputs_diff: bool = False,
+        early_stop_threshold: int = 7,
     ):
         # Core configuration
         self.max_workers = max_workers
@@ -180,29 +181,16 @@ class ARCTaskRunnerSimple:
         self.refine_mode = bool(refinement_dataset)  # Enable refinement mode if dataset provided
         self.include_outputs = include_outputs
         self.include_outputs_diff = include_outputs_diff
+        self.early_stop_threshold = early_stop_threshold
         # Use custom output directory if provided, otherwise use default
         output_dir = Path(parquet_output_dir) if parquet_output_dir else None
         self.dataset_collector = SoarDatasetCollector(sample_name, output_dir=output_dir)
         self.no_transductive_penalty = no_transductive_penalty
         
-        # Standard API timeout for network safety, no infrastructure timeouts
-        api_timeout = 600  # 10 minutes for network safety only
+        # Timeout configuration
+        api_timeout = 600  # 10 minutes per API request
+        self.inactivity_timeout = 600  # 10 minutes inactivity timeout for execution
 
-        # Optional global timeout from environment variable
-        global_timeout = None
-        if "GLOBAL_TIMEOUT" in os.environ:
-            try:
-                global_timeout = int(os.environ["GLOBAL_TIMEOUT"])
-                print(
-                    f"⏰ Global timeout set to {global_timeout}s via GLOBAL_TIMEOUT environment variable"
-                )
-            except ValueError:
-                print(
-                    "⚠️ Invalid GLOBAL_TIMEOUT value - must be integer seconds. Ignoring."
-                )
-
-        self.global_timeout = global_timeout
-        self.inactivity_timeout = 600  # Default inactivity timeout of 5 minutes
 
         # Warn about safety settings
         executor_type = "unrestricted" if unsafe_executor else "docker"
@@ -220,7 +208,7 @@ class ARCTaskRunnerSimple:
             reasoning_effort=reasoning_effort,
             qwen_no_think=qwen_no_think,
             lora_adapter=lora_adapter,
-            api_timeout=api_timeout,  # Standard timeout for network safety
+            api_timeout=api_timeout,  # API timeout enforced by OpenAI client
         )
 
         # Initialize remaining components
@@ -257,7 +245,7 @@ class ARCTaskRunnerSimple:
         self._extract_metrics_url_from_base_url()
 
         print(
-            f"⏰ API timeout: {api_timeout}s (network safety only, no infrastructure timeouts)"
+            f"⏰ API timeout: {api_timeout}s per request (enforced by OpenAI client)"
         )
         print(f"🗄️ Sampled programs will be logged to {self.dataset_collector.output_path()}")
         
@@ -350,10 +338,74 @@ class ARCTaskRunnerSimple:
     
     def _select_best_program_for_refinement(self, programs):
         """
-        Select a random program for refinement from available programs.
+        Select the best program for refinement using smart ranking:
+        1. Rank by train correctness percentage (descending)  
+        2. Tie-break by code length (ascending - prefer shorter code)
+        3. Take top 10 programs, then random selection from those
         """
-        import random
-        return random.choice(programs) if programs else {}
+        from llm_python.utils.refinement_utils import select_best_program_for_refinement
+        return select_best_program_for_refinement(programs, top_k=10, debug=self.debug)
+
+    def _is_all_train_correct(self, correct_train_input):
+        """Check if a program is all-train-correct (100% accuracy on training examples)"""
+        # Handle empty/None cases safely
+        if correct_train_input is None:
+            return False
+        
+        # Convert numpy arrays to lists first to avoid ambiguous truth value errors
+        if hasattr(correct_train_input, 'tolist'):
+            correct_train_input = correct_train_input.tolist()
+        
+        # Now safe to check for empty after conversion
+        if not correct_train_input:
+            return False
+            
+        if isinstance(correct_train_input, list):
+            return len(correct_train_input) > 0 and all(correct_train_input)
+        return bool(correct_train_input)  # Single boolean value
+
+    def _count_all_train_correct_programs(self, task_id: str, current_results: dict, refinement_programs: dict, early_stop_counts: dict = None) -> int:
+        """
+        Count non-transductive all-train-correct programs for a task from:
+        1. Refinement dataset programs (using pre-computed counts)
+        2. Current execution results
+        """
+        count = 0
+        
+        # Count from refinement dataset (using pre-computed counts if available)
+        if early_stop_counts and task_id in early_stop_counts:
+            count += early_stop_counts[task_id]
+        elif task_id in refinement_programs:
+            # Fallback to old method if pre-computed counts not available
+            for program in refinement_programs[task_id]['programs']:
+                if (not program.get('is_transductive', False) and 
+                    self._is_all_train_correct(program.get('correct_train_input', []))):
+                    count += 1
+        
+        # Count from current execution attempts
+        if task_id in current_results and 'attempts' in current_results[task_id]:
+            for attempt in current_results[task_id]['attempts']:
+                if (attempt.get('train_accuracy', 0.0) == 1.0 and 
+                    not attempt.get('is_transductive', False)):
+                    count += 1
+                    
+        return count
+
+    def _should_skip_task_attempts(self, task_id: str, current_results: dict, refinement_programs: dict, early_stop_counts: dict = None) -> bool:
+        """
+        Check if we should skip dispatching attempts for a task because it has
+        reached the early stopping threshold of non-transductive all-train-correct programs.
+        """
+        if self.early_stop_threshold <= 0:
+            return False  # Early stopping disabled
+            
+        count = self._count_all_train_correct_programs(task_id, current_results, refinement_programs, early_stop_counts)
+        
+        if count >= self.early_stop_threshold:
+            print(f"🛑 Skipping task {task_id}: {count} all-train-correct programs >= threshold {self.early_stop_threshold}")
+            return True
+            
+        return False
     
     def _get_llm_metrics(self):
         """Fetch metrics from LLM server (vLLM or SGLang)"""
@@ -1093,12 +1145,18 @@ class ARCTaskRunnerSimple:
             
             # If refinement mode, load program data separately and augment tasks
             program_lookup = {}
+            early_stop_counts = {}
             if self.refine_mode:
                 print(f"Loading refinement programs from: {self.refinement_dataset}")
                 try:
                     program_data = self.task_loader.get_program_data_for_refinement(self.refinement_dataset)
                     program_lookup = program_data
                     print(f"📊 Loaded refinement programs for {len(program_lookup)} tasks")
+                    
+                    # Also load all-train-correct program counts for early stopping
+                    if self.early_stop_threshold > 0:
+                        early_stop_counts = self.task_loader.get_all_programs_for_early_stopping(self.refinement_dataset)
+                        
                 except Exception as e:
                     print(f"⚠️ Failed to load refinement dataset: {e}")
                     print("⚠️ Falling back to normal mode for all tasks")
@@ -1205,10 +1263,10 @@ class ARCTaskRunnerSimple:
         else:
             print("Parallelization: DISABLED (sequential execution)")
 
-        # No infrastructure timeouts to avoid GPU overload
+        # Timeout configuration
         print("")
         print(
-            "✅ No infrastructure timeouts - requests complete naturally to avoid GPU overload"
+            f"⏰ API timeout: {self.api_timeout}s per request, inactivity timeout: {self.inactivity_timeout}s for execution"
         )
         print("")
 
@@ -1248,6 +1306,11 @@ class ARCTaskRunnerSimple:
                     # Always 3-tuple format
                     task_id, task_data, programs = task_tuple
                     task_idx = batch_start + task_idx_in_batch
+                    
+                    # Pre-filtering: Skip task if it already has enough all-train-correct programs
+                    if self._should_skip_task_attempts(task_id, {}, program_lookup, early_stop_counts):
+                        continue  # Skip all attempts for this task
+                    
                     attempt_jobs.append((task_idx, task_id, task_data, attempt_num))
 
         # Track results by task - use thread-safe defaultdict to prevent race conditions
@@ -1321,6 +1384,45 @@ class ARCTaskRunnerSimple:
             attempt_start = time.time()
 
             try:
+                # Dynamic early stopping: Check if threshold reached during execution
+                if self._should_skip_task_attempts(task_id, task_results, program_lookup, early_stop_counts):
+                    print(f"🛑 Skipping {task_id} attempt {attempt_num + 1}: threshold reached during execution")
+                    
+                    # Create a dummy result to maintain consistent structure
+                    dummy_result = {
+                        "task_id": task_id,
+                        "attempt_detail": {
+                            # Early stopping fields
+                            "skipped": True,
+                            "skip_reason": "early_stop_threshold_reached",
+                            "attempt_number": attempt_num + 1,
+                            
+                            # Required fields for reporting (with safe defaults)
+                            "program_extracted": False,
+                            "program": "",
+                            "train_accuracy": 0.0,
+                            "train_exec_errors": 0,
+                            "train_exec_timeouts": 0,
+                            "test_correct": False,
+                            "api_success": True,  # Didn't fail, just skipped
+                            "api_timeout": False,
+                            "empty_response": False,
+                            "hit_max_tokens": False,
+                            "outputs_valid": False,
+                            "is_transductive": False,
+                            "transduction_confidence": 0.0,
+                            "transduction_reason": "skipped_early_stop",
+                            "train_results": [],
+                            "test_results": [],
+                            "all_test_correct": False,
+                            "code_ran": False,
+                        }
+                    }
+                    
+                    with count_lock:
+                        completed_attempts += 1
+                    
+                    return dummy_result
                 # Create fresh prompt for each attempt when splitter is enabled, 
                 # otherwise use pre-created prompt for consistency
                 if self.splitter:
@@ -1343,7 +1445,7 @@ class ARCTaskRunnerSimple:
                     if selected_program:
                         refined_from_id = selected_program.get("row_id")
                 
-                # No infrastructure timeout - let requests complete to avoid GPU overload
+                # Individual API timeouts handled by OpenAI client
                 result = self.run_single_attempt(
                     task_id, task_data, attempt_num, dataset, subset_name, full_prompt, refined_from_id
                 )
@@ -1407,12 +1509,11 @@ class ARCTaskRunnerSimple:
             last_progress_time = time.time()
 
             while remaining:
-                time_elapsed = time.time() - start_time
 
-                # Check global timeout or inactivity
-                if (self.global_timeout and time_elapsed > self.global_timeout) or (time.time() - last_progress_time > self.inactivity_timeout):
+                # Check for inactivity timeout (no completions in a long time)
+                if time.time() - last_progress_time > self.inactivity_timeout:
                     print(
-                        f"⏰ Global timeout reached ({self.global_timeout}s). Cancelling remaining attempts..."
+                        f"⏰ Inactivity timeout reached ({self.inactivity_timeout}s with no completions). Cancelling remaining attempts..."
                     )
                     # Cancel remaining futures
                     cancelled_count = 0
@@ -1440,13 +1541,8 @@ class ARCTaskRunnerSimple:
                             print(f"🚨 Future #{completed_count} error: {future_e}")
                     # Periodic progress log
                     done_now = total_attempts - len(remaining)
-                    timeout_info = (
-                        f" (timeout in {self.global_timeout - time_elapsed:.0f}s)"
-                        if self.global_timeout
-                        else ""
-                    )
                     print(
-                        f"⏳ Progress: {done_now}/{total_attempts} attempts done; {len(remaining)} remaining{timeout_info}"
+                        f"⏳ Progress: {done_now}/{total_attempts} attempts done; {len(remaining)} remaining"
                     )
                 except KeyboardInterrupt:
                     print(
@@ -1474,13 +1570,8 @@ class ARCTaskRunnerSimple:
                 except TimeoutError:
                     # No futures completed in this window; print a heartbeat
                     done_now = total_attempts - len(remaining)
-                    timeout_info = (
-                        f" (timeout in {self.global_timeout - time_elapsed:.0f}s)"
-                        if self.global_timeout
-                        else ""
-                    )
                     print(
-                        f"⏳ No completions in last {progress_interval:.0f}s — {done_now}/{total_attempts} done; {len(remaining)} remaining{timeout_info}"
+                        f"⏳ No completions in last {progress_interval:.0f}s — {done_now}/{total_attempts} done; {len(remaining)} remaining"
                     )
                     continue
                 except Exception as e:
@@ -1488,14 +1579,9 @@ class ARCTaskRunnerSimple:
                     traceback.print_exc()
 
             elapsed_time = time.time() - start_time
-            if self.global_timeout and elapsed_time > self.global_timeout:
-                print(
-                    f"⏰ Execution stopped after {elapsed_time:.1f}s due to global timeout"
-                )
-            else:
-                print(
-                    f"✅ All {total_attempts} attempts completed in {elapsed_time:.1f}s"
-                )
+            print(
+                f"✅ All {total_attempts} attempts completed in {elapsed_time:.1f}s"
+            )
 
             # Check final status - handle cancelled futures properly
             successful_attempts = 0
@@ -1524,7 +1610,7 @@ class ARCTaskRunnerSimple:
                 )
 
             if cancelled_attempts > 0:
-                print(f"🛑 {cancelled_attempts} attempts were cancelled due to timeout")
+                print(f"🛑 {cancelled_attempts} attempts were cancelled due to inactivity timeout")
 
             print(
                 f"📊 Final status: {successful_attempts} successful, {failed_attempts} failed, {cancelled_attempts} cancelled"
@@ -1625,7 +1711,8 @@ class ARCTaskRunnerSimple:
         # 1. OUTPUT VALIDITY CATEGORIES
         total_attempts = len(attempts)
         valid_outputs = sum(1 for att in attempts if att.get("outputs_valid", False))
-        no_programs = sum(1 for att in attempts if not att.get("program_extracted", False))
+        skipped_attempts = sum(1 for att in attempts if att.get("skipped", False))
+        no_programs = sum(1 for att in attempts if not att.get("program_extracted", False) and not att.get("skipped", False))
         exec_failures = sum(1 for att in attempts if att.get("train_exec_errors", 0) > 0 or att.get("test_exec_error", False))
         max_length = sum(1 for att in attempts if att.get("hit_max_tokens", False))
         api_timeout = sum(1 for att in attempts if att.get("api_timeout", False))
@@ -1706,6 +1793,8 @@ class ARCTaskRunnerSimple:
         validity_parts = []
         if valid_outputs > 0:
             validity_parts.append(f"{valid_outputs} valid outputs")
+        if skipped_attempts > 0:
+            validity_parts.append(f"{skipped_attempts} skipped")
         if no_programs > 0:
             validity_parts.append(f"{no_programs} no programs")
         if exec_failures > 0:
@@ -2152,6 +2241,12 @@ def main():
         action="store_true",
         help="Include a succinct diff of predicted vs expected outputs in refinement prompts (more compact than full outputs)",
     )
+    parser.add_argument(
+        "--early-stop-threshold",
+        type=int,
+        default=7,
+        help="Stop dispatching new attempts for a task when it has this many non-transductive all-train-correct programs (default: 7)",
+    )
 
     args = parser.parse_args()
 
@@ -2195,6 +2290,7 @@ def main():
         refinement_dataset=args.refinement_ds,
         include_outputs=args.include_outputs,
         include_outputs_diff=args.include_outputs_diff,
+        early_stop_threshold=args.early_stop_threshold,
     )
 
     # Run the task subset

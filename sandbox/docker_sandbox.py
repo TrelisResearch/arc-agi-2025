@@ -130,7 +130,7 @@ class DockerSandboxExecutor(BaseExecutor):
             port = s.getsockname()[1]
         return port
     
-    def _wait_for_container_ready(self, max_wait: int = 10) -> None:
+    def _wait_for_container_ready(self, max_wait: int = 30) -> None:
         """Wait for the container to be ready to accept requests."""
         base_url = f"http://localhost:{self.host_port}"
         

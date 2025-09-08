@@ -34,16 +34,16 @@ REFINEMENT_PARQUET_SCHEMA = pa.schema(
     (
         [field for field in PARQUET_SCHEMA]
         + [
-            pa.field("code_original", pa.string(), nullable=False),
+            pa.field("code_original", pa.string(), nullable=True),
             pa.field(
                 "predicted_train_output_original",
                 pa.list_(pa.list_(pa.list_(pa.int64()))),
-                nullable=False,
+                nullable=True,
             ),  # Required
             pa.field(
                 "predicted_test_output_original",
                 pa.list_(pa.list_(pa.list_(pa.int64()))),
-                nullable=False,
+                nullable=True,
             ),  # Required
         ]
     )
