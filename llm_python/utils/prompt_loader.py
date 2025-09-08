@@ -10,7 +10,7 @@ class PromptLoader:
         self.base_dir = Path(base_dir)
         self._prompt_cache: Dict[str, str] = {}
     
-    def load_prompt(self, prompt_type: str, version: str = "v1") -> str:
+    def load_prompt(self, prompt_type: str, version: str = "soar") -> str:
         """Load a prompt from file, with caching"""
         cache_key = f"{prompt_type}_{version}"
         
@@ -27,21 +27,14 @@ class PromptLoader:
         
         return self._prompt_cache[cache_key]
     
-    def get_system_message(self, version: str = "v1") -> str:
+    def get_system_message(self, version: str = "soar") -> str:
         """Get the system message prompt"""
         return self.load_prompt("system", version)
     
-    def get_initial_turn_prompt(self, version: str = "v1") -> str:
+    def get_initial_turn_prompt(self, version: str = "soar") -> str:
         """Get the initial turn prompt template"""
         return self.load_prompt("initial-turn", version)
     
-    def get_subsequent_turn_prompt(self, version: str = "v1") -> str:
-        """Get the subsequent turn prompt"""
-        return self.load_prompt("subsequent-turn", version)
-    
-    def get_code_request_prompt(self, version: str = "v1") -> str:
-        """Get the code request prompt"""
-        return self.load_prompt("code-request", version)
     
     
     def list_available_versions(self, prompt_type: str) -> list:
