@@ -35,7 +35,9 @@ class PromptLoader:
         """Get the initial turn prompt template"""
         return self.load_prompt("initial-turn", version)
     
-    
+    def get_compound_prompt(self, version: str = "compound") -> str:
+        """Get the compound program prompt template"""
+        return self.load_prompt("initial-turn", version)
     
     def list_available_versions(self, prompt_type: str) -> list:
         """List all available versions for a prompt type"""
