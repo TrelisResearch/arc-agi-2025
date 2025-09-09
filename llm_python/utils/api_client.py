@@ -154,23 +154,23 @@ class ARCAPIClient:
                 ]
 
         # Add sampling parameters based on endpoint type
-        # if "top_p" not in kwargs and "min_p" not in kwargs:
-        #     # For TCP endpoints, use min_p instead of top_p/top_k
-        #     if (
-        #         self.base_url
-        #         and ":" in self.base_url
-        #         and not self.base_url.startswith("https://")
-        #     ):
-        #         if "extra_body" not in kwargs:
-        #             kwargs["extra_body"] = {}
-        #         kwargs["extra_body"]["min_p"] = 0.05
-        #     else:
-        #         # For most endpoints, use top_p and top_k defaults
-        #         kwargs["top_p"] = 0.9
-        #         if "extra_body" not in kwargs:
-        #             kwargs["extra_body"] = {}
-        #         if "top_k" not in kwargs["extra_body"]:
-        #             kwargs["extra_body"]["top_k"] = 50
+        if "top_p" not in kwargs and "min_p" not in kwargs:
+            # For TCP endpoints, use min_p instead of top_p/top_k
+            if (
+                self.base_url
+                and ":" in self.base_url
+                and not self.base_url.startswith("https://")
+            ):
+                if "extra_body" not in kwargs:
+                    kwargs["extra_body"] = {}
+                kwargs["extra_body"]["min_p"] = 0.05
+            else:
+                # For most endpoints, use top_p and top_k defaults
+                kwargs["top_p"] = 0.9
+                if "extra_body" not in kwargs:
+                    kwargs["extra_body"] = {}
+                if "top_k" not in kwargs["extra_body"]:
+                    kwargs["extra_body"]["top_k"] = 50
 
         # Add Qwen-specific parameters (only for no-think flag)
         if "qwen" in self.model.lower() and self.base_url and self.qwen_no_think:
