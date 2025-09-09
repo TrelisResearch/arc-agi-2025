@@ -28,6 +28,11 @@ Todo:
 
 ---
 ## Sept 9th 2025
+### Sample Qwen 4b model at 256x
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-2-mixed-finetuning-20-c1926" --max-attempts 256 --subset evaluation --max-workers 64 > qwen3_4b_mixed_finetuning_20_evaluation_256x.log 2>&1 &
+```
+
 ### Sample Qwen 8b model at 256x
 ```bash
 PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926" --max-attempts 256 --subset evaluation --max-workers 64 > qwen3_8b_mixed_finetuning_20_evaluation_256x.log 2>&1 &
