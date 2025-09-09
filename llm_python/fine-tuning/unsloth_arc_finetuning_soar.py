@@ -429,7 +429,7 @@ def build_dataset() -> DatasetDict:
           task_id = example["task_id"]
           task_data = task_loader.get_task(task_id)
 
-          original_code = example["program"]  # parquet uses 'program' not 'code'
+          original_code = example["code"]  # parquet uses 'code'
           cleaned_code = clean_multiple_newlines(original_code)
           cleaned_flag = int(cleaned_code != original_code)
 
