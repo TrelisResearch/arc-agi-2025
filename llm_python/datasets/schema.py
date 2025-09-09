@@ -27,6 +27,7 @@ PARQUET_SCHEMA = pa.schema(
         pa.field("model", pa.string(), nullable=False),  # Required
         pa.field("is_transductive", pa.bool_(), nullable=False),  # Required
         pa.field("refined_from_id", pa.string(), nullable=True),  # Optional
+        pa.field("compound_inspiration_id", pa.string(), nullable=True),  # Optional
     )
 )
 
