@@ -18,10 +18,11 @@ from llm_python.utils.arc_tester import ArcTester
 from llm_python.utils.prompt_utils import create_compound_prompt, extract_python_code
 from llm_python.utils.shutdown import ensure_system_exit
 from llm_python.utils.task_loader import get_task_loader
+from concurrent.futures import ThreadPoolExecutor
 
 load_dotenv()
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(Path(__file__).name)
 
 
 def invoke_llm(api_client: ARCAPIClient, system_prompt: str, user_prompt: str):
@@ -47,6 +48,7 @@ def generate_compound_programs(
     executor: ArcTester,
     dataset: pd.DataFrame,
     attempts: int,
+    max_workers: int = 8,
 ) -> None:
     """
     Generate compound programs by refining existing ones in the dataset.
@@ -56,7 +58,7 @@ def generate_compound_programs(
     """
     task_loader = get_task_loader()
 
-    for i in range(0, attempts):
+    def run_attempt(i: int):
         logger.info(f"Starting attempt {i + 1} of {attempts}")
         sample = dataset.sample(n=1, random_state=int(time())).iloc[0]
         task_data = task_loader.get_task(sample["task_id"])
@@ -76,19 +78,19 @@ def generate_compound_programs(
         response = invoke_llm(api_client, system_prompt, user_prompt)
         if response is None:
             logger.info("No response from LLM API")
-            continue
+            return
         logger.debug(f"LLM response:\n{response}")
         program = extract_python_code(response)
         if program is None:
             logger.info("No valid Python code extracted from LLM response")
-            continue
+            return
         logger.debug(f"Extracted program:\n{program}")
         execution_result = executor.test_program(program, task_data)
         if any(execution_result.train_errors):
             logger.info(
                 f"Program execution failed with errors: {execution_result.train_errors}"
             )
-            continue
+            return
 
         succesfully_collected = dataset_collector.collect(
             ProgramSample(
@@ -108,10 +110,13 @@ def generate_compound_programs(
         )
         if not succesfully_collected:
             logger.info("Failed to collect program sample, rejected by collector.")
-            continue
+            return
         logger.info(
             f"Successfully collected refined program for task {sample['task_id']}"
         )
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor_pool:
+        executor_pool.map(run_attempt, range(attempts))
 
 
 def main():
@@ -172,14 +177,17 @@ def main():
     parser.add_argument(
         "--log-level",
         type=lambda s: s.upper(),
+        default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         help="Set the logging level",
     )
 
     args = parser.parse_args()
 
-    if args.log_level:
-        logging.basicConfig(level=args.log_level)
+    logging.basicConfig(
+        level=args.log_level,
+        format="[%(levelname)s] %(name)s: %(message)s",
+    )
 
     if args.remote_debug:
         print("Debug mode: waiting 30 seconds for debugger to attach...")
@@ -207,12 +215,7 @@ def main():
         api_timeout=600,  # API timeout enforced by OpenAI client
     )
 
-    executor = ArcTester(
-        timeout=1,
-        executor_type="unrestricted",
-        max_output_chars=10_000,
-        max_output_cells=1_800,
-    )
+    executor = ArcTester()
     dataset = read_soar_parquet(args.compound_dataset)
 
     generate_compound_programs(
@@ -221,6 +224,7 @@ def main():
         executor=executor,
         dataset=dataset,
         attempts=args.attempts,
+        max_workers=args.max_workers,
     )
 
     dataset_collector.flush()
