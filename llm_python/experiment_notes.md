@@ -32,7 +32,27 @@ Todo:
 ```bash
 PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926" --max-attempts 256 --subset evaluation --max-workers 64 > qwen3_8b_mixed_finetuning_20_evaluation_256x.log 2>&1 &
 ```
-...
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926
+Total tasks: 120
+Total time: 3588.9s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 181,939,477
+Total cost: $30.918539
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 1.7% (1.7% excl. trans)
+  Pass@2 (Train Majority):  1.7% (1.7% excl. trans)
+  Oracle (Best Attempt):    1.7% (1.7% excl. trans)
+  All Train Correct:        1.7% (1.7% excl. trans)
+  Min 1 Train Correct:      11.7% (11.7% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.1%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 25533 programs to /workspace/arc-agi-2025/llm_python/datasets/inference/20250909_100559_Trelis_Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926_arc-prize-2025_evaluation.parquet
+All sampled programs saved to /workspace/arc-agi-2025/llm_python/datasets/inference/20250909_100559_Trelis_Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926_arc-prize-2025_evaluation.parquet
 
 ### Testing out the 8B model
 Start a pod and test for 64 attempts on arc-prize-2025 evaluation in one command:
