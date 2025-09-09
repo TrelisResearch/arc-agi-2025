@@ -182,6 +182,7 @@ class ARCTaskRunnerSimple:
         self.include_outputs = include_outputs
         self.include_outputs_diff = include_outputs_diff
         self.early_stop_threshold = early_stop_threshold
+        self.logged_skipped_tasks = set()  # Track which tasks we've already logged as skipped
         # Use custom output directory if provided, otherwise use default
         output_dir = Path(parquet_output_dir) if parquet_output_dir else None
         self.dataset_collector = SoarDatasetCollector(sample_name, output_dir=output_dir)
@@ -402,7 +403,10 @@ class ARCTaskRunnerSimple:
         count = self._count_all_train_correct_programs(task_id, current_results, refinement_programs, early_stop_counts)
         
         if count >= self.early_stop_threshold:
-            print(f"🛑 Skipping task {task_id}: {count} all-train-correct programs >= threshold {self.early_stop_threshold}")
+            # Only log once per task to avoid spam
+            if task_id not in self.logged_skipped_tasks:
+                print(f"ℹ️  Task {task_id}: {count} programs found, skipping remaining attempts")
+                self.logged_skipped_tasks.add(task_id)
             return True
             
         return False
@@ -1386,7 +1390,7 @@ class ARCTaskRunnerSimple:
             try:
                 # Dynamic early stopping: Check if threshold reached during execution
                 if self._should_skip_task_attempts(task_id, task_results, program_lookup, early_stop_counts):
-                    print(f"🛑 Skipping {task_id} attempt {attempt_num + 1}: threshold reached during execution")
+                    # Skip logging here since _should_skip_task_attempts already handles it
                     
                     # Create a dummy result to maintain consistent structure
                     dummy_result = {

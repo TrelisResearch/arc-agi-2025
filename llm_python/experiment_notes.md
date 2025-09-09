@@ -27,6 +27,137 @@ Todo:
 - Mathieu; Hazem.
 
 ---
+## Sept 9th 2025
+### Sample Qwen 8b model at 256x
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926" --max-attempts 256 --subset evaluation --max-workers 64 > qwen3_8b_mixed_finetuning_20_evaluation_256x.log 2>&1 &
+```
+...
+
+### Testing out the 8B model
+Start a pod and test for 64 attempts on arc-prize-2025 evaluation in one command:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926" --max-attempts 64 --subset evaluation --max-workers 64 > qwen3_8b_mixed_finetuning_20_evaluation_64x.log 2>&1 &
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926
+Total tasks: 120
+Total time: 925.3s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 45,960,921
+Total cost: $7.798239
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.8% (0.8% excl. trans)
+  Pass@2 (Train Majority):  0.8% (0.8% excl. trans)
+  Oracle (Best Attempt):    0.8% (0.8% excl. trans)
+  All Train Correct:        1.7% (1.7% excl. trans)
+  Min 1 Train Correct:      8.3% (7.5% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.1%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 6395 programs to /workspace/arc-agi-2025/llm_python/datasets/inference/20250909_093033_Trelis_Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926_arc-prize-2025_evaluation.parquet
+All sampled programs saved to /workspace/arc-agi-2025/llm_python/datasets/inference/20250909_093033_Trelis_Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926_arc-prize-2025_evaluation.parquet
+
+and then repeat:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926" --max-attempts 64 --subset evaluation --max-workers 64 > qwen3_8b_mixed_finetuning_20_evaluation_64x_repeat.log 2>&1 &
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926
+Total tasks: 120
+Total time: 823.9s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 45,958,934
+Total cost: $7.797047
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.8% (0.8% excl. trans)
+  Pass@2 (Train Majority):  0.8% (0.8% excl. trans)
+  Oracle (Best Attempt):    0.8% (0.8% excl. trans)
+  All Train Correct:        1.7% (1.7% excl. trans)
+  Min 1 Train Correct:      6.7% (6.7% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.1%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 6377 programs to /workspace/arc-agi-2025/llm_python/datasets/inference/20250909_093048_Trelis_Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926_arc-prize-2025_evaluation.parquet
+All sampled programs saved to /workspace/arc-agi-2025/llm_python/datasets/inference/20250909_093048_Trelis_Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926_arc-prize-2025_evaluation.parquet
+
+and then run passing in that dataset and outputs so we can do refinement:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926" --max-attempts 64 --subset evaluation --max-workers 64 --refinement-ds /workspace/arc-agi-2025/llm_python/datasets/inference/20250909_093033_Trelis_Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926_arc-prize-2025_evaluation.parquet --include-outputs > qwen3_8b_mixed_finetuning_20_evaluation_64x_refine.log 2>&1 &
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926
+Total tasks: 119
+Total time: 507.4s
+Successful API calls: 119/119 (100.0%)
+Total tokens used: 45,360,876
+Total cost: $7.297668
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    0.0% (0.0% excl. trans)
+  All Train Correct:        0.0% (0.0% excl. trans)
+  Min 1 Train Correct:      2.5% (2.5% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 7206 programs to /workspace/arc-agi-2025/llm_python/datasets/inference/20250909_094847_Trelis_Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926_arc-prize-2025_evaluation.parquet
+All sampled programs saved to /workspace/arc-agi-2025/llm_python/datasets/inference/20250909_094847_Trelis_Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926_arc-prize-2025_evaluation.parquet
+
+## Sept 8th 2025
+### Testing on eval of the new Trelis/Qwen3-4B_ds-arc-agi-2-mixed-finetuning-20-c1926 model
+Start a pod and test for 64 attempts on arc-prize-2025 evaluation in one command:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-2-mixed-finetuning-20-c1926" --max-attempts 64 --subset evaluation --max-workers 64 > qwen3_4b_mixed_finetuning_20_evaluation_64x.log 2>&1 &
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-2-mixed-finetuning-20-c1926
+Total tasks: 120
+Total time: 876.7s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 45,861,379
+Total cost: $7.738514
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.8% (0.8% excl. trans)
+  Pass@2 (Train Majority):  0.8% (0.8% excl. trans)
+  Oracle (Best Attempt):    0.8% (0.8% excl. trans)
+  All Train Correct:        0.8% (0.8% excl. trans)
+  Min 1 Train Correct:      5.0% (5.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.1%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 5978 programs to /workspace/arc-agi-2025/llm_python/datasets/inference/20250908_210120_Trelis_Qwen3-4B_ds-arc-agi-2-mixed-finetuning-20-c1926_arc-prize-2025_evaluation.parquet
+All sampled programs saved to /workspace/arc-agi-2025/llm_python/datasets/inference/20250908_210120_Trelis_Qwen3-4B_ds-arc-agi-2-mixed-finetuning-20-c1926_arc-prize-2025_evaluation.parquet
+
+and then repeat this 64x:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-2-mixed-finetuning-20-c1926" --max-attempts 64 --subset evaluation --max-workers 64 > qwen3_4b_mixed_finetuning_20_evaluation_64x_repeat.log 2>&1 &
+```
+and then repeat but refining using the previous 64x evaluation dataset:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-2-mixed-finetuning-20-c1926" --max-attempts 64 --subset evaluation --max-workers 64 --refinement-ds /workspace/arc-agi-2025/llm_python/datasets/inference/20250908_210120_Trelis_Qwen3-4B_ds-arc-agi-2-mixed-finetuning-20-c1926_arc-prize-2025_evaluation.parquet > qwen3_4b_mixed_finetuning_20_evaluation_64x_refine.log 2>&1 &
+```
+
+
+### Generate better aa2 training data using refinement
+and we might as well generate more training data as well, but pointing to Trelis/arc-agi-2-mixed-finetuning-20 with outputs and using the new early stop threshold of 7, and we're using the Trelis/Qwen3-4B_ds-arc-agi-2-mixed-finetuning-20-c1926 model, using 128 attempts the pod start and task runner combined script:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-2-mixed-finetuning-20-c1926" --max-attempts 128 --subset training --max-workers 64 --refinement-ds Trelis/arc-agi-2-mixed-finetuning-20 --include-outputs --early-stop-threshold 7 > qwen3_4b_mixed_finetuning_20_training_128x.log 2>&1 &
+```
+
+
 ## Sept 7th 2025
 ### Early stopping in run_arc_tasks_soar.py
 We'll run a quick test on arc prize 2025 evaluation with openrouter endpoint and OSS 120B model:
