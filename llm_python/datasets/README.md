@@ -29,6 +29,7 @@ uv run python -m llm_python.datasets.viewer path/to/file.parquet
 ### Syncing local inference parquet files to superking (GCS)
 
 ```bash
+cd ../workspace && curl -sSL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-537.0.0-linux-x86_64.tar.gz -o google-cloud-cli.tar.gz && tar -xzf google-cloud-cli.tar.gz && rm google-cloud-cli.tar.gz && ./google-cloud-sdk/install.sh --quiet && export PATH="/workspace/google-cloud-sdk/bin:$PATH" && echo 'export PATH="/workspace/google-cloud-sdk/bin:$PATH"' >> ~/.bashrc
 gcloud auth login --no-launch-browser
 gcloud config set project trelis-arc
 gsutil -m cp llm_python/datasets/inference/* gs://trelis-arc/datasets/superking/
