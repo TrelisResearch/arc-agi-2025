@@ -33,4 +33,5 @@ cd ../workspace && curl -sSL https://dl.google.com/dl/cloudsdk/channels/rapid/do
 gcloud auth login --no-launch-browser
 gcloud config set project trelis-arc
 gsutil -m cp llm_python/datasets/inference/* gs://trelis-arc/datasets/superking/
+gsutil -m cp llm_python/datasets/rewritten/* gs://trelis-arc/datasets/superking/
 ```
