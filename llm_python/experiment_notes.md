@@ -28,6 +28,13 @@ Todo:
 
 ---
 ## Sept 9th 2025
+### Test training on re-written programs
+We'll test evaluation for arc-prize-2025 evaluation with 64 attempts with the newly created model Trelis/Qwen3-4B_ds-rewritten-c46:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-rewritten-c46" --max-attempts 64 --subset evaluation --max-workers 64 > qwen3_4b_rewritten_evaluation_64x.log 2>&1 &
+```
+...
+
 ### Rewrite programs
 ```bash
 PYTHONPATH=. uv run python llm_python/generate_rewrite_programs.py \
