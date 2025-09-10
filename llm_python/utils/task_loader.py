@@ -279,6 +279,18 @@ class TaskLoader:
 
         return stats
 
+    def inject_subset(self, dataset_name: str, subset_name: str, tasks: Dict[str, TaskData]) -> None:
+        """
+        Inject a new subset into the TaskLoader from external data.
+
+        Args:
+            subset_name: Name for the new subset.
+            tasks: Dict mapping task_id to TaskData.
+            source_dataset: Source label for the injected tasks (default: "injected").
+        """
+        self._add_tasks_safely(tasks, dataset_name)
+        self.subsets[subset_name] = list(tasks.keys())
+
     def _detect_dataset_type(self, identifier: str) -> str:
         """Detect if identifier is parquet file/directory, HuggingFace dataset, or traditional subset"""
         from pathlib import Path
