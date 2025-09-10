@@ -93,7 +93,7 @@ def load_programs_for_finetuning(parquet_path: Union[str, Path],
     for _, row in df.iterrows():
         program_data = {
             'task_id': row['task_id'],
-            'program': row['code'] or "",  # Handle None/empty code
+            'code': row['code'] or "",  # Handle None/empty code
             'model': row.get('model', 'unknown'),
             'is_transductive': row['is_transductive'],
             # Include reasoning if available

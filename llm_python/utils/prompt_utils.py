@@ -273,3 +273,64 @@ def extract_python_code(text: str, debug: bool = False) -> str:
         return python_blocks[-1].strip()
 
     return ""
+
+
+def create_rewrite_prompt(
+    task_data: TaskData,
+    original_program: str,
+) -> Tuple[str, str]:
+    """
+    Create system and user prompts for program rewriting.
+    
+    Args:
+        task_data: The ARC task data
+        original_program: The program to rewrite
+        
+    Returns:
+        Tuple of (system_prompt, user_prompt)
+    """
+    prompt_loader = get_prompt_loader()
+    
+    # Format the task data
+    task_content = ""
+    
+    # Get training examples
+    train_examples = task_data["train"].copy()
+    
+    # Add training examples
+    for i, example in enumerate(train_examples, 1):
+        input_grid = example["input"]
+        output_grid = example["output"]
+        input_shape = _get_grid_shape_string(input_grid)
+        output_shape = _get_grid_shape_string(output_grid)
+        input_str = _format_grid_for_prompt(input_grid)
+        output_str = _format_grid_for_prompt(output_grid)
+        task_content += f"## Input {i} (grid shape: {input_shape}):\n{input_str}\n"
+        task_content += f"## Output {i} (grid shape: {output_shape}):\n{output_str}\n\n"
+    
+    # Add test examples (inputs only)
+    test_examples = task_data["test"].copy()
+    for i, example in enumerate(test_examples, 1):
+        input_grid = example["input"]
+        input_shape = _get_grid_shape_string(input_grid)
+        input_str = _format_grid_for_prompt(input_grid)
+        task_content += f"## Test Input {i} (grid shape: {input_shape}):\n{input_str}\n\n"
+    
+    # Load style guide
+    from pathlib import Path
+    style_guide_path = Path(__file__).parent.parent / "prompt-strings" / "style-guide.md"
+    with open(style_guide_path, 'r') as f:
+        style_guide = f.read()
+    
+    # Load prompts
+    system_prompt = prompt_loader.get_system_message("rewrite")
+    user_prompt_template = prompt_loader.get_initial_turn_prompt("rewrite")
+    
+    # Fill in the user prompt template
+    user_prompt = user_prompt_template.format(
+        task_content=task_content,
+        original_program=original_program,
+        style_guide=style_guide
+    )
+    
+    return system_prompt, user_prompt

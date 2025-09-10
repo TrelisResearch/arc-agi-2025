@@ -187,7 +187,7 @@ class ResultProcessor:
                 compact_attempts = []
                 for att in r.get('attempt_details', []):
                     if isinstance(att, dict):
-                        compact_att = {k: v for k, v in att.items() if k not in ('raw_response', 'program')}
+                        compact_att = {k: v for k, v in att.items() if k not in ('raw_response', 'code')}
                         compact_attempts.append(compact_att)
                     else:
                         compact_attempts.append(att)
