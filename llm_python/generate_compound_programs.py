@@ -203,7 +203,7 @@ def main():
     dataset_output_folder = Path(__file__).parent / "datasets" / "compounded"
     dataset_output_folder.mkdir(parents=True, exist_ok=True)
     dataset_collector = SoarDatasetCollector(
-        args.model, output_dir=dataset_output_folder
+        args.model, output_dir=dataset_output_folder, flush_every=50
     )
     api_client = ARCAPIClient(
         model=args.model,
@@ -218,14 +218,18 @@ def main():
     executor = ArcTester()
     dataset = read_soar_parquet(args.compound_dataset)
 
-    generate_compound_programs(
-        dataset_collector=dataset_collector,
-        api_client=api_client,
-        executor=executor,
-        dataset=dataset,
-        attempts=args.attempts,
-        max_workers=args.max_workers,
-    )
+    try:
+        generate_compound_programs(
+            dataset_collector=dataset_collector,
+            api_client=api_client,
+            executor=executor,
+            dataset=dataset,
+            attempts=args.attempts,
+            max_workers=args.max_workers,
+        )
+
+    except KeyboardInterrupt:
+        print("Interrupted by user, shutting down...")
 
     dataset_collector.flush()
 

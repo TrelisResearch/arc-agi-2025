@@ -17,7 +17,9 @@ from concurrent.futures import ThreadPoolExecutor
 import requests
 
 from llm_python.datasets.collector import SoarDatasetCollector
+from llm_python.datasets.io import read_soar_parquet
 from llm_python.utils.code import is_random
+from llm_python.utils.numpy import convert_numpy_types
 from llm_python.utils.shutdown import ensure_system_exit
 from llm_python.utils.task_loader import TaskData, get_task_loader
 from llm_python.utils.arc_tester import ArcTester
@@ -2129,8 +2131,29 @@ class ARCTaskRunnerSimple:
                 f"\n⚠️  Note: Test accuracy metrics unavailable in SUBMIT mode (no test outputs)"
             )
 
-
-
+def generate_task_data_from_soar(parquet_path: str) -> Dict[str, TaskData]:
+    data = read_soar_parquet(parquet_path)
+    task_loader = get_task_loader()
+    task_dict = {}
+    for _, item in data.iterrows():
+        task_id = item.get("task_id")
+        new_task_id = item.get("row_id")
+        predicted_train_outputs = item.get("predicted_train_output")
+        predicted_test_outputs = item.get("predicted_test_output")
+        original_task_data = task_loader.get_task(task_id)
+        task_dict[new_task_id] = TaskData(
+            train=[
+                {"input": inp["input"], "output": convert_numpy_types(out)}
+                for inp, out in zip(
+                    original_task_data["train"], predicted_train_outputs
+                )
+            ],
+            test=[
+                {"input": inp["input"], "output": convert_numpy_types(out)}
+                for inp, out in zip(original_task_data["test"], predicted_test_outputs)
+            ],
+        )
+    return task_dict
 
 
 def main():
@@ -2146,6 +2169,11 @@ def main():
         "--subset",
         default="training",
         help="Dataset subset to use. Supports: (1) Traditional subsets like 'training', 'evaluation' (2) HuggingFace datasets like 'username/dataset-name' (3) Parquet files/directories like '/path/to/data.parquet'",
+    )
+    parser.add_argument(
+        "--parquet-dataset",
+        default=None,
+        help="Use a parquet dataset for synthetic tasks rather than a predefined subset",
     )
     parser.add_argument("--model", default="gpt-4.1-mini", help="Model to use")
     parser.add_argument("--limit", type=int, help="Limit number of tasks to run")
@@ -2271,6 +2299,17 @@ def main():
         if dataset_type == "traditional":
             parser.error("--refinement-ds requires HuggingFace dataset or parquet file. Traditional subsets not supported for refinement programs.")
 
+    dataset = args.dataset
+    subset = args.subset
+
+    if args.parquet_dataset:
+        print(f"Generating task data from parquet dataset at '{args.parquet_dataset}'...")
+        task_data = generate_task_data_from_soar(args.parquet_dataset)
+        print(f"Generated {len(task_data)} tasks from parquet dataset")
+        get_task_loader().inject_subset("synthetic", subset_name="synthetic/all", tasks=task_data)
+        dataset = "synthetic"
+        subset = "all"
+
     # Create runner and run tasks
     runner = ARCTaskRunnerSimple(
         model=args.model,
@@ -2288,7 +2327,7 @@ def main():
         prompt_version=args.prompt_version,
         unsafe_executor=args.unsafe_executor,
         lora_adapter=args.lora_adapter,
-        sample_name=f"{args.model.replace('/', '_').replace(':', '_')}_{args.dataset}_{args.subset}",
+        sample_name=f"{args.model.replace('/', '_').replace(':', '_')}_{dataset}_{subset}",
         parquet_output_dir=args.parquet_output_dir,
         splitter=args.splitter,
         refinement_dataset=args.refinement_ds,
@@ -2298,7 +2337,7 @@ def main():
     )
 
     # Run the task subset
-    results = runner.run_subset(args.subset, args.dataset, args.limit)
+    results = runner.run_subset(subset, dataset, args.limit)
     runner.dataset_collector.flush()
     print(f"All sampled programs saved to {runner.dataset_collector.output_path()}")
 
@@ -2309,6 +2348,7 @@ if __name__ == "__main__":
         main()
     except Exception as e:
         print(f"An unexpected error occurred in main: {e}", file=sys.stderr)
+        traceback.print_exc()
         exit_code = 1
     finally:
         ensure_system_exit(exit_code)
