@@ -217,7 +217,7 @@ class ARCTaskRunnerSimple:
         # Initialize remaining components
         self.task_loader = get_task_loader()
         self.executor = ArcTester(
-            timeout=10,
+            timeout=15,
             executor_type=executor_type,
             max_output_chars=10_000,
             max_output_cells=1_800,
@@ -1733,24 +1733,38 @@ class ARCTaskRunnerSimple:
         submit_mode = os.getenv("SUBMIT", "").lower() == "true"
 
 
-        # 1. OUTPUT VALIDITY CATEGORIES
+        # 1. OUTPUT VALIDITY CATEGORIES (mutually exclusive)
         total_attempts = len(attempts)
-        valid_outputs = sum(1 for att in attempts if att.get("outputs_valid", False))
-        skipped_attempts = sum(1 for att in attempts if att.get("skipped", False))
-        no_programs = sum(1 for att in attempts if not att.get("program_extracted", False) and not att.get("skipped", False))
-        # Separate execution timeouts from other execution errors
-        exec_timeouts = sum(1 for att in attempts if att.get("train_exec_timeouts", 0) > 0 or att.get("test_exec_timeout", False))
-        # Only count non-timeout execution errors
-        exec_failures = sum(1 for att in attempts if 
-                          (att.get("train_exec_errors", 0) > 0 or att.get("test_exec_error", False)) and
-                          not (att.get("train_exec_timeouts", 0) > 0 or att.get("test_exec_timeout", False)))
-        max_length = sum(1 for att in attempts if att.get("hit_max_tokens", False))
-        api_timeout = sum(1 for att in attempts if att.get("api_timeout", False))
-        # Invalid outputs: program extracted, no execution failure, but outputs invalid
-        invalid_outputs = sum(1 for att in attempts 
-                             if att.get("program_extracted", False) 
-                             and not att.get("outputs_valid", False)
-                             and not (att.get("train_exec_errors", 0) > 0 or att.get("test_exec_error", False)))
+        
+        # Count each attempt in exactly one category
+        valid_outputs = 0
+        skipped_attempts = 0
+        no_programs = 0
+        exec_timeouts = 0
+        exec_failures = 0
+        max_length = 0
+        api_timeout = 0
+        invalid_outputs = 0
+        
+        for att in attempts:
+            # Check categories in priority order (mutually exclusive)
+            if att.get("skipped", False):
+                skipped_attempts += 1
+            elif att.get("api_timeout", False):
+                api_timeout += 1
+            elif att.get("hit_max_tokens", False):
+                max_length += 1
+            elif not att.get("program_extracted", False):
+                no_programs += 1
+            elif att.get("train_exec_timeouts", 0) > 0 or att.get("test_exec_timeout", False):
+                exec_timeouts += 1
+            elif att.get("train_exec_errors", 0) > 0 or att.get("test_exec_error", False):
+                exec_failures += 1
+            elif att.get("outputs_valid", False):
+                valid_outputs += 1
+            else:
+                # Program extracted, no errors/timeouts, but outputs invalid
+                invalid_outputs += 1
         
         # 2. TEST CATEGORIES (if not submit mode)
         test_perfect_total = test_perfect_trans = 0

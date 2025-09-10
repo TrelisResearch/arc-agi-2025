@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 from typing import List, Optional, NamedTuple, Any, Tuple
 from llm_python.utils.numpy import convert_numpy_types
 from sandbox import create_executor
@@ -36,7 +37,7 @@ class ArcTester:
     _executor_context = None
     _executor_type = None
     
-    def __init__(self, timeout: int = 10, executor_type: str = "unrestricted",
+    def __init__(self, timeout: int = 15, executor_type: str = "unrestricted",
                  max_output_chars: Optional[int] = None,
                  max_output_cells: Optional[int] = None):
         """Initialize the ARC tester.
