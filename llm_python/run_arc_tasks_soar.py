@@ -217,7 +217,7 @@ class ARCTaskRunnerSimple:
         # Initialize remaining components
         self.task_loader = get_task_loader()
         self.executor = ArcTester(
-            timeout=1,
+            timeout=10,
             executor_type=executor_type,
             max_output_chars=10_000,
             max_output_cells=1_800,
@@ -236,6 +236,7 @@ class ARCTaskRunnerSimple:
             "exec_successes": 0,
             "exec_timeouts": 0,
             "exec_errors": 0,
+            "api_timeouts": 0,
             "exec_times": [],
             "recent_window": 100,
             "report_interval": 100,
@@ -609,17 +610,21 @@ class ARCTaskRunnerSimple:
         with self._cost_lock:  # Reuse existing lock for simplicity
             self.health_metrics["total_attempts"] += 1
 
-            # Track execution success/failure
+            # Track API timeouts separately
+            if attempt_detail.get("api_timeout", False):
+                self.health_metrics["api_timeouts"] += 1
+            
+            # Track execution success/failure (check timeouts FIRST)
             if (
-                attempt_detail.get("test_exec_error")
-                or attempt_detail.get("train_exec_errors", 0) > 0
-            ):
-                self.health_metrics["exec_errors"] += 1
-            elif (
                 attempt_detail.get("test_exec_timeout")
                 or attempt_detail.get("train_exec_timeouts", 0) > 0
             ):
                 self.health_metrics["exec_timeouts"] += 1
+            elif (
+                attempt_detail.get("test_exec_error")
+                or attempt_detail.get("train_exec_errors", 0) > 0
+            ):
+                self.health_metrics["exec_errors"] += 1
             else:
                 self.health_metrics["exec_successes"] += 1
 
@@ -641,8 +646,9 @@ class ARCTaskRunnerSimple:
 
         # Overall stats
         success_rate = (metrics["exec_successes"] / total) * 100
-        timeout_rate = (metrics["exec_timeouts"] / total) * 100
+        exec_timeout_rate = (metrics["exec_timeouts"] / total) * 100
         error_rate = (metrics["exec_errors"] / total) * 100
+        api_timeout_rate = (metrics["api_timeouts"] / total) * 100
 
         # Recent window stats (last N attempts)
         window_size = min(metrics["recent_window"], total)
@@ -655,7 +661,7 @@ class ARCTaskRunnerSimple:
         if recent_total > 0:
             # Approximate recent rates (would need more complex tracking for exact)
             recent_success_rate = success_rate  # Simplified for now
-            recent_timeout_rate = timeout_rate
+            recent_timeout_rate = exec_timeout_rate
             recent_error_rate = error_rate
 
         # Execution time stats
@@ -672,8 +678,9 @@ class ARCTaskRunnerSimple:
         print(
             f"🏥 Health [{total} attempts]: "
             f"Success {success_rate:.0f}% | "
-            f"Timeout {timeout_rate:.0f}% | "
+            f"ExecTimeout {exec_timeout_rate:.0f}% | "
             f"ExecErr {error_rate:.0f}% | "
+            f"APITimeout {api_timeout_rate:.0f}% | "
             f"AvgTime {recent_avg_time:.2f}s"
         )
 
@@ -946,10 +953,16 @@ class ARCTaskRunnerSimple:
 
             if is_corr:
                 train_correct += 1
+            elif tout:  # Check timeout FIRST before error
+                train_exec_timeouts += 1
+                # Debug: Print timeout details
+                if os.getenv("DEBUG_EXEC_ERRORS", "").lower() == "true":
+                    print(f"⏱️ Train execution timeout for {task_id} (example {task_data['train'].index(ex)})")
             elif err and err != "no program":
                 train_exec_errors += 1
-            elif tout:
-                train_exec_timeouts += 1
+                # Debug: Print execution error details
+                if os.getenv("DEBUG_EXEC_ERRORS", "").lower() == "true":
+                    print(f"🔴 Train execution error for {task_id} (example {task_data['train'].index(ex)}): {err}")
 
         train_accuracy = (
             train_correct / len(task_data["train"]) if task_data["train"] else 0.0
@@ -980,10 +993,16 @@ class ARCTaskRunnerSimple:
                 test_pred, test_err, test_tout = (
                     self.executor.execute_program_with_timeout(program, test_input)
                 )
-                if test_err and test_err != "no program":
-                    any_test_exec_error = True
-                if test_tout:
+                if test_tout:  # Check timeout FIRST
                     any_test_exec_timeout = True
+                    # Debug: Print test timeout details  
+                    if os.getenv("DEBUG_EXEC_ERRORS", "").lower() == "true":
+                        print(f"⏱️ Test execution timeout for {task_id} (test {test_idx})")
+                elif test_err and test_err != "no program":  # Only count as error if NOT a timeout
+                    any_test_exec_error = True
+                    # Debug: Print test execution error details
+                    if os.getenv("DEBUG_EXEC_ERRORS", "").lower() == "true":
+                        print(f"🔴 Test execution error for {task_id} (test {test_idx}): {test_err}")
 
             # Mark as correct/incorrect only when we have ground truth (not in SUBMIT mode)
             is_correct = (
@@ -1719,7 +1738,12 @@ class ARCTaskRunnerSimple:
         valid_outputs = sum(1 for att in attempts if att.get("outputs_valid", False))
         skipped_attempts = sum(1 for att in attempts if att.get("skipped", False))
         no_programs = sum(1 for att in attempts if not att.get("program_extracted", False) and not att.get("skipped", False))
-        exec_failures = sum(1 for att in attempts if att.get("train_exec_errors", 0) > 0 or att.get("test_exec_error", False))
+        # Separate execution timeouts from other execution errors
+        exec_timeouts = sum(1 for att in attempts if att.get("train_exec_timeouts", 0) > 0 or att.get("test_exec_timeout", False))
+        # Only count non-timeout execution errors
+        exec_failures = sum(1 for att in attempts if 
+                          (att.get("train_exec_errors", 0) > 0 or att.get("test_exec_error", False)) and
+                          not (att.get("train_exec_timeouts", 0) > 0 or att.get("test_exec_timeout", False)))
         max_length = sum(1 for att in attempts if att.get("hit_max_tokens", False))
         api_timeout = sum(1 for att in attempts if att.get("api_timeout", False))
         # Invalid outputs: program extracted, no execution failure, but outputs invalid
@@ -1804,7 +1828,9 @@ class ARCTaskRunnerSimple:
         if no_programs > 0:
             validity_parts.append(f"{no_programs} no programs")
         if exec_failures > 0:
-            validity_parts.append(f"{exec_failures} execution failures")
+            validity_parts.append(f"{exec_failures} execution errors")
+        if exec_timeouts > 0:
+            validity_parts.append(f"{exec_timeouts} execution timeouts")
         if max_length > 0:
             validity_parts.append(f"{max_length} max length")
         if api_timeout > 0:
@@ -1861,6 +1887,27 @@ class ARCTaskRunnerSimple:
                 summary += f" (best: {best_attempt.get('train_accuracy', 0.0):.1%} train, test-failed)"
 
         print(summary)
+        
+        # Debug: Print detailed execution errors if enabled
+        if os.getenv("DEBUG_EXEC_ERRORS", "").lower() == "true" and exec_failures > 0:
+            print(f"  📋 Execution error details for {task_id}:")
+            for i, attempt in enumerate(attempts):
+                if attempt.get("train_exec_errors", 0) > 0 or attempt.get("test_exec_error", False):
+                    print(f"    Attempt {i+1}:")
+                    
+                    # Show train errors
+                    if "train_results" in attempt and attempt["train_results"]:
+                        for j, result in enumerate(attempt["train_results"]):
+                            if result.get("error") and result["error"] != "no program":
+                                error_msg = result["error"][:200] if len(result["error"]) > 200 else result["error"]
+                                print(f"      Train example {j}: {error_msg}")
+                    
+                    # Show test errors  
+                    if "test_results" in attempt and attempt["test_results"]:
+                        for result in attempt["test_results"]:
+                            if result.get("error") and result["error"] != "no program":
+                                error_msg = result["error"][:200] if len(result["error"]) > 200 else result["error"]
+                                print(f"      Test {result.get('test_idx', '?')}: {error_msg}")
 
     def _trim_failed_attempt(self, attempt: AttemptDetail) -> AttemptDetail:
         """Trim data from attempts that failed to execute (exec errors, no code, API failures)
@@ -1959,6 +2006,8 @@ class ARCTaskRunnerSimple:
                 "max_length_responses": 0.0,
                 "timeout_responses": 0.0,
                 "api_failure_responses": 0.0,
+                "execution_timeout_responses": 0.0,
+                "execution_error_responses": 0.0,
             }
 
         # Print summary
@@ -2012,6 +2061,12 @@ class ARCTaskRunnerSimple:
             print(
                 f"  API Failure Responses:    {percentage_metrics['api_failure_responses']:.1%}"
             )
+            print(
+                f"  Execution Timeout Responses (of all attempts): {percentage_metrics['execution_timeout_responses']:.1%}"
+            )
+            print(
+                f"  Execution Error Responses (of all attempts): {percentage_metrics['execution_error_responses']:.1%}"
+            )
 
     def _print_submit_mode_summary(
         self,
@@ -2052,6 +2107,24 @@ class ARCTaskRunnerSimple:
                 for att in result.get("attempt_details", [])
                 if not att.get("api_success", True)
                 and not att.get("api_timeout", False)
+            )
+            for result in results
+        )
+        execution_timeout_responses = sum(
+            sum(
+                1
+                for att in result.get("attempt_details", [])
+                if att.get("train_exec_timeouts", 0) > 0
+                or att.get("test_exec_timeout", False)
+            )
+            for result in results
+        )
+        execution_error_responses = sum(
+            sum(
+                1
+                for att in result.get("attempt_details", [])
+                if ((att.get("train_exec_errors", 0) > 0 or att.get("test_exec_error", False)) and
+                    not (att.get("train_exec_timeouts", 0) > 0 or att.get("test_exec_timeout", False)))
             )
             for result in results
         )
@@ -2118,6 +2191,12 @@ class ARCTaskRunnerSimple:
             )
             print(
                 f"  API failure responses: {api_failure_responses}/{total_responses} ({api_failure_responses / total_responses:.1%})"
+            )
+            print(
+                f"  Execution timeout responses (of all attempts): {execution_timeout_responses}/{total_responses} ({execution_timeout_responses / total_responses:.1%})"
+            )
+            print(
+                f"  Execution error responses (of all attempts): {execution_error_responses}/{total_responses} ({execution_error_responses / total_responses:.1%})"
             )
 
             print(f"\n📊 TRAIN METRICS:")

@@ -19,6 +19,14 @@ except ImportError:
 
 from sandbox.concurrency import ConcurrencyGate
 
+
+class ExecutionTimeout(Exception):
+    """Exception raised when code execution exceeds the time limit."""
+    def __init__(self, timeout_seconds: float):
+        self.timeout_seconds = timeout_seconds
+        super().__init__(f"Code execution timed out after {timeout_seconds} seconds.")
+
+
 # Untrusted execution can runaway with memory quicker than we can kill processes, so we need a hard limit on concurrency here.
 CPU_COUNT = os.cpu_count() or 1
 MAX_CONCURRENT_PROCESSES = max(1, CPU_COUNT // 4)
@@ -156,7 +164,7 @@ except Exception as e:
                 for child in p.children(recursive=True):
                     child.kill()
                 p.kill()
-            return None, Exception(f"Code execution timed out after {timeout} seconds.")
+            return None, ExecutionTimeout(timeout)
         except Exception as e:
             return None, Exception(f"Subprocess execution failed: {e}")
         finally:

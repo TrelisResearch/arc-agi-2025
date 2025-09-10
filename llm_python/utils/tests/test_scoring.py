@@ -101,6 +101,24 @@ def transform(grid):
         assert "No valid transformation function found" in error
         assert timed_out is False
     
+    def test_execution_timeout(self):
+        """Test program that times out during execution"""
+        executor = ArcTester(timeout=1, executor_type="unrestricted")
+        
+        program = """
+def transform(grid):
+    import time
+    time.sleep(10)  # Sleep longer than timeout
+    return grid
+"""
+        test_input = [[1, 2]]
+        
+        result, error, timed_out = executor.execute_program_with_timeout(program, test_input)
+        
+        assert result is None
+        assert "timed out" in error.lower()
+        assert timed_out is True  # Should be True for execution timeout
+    
     @classmethod
     def teardown_class(cls):
         """Cleanup the executor after tests"""

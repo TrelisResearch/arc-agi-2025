@@ -3,6 +3,7 @@
 from typing import List, Optional, NamedTuple, Any, Tuple
 from llm_python.utils.numpy import convert_numpy_types
 from sandbox import create_executor
+from sandbox.subprocess_executor import ExecutionTimeout
 from .task_loader import TaskData, Grid, TaskExample
 
 
@@ -35,7 +36,7 @@ class ArcTester:
     _executor_context = None
     _executor_type = None
     
-    def __init__(self, timeout: int = 2, executor_type: str = "unrestricted",
+    def __init__(self, timeout: int = 10, executor_type: str = "unrestricted",
                  max_output_chars: Optional[int] = None,
                  max_output_cells: Optional[int] = None):
         """Initialize the ARC tester.
@@ -130,9 +131,9 @@ else:
             result, error = ArcTester._executor_context.execute_code(code, timeout=self.timeout)
             
             if error:
-                # Check if it's a timeout error
-                if "timeout" in str(error).lower():
-                    return None, f"Program exceeded timeout of {self.timeout}s", True
+                # Check if it's an execution timeout (not API timeout)
+                if isinstance(error, ExecutionTimeout):
+                    return None, str(error), True
                 else:
                     return None, str(error), False
             
@@ -235,10 +236,10 @@ return outputs
             result, error = ArcTester._executor_context.execute_code(code, timeout=self.timeout * len(test_inputs))
             
             if error:
-                # Check if it's a timeout error
-                if "timeout" in str(error).lower():
-                    # Return timeout for all inputs
-                    return [(None, f"Program exceeded timeout of {self.timeout * len(test_inputs)}s", True) for _ in test_inputs]
+                # Check if it's an execution timeout (not API timeout)
+                if isinstance(error, ExecutionTimeout):
+                    # Return execution timeout for all inputs
+                    return [(None, str(error), True) for _ in test_inputs]
                 else:
                     # Return error for all inputs
                     return [(None, str(error), False) for _ in test_inputs]
