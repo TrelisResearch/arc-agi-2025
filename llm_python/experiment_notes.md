@@ -27,13 +27,92 @@ Todo:
 - Mathieu; Hazem.
 
 ---
+## Sept 10th 2025
+### Diagnosing the execution
+We'll run on the arc-prize-2025 evaluation dataset with just one attempt with gpt-4.1-nano via openrouter:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 1 --model openai/gpt-4.1-nano --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --limit 1
+```
+
+### Post-train the latest best 20 and also the parquet programs models
+
+the best 20 model: Trelis/Qwen3-4B_ds-arc-agi-2-mixed-finetuning-20-c1926
+the parquet programs models: Trelis/Qwen3-4B_ds-parquet-programs-c2806
+
+I'll train each model on rewritten-aa2-train dataset for two cosine epochs with warmup and see what happens to performance.
+
+Start a pod and run: Trelis/Qwen3-4B_ds-arc-agi-2-mixed-finetuning-20-c1926_ds-rewritten_rLoRA-64-c44
+
 ## Sept 9th 2025
+### Diagnose why the re-writes are so bad
+
+Start a pod (just create_pod) with Trelis/Qwen3-4B_ds-rewritten-c44:
+```bash
+uv run runpod/create_pod.py sglang Trelis/Qwen3-4B_ds-rewritten-c44 --kv-cache-dtype fp8_e5m2
+```
+
+separately, check whether all programs in /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/rewritten/gpt-5-mini.parquet execute without error and give the ground truth outputs when passed the inputs, use the utils available in this repo
+
 ### Test training on re-written programs
 We'll test evaluation for arc-prize-2025 evaluation with 64 attempts with the newly created model Trelis/Qwen3-4B_ds-rewritten-c46:
 ```bash
-PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-rewritten-c46" --max-attempts 64 --subset evaluation --max-workers 64 > qwen3_4b_rewritten_evaluation_64x.log 2>&1 &
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-rewritten-c44" --max-attempts 64 --subset evaluation --max-workers 64 > qwen3_4b_rewritten_evaluation_64x.log 2>&1 &
 ```
-...
+and we'll run some inference on that on http://103.196.86.29:12673/v1:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 64 --max_attempts 8 --model Trelis/Qwen3-4B_ds-rewritten-c44 --base-url http://103.196.86.29:12673/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think
+```
+and give me the nohup version logging to file:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 64 --max_attempts 64 --model Trelis/Qwen3-4B_ds-rewritten-c44 --base-url http://103.196.86.29:12673/v1 --unsafe-executor --max-tokens 2000 --qwen-no-think > qwen3_4b_rewritten_evaluation_64x.log 2>&1 &
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-rewritten-c44
+Total tasks: 120
+Total time: 1130.5s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 46,873,187
+Total cost: $8.345599
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    0.0% (0.0% excl. trans)
+  All Train Correct:        0.0% (0.0% excl. trans)
+  Min 1 Train Correct:      0.8% (0.8% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 4429 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250909_194433_Trelis_Qwen3-4B_ds-rewritten-c44_arc-prize-2025_evaluation.parquet
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250909_194433_Trelis_Qwen3-4B_ds-rewritten-c44_arc-prize-2025_evaluation.parquet
+
+**8 attempts:**
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-rewritten-c44
+Total tasks: 120
+Total time: 156.5s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 5,860,498
+Total cost: $1.044010
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    0.0% (0.0% excl. trans)
+  All Train Correct:        0.0% (0.0% excl. trans)
+  Min 1 Train Correct:      0.8% (0.8% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.1%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+
+and then both start a pod AND run 64 attempts arc-prize-2025 evaluation with julien31/Soar-qwen-14b:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "julien31/Soar-qwen-7b" --max-attempts 64 --subset evaluation --max-workers 32 > soar_qwen_7b_evaluation_64x.log 2>&1 &
+```
 
 ### Rewrite programs
 ```bash
