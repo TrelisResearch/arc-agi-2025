@@ -31,7 +31,8 @@ Todo:
 ### Diagnosing the execution
 We'll run on the arc-prize-2025 evaluation dataset with just one attempt with gpt-4.1-nano via openrouter:
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 1 --model openai/gpt-4.1-nano --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --limit 1
+export DEBUG_EXEC_ERRORS=true
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 64 --model openai/gpt-4.1-nano --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --limit 1
 ```
 
 ### Post-train the latest best 20 and also the parquet programs models
@@ -41,7 +42,70 @@ the parquet programs models: Trelis/Qwen3-4B_ds-parquet-programs-c2806
 
 I'll train each model on rewritten-aa2-train dataset for two cosine epochs with warmup and see what happens to performance.
 
-Start a pod and run: Trelis/Qwen3-4B_ds-arc-agi-2-mixed-finetuning-20-c1926_ds-rewritten_rLoRA-64-c44
+Start a pod and run: Trelis/Qwen3-4B_ds-arc-agi-2-mixed-finetuning-20-c1926_ds-rewritten_rLoRA-64-c44:
+
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-2-mixed-finetuning-20-c1926_ds-rewritten_rLoRA-64-c44" --max-attempts 64 --subset evaluation --max-workers 64 > qwen3_4b_arc_agi_2_mixed_finetuning_20_ds_rewritten_rLoRA_64x.log 2>&1 &
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-2-mixed-finetuning-20-c1926_ds-rewritten_rLoRA-64-c44
+Total tasks: 120
+Total time: 1011.0s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 47,023,167
+Total cost: $8.435587
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.8% (0.8% excl. trans)
+  Pass@2 (Train Majority):  0.8% (0.8% excl. trans)
+  Oracle (Best Attempt):    0.8% (0.8% excl. trans)
+  All Train Correct:        0.0% (0.0% excl. trans)
+  Min 1 Train Correct:      5.0% (5.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 4679 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250910_172458_Trelis_Qwen3-4B_ds-arc-agi-2-mixed-finetuning-20-c1926_ds-rewritten_rLoRA-64-c44_arc-prize-2025_evaluation.parquet
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250910_172458_Trelis_Qwen3-4B_ds-arc-agi-2-mixed-finetuning-20-c1926_ds-rewritten_rLoRA-64-c44_arc-prize-2025_evaluation.parquet
+
+and then RERUN!!! first exporting DEBUG_EXEC_ERRORS=true:
+```bash
+export DEBUG_EXEC_ERRORS=true
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-2-mixed-finetuning-20-c1926_ds-rewritten_rLoRA-64-c44" --max-attempts 64 --subset evaluation --max-workers 64 > qwen3_4b_arc_agi_2_mixed_finetuning_20_ds_rewritten_rLoRA_64x.log 2>&1 &
+```
+
+and then on Trelis/Qwen3-4B_ds-parquet-programs-c2806_ds-rewritten_rLoRA-64-c44:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-parquet-programs-c2806_ds-rewritten_rLoRA-64-c44" --max-attempts 64 --subset evaluation --max-workers 64 > qwen3_4b_parquet_programs_ds_rewritten_rLoRA_64x.log 2>&1 &
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-parquet-programs-c2806_ds-rewritten_rLoRA-64-c44
+Total tasks: 120
+Total time: 1129.0s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 47,397,631
+Total cost: $8.660265
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 1.7% (1.7% excl. trans)
+  Pass@2 (Train Majority):  1.7% (1.7% excl. trans)
+  Oracle (Best Attempt):    1.7% (1.7% excl. trans)
+  All Train Correct:        1.7% (1.7% excl. trans)
+  Min 1 Train Correct:      5.8% (5.8% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.1%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+✅ Checkpointed 3992 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250910_162615_Trelis_Qwen3-4B_ds-parquet-programs-c2806_ds-rewritten_rLoRA-64-c44_arc-prize-2025_evaluation.parquet
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250910_162615_Trelis_Qwen3-4B_ds-parquet-programs-c2806_ds-rewritten_rLoRA-64-c44_arc-prize-2025_evaluation.parquet
+
+and then RERUN!!! first exporting DEBUG_EXEC_ERRORS=true:
+```bash
+export DEBUG_EXEC_ERRORS=true
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-parquet-programs-c2806_ds-rewritten_rLoRA-64-c44" --max-attempts 64 --subset evaluation --max-workers 16 > qwen3_4b_parquet_programs_ds_rewritten_rLoRA_64x_debugged_showing.log 2>&1 &
+```
 
 ## Sept 9th 2025
 ### Diagnose why the re-writes are so bad
