@@ -51,7 +51,34 @@ Inference:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 64 --model julien31/Soar-qwen-14b --base-url http://103.196.86.37:16943/v1 --unsafe-executor --max-tokens 2000 --temperature 0.7 --qwen-no-think
 ```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: julien31/Soar-qwen-14b
+Total tasks: 120
+Total time: 2267.8s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 46,656,077
+Total cost: $8.229157
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.8% (0.8% excl. trans)
+  Pass@2 (Train Majority):  0.8% (0.8% excl. trans)
+  Oracle (Best Attempt):    0.8% (0.8% excl. trans)
+  All Train Correct:        0.0% (0.0% excl. trans)
+  Min 1 Train Correct:      9.2% (4.2% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.8%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.1%
+  Execution Error Responses (of all attempts): 5.9%
+✅ Checkpointed 6968 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250911_191335_julien31_Soar-qwen-14b_arc-prize-2025_evaluation.parquet
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250911_191335_julien31_Soar-qwen-14b_arc-prize-2025_evaluation.parquet
+
+Now use that parquet file to run including outputs and pass it as a ds for refinement:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 64 --model julien31/Soar-qwen-14b --base-url http://103.196.86.37:16943/v1 --unsafe-executor --max-tokens 2000 --temperature 0.7 --qwen-no-think --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250911_191335_julien31_Soar-qwen-14b_arc-prize-2025_evaluation.parquet --include-outputs
+```
 
 ### Test out OSS
 Test out the performance of OSS with two attempts per task using openrouter and OSS 20B on evaluation. Start a pod and run 2x attempts with OSS 20B:
