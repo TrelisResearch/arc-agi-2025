@@ -62,7 +62,7 @@ def extract_oracle_programs(log_dir: str, verbose: bool = False) -> Dict[str, Li
                                    all(tr.get('correct', False) for tr in train_results))
                 
                 if test_correct and all_train_correct:
-                    program_code = attempt.get('program', '')
+                    program_code = attempt.get('code', '')
                     if program_code and program_code.strip():
                         oracle_programs[task_id].append(program_code)
                         if verbose:

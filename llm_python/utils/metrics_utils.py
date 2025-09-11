@@ -39,7 +39,7 @@ def calculate_task_metrics(
 
     # response‑level counters
     total_responses = max_length_responses = 0
-    timeout_responses = api_failure_responses = 0
+    timeout_responses = api_failure_responses = execution_timeout_responses = execution_error_responses = 0
     transductive_responses = non_transductive_responses = 0
 
     # --------------- iterate through tasks -----------------
@@ -64,6 +64,15 @@ def calculate_task_metrics(
                 timeout_responses += 1
             if not att.get("api_success", True) and not att.get("api_timeout", False):
                 api_failure_responses += 1
+            if att.get("train_exec_timeouts", 0) > 0 or att.get("test_exec_timeout", False):
+                execution_timeout_responses += 1
+                # Debug logging
+                if False:  # Set to True to debug
+                    print(f"DEBUG: Found timeout - train_exec_timeouts={att.get('train_exec_timeouts', 0)}, test_exec_timeout={att.get('test_exec_timeout', False)}")
+            # Count execution errors (excluding timeouts)
+            if ((att.get("train_exec_errors", 0) > 0 or att.get("test_exec_error", False)) and 
+                not (att.get("train_exec_timeouts", 0) > 0 or att.get("test_exec_timeout", False))):
+                execution_error_responses += 1
 
         # ---------- track transductive for stats ----------
         trans_count = sum(1 for att in attempts if att.get("is_transductive", False))
@@ -202,6 +211,8 @@ def calculate_task_metrics(
         "max_length_responses":   max_length_responses,
         "timeout_responses":      timeout_responses,
         "api_failure_responses":  api_failure_responses,
+        "execution_timeout_responses": execution_timeout_responses,
+        "execution_error_responses": execution_error_responses,
     }
 
 
@@ -283,11 +294,15 @@ def metrics_to_percentages(metrics: Dict) -> Dict:
             "max_length_responses": metrics["max_length_responses"] / total_responses,
             "timeout_responses":    metrics["timeout_responses"]    / total_responses,
             "api_failure_responses":metrics["api_failure_responses"]/ total_responses,
+            "execution_timeout_responses": metrics["execution_timeout_responses"] / total_responses,
+            "execution_error_responses": metrics["execution_error_responses"] / total_responses,
         })
     else:
         pct.update({
             "max_length_responses": 0.0,
             "timeout_responses":    0.0,
             "api_failure_responses":0.0,
+            "execution_timeout_responses": 0.0,
+            "execution_error_responses": 0.0,
         })
     return pct

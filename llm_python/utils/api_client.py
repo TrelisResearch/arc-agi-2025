@@ -52,7 +52,7 @@ class ARCAPIClient:
         elif self.base_url == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1":
             return os.getenv("DASHSCOPE_API_KEY")
         else:
-            return os.getenv("OPENAI_API_KEY")
+            return os.getenv("OPENAI_API_KEY") or "EMPTY"
 
     def _get_hf_token(self) -> Optional[str]:
         """Get Hugging Face token from environment"""

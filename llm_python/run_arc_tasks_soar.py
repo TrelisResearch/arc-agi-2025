@@ -17,7 +17,9 @@ from concurrent.futures import ThreadPoolExecutor
 import requests
 
 from llm_python.datasets.collector import SoarDatasetCollector
+from llm_python.datasets.io import read_soar_parquet
 from llm_python.utils.code import is_random
+from llm_python.utils.numpy import convert_numpy_types
 from llm_python.utils.shutdown import ensure_system_exit
 from llm_python.utils.task_loader import TaskData, get_task_loader
 from llm_python.utils.arc_tester import ArcTester
@@ -182,6 +184,7 @@ class ARCTaskRunnerSimple:
         self.include_outputs = include_outputs
         self.include_outputs_diff = include_outputs_diff
         self.early_stop_threshold = early_stop_threshold
+        self.logged_skipped_tasks = set()  # Track which tasks we've already logged as skipped
         # Use custom output directory if provided, otherwise use default
         output_dir = Path(parquet_output_dir) if parquet_output_dir else None
         self.dataset_collector = SoarDatasetCollector(sample_name, output_dir=output_dir)
@@ -214,7 +217,7 @@ class ARCTaskRunnerSimple:
         # Initialize remaining components
         self.task_loader = get_task_loader()
         self.executor = ArcTester(
-            timeout=1,
+            timeout=15,
             executor_type=executor_type,
             max_output_chars=10_000,
             max_output_cells=1_800,
@@ -233,6 +236,7 @@ class ARCTaskRunnerSimple:
             "exec_successes": 0,
             "exec_timeouts": 0,
             "exec_errors": 0,
+            "api_timeouts": 0,
             "exec_times": [],
             "recent_window": 100,
             "report_interval": 100,
@@ -402,7 +406,10 @@ class ARCTaskRunnerSimple:
         count = self._count_all_train_correct_programs(task_id, current_results, refinement_programs, early_stop_counts)
         
         if count >= self.early_stop_threshold:
-            print(f"🛑 Skipping task {task_id}: {count} all-train-correct programs >= threshold {self.early_stop_threshold}")
+            # Only log once per task to avoid spam
+            if task_id not in self.logged_skipped_tasks:
+                print(f"ℹ️  Task {task_id}: {count} programs found, skipping remaining attempts")
+                self.logged_skipped_tasks.add(task_id)
             return True
             
         return False
@@ -603,17 +610,21 @@ class ARCTaskRunnerSimple:
         with self._cost_lock:  # Reuse existing lock for simplicity
             self.health_metrics["total_attempts"] += 1
 
-            # Track execution success/failure
+            # Track API timeouts separately
+            if attempt_detail.get("api_timeout", False):
+                self.health_metrics["api_timeouts"] += 1
+            
+            # Track execution success/failure (check timeouts FIRST)
             if (
-                attempt_detail.get("test_exec_error")
-                or attempt_detail.get("train_exec_errors", 0) > 0
-            ):
-                self.health_metrics["exec_errors"] += 1
-            elif (
                 attempt_detail.get("test_exec_timeout")
                 or attempt_detail.get("train_exec_timeouts", 0) > 0
             ):
                 self.health_metrics["exec_timeouts"] += 1
+            elif (
+                attempt_detail.get("test_exec_error")
+                or attempt_detail.get("train_exec_errors", 0) > 0
+            ):
+                self.health_metrics["exec_errors"] += 1
             else:
                 self.health_metrics["exec_successes"] += 1
 
@@ -635,8 +646,9 @@ class ARCTaskRunnerSimple:
 
         # Overall stats
         success_rate = (metrics["exec_successes"] / total) * 100
-        timeout_rate = (metrics["exec_timeouts"] / total) * 100
+        exec_timeout_rate = (metrics["exec_timeouts"] / total) * 100
         error_rate = (metrics["exec_errors"] / total) * 100
+        api_timeout_rate = (metrics["api_timeouts"] / total) * 100
 
         # Recent window stats (last N attempts)
         window_size = min(metrics["recent_window"], total)
@@ -649,7 +661,7 @@ class ARCTaskRunnerSimple:
         if recent_total > 0:
             # Approximate recent rates (would need more complex tracking for exact)
             recent_success_rate = success_rate  # Simplified for now
-            recent_timeout_rate = timeout_rate
+            recent_timeout_rate = exec_timeout_rate
             recent_error_rate = error_rate
 
         # Execution time stats
@@ -666,8 +678,9 @@ class ARCTaskRunnerSimple:
         print(
             f"🏥 Health [{total} attempts]: "
             f"Success {success_rate:.0f}% | "
-            f"Timeout {timeout_rate:.0f}% | "
+            f"ExecTimeout {exec_timeout_rate:.0f}% | "
             f"ExecErr {error_rate:.0f}% | "
+            f"APITimeout {api_timeout_rate:.0f}% | "
             f"AvgTime {recent_avg_time:.2f}s"
         )
 
@@ -940,10 +953,16 @@ class ARCTaskRunnerSimple:
 
             if is_corr:
                 train_correct += 1
+            elif tout:  # Check timeout FIRST before error
+                train_exec_timeouts += 1
+                # Debug: Print timeout details
+                if os.getenv("DEBUG_EXEC_ERRORS", "").lower() == "true":
+                    print(f"⏱️ Train execution timeout for {task_id} (example {task_data['train'].index(ex)})")
             elif err and err != "no program":
                 train_exec_errors += 1
-            elif tout:
-                train_exec_timeouts += 1
+                # Debug: Print execution error details
+                if os.getenv("DEBUG_EXEC_ERRORS", "").lower() == "true":
+                    print(f"🔴 Train execution error for {task_id} (example {task_data['train'].index(ex)}): {err}")
 
         train_accuracy = (
             train_correct / len(task_data["train"]) if task_data["train"] else 0.0
@@ -974,10 +993,16 @@ class ARCTaskRunnerSimple:
                 test_pred, test_err, test_tout = (
                     self.executor.execute_program_with_timeout(program, test_input)
                 )
-                if test_err and test_err != "no program":
-                    any_test_exec_error = True
-                if test_tout:
+                if test_tout:  # Check timeout FIRST
                     any_test_exec_timeout = True
+                    # Debug: Print test timeout details  
+                    if os.getenv("DEBUG_EXEC_ERRORS", "").lower() == "true":
+                        print(f"⏱️ Test execution timeout for {task_id} (test {test_idx})")
+                elif test_err and test_err != "no program":  # Only count as error if NOT a timeout
+                    any_test_exec_error = True
+                    # Debug: Print test execution error details
+                    if os.getenv("DEBUG_EXEC_ERRORS", "").lower() == "true":
+                        print(f"🔴 Test execution error for {task_id} (test {test_idx}): {test_err}")
 
             # Mark as correct/incorrect only when we have ground truth (not in SUBMIT mode)
             is_correct = (
@@ -1386,7 +1411,7 @@ class ARCTaskRunnerSimple:
             try:
                 # Dynamic early stopping: Check if threshold reached during execution
                 if self._should_skip_task_attempts(task_id, task_results, program_lookup, early_stop_counts):
-                    print(f"🛑 Skipping {task_id} attempt {attempt_num + 1}: threshold reached during execution")
+                    # Skip logging here since _should_skip_task_attempts already handles it
                     
                     # Create a dummy result to maintain consistent structure
                     dummy_result = {
@@ -1708,19 +1733,38 @@ class ARCTaskRunnerSimple:
         submit_mode = os.getenv("SUBMIT", "").lower() == "true"
 
 
-        # 1. OUTPUT VALIDITY CATEGORIES
+        # 1. OUTPUT VALIDITY CATEGORIES (mutually exclusive)
         total_attempts = len(attempts)
-        valid_outputs = sum(1 for att in attempts if att.get("outputs_valid", False))
-        skipped_attempts = sum(1 for att in attempts if att.get("skipped", False))
-        no_programs = sum(1 for att in attempts if not att.get("program_extracted", False) and not att.get("skipped", False))
-        exec_failures = sum(1 for att in attempts if att.get("train_exec_errors", 0) > 0 or att.get("test_exec_error", False))
-        max_length = sum(1 for att in attempts if att.get("hit_max_tokens", False))
-        api_timeout = sum(1 for att in attempts if att.get("api_timeout", False))
-        # Invalid outputs: program extracted, no execution failure, but outputs invalid
-        invalid_outputs = sum(1 for att in attempts 
-                             if att.get("program_extracted", False) 
-                             and not att.get("outputs_valid", False)
-                             and not (att.get("train_exec_errors", 0) > 0 or att.get("test_exec_error", False)))
+        
+        # Count each attempt in exactly one category
+        valid_outputs = 0
+        skipped_attempts = 0
+        no_programs = 0
+        exec_timeouts = 0
+        exec_failures = 0
+        max_length = 0
+        api_timeout = 0
+        invalid_outputs = 0
+        
+        for att in attempts:
+            # Check categories in priority order (mutually exclusive)
+            if att.get("skipped", False):
+                skipped_attempts += 1
+            elif att.get("api_timeout", False):
+                api_timeout += 1
+            elif att.get("hit_max_tokens", False):
+                max_length += 1
+            elif not att.get("program_extracted", False):
+                no_programs += 1
+            elif att.get("train_exec_timeouts", 0) > 0 or att.get("test_exec_timeout", False):
+                exec_timeouts += 1
+            elif att.get("train_exec_errors", 0) > 0 or att.get("test_exec_error", False):
+                exec_failures += 1
+            elif att.get("outputs_valid", False):
+                valid_outputs += 1
+            else:
+                # Program extracted, no errors/timeouts, but outputs invalid
+                invalid_outputs += 1
         
         # 2. TEST CATEGORIES (if not submit mode)
         test_perfect_total = test_perfect_trans = 0
@@ -1798,7 +1842,9 @@ class ARCTaskRunnerSimple:
         if no_programs > 0:
             validity_parts.append(f"{no_programs} no programs")
         if exec_failures > 0:
-            validity_parts.append(f"{exec_failures} execution failures")
+            validity_parts.append(f"{exec_failures} execution errors")
+        if exec_timeouts > 0:
+            validity_parts.append(f"{exec_timeouts} execution timeouts")
         if max_length > 0:
             validity_parts.append(f"{max_length} max length")
         if api_timeout > 0:
@@ -1855,6 +1901,27 @@ class ARCTaskRunnerSimple:
                 summary += f" (best: {best_attempt.get('train_accuracy', 0.0):.1%} train, test-failed)"
 
         print(summary)
+        
+        # Debug: Print detailed execution errors if enabled
+        if os.getenv("DEBUG_EXEC_ERRORS", "").lower() == "true" and exec_failures > 0:
+            print(f"  📋 Execution error details for {task_id}:")
+            for i, attempt in enumerate(attempts):
+                if attempt.get("train_exec_errors", 0) > 0 or attempt.get("test_exec_error", False):
+                    print(f"    Attempt {i+1}:")
+                    
+                    # Show train errors
+                    if "train_results" in attempt and attempt["train_results"]:
+                        for j, result in enumerate(attempt["train_results"]):
+                            if result.get("error") and result["error"] != "no program":
+                                error_msg = result["error"][:200] if len(result["error"]) > 200 else result["error"]
+                                print(f"      Train example {j}: {error_msg}")
+                    
+                    # Show test errors  
+                    if "test_results" in attempt and attempt["test_results"]:
+                        for result in attempt["test_results"]:
+                            if result.get("error") and result["error"] != "no program":
+                                error_msg = result["error"][:200] if len(result["error"]) > 200 else result["error"]
+                                print(f"      Test {result.get('test_idx', '?')}: {error_msg}")
 
     def _trim_failed_attempt(self, attempt: AttemptDetail) -> AttemptDetail:
         """Trim data from attempts that failed to execute (exec errors, no code, API failures)
@@ -1953,6 +2020,8 @@ class ARCTaskRunnerSimple:
                 "max_length_responses": 0.0,
                 "timeout_responses": 0.0,
                 "api_failure_responses": 0.0,
+                "execution_timeout_responses": 0.0,
+                "execution_error_responses": 0.0,
             }
 
         # Print summary
@@ -2006,6 +2075,12 @@ class ARCTaskRunnerSimple:
             print(
                 f"  API Failure Responses:    {percentage_metrics['api_failure_responses']:.1%}"
             )
+            print(
+                f"  Execution Timeout Responses (of all attempts): {percentage_metrics['execution_timeout_responses']:.1%}"
+            )
+            print(
+                f"  Execution Error Responses (of all attempts): {percentage_metrics['execution_error_responses']:.1%}"
+            )
 
     def _print_submit_mode_summary(
         self,
@@ -2046,6 +2121,24 @@ class ARCTaskRunnerSimple:
                 for att in result.get("attempt_details", [])
                 if not att.get("api_success", True)
                 and not att.get("api_timeout", False)
+            )
+            for result in results
+        )
+        execution_timeout_responses = sum(
+            sum(
+                1
+                for att in result.get("attempt_details", [])
+                if att.get("train_exec_timeouts", 0) > 0
+                or att.get("test_exec_timeout", False)
+            )
+            for result in results
+        )
+        execution_error_responses = sum(
+            sum(
+                1
+                for att in result.get("attempt_details", [])
+                if ((att.get("train_exec_errors", 0) > 0 or att.get("test_exec_error", False)) and
+                    not (att.get("train_exec_timeouts", 0) > 0 or att.get("test_exec_timeout", False)))
             )
             for result in results
         )
@@ -2113,6 +2206,12 @@ class ARCTaskRunnerSimple:
             print(
                 f"  API failure responses: {api_failure_responses}/{total_responses} ({api_failure_responses / total_responses:.1%})"
             )
+            print(
+                f"  Execution timeout responses (of all attempts): {execution_timeout_responses}/{total_responses} ({execution_timeout_responses / total_responses:.1%})"
+            )
+            print(
+                f"  Execution error responses (of all attempts): {execution_error_responses}/{total_responses} ({execution_error_responses / total_responses:.1%})"
+            )
 
             print(f"\n📊 TRAIN METRICS:")
             print(
@@ -2125,8 +2224,29 @@ class ARCTaskRunnerSimple:
                 f"\n⚠️  Note: Test accuracy metrics unavailable in SUBMIT mode (no test outputs)"
             )
 
-
-
+def generate_task_data_from_soar(parquet_path: str) -> Dict[str, TaskData]:
+    data = read_soar_parquet(parquet_path)
+    task_loader = get_task_loader()
+    task_dict = {}
+    for _, item in data.iterrows():
+        task_id = item.get("task_id")
+        new_task_id = item.get("row_id")
+        predicted_train_outputs = item.get("predicted_train_output")
+        predicted_test_outputs = item.get("predicted_test_output")
+        original_task_data = task_loader.get_task(task_id)
+        task_dict[new_task_id] = TaskData(
+            train=[
+                {"input": inp["input"], "output": convert_numpy_types(out)}
+                for inp, out in zip(
+                    original_task_data["train"], predicted_train_outputs
+                )
+            ],
+            test=[
+                {"input": inp["input"], "output": convert_numpy_types(out)}
+                for inp, out in zip(original_task_data["test"], predicted_test_outputs)
+            ],
+        )
+    return task_dict
 
 
 def main():
@@ -2142,6 +2262,11 @@ def main():
         "--subset",
         default="training",
         help="Dataset subset to use. Supports: (1) Traditional subsets like 'training', 'evaluation' (2) HuggingFace datasets like 'username/dataset-name' (3) Parquet files/directories like '/path/to/data.parquet'",
+    )
+    parser.add_argument(
+        "--parquet-dataset",
+        default=None,
+        help="Use a parquet dataset for synthetic tasks rather than a predefined subset",
     )
     parser.add_argument("--model", default="gpt-4.1-mini", help="Model to use")
     parser.add_argument("--limit", type=int, help="Limit number of tasks to run")
@@ -2267,6 +2392,17 @@ def main():
         if dataset_type == "traditional":
             parser.error("--refinement-ds requires HuggingFace dataset or parquet file. Traditional subsets not supported for refinement programs.")
 
+    dataset = args.dataset
+    subset = args.subset
+
+    if args.parquet_dataset:
+        print(f"Generating task data from parquet dataset at '{args.parquet_dataset}'...")
+        task_data = generate_task_data_from_soar(args.parquet_dataset)
+        print(f"Generated {len(task_data)} tasks from parquet dataset")
+        get_task_loader().inject_subset("synthetic", subset_name="synthetic/all", tasks=task_data)
+        dataset = "synthetic"
+        subset = "all"
+
     # Create runner and run tasks
     runner = ARCTaskRunnerSimple(
         model=args.model,
@@ -2284,7 +2420,7 @@ def main():
         prompt_version=args.prompt_version,
         unsafe_executor=args.unsafe_executor,
         lora_adapter=args.lora_adapter,
-        sample_name=f"{args.model.replace('/', '_').replace(':', '_')}_{args.dataset}_{args.subset}",
+        sample_name=f"{args.model.replace('/', '_').replace(':', '_')}_{dataset}_{subset}",
         parquet_output_dir=args.parquet_output_dir,
         splitter=args.splitter,
         refinement_dataset=args.refinement_ds,
@@ -2294,7 +2430,7 @@ def main():
     )
 
     # Run the task subset
-    results = runner.run_subset(args.subset, args.dataset, args.limit)
+    results = runner.run_subset(subset, dataset, args.limit)
     runner.dataset_collector.flush()
     print(f"All sampled programs saved to {runner.dataset_collector.output_path()}")
 
@@ -2305,6 +2441,7 @@ if __name__ == "__main__":
         main()
     except Exception as e:
         print(f"An unexpected error occurred in main: {e}", file=sys.stderr)
+        traceback.print_exc()
         exit_code = 1
     finally:
         ensure_system_exit(exit_code)

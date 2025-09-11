@@ -12,6 +12,7 @@ import atexit
 import threading
 from typing import Any, Optional, Tuple
 from pathlib import Path
+from sandbox.subprocess_executor import ExecutionTimeout
 
 try:
     import docker
@@ -186,7 +187,7 @@ class DockerSandboxExecutor(BaseExecutor):
             )
             
             if response.status_code != 200:
-                raise Exception(f"HTTP error {response.status_code}: {response.text}")
+                return None, Exception(f"HTTP error {response.status_code}: {response.text}")
             
             result_data = response.json()
             
@@ -205,11 +206,11 @@ class DockerSandboxExecutor(BaseExecutor):
                 return None, Exception(f"{error_type}: {error_msg}")
                 
         except requests.exceptions.Timeout:
-            raise Exception(f"Request timed out after {timeout} seconds")
+            return None, ExecutionTimeout(timeout)
         except requests.exceptions.RequestException as e:
-            raise Exception(f"Request failed: {e}")
+            return None, Exception(f"Request failed: {e}")
         except Exception as e:
-            raise Exception(f"Execution failed: {e}")
+            return None, Exception(f"Execution failed: {e}")
     
     def cleanup(self) -> None:
         """Clean up the Docker container and resources."""
