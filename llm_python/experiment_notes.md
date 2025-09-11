@@ -24,16 +24,337 @@ Ronan:
 
 Todo:
 - Reach back out to openrouter on sponsorship again.
-- Mathieu; Hazem.
 
 ---
+## Sept 11th 2025
+
+### Test out julien31/Soar-qwen-14b model
+Inference:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 64 --model julien31/Soar-qwen-14b --base-url http://103.196.86.37:16943/v1 --unsafe-executor --max-tokens 2000 --temperature 0.7 --qwen-no-think
+```
+
+
+### Test out OSS
+Test out the performance of OSS with two attempts per task using openrouter and OSS 20B on evaluation. Start a pod and run 2x attempts with OSS 20B:
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 openai/gpt-oss-20b --max-attempts 8 --subset evaluation --max-workers 16
+```
+### Test out Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8
+Start a pod and run inference, just start the pod first:
+```bash
+uv run runpod/create_pod.py sglang Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8 --kv-cache-dtype fp8_e5m2
+```
+and then run inference:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 8 --model Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8 --base-url http://103.196.86.37:11855/v1 --unsafe-executor --max-tokens 16000 --temperature 0.7
+```
+
 ## Sept 10th 2025
 ### Diagnosing the execution
+
+| Model (full name)                                                     | Temp / Sampler              | KV cache       | Exec errors | Exec timeouts |
+| --------------------------------------------------------------------- | --------------------------- | -------------- | ----------: | ------------: |
+| `openai/gpt-4.1-nano` (OpenRouter)                                    | —                           | —              |    **3.5%** |          0.0% |
+| `Trelis/Qwen3-4B_ds-parquet-programs-c2806_ds-rewritten_rLoRA-64-c44` | 1.0                         | on (fp8\_e5m2) |   **42.7%** |          0.6% |
+| `Trelis/Qwen3-4B_ds-parquet-programs-c2806_ds-rewritten_rLoRA-64-c44` | 0.7 (top\_p=0.8, top\_k=20) | on             |   **30.8%** |          2.3% |
+| `Trelis/Qwen3-4B_ds-parquet-programs-c2806_ds-rewritten_rLoRA-64-c44` | 0.2 (min\_p=0.05)           | on             |   **34.2%** |          1.1% |
+| `Trelis/Qwen3-4B_ds-parquet-programs-c2806_ds-rewritten_rLoRA-64-c44` | 0.7 (top\_p=0.8, top\_k=20) | **off**        |   **29.1%** |          1.4% |
+| `Qwen/Qwen3-4B` (base)                                                | 0.7 (top\_p=0.8, top\_k=20) | on             |    **4.4%** |          0.0% |
+| `Trelis/Qwen3-4B_ds-arc-agi-1-perfect-50-c642`                        | 0.7                         | on             |   **17.2%** |          0.9% |
+| `julien31/Soar-qwen-7b`                                               | 0.7                         | on (fp8\_e5m2) |   **40.5%** |          0.0% |
+| **NEW** `julien31/Soar-qwen-14b`                                      | 0.7                         | on (fp8\_e5m2) |    **3.8%** |          0.2% |
+| **NEW** `Trelis/Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926`      | 0.7                         | on             |    **6.7%** |          0.5% |
+
+
 We'll run on the arc-prize-2025 evaluation dataset with just one attempt with gpt-4.1-nano via openrouter:
 ```bash
 export DEBUG_EXEC_ERRORS=true
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 64 --model openai/gpt-4.1-nano --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --limit 1
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 64 --model openai/gpt-4.1-nano --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --limit 4
 ```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: openai/gpt-4.1-nano
+Total tasks: 4
+Total time: 115.2s
+Successful API calls: 4/4 (100.0%)
+Total tokens used: 1,784,712
+Total cost: $0.372341
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    0.0% (0.0% excl. trans)
+  All Train Correct:        0.0% (0.0% excl. trans)
+  Min 1 Train Correct:      0.0% (0.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 3.5%
+✅ Checkpointed 239 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250911_171855_openai_gpt-4.1-nano_arc-prize-2025_evaluation.parquet
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250911_171855_openai_gpt-4.1-nano_arc-prize-2025_evaluation.parquet
+Graceful exit starting, process will be force terminated in 10 seconds.
+
+Note that error rates are reasonably low with gpt-4.1-nano.
+
+Start a pod for "Trelis/Qwen3-4B_ds-parquet-programs-c2806_ds-rewritten_rLoRA-64-c44":
+```bash
+uv run runpod/create_pod.py sglang Trelis/Qwen3-4B_ds-parquet-programs-c2806_ds-rewritten_rLoRA-64-c44 --kv-cache-dtype fp8_e5m2
+```
+
+and then run inference with temperature = 1.0:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 64 --model Trelis/Qwen3-4B_ds-parquet-programs-c2806_ds-rewritten_rLoRA-64-c44 --base-url http://103.196.86.37:15663/v1 --unsafe-executor --max-tokens 2000 --limit 10 --qwen-no-think
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-parquet-programs-c2806_ds-rewritten_rLoRA-64-c44
+Total tasks: 10
+Total time: 222.7s
+Successful API calls: 10/10 (100.0%)
+Total tokens used: 4,156,700
+Total cost: $0.739150
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    0.0% (0.0% excl. trans)
+  All Train Correct:        0.0% (0.0% excl. trans)
+  Min 1 Train Correct:      10.0% (10.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.6%
+  Execution Error Responses (of all attempts): 42.7%
+
+and retry with temperature = 0.7 (and setting top_p to 0.8 and top_k to 20 in the extra_body):
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 64 --model Trelis/Qwen3-4B_ds-parquet-programs-c2806_ds-rewritten_rLoRA-64-c44 --base-url http://103.196.86.37:15663/v1 --unsafe-executor --max-tokens 2000 --limit 10 --temperature 0.7 --qwen-no-think
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-parquet-programs-c2806_ds-rewritten_rLoRA-64-c44
+Total tasks: 10
+Total time: 407.9s
+Successful API calls: 10/10 (100.0%)
+Total tokens used: 4,149,909
+Total cost: $0.735075
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    0.0% (0.0% excl. trans)
+  All Train Correct:        0.0% (0.0% excl. trans)
+  Min 1 Train Correct:      10.0% (10.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.5%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 2.3%
+  Execution Error Responses (of all attempts): 30.8%
+
+and retry with temperature = 0.2 and min p of 0.05:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 64 --model Trelis/Qwen3-4B_ds-parquet-programs-c2806_ds-rewritten_rLoRA-64-c44 --base-url http://103.196.86.37:15663/v1 --unsafe-executor --max-tokens 2000 --limit 10 --temperature 0.2 --qwen-no-think
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-parquet-programs-c2806_ds-rewritten_rLoRA-64-c44
+Total tasks: 10
+Total time: 209.2s
+Successful API calls: 10/10 (100.0%)
+Total tokens used: 4,171,921
+Total cost: $0.748282
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    0.0% (0.0% excl. trans)
+  All Train Correct:        0.0% (0.0% excl. trans)
+  Min 1 Train Correct:      0.0% (0.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     3.4%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 1.1%
+  Execution Error Responses (of all attempts): 34.2%
+
+and turn off the kv cache and run again with recc settings:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 64 --model Trelis/Qwen3-4B_ds-parquet-programs-c2806_ds-rewritten_rLoRA-64-c44 --base-url http://103.196.86.37:12829/v1 --unsafe-executor --max-tokens 2000 --limit 10 --temperature 0.7 --qwen-no-think
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-parquet-programs-c2806_ds-rewritten_rLoRA-64-c44
+Total tasks: 10
+Total time: 314.8s
+Successful API calls: 10/10 (100.0%)
+Total tokens used: 4,156,035
+Total cost: $0.738751
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    0.0% (0.0% excl. trans)
+  All Train Correct:        0.0% (0.0% excl. trans)
+  Min 1 Train Correct:      10.0% (10.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.2%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 1.4%
+  Execution Error Responses (of all attempts): 29.1%
+
+and now try this earlier model Trelis/Qwen3-4B_ds-arc-agi-1-perfect-50-c642 running on http://103.196.86.37:12552:
+```bash
+export DEBUG_EXEC_ERRORS=true
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 64 --model Trelis/Qwen3-4B_ds-arc-agi-1-perfect-50-c642 --base-url http://103.196.86.20:53018/v1 --unsafe-executor --max-tokens 2000 --temperature 0.7 --qwen-no-think --limit 10
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-1-perfect-50-c642
+Total tasks: 10
+Total time: 229.9s
+Successful API calls: 10/10 (100.0%)
+Total tokens used: 4,094,207
+Total cost: $0.701654
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    0.0% (0.0% excl. trans)
+  All Train Correct:        0.0% (0.0% excl. trans)
+  Min 1 Train Correct:      0.0% (0.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.9%
+  Execution Error Responses (of all attempts): 17.2%
+
+and start up a new pod with the julien31/Soar-qwen-7b model:
+```bash
+uv run runpod/create_pod.py sglang julien31/Soar-qwen-7b --kv-cache-dtype fp8_e5m2
+```
+and then run inference on it:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 64 --model julien31/Soar-qwen-7b --base-url http://103.196.86.37:17331/v1 --unsafe-executor --max-tokens 2000 --temperature 0.7 --qwen-no-think --limit 10
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: julien31/Soar-qwen-7b
+Total tasks: 10
+Total time: 107.1s
+Successful API calls: 10/10 (100.0%)
+Total tokens used: 4,117,318
+Total cost: $0.716672
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    0.0% (0.0% excl. trans)
+  All Train Correct:        0.0% (0.0% excl. trans)
+  Min 1 Train Correct:      0.0% (0.0% excl. trans)
+  Min 1 Code Success:       10.0%
+  Max Length Responses:     14.8%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 40.5%
+
+and start up a new pod with the julien31/Soar-qwen-14b model:
+```bash
+uv run runpod/create_pod.py sglang julien31/Soar-qwen-14b --kv-cache-dtype fp8_e5m2
+```
+and then run inference on it:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 64 --model julien31/Soar-qwen-14b --base-url http://103.196.86.37:17854/v1 --unsafe-executor --max-tokens 2000 --temperature 0.7 --qwen-no-think --limit 10
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: julien31/Soar-qwen-14b
+Total tasks: 10
+Total time: 198.3s
+Successful API calls: 10/10 (100.0%)
+Total tokens used: 4,120,110
+Total cost: $0.718348
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 10.0% (10.0% excl. trans)
+  Pass@2 (Train Majority):  10.0% (10.0% excl. trans)
+  Oracle (Best Attempt):    10.0% (10.0% excl. trans)
+  All Train Correct:        10.0% (10.0% excl. trans)
+  Min 1 Train Correct:      30.0% (20.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.6%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.2%
+  Execution Error Responses (of all attempts): 3.8%
+
+and then test our 8b model - Trelis/Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926:
+```bash
+export DEBUG_EXEC_ERRORS=true
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 64 --model Trelis/Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926 --base-url http://103.196.86.37:18934/v1 --unsafe-executor --max-tokens 2000 --temperature 0.7 --qwen-no-think --limit 10
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926
+Total tasks: 10
+Total time: 138.5s
+Successful API calls: 10/10 (100.0%)
+Total tokens used: 4,041,747
+Total cost: $0.670178
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    0.0% (0.0% excl. trans)
+  All Train Correct:        0.0% (0.0% excl. trans)
+  Min 1 Train Correct:      0.0% (0.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.5%
+  Execution Error Responses (of all attempts): 6.7%
+
+Test a Qwen/Qwen3-4B model with the recommended temperature settings, starting a pod AND running inference
+Start a pod:
+```bash
+uv run runpod/create_pod.py sglang Qwen/Qwen3-4B --kv-cache-dtype fp8_e5m2
+```
+and then run inference:
+
+```bash
+export DEBUG_EXEC_ERRORS=true
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 64 --model Qwen/Qwen3-4B --base-url http://103.196.86.20:58279/v1 --unsafe-executor --max-tokens 2000 --temperature 0.7 --qwen-no-think --limit 10
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Qwen/Qwen3-4B
+Total tasks: 10
+Total time: 306.7s
+Successful API calls: 10/10 (100.0%)
+Total tokens used: 4,543,565
+Total cost: $0.971269
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    0.0% (0.0% excl. trans)
+  All Train Correct:        0.0% (0.0% excl. trans)
+  Min 1 Train Correct:      10.0% (0.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     31.9%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 4.4%
+
 
 ### Post-train the latest best 20 and also the parquet programs models
 
