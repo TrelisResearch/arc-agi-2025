@@ -1,5 +1,23 @@
 # Experiment Notes
 
+## 🚨 LOGGING BUG FOUND IN run_arc_tasks_soar.py
+
+**Issue**: Train accuracy reporting is inconsistent, showing "61 train-incorrect" but "best: 50.0% train"
+
+**Root Cause**: Inconsistent filtering between two reporting mechanisms:
+- **Train categorization** (lines 1800-1817): Only counts attempts with `outputs_valid == True`
+- **Best attempt selection** (lines 1820-1823): Includes ALL attempts, even those with invalid outputs
+
+**What happens**: An attempt can achieve 50% train accuracy but have malformed test predictions:
+- Excluded from "train-partial" count (due to `outputs_valid == False`)
+- Included in "best: 50.0% train" (because best attempt ignores output validity)
+
+**Impact**: Misleading logs make it hard to understand actual model performance. Need to fix both mechanisms to use same filtering criteria.
+
+**Location**: `/Users/ronanmcgovern/TR/arc-agi-2025/llm_python/run_arc_tasks_soar.py` lines 1800-1823
+
+---
+
 Big picture status:
 - SOAR near-term data improvements:
   1. Re-compile SuperKing with the new examples of incorrect -> correct via refinement.
