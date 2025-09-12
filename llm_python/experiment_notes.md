@@ -44,6 +44,40 @@ Todo:
 - Reach back out to openrouter on sponsorship again.
 
 ---
+## Sept 12th 2025
+### Unified refinement with gpt-5-mini on arc-prize-2025 evaluation via openrouter
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 1 --model gpt-5-mini --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds Trelis/arc-agi-2-faking-hard-5
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: gpt-5-mini
+Total tasks: 120
+Total time: 413.1s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 1,384,809
+Total cost: $1.586207
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 1.7% (0.8% excl. trans)
+  Pass@2 (Train Majority):  1.7% (0.8% excl. trans)
+  Oracle (Best Attempt):    1.7% (0.8% excl. trans)
+  All Train Correct:        1.7% (0.8% excl. trans)
+  Min 1 Train Correct:      8.3% (3.3% excl. trans)
+  Min 1 Code Success:       94.2%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 3.3%
+✅ Checkpointed 110 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250912_152802_gpt-5-mini_arc-prize-2025_evaluation.parquet
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250912_152802_gpt-5-mini_arc-prize-2025_evaluation.parquet
+
+and then repeat with 8 attempts:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 8 --model gpt-5-mini --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds Trelis/arc-agi-2-faking-hard-5
+```
+
 ## Sept 11th 2025
 
 ### Test out julien31/Soar-qwen-14b model

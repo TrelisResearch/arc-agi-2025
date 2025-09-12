@@ -167,8 +167,6 @@ class ARCTaskRunnerSimple:
         parquet_output_dir: Optional[str] = None,
         splitter: bool = False,
         refinement_dataset: Optional[str] = None,
-        include_outputs: bool = False,
-        include_outputs_diff: bool = False,
         early_stop_threshold: int = 7,
     ):
         # Core configuration
@@ -181,8 +179,6 @@ class ARCTaskRunnerSimple:
         self.splitter = splitter
         self.refinement_dataset = refinement_dataset
         self.refine_mode = bool(refinement_dataset)  # Enable refinement mode if dataset provided
-        self.include_outputs = include_outputs
-        self.include_outputs_diff = include_outputs_diff
         self.early_stop_threshold = early_stop_threshold
         self.logged_skipped_tasks = set()  # Track which tasks we've already logged as skipped
         # Use custom output directory if provided, otherwise use default
@@ -751,24 +747,14 @@ class ARCTaskRunnerSimple:
             # Don't let database logging errors crash the main execution
             traceback.print_exc()
 
-    def create_prompt(self, task_data: Dict, draft_program: Optional[str] = None, predicted_outputs: Optional[Dict] = None) -> tuple[str, str]:
+    def create_prompt(self, task_data: Dict) -> tuple[str, str]:
         """Create a prompt for the model to solve an ARC task"""
-        # Determine output mode based on flags
-        output_mode = None
-        if self.include_outputs:
-            output_mode = "full"
-        elif self.include_outputs_diff:
-            output_mode = "diff"
-        
-        # Use unified prompt function for both regular and refinement modes
+        # Use simplified prompt function - no refinement-specific logic needed
         return create_arc_prompt(
             task_data=task_data,
             prompt_loader=self.prompt_loader,
             prompt_version=self.prompt_version,
-            splitter=self.splitter,
-            draft_program=draft_program,
-            predicted_outputs=predicted_outputs,
-            output_mode=output_mode
+            splitter=self.splitter
         )
 
     def get_sampling_parameters(self) -> Dict:
@@ -1355,20 +1341,32 @@ class ARCTaskRunnerSimple:
             if programs:  # Task has refinement programs available
                 # Select best program for refinement (most correct training examples, then random)
                 selected_program = self._select_best_program_for_refinement(programs)
-                draft_code = selected_program.get('code', '')
                 
-                # Extract predicted outputs if needed for output modes
-                # Only include train outputs since test outputs won't be available during actual runs
-                predicted_outputs = None
-                if self.include_outputs or self.include_outputs_diff:
-                    predicted_outputs = {
-                        'train': selected_program.get('predicted_train_output', [])
-                    }
+                # Create swapped task data: use predicted outputs as inputs, keep original outputs for scoring
+                predicted_train_outputs = selected_program.get('predicted_train_output', [])
+                predicted_test_outputs = selected_program.get('predicted_test_output', [])
                 
-                task_results[task_id]["task_data"] = task_data
+                # Create swapped task data with predicted outputs as inputs
+                swapped_task_data = {
+                    "train": [
+                        {
+                            "input": predicted_train_outputs[i] if i < len(predicted_train_outputs) and predicted_train_outputs[i] is not None else original_example["input"],
+                            "output": original_example["output"]  # Keep original for scoring
+                        }
+                        for i, original_example in enumerate(task_data["train"])
+                    ],
+                    "test": [
+                        {
+                            "input": predicted_test_outputs[i] if i < len(predicted_test_outputs) and predicted_test_outputs[i] is not None else original_example["input"],
+                            "output": original_example.get("output", [])  # Keep original for scoring (may be empty in SUBMIT mode)
+                        }
+                        for i, original_example in enumerate(task_data["test"])
+                    ]
+                }
+                
+                task_results[task_id]["task_data"] = swapped_task_data
                 task_results[task_id]["selected_program"] = selected_program  # Store for logging
-                task_results[task_id]["predicted_outputs"] = predicted_outputs  # Store for splitter mode
-                system_content, user_content = self.create_prompt(task_data, draft_program=draft_code, predicted_outputs=predicted_outputs)
+                system_content, user_content = self.create_prompt(swapped_task_data)
                 task_results[task_id]["full_prompt"] = {
                     "system": system_content,
                     "user": user_content,
@@ -1393,10 +1391,15 @@ class ARCTaskRunnerSimple:
             print(first_prompt['system'])
             print("\nUSER:")
             print(first_prompt['user'])
+            # Show selected program info if in refinement mode
             if self.refine_mode and "selected_program" in task_results[first_task_id]:
-                draft_program = task_results[first_task_id]["selected_program"].get('code', '')
-                # print(f"\nDRAFT PROGRAM TO REFINE:")
-                # print(draft_program)
+                selected_program = task_results[first_task_id]["selected_program"]
+                predicted_train_count = len(selected_program.get('predicted_train_output', []))
+                predicted_test_count = len(selected_program.get('predicted_test_output', []))
+                print(f"\nSELECTED PROGRAM INFO:")
+                print(f"  - Train predictions: {predicted_train_count}")
+                print(f"  - Test predictions: {predicted_test_count}")
+                print(f"  - Row ID: {selected_program.get('row_id', 'N/A')}")
             print("=" * 80)
             first_prompt_shown = True
 
@@ -1451,14 +1454,9 @@ class ARCTaskRunnerSimple:
                 # Create fresh prompt for each attempt when splitter is enabled, 
                 # otherwise use pre-created prompt for consistency
                 if self.splitter:
-                    if self.refine_mode:
-                        # In refinement mode, we need to get the selected program again
-                        selected_program = task_results[task_id]["selected_program"]
-                        draft_code = selected_program.get('code', '')
-                        predicted_outputs = task_results[task_id].get("predicted_outputs")  # Use stored outputs
-                        system_content, user_content = self.create_prompt(task_data, draft_program=draft_code, predicted_outputs=predicted_outputs)
-                    else:
-                        system_content, user_content = self.create_prompt(task_data)
+                    # Use the task_data stored in task_results (which is already swapped for refinement mode)
+                    stored_task_data = task_results[task_id]["task_data"]
+                    system_content, user_content = self.create_prompt(stored_task_data)
                     full_prompt = {"system": system_content, "user": user_content}
                 else:
                     full_prompt = task_results[task_id]["full_prompt"]
@@ -2357,16 +2355,6 @@ def main():
         help="Refinement dataset: HuggingFace dataset or parquet file containing draft programs to refine. Uses programs with at least one (but not all) correct training examples. Enables refinement prompts with draft code.",
     )
     parser.add_argument(
-        "--include-outputs",
-        action="store_true",
-        help="Include the draft program's predicted outputs in refinement prompts to show the LLM its errors",
-    )
-    parser.add_argument(
-        "--include-outputs-diff",
-        action="store_true",
-        help="Include a succinct diff of predicted vs expected outputs in refinement prompts (more compact than full outputs)",
-    )
-    parser.add_argument(
         "--early-stop-threshold",
         type=int,
         default=7,
@@ -2380,10 +2368,6 @@ def main():
         parser.error("--max_workers must be at least 1")
     if args.temperature is not None and not (0.0 <= args.temperature <= 2.0):
         parser.error("--temperature must be between 0.0 and 2.0")
-    if args.include_outputs and args.include_outputs_diff:
-        parser.error("--include-outputs and --include-outputs-diff are mutually exclusive")
-    if (args.include_outputs or args.include_outputs_diff) and not args.refinement_ds:
-        parser.error("--include-outputs and --include-outputs-diff require --refinement-ds")
     if args.refinement_ds:
         # Refinement mode requires HF/parquet dataset for source programs (not traditional subsets)
         from llm_python.utils.task_loader import TaskLoader, get_default_data_root
@@ -2424,8 +2408,6 @@ def main():
         parquet_output_dir=args.parquet_output_dir,
         splitter=args.splitter,
         refinement_dataset=args.refinement_ds,
-        include_outputs=args.include_outputs,
-        include_outputs_diff=args.include_outputs_diff,
         early_stop_threshold=args.early_stop_threshold,
     )
 
