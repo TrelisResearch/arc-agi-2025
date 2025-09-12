@@ -1,25 +1,25 @@
-import math
-import os
 import time
-from functools import partial
-from typing import Dict, List, Tuple
-
-import equinox as eqx
 import jax
 import jax.numpy as jnp
-import numpy as np
-import optax
+import equinox as eqx
 from matplotlib import pyplot as plt
+import optax
+from typing import List, Tuple, Dict, Any
+from functools import partial
+import math
+import os
 
 # Assuming 'llm_python' is a local module you have.
 # Replace this with your actual ARC data loading utility.
 from llm_python.utils.task_loader import get_task_loader
+import numpy as np
 
 # --- 1. Constants and Configuration ---
 
 # Define palette and special values for the grid
 MASK_VALUE: int = 10
-VOCAB_SIZE: int = 11  # 0-9 for colors, 10 for mask
+PADDING_TOKEN: int = 11  # Explicit padding token
+VOCAB_SIZE: int = 12  # 0-9 for colors, 10 for mask, 11 for padding
 MAX_GRID_DIM: int = 30  # Pad all grids to 30x30
 
 # --- 2. U-Net Architecture (Time-Aware with Dropout) ---
@@ -69,17 +69,19 @@ class ColorPermutationGenerator(eqx.Module):
     mlp: eqx.nn.MLP
     output_size: int = eqx.field(static=True)
     num_tasks: int = eqx.field(static=True)
+    vocab_size: int = eqx.field(static=True)
 
     def __init__(self, num_tasks: int, vocab_size: int, *, key: jax.Array):
         cnn_key1, cnn_key2, mlp_key = jax.random.split(key, 3)
         self.output_size = vocab_size * vocab_size
         self.num_tasks = num_tasks
+        self.vocab_size = vocab_size
 
         # A simple CNN to process the grid and extract features
         self.cnn = eqx.nn.Sequential(
             [
                 eqx.nn.Conv2d(
-                    vocab_size, 64, kernel_size=3, stride=1, padding=1, key=cnn_key1
+                    self.vocab_size, 64, kernel_size=3, stride=1, padding=1, key=cnn_key1
                 ),
                 eqx.nn.Lambda(jax.nn.relu),
                 eqx.nn.Conv2d(
@@ -92,7 +94,7 @@ class ColorPermutationGenerator(eqx.Module):
         )
 
         # Dummy forward pass to calculate flattened size
-        dummy_input = jnp.zeros((vocab_size, MAX_GRID_DIM, MAX_GRID_DIM))
+        dummy_input = jnp.zeros((self.vocab_size, MAX_GRID_DIM, MAX_GRID_DIM))
         cnn_output_size = self.cnn(dummy_input).shape[0]
 
         # MLP input size now includes the one-hot task vector
@@ -108,7 +110,7 @@ class ColorPermutationGenerator(eqx.Module):
         self, source_grid: jnp.ndarray, task_id: jnp.ndarray
     ) -> Tuple[jnp.ndarray, jnp.ndarray]:
         # Permutation is based on the source grid and task_id
-        source_onehot = jax.nn.one_hot(source_grid, VOCAB_SIZE)
+        source_onehot = jax.nn.one_hot(source_grid, self.vocab_size)
         source_ch_first = jnp.transpose(source_onehot, (2, 0, 1))
 
         grid_features = self.cnn(source_ch_first)
@@ -120,7 +122,7 @@ class ColorPermutationGenerator(eqx.Module):
         combined_features = jnp.concatenate([grid_features, task_onehot])
 
         flat_matrix = self.mlp(combined_features)
-        matrix = flat_matrix.reshape((VOCAB_SIZE, VOCAB_SIZE))
+        matrix = flat_matrix.reshape((self.vocab_size, self.vocab_size))
 
         soft_permutation_matrix = jax.nn.softmax(matrix, axis=0)
         inverse_soft_permutation_matrix = soft_permutation_matrix.T
@@ -198,8 +200,9 @@ class ArcUNetSolver(eqx.Module):
         self.num_tasks = num_tasks
         self.time_embed_dim = time_embed_dim
 
+        # Generator now only operates on the 11 content tokens
         self.permutation_generator = ColorPermutationGenerator(
-            num_tasks, VOCAB_SIZE, key=keys[0]
+            num_tasks, VOCAB_SIZE - 1, key=keys[0]
         )
         self.time_embedding_projector = SinusoidalPosEmb(dim=time_embed_dim)
         self.time_mlp = TimeEmbeddingBlock(time_embed_dim, time_embed_dim, key=keys[1])
@@ -242,15 +245,28 @@ class ArcUNetSolver(eqx.Module):
         else:
             keys = [None] * 9
 
-        # 1. Generate the content- and task-aware permutation matrices
+        # 1. Generate the content- and task-aware permutation matrices for content tokens
         P, P_inv = self.permutation_generator(source_grid, task_id)
 
         # 2. One-hot encode and then permute the input grids
         source_onehot = jax.nn.one_hot(source_grid, VOCAB_SIZE)
-        permuted_source = source_onehot @ P
-
         masked_target_onehot = jax.nn.one_hot(masked_target_grid, VOCAB_SIZE)
-        permuted_masked_target = masked_target_onehot @ P
+
+        # --- ISOLATE PADDING TOKEN ---
+        # Separate the content (colors 0-10) from the padding (11)
+        source_content = source_onehot[..., :-1]
+        source_padding = source_onehot[..., -1:]
+        masked_target_content = masked_target_onehot[..., :-1]
+        masked_target_padding = masked_target_onehot[..., -1:]
+
+        # Apply permutation ONLY to content channels
+        permuted_source_content = source_content @ P
+        permuted_masked_target_content = masked_target_content @ P
+        
+        # Recombine with the untouched padding channel
+        permuted_source = jnp.concatenate([permuted_source_content, source_padding], axis=-1)
+        permuted_masked_target = jnp.concatenate([permuted_masked_target_content, masked_target_padding], axis=-1)
+        # --- END ISOLATION ---
 
         # Transpose to (C, H, W) for convolutions
         permuted_source_ch = jnp.transpose(permuted_source, (2, 0, 1))
@@ -292,7 +308,16 @@ class ArcUNetSolver(eqx.Module):
         permuted_logits = jnp.transpose(permuted_logits_ch, (1, 2, 0))
 
         # 3. Apply the inverse permutation to the output logits
-        final_logits = permuted_logits @ P_inv
+        # --- ISOLATE PADDING LOGIT ---
+        permuted_content_logits = permuted_logits[..., :-1]
+        padding_logit = permuted_logits[..., -1:]
+
+        # Apply inverse permutation ONLY to content logits
+        content_logits = permuted_content_logits @ P_inv
+        
+        # Recombine with untouched padding logit
+        final_logits = jnp.concatenate([content_logits, padding_logit], axis=-1)
+        # --- END ISOLATION ---
 
         return final_logits
 
@@ -302,7 +327,7 @@ class ArcUNetSolver(eqx.Module):
 
 def pad_grid(grid: np.ndarray, max_dim: int = MAX_GRID_DIM) -> np.ndarray:
     h, w = grid.shape
-    padded_grid = np.full((max_dim, max_dim), 0, dtype=np.int32)
+    padded_grid = np.full((max_dim, max_dim), PADDING_TOKEN, dtype=np.int32)
     padded_grid[:h, :w] = grid
     return padded_grid
 
@@ -349,17 +374,25 @@ def train_step(
 
         # vmap the corruption logic over the batch
         def create_corruption_and_mask(target, ratio, mkey, nkey, ckey):
-            can_be_masked = (target >= 0) & (target < 10)
+            # All pixels (including padding) are now candidates for masking
             noise_for_mask = jax.random.uniform(mkey, shape=target.shape)
-            mask_to_hide = (noise_for_mask < ratio) & can_be_masked
-            can_be_noised = ~mask_to_hide & can_be_masked
+            mask_to_hide = noise_for_mask < ratio
+            
+            # Only non-masked COLOR pixels can be noised
+            can_be_noised = ~mask_to_hide & (target < MASK_VALUE)
             noise_for_noise = jax.random.uniform(nkey, shape=target.shape)
             mask_to_noise = (noise_for_noise < noise_ratio) & can_be_noised
+
+            # Generate random colors for the noise mask
             random_colors = jax.random.randint(
                 ckey, shape=target.shape, minval=0, maxval=9
             )
+            
+            # Apply noise and then masking
             noised_target = jnp.where(mask_to_noise, random_colors, target)
             corrupted_target = jnp.where(mask_to_hide, MASK_VALUE, noised_target)
+            
+            # The loss mask is for both masked and noised pixels
             loss_mask = mask_to_hide | mask_to_noise
             return corrupted_target, loss_mask
 
@@ -386,23 +419,62 @@ def train_step(
     return new_model, new_optim_state, loss_val
 
 
+def create_unmasking_schedule(total_pixels: int, num_steps: int) -> jnp.ndarray:
+    """
+    Creates a non-linear schedule for unmasking pixels that decays exponentially.
+    Ensures that every step unmasks at least one pixel.
+    """
+    # Create a base exponential decay series
+    steps = jnp.arange(num_steps)
+    # The steepness of the decay. Higher values mean faster decay.
+    decay_factor = 3.0 
+    weights = jnp.exp(-decay_factor * steps / num_steps)
+    
+    # Normalize the weights so they sum to the total number of pixels
+    normalized_weights = weights * total_pixels / jnp.sum(weights)
+    
+    # Convert to integers, ensuring at least 1 pixel per step
+    schedule = jnp.ceil(normalized_weights).astype(jnp.int32)
+    
+    # Because of ceiling, the sum might be > total_pixels.
+    # We'll trim the excess from the early, larger steps.
+    excess = jnp.sum(schedule) - total_pixels
+    
+    def trim_body(i, current_schedule):
+        # Trim one pixel at a time from the start of the schedule
+        # as long as the step has more than 1 pixel.
+        idx = i
+        can_trim = current_schedule[idx] > 1
+        return jnp.where(can_trim, current_schedule.at[idx].add(-1), current_schedule)
+
+    schedule = jax.lax.fori_loop(0, excess, trim_body, schedule)
+    
+    # Final sanity check
+    final_sum = jnp.sum(schedule)
+    # If still not perfect, adjust the first step. This handles edge cases.
+    schedule = schedule.at[0].add(total_pixels - final_sum)
+    
+    return schedule
+
 def generate_with_diffusion(
     model: ArcUNetSolver,
     source_grid: jnp.ndarray,
     task_id: jnp.ndarray,
     key: jax.Array,
     num_steps: int,
+    unmask_schedule: jnp.ndarray
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """
     Generates a solution grid using an iterative diffusion process.
     Always returns the final grid and the full trace of intermediate steps.
     """
 
+    
     def diffusion_step(i, state):
         current_target, trace_so_far, key = state
         trace_so_far = trace_so_far.at[i].set(current_target)
 
-        key, model_key, sample_key, noise_key = jax.random.split(key, 4)
+        key, model_key, sample_key = jax.random.split(key, 3)
 
         power = 3
         timestep = jnp.array(((num_steps - 1 - i) / num_steps) ** power)
@@ -413,12 +485,26 @@ def generate_with_diffusion(
 
         sampled_grid = jax.random.categorical(sample_key, pred_logits)
         
-        update_ratio = (1.0 / (num_steps - i + 1)) * 2
-        noise = jax.random.uniform(noise_key, shape=source_grid.shape)
+        # Get the number of pixels to unmask for this specific step
+        unmask_per_step = unmask_schedule[i]
+
+        # Use confidence to decide which pixels to unmask
+        probs = jax.nn.softmax(pred_logits, axis=-1)
+        entropy = -jnp.sum(probs * jnp.log(probs + 1e-9), axis=-1)
+        confidence = -entropy
+        masked_confidence = jnp.where(
+            current_target == MASK_VALUE, confidence, -jnp.inf
+        )
+
+        _, unmask_indices_flat = jax.lax.top_k(
+            masked_confidence.flatten(), k=unmask_per_step
+        )
+        unmask_mask_flat = (
+            jnp.zeros_like(masked_confidence.flatten(), dtype=jnp.bool_).at[unmask_indices_flat].set(True)
+        )
+        unmask_mask = unmask_mask_flat.reshape(source_grid.shape)
         
-        should_update_mask = (noise < update_ratio) & (current_target == MASK_VALUE)
-        
-        new_target = jnp.where(should_update_mask, sampled_grid, current_target)
+        new_target = jnp.where(unmask_mask, sampled_grid, current_target)
 
         return new_target, trace_so_far, key
 
@@ -441,20 +527,21 @@ def visualize_diffusion_process(
     # --- Plotting Logic ---
     cmap = plt.cm.colors.ListedColormap(
         [
-            "#000000",
-            "#0074D9",
-            "#FF4136",
-            "#2ECC40",
-            "#FFDC00",
-            "#AAAAAA",
-            "#F012BE",
-            "#FF851B",
-            "#7FDBFF",
-            "#870C25",
-            "#D3D3D3",
+            "#000000",  # 0
+            "#0074D9",  # 1
+            "#FF4136",  # 2
+            "#2ECC40",  # 3
+            "#FFDC00",  # 4
+            "#AAAAAA",  # 5
+            "#F012BE",  # 6
+            "#FF851B",  # 7
+            "#7FDBFF",  # 8
+            "#870C25",  # 9
+            "#D3D3D3",  # 10 (MASK_VALUE)
+            "#444444",  # 11 (PADDING_TOKEN)
         ]
     )
-    norm = plt.cm.colors.Normalize(vmin=0, vmax=10)
+    norm = plt.cm.colors.Normalize(vmin=0, vmax=11)
 
     # Convert JAX arrays to NumPy arrays for plotting
     source_grid_np = np.asarray(source_grid)
@@ -465,7 +552,7 @@ def visualize_diffusion_process(
     # Select which steps to show
     plots_to_show = [("Source", source_grid_np)]
     num_trace_steps = len(final_trace_np)
-    max_intermediate_plots = 6
+    max_intermediate_plots = 61
 
     if num_trace_steps <= max_intermediate_plots:
         indices_to_show = range(num_trace_steps)
@@ -507,6 +594,7 @@ def evaluate_generation_accuracy(
     dataset: Dict[str, jnp.ndarray],
     key: jax.Array,
     num_diffusion_steps: int,
+    unmask_schedule: jnp.ndarray,
     batch_size: int = 32,
 ) -> Tuple[float, float]:
     model = eqx.tree_inference(model, value=True)
@@ -516,8 +604,8 @@ def evaluate_generation_accuracy(
     total_count = dataset["source"].shape[0]
     if total_count == 0:
         return 0.0, 0.0
-    
-    generate_partial = partial(generate_with_diffusion, model, num_steps=num_diffusion_steps)
+
+    generate_partial = partial(generate_with_diffusion, model, num_steps=num_diffusion_steps, unmask_schedule=unmask_schedule)
     vmapped_generate = eqx.filter_jit(jax.vmap(generate_partial))
 
     for i in range(0, total_count, batch_size):
@@ -531,12 +619,13 @@ def evaluate_generation_accuracy(
         generated_grids, _ = vmapped_generate(
             batch["source"], batch["task_id"], batch_keys
         )
+        
         matches = generated_grids == batch["target"]
-
+        
         perfect_count += int(jnp.all(matches, axis=(1, 2)).sum().item())
         total_correct_pixels += matches.sum()
         total_pixels += batch["target"].size
-
+        
     percent_perfect = 100.0 * perfect_count / total_count
     pixel_accuracy = 100.0 * total_correct_pixels / total_pixels
     return percent_perfect, pixel_accuracy
@@ -548,8 +637,8 @@ if __name__ == "__main__":
     NUM_TASKS = 400
     BATCH_SIZE = 128
     LEARNING_RATE = 3e-4
-    NUM_EPOCHS = 2000
-    NUM_DIFFUSION_STEPS = 1
+    NUM_EPOCHS = 1000
+    NUM_DIFFUSION_STEPS = 100
     DROPOUT_RATE = 0.1
     BASE_CHANNELS = 256
     NOISE_RATIO = 0.2
@@ -626,62 +715,71 @@ if __name__ == "__main__":
 
     jitted_train_step = eqx.filter_jit(partial(train_step, noise_ratio=NOISE_RATIO))
 
-    for epoch in range(NUM_EPOCHS):
-        loader_key, perm_key = jax.random.split(loader_key)
-        indices = jax.random.permutation(perm_key, num_train_samples)
+    total_pixels_in_grid = MAX_GRID_DIM * MAX_GRID_DIM
+    unmask_schedule = create_unmasking_schedule(total_pixels_in_grid, NUM_DIFFUSION_STEPS)
 
-        shuffled_train_dataset_cpu = jax.tree_util.tree_map(
-            lambda x: x[indices], train_dataset_cpu
-        )
+    try:
+        for epoch in range(NUM_EPOCHS):
+            loader_key, perm_key = jax.random.split(loader_key)
+            indices = jax.random.permutation(perm_key, num_train_samples)
 
-        aggregate_train_loss = 0
-        for i in range(0, num_train_samples, BATCH_SIZE):
-            start_index = i
-            end_index = i + BATCH_SIZE
-            batch_cpu = jax.tree_util.tree_map(
-                lambda x: x[start_index:end_index], shuffled_train_dataset_cpu
-            )
-            if batch_cpu["source"].shape[0] != BATCH_SIZE:
-                continue
-
-            batch_gpu = jax.tree_util.tree_map(jnp.array, batch_cpu)
-
-            train_key, step_key = jax.random.split(train_key)
-            model, optim_state, train_loss = jitted_train_step(
-                model, optim_state, batch_gpu, step_key
-            )
-            aggregate_train_loss += train_loss.sum().item()
-
-        if time.time() - time_since_eval > 60 or epoch == NUM_EPOCHS - 1:
-            time_since_eval = time.time()
-            eval_key, train_loss_key, train_acc_key, eval_acc_key = jax.random.split(
-                eval_key, 4
+            shuffled_train_dataset_cpu = jax.tree_util.tree_map(
+                lambda x: x[indices], train_dataset_cpu
             )
 
-            model_for_eval = eqx.tree_inference(model, value=True)
+            aggregate_train_loss = 0
+            for i in range(0, num_train_samples, BATCH_SIZE):
+                start_index = i
+                end_index = i + BATCH_SIZE
+                batch_cpu = jax.tree_util.tree_map(
+                    lambda x: x[start_index:end_index], shuffled_train_dataset_cpu
+                )
+                if batch_cpu["source"].shape[0] != BATCH_SIZE:
+                    continue
 
-            train_dataset_gpu = jax.tree_util.tree_map(jnp.array, train_dataset_cpu)
-            eval_dataset_gpu = jax.tree_util.tree_map(jnp.array, eval_dataset_cpu)
+                batch_gpu = jax.tree_util.tree_map(jnp.array, batch_cpu)
 
-            train_acc, train_pixel_acc = evaluate_generation_accuracy(
-                model_for_eval,
-                train_dataset_gpu,
-                train_acc_key,
-                NUM_DIFFUSION_STEPS,
-                batch_size=BATCH_SIZE,
-            )
-            eval_acc, eval_pixel_acc = evaluate_generation_accuracy(
-                model_for_eval,
-                eval_dataset_gpu,
-                eval_acc_key,
-                NUM_DIFFUSION_STEPS,
-                batch_size=BATCH_SIZE,
-            )
+                train_key, step_key = jax.random.split(train_key)
+                model, optim_state, train_loss = jitted_train_step(
+                    model, optim_state, batch_gpu, step_key
+                )
+                aggregate_train_loss += train_loss.sum().item()
 
-            print(
-                f"Epoch {epoch + 1}/{NUM_EPOCHS} | TL: {aggregate_train_loss:.4f} | TA: {train_acc:.2f}% ({train_pixel_acc:.2f}%) | EA: {eval_acc:.2f}% ({eval_pixel_acc:.2f}%)"
-            )
+            if time.time() - time_since_eval > 60 or epoch == NUM_EPOCHS - 1:
+                time_since_eval = time.time()
+                eval_key, train_acc_key, eval_acc_key = jax.random.split(
+                    eval_key, 3
+                )
 
+                model_for_eval = eqx.tree_inference(model, value=True)
+
+                train_dataset_gpu = jax.tree_util.tree_map(jnp.array, train_dataset_cpu)
+                eval_dataset_gpu = jax.tree_util.tree_map(jnp.array, eval_dataset_cpu)
+                
+                # Removed loss evaluation to speed up the loop
+                train_acc, train_pixel_acc = evaluate_generation_accuracy(
+                    model_for_eval,
+                    train_dataset_gpu,
+                    train_acc_key,
+                    NUM_DIFFUSION_STEPS,
+                    unmask_schedule,
+                    batch_size=BATCH_SIZE,
+                )
+                eval_acc, eval_pixel_acc = evaluate_generation_accuracy(
+                    model_for_eval,
+                    eval_dataset_gpu,
+                    eval_acc_key,
+                    NUM_DIFFUSION_STEPS,
+                    unmask_schedule,
+                    batch_size=BATCH_SIZE,
+                )
+
+                print(
+                    f"Epoch {epoch + 1}/{NUM_EPOCHS} | TL: {aggregate_train_loss:.4f} | TA: {train_acc:.2f}% ({train_pixel_acc:.2f}%) | EA: {eval_acc:.2f}% ({eval_pixel_acc:.2f}%)"
+                )
+    except KeyboardInterrupt:
+        print("Training interrupted. Proceeding to final evaluation...")
+        
     # Final evaluation with the final model
     print("\n--- Final evaluation and visualization ---")
     model_for_eval = eqx.tree_inference(model, value=True)
@@ -692,6 +790,7 @@ if __name__ == "__main__":
         eval_dataset_gpu,
         jax.random.PRNGKey(42),
         NUM_DIFFUSION_STEPS,
+        unmask_schedule,
         batch_size=BATCH_SIZE,
     )
     print(
@@ -699,8 +798,8 @@ if __name__ == "__main__":
     )
 
     # Visualize a few random examples from the eval set
-    vis_key = jax.random.PRNGKey(43)
-    num_visualizations = 10
+    vis_key = jax.random.PRNGKey(42)
+    num_visualizations = 20
     vis_indices = jax.random.choice(
         vis_key,
         eval_dataset_gpu["source"].shape[0],
@@ -725,7 +824,7 @@ if __name__ == "__main__":
 
         # Generate the data needed for plotting
         final_target, final_trace = jitted_generate_single(
-            model_for_eval, source, task_id_num, step_key, num_steps=NUM_DIFFUSION_STEPS
+            model_for_eval, source, task_id_num, step_key, num_steps=NUM_DIFFUSION_STEPS, unmask_schedule=unmask_schedule
         )
 
         save_path = f"diffusion_traces/trace_example_{task_id_str}.png"
@@ -737,3 +836,4 @@ if __name__ == "__main__":
             final_trace,
             save_path=save_path,
         )
+

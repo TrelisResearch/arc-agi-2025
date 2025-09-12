@@ -278,7 +278,7 @@ if __name__ == "__main__":
     NUM_TASKS = 400
     TASK_EMBED_DIM = 128
     BATCH_SIZE = 64
-    LEARNING_RATE = 1e-4
+    LEARNING_RATE = 1e-3
     NUM_EPOCHS = 1000
 
     # Transformer Hyperparameters
@@ -333,6 +333,13 @@ if __name__ == "__main__":
     )
     optimizer = optax.adam(LEARNING_RATE)
     optim_state = optimizer.init(eqx.filter(model, eqx.is_array))
+
+    def count_params(model: eqx.Module):
+        return sum(
+            x.size for x in jax.tree_util.tree_leaves(eqx.filter(model, eqx.is_array))
+        )
+
+    print(f"Model has {count_params(model):,} trainable parameters.")
 
     # --- Training Loop ---
     print(f"Training for {NUM_EPOCHS} epochs...")
