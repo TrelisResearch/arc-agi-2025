@@ -45,7 +45,17 @@ Todo:
 
 ---
 ## Sept 12th 2025
-### Refinement data generation
+### Refinement generation on mixed 100! Trelis/arc-agi-2-all-100
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 Trelis/Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926 --max-attempts 1024 --subset training --max-workers 64 --refinement-ds Trelis/arc-agi-2-all-100 > qwen3_8b_all_100_training_2048x.log 2>&1 &
+```
+
+and do the same with Julien31/Soar-qwen-14b but with 32 workers:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 Julien31/Soar-qwen-14b --max-attempts 1024 --subset training --max-workers 32 --refinement-ds Trelis/arc-agi-2-all-100 > julien31_soar_qwen_14b_all_100_training_2048x.log 2>&1 &
+```
+
+### Refinement data generation on mixed 20
 Start a pod and run 2048 attempts on Trelis/Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926 pointing to the mixed dataset, and we're running on arc-prize-2025 training:
 ```bash
 PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 Trelis/Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926 --max-attempts 1024 --subset training --max-workers 64 --refinement-ds Trelis/arc-agi-2-mixed-finetuning-20 > qwen3_8b_mixed_finetuning_20_training_2048x.log 2>&1 &

@@ -137,7 +137,8 @@ def test_openai_endpoint(base_url, model_name, timeout=10):
             timeout=timeout
         )
         return True
-    except Exception:
+    except Exception as e:
+        print(f"    🐛 OpenAI-style endpoint test failed: {str(e)}")
         return False
 
 def test_custom_endpoint(url, timeout=10):
