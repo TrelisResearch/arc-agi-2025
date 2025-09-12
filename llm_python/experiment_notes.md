@@ -91,6 +91,28 @@ All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/da
 ```bash
 uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 Trelis/Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926 --max-attempts 64 --subset evaluation --max-workers 64 --refinement-ds Trelis/arc-agi-2-faking-hard-5
 ```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926
+Total tasks: 120
+Total time: 1040.7s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 45,843,763
+Total cost: $7.727944
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.8% (0.8% excl. trans)
+  Pass@2 (Train Majority):  0.8% (0.8% excl. trans)
+  Oracle (Best Attempt):    0.8% (0.8% excl. trans)
+  All Train Correct:        1.7% (1.7% excl. trans)
+  Min 1 Train Correct:      5.0% (5.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.2%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.2%
+  Execution Error Responses (of all attempts): 8.7%
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250912_170045_Trelis_Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926_arc-prize-2025_evaluation.parquet
 
 ### Unified refinement with gpt-5-mini on arc-prize-2025 evaluation via openrouter
 ```bash
