@@ -45,9 +45,56 @@ Todo:
 
 ---
 ## Sept 12th 2025
+### Refinement data generation
+Start a pod and run 2048 attempts on Trelis/Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926 pointing to the mixed dataset, and we're running on arc-prize-2025 training:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 Trelis/Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926 --max-attempts 1024 --subset training --max-workers 64 --refinement-ds Trelis/arc-agi-2-mixed-finetuning-20 > qwen3_8b_mixed_finetuning_20_training_2048x.log 2>&1 &
+```
+
+and do the same with Julien31/Soar-qwen-14b but with 32 workers:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 Julien31/Soar-qwen-14b --max-attempts 1024 --subset training --max-workers 32 --refinement-ds Trelis/arc-agi-2-mixed-finetuning-20 > julien31_soar_qwen_14b_training_2048x.log 2>&1 &
+```
+
+
+### Post-training on faking-hard-5
+> We would expect it to do at least this well because it's now pre-trained on the data we're testing on!
+
+Run a test on arc-prize-2025 evaluation - will be interesting if we get more than 6 correct - Trelis/Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926_ds-arc-agi-2-faking-hard-5-c38 - start a pod and run 64 attempts on it with arc-prize-2025 evaluation:
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 Trelis/Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926_ds-arc-agi-2-faking-hard-5-c38 --max-attempts 64 --subset evaluation --max-workers 32
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926_ds-arc-agi-2-faking-hard-5-c38
+Total tasks: 120
+Total time: 1606.8s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 46,149,912
+Total cost: $8.040750
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 1.7% (1.7% excl. trans)
+  Pass@2 (Train Majority):  1.7% (1.7% excl. trans)
+  Oracle (Best Attempt):    1.7% (1.7% excl. trans)
+  All Train Correct:        3.3% (3.3% excl. trans)
+  Min 1 Train Correct:      10.0% (10.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.7%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.4%
+  Execution Error Responses (of all attempts): 13.0%
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250912_160208_Trelis_Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926_ds-arc-agi-2-faking-hard-5-c38_arc-prize-2025_evaluation.parquet
+
+### Testing out our Trelis/Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926 model as a refinement model
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 Trelis/Qwen3-8B_ds-arc-agi-2-mixed-finetuning-20-c1926 --max-attempts 64 --subset evaluation --max-workers 64 --refinement-ds Trelis/arc-agi-2-faking-hard-5
+```
+
 ### Unified refinement with gpt-5-mini on arc-prize-2025 evaluation via openrouter
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 32 --max_attempts 1 --model gpt-5-mini --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds Trelis/arc-agi-2-faking-hard-5
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 64 --max_attempts 1 --model gpt-5-mini --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds Trelis/arc-agi-2-faking-hard-5
 ```
 Dataset: arc-prize-2025
 Subset: evaluation
