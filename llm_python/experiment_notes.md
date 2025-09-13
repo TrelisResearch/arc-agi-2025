@@ -115,7 +115,7 @@ Cross-checks:
 #### Rerunning refinement to get some easier data, here don't skip til there are lots of correct programs
 
 ```bash 
-PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 Julien31/Soar-qwen-14b --max-attempts 64 --subset training --max-workers 64 --refinement-ds /workspace/arc-agi-2025/llm_python/datasets/inference/20250913_080534_Julien31_Soar-qwen-14b_arc-prize-2025_training.parquet --early_stop_threshold 100 > julien31_soar_qwen_14b_all_100_training_64x_refine_early_stop_100.log 2>&1 &
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 Julien31/Soar-qwen-14b --max-attempts 64 --subset training --max-workers 64 --refinement-ds /workspace/arc-agi-2025/llm_python/datasets/inference/20250913_080534_Julien31_Soar-qwen-14b_arc-prize-2025_training.parquet --early-stop-threshold 100 > julien31_soar_qwen_14b_all_100_training_64x_refine_early_stop_100.log 2>&1 &
 ```
 
 

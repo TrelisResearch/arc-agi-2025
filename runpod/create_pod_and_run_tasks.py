@@ -261,7 +261,7 @@ This script will:
                        type=str,
                        help='Refinement dataset: HuggingFace dataset or parquet file containing draft programs to refine')
     parser.add_argument('--early-stop-threshold',
-                       type=float,
+                       type=int,
                        help='Early stop threshold to pass through to task runner')
     
     args = parser.parse_args()
