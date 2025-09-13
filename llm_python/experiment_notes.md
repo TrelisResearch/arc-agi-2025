@@ -47,36 +47,87 @@ Todo:
 ## Sept 13th 2025
 Checking which models actually solve more training examples.
 
+### 64x run-through of sampling and then refinement
 Julien31/Soar-qwen-14b
 ```bash
-PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 Julien31/Soar-qwen-14b --max-attempts 64 --subset training --max-workers 16 > julien31_soar_qwen_14b_all_100_training_64x.log 2>&1 &
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 Julien31/Soar-qwen-14b --max-attempts 64 --subset training --max-workers 64 > julien31_soar_qwen_14b_all_100_training_64x.log 2>&1 &
 ```
 
 julien31/Soar-qwen-32b
 ```bash
-PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 Julien31/Soar-qwen-32b --max-attempts 64 --subset training --max-workers 16 > julien31_soar_qwen_32b_all_100_training_64x.log 2>&1 &
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 Julien31/Soar-qwen-32b --max-attempts 64 --subset training --max-workers 64 > julien31_soar_qwen_32b_all_100_training_64x.log 2>&1 &
 ```
 
+### Quick checks on the strongest models
 And then the strongest models on arc agi 2 are:
 - openai/gpt-5
 - anthropic/claude-sonnet-4
 - google/gemini-2.5-pro
 - x-ai/grok-4
 
-Try all of the pass@2 on arc-prize-2025 training:
+Try all of the pass@2 on arc-prize-2025 training-hard:
 
 gpt-5:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 64 --max_attempts 2 --model openai/gpt-5 --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000
 ```
-anthropic/claude-sonnet-4
-```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 64 --max_attempts 2 --model anthropic/claude-sonnet-4 --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000
-```
+Dataset: arc-prize-2025
+Subset: training-hard
+Model: openai/gpt-5
+Total tasks: 137
+Total time: 676.1s
+Successful API calls: 137/137 (100.0%)
+Total tokens used: 1,659,514
+Total cost: $0.915737
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 16.8% (7.3% excl. trans)
+  Pass@2 (Train Majority):  16.8% (7.3% excl. trans)
+  Oracle (Best Attempt):    16.8% (7.3% excl. trans)
+  All Train Correct:        16.8% (5.8% excl. trans)
+  Min 1 Train Correct:      26.3% (9.5% excl. trans)
+  Min 1 Code Success:       41.6%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 0.4%
+✅ Checkpointed 70 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250913_084805_openai_gpt-5_arc-prize-2025_training-hard.parquet
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250913_084805_openai_gpt-5_arc-prize-2025_training-hard.parquet
+
 gemini:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 64 --max_attempts 2 --model google/gemini-2.5-pro --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000
 ```
+Dataset: arc-prize-2025
+Subset: training-hard
+Model: google/gemini-2.5-pro
+Total tasks: 137
+Total time: 324.5s
+Successful API calls: 137/137 (100.0%)
+Total tokens used: 2,249,612
+Total cost: $0.730388
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 5.1% (2.2% excl. trans)
+  Pass@2 (Train Majority):  5.1% (2.2% excl. trans)
+  Oracle (Best Attempt):    5.1% (2.2% excl. trans)
+  All Train Correct:        4.4% (1.5% excl. trans)
+  Min 1 Train Correct:      8.0% (2.2% excl. trans)
+  Min 1 Code Success:       99.3%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 2.9%
+✅ Checkpointed 247 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250913_084818_google_gemini-2.5-pro_arc-prize-2025_training-hard.parquet
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250913_084818_google_gemini-2.5-pro_arc-prize-2025_training-hard.parquet
+
+anthropic/claude-sonnet-4
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 64 --max_attempts 2 --model anthropic/claude-sonnet-4 --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000 
+```
+
 <!-- grok:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 64 --max_attempts 2 --model x-ai/grok-4 --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000
