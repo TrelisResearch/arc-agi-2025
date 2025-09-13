@@ -117,7 +117,29 @@ Cross-checks:
 ```bash 
 PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 Julien31/Soar-qwen-14b --max-attempts 64 --subset training --max-workers 64 --refinement-ds /workspace/arc-agi-2025/llm_python/datasets/inference/20250913_080534_Julien31_Soar-qwen-14b_arc-prize-2025_training.parquet --early-stop-threshold 100 > julien31_soar_qwen_14b_all_100_training_64x_refine_early_stop_100.log 2>&1 &
 ```
+Dataset: arc-prize-2025
+Subset: training
+Model: Julien31/Soar-qwen-14b
+Total tasks: 1000
+Total time: 12636.2s
+Successful API calls: 1000/1000 (100.0%)
+Total tokens used: 208,478,040
+Total cost: $40.597790
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 43.8% (42.7% excl. trans)
+  Pass@2 (Train Majority):  43.4% (42.5% excl. trans)
+  Oracle (Best Attempt):    45.9% (44.1% excl. trans)
+  All Train Correct:        45.0% (40.7% excl. trans)
+  Min 1 Train Correct:      64.1% (57.1% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.8%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.1%
+  Execution Error Responses (of all attempts): 5.5%
+✅ Checkpointed 59261 programs to /workspace/arc-agi-2025/llm_python/datasets/inference/20250913_152126_Julien31_Soar-qwen-14b_arc-prize-2025_training.parquet
+All sampled programs saved to /workspace/arc-agi-2025/llm_python/datasets/inference/20250913_152126_Julien31_Soar-qwen-14b_arc-prize-2025_training.parquet
 
 #### julien31/Soar-qwen-32b
 ```bash
