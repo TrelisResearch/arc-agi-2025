@@ -28,46 +28,54 @@ def calculate_program_metrics(program: Dict[str, Any]) -> Tuple[float, int]:
 
 
 def select_best_program_for_refinement(
-    programs: List[Dict[str, Any]], 
-    top_k: int = 10, 
+    programs: List[Dict[str, Any]],
+    top_k: int = 100,
     debug: bool = False
 ) -> Dict[str, Any]:
     """
     Select the best program for refinement using smart ranking:
-    1. Rank by train correctness percentage (descending)  
+    1. Rank by train correctness percentage (descending)
     2. Tie-break by code length (ascending - prefer shorter code)
-    3. Take top K programs, then random selection from those
-    
+    3. Take top K programs, then weighted random selection based on correctness percentage
+
     Args:
         programs: List of program dictionaries
-        top_k: Number of top programs to consider for random selection
+        top_k: Number of top programs to consider for weighted random selection
         debug: Whether to print debug information
-        
+
     Returns:
         Selected program dictionary, or empty dict if no programs available
     """
     if not programs:
         return {}
-    
+
     def sort_key(program):
         correctness_pct, code_length = calculate_program_metrics(program)
         # Return tuple for sorting: correctness descending, length ascending
         return (-correctness_pct, code_length)
-    
+
     # Sort by: correctness descending, then length ascending
     sorted_programs = sorted(programs, key=sort_key)
-    
+
     # Take top K (or fewer if less available)
     top_programs = sorted_programs[:top_k]
-    
-    # Random selection from top candidates
-    selected = random.choice(top_programs)
-    
+
+    # Calculate weights based on correctness percentage
+    weights = []
+    for program in top_programs:
+        correctness_pct, _ = calculate_program_metrics(program)
+        # Weight formula: 1 + 100 * train_correct_percentage
+        weight = 1 + 100 * correctness_pct
+        weights.append(weight)
+
+    # Weighted random selection
+    selected = random.choices(top_programs, weights=weights, k=1)[0]
+
     # Debug logging
     if debug:
         correctness_pct, code_length = calculate_program_metrics(selected)
-        print(f"🎯 Selected program: {correctness_pct:.1%} correct, {code_length} chars from {len(top_programs)} candidates")
-    
+        print(f"🎯 Selected program: {correctness_pct:.1%} correct, {code_length} chars from {len(top_programs)} candidates (weighted sampling)")
+
     return selected
 
 
