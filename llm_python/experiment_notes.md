@@ -28,12 +28,15 @@ Ronan:
 Todo:
 - Reach back out to openrouter on sponsorship again.
 
+To do on training dataset generation:
+- Push up some incorrects and partials, because right now we're skipping easier tasks on that. OR just don't skip and run without skipping.
+
 ---
 ## Sept 13th 2025
 Checking which models actually solve more training examples.
 
 ### 64x run-through of sampling and then refinement
-Julien31/Soar-qwen-14b
+#### Julien31/Soar-qwen-14b
 ```bash
 PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 Julien31/Soar-qwen-14b --max-attempts 64 --subset training --max-workers 64 > julien31_soar_qwen_14b_all_100_training_64x.log 2>&1 &
 ```
@@ -64,12 +67,91 @@ and now we'll run refinement pointing to that parquet:
 ```bash 
 PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 Julien31/Soar-qwen-14b --max-attempts 64 --subset training --max-workers 64 --refinement-ds /workspace/arc-agi-2025/llm_python/datasets/inference/20250913_080534_Julien31_Soar-qwen-14b_arc-prize-2025_training.parquet > julien31_soar_qwen_14b_all_100_training_64x_refine.log 2>&1 &
 ```
-...
+Dataset: arc-prize-2025
+Subset: training
+Model: Julien31/Soar-qwen-14b
+Total tasks: 648
+Total time: 8778.3s
+Successful API calls: 648/648 (100.0%)
+Total tokens used: 154,075,979
+Total cost: $29.941979
 
-julien31/Soar-qwen-32b
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 14.0% (12.0% excl. trans)
+  Pass@2 (Train Majority):  13.1% (11.7% excl. trans)
+  Oracle (Best Attempt):    17.0% (13.4% excl. trans)
+  All Train Correct:        15.7% (9.1% excl. trans)
+  Min 1 Train Correct:      46.8% (34.3% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     1.2%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.1%
+  Execution Error Responses (of all attempts): 7.5%
+✅ Checkpointed 37214 programs to /workspace/arc-agi-2025/llm_python/datasets/inference/20250913_114102_Julien31_Soar-qwen-14b_arc-prize-2025_training.parquet
+All sampled programs saved to /workspace/arc-agi-2025/llm_python/datasets/inference/20250913_114102_Julien31_Soar-qwen-14b_arc-prize-2025_training.parquet
+
+Combined score when submitting:
+  Files processed:
+  - Combined 94,623 programs from 2 parquet files
+  - Model: Julien31/Soar-qwen-14b
+  - Coverage: 1000/1000 tasks (100% coverage)
+
+  Performance of both parquet files:
+  - Task Pass@1: 42.1% (421/1000 tasks solved on first attempt)
+  - Task Pass@2: 44.9% (449/1000 tasks solved on either attempt)
+
+Cross-checks:
+  First Parquet (20250913_080534):
+  - Tasks Pass@1: 415/1000 (41.5%)
+  - Tasks Pass@2: 446/1000 (44.6%)
+  - No empty predictions
+
+  Second Parquet (20250913_114102):
+  - Tasks Pass@1: 74/1000 (7.4%)
+  - Tasks Pass@2: 91/1000 (9.1%)
+  - 738 empty predictions (covers only 648 tasks)
+
+#### Rerunning refinement to get some easier data, here don't skip til there are lots of correct programs
+
+```bash 
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 Julien31/Soar-qwen-14b --max-attempts 64 --subset training --max-workers 64 --refinement-ds /workspace/arc-agi-2025/llm_python/datasets/inference/20250913_080534_Julien31_Soar-qwen-14b_arc-prize-2025_training.parquet --early_stop_threshold 100 > julien31_soar_qwen_14b_all_100_training_64x_refine_early_stop_100.log 2>&1 &
+```
+
+
+#### julien31/Soar-qwen-32b
 ```bash
 PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 Julien31/Soar-qwen-32b --max-attempts 64 --subset training --max-workers 64 > julien31_soar_qwen_32b_all_100_training_64x.log 2>&1 &
 ```
+Dataset: arc-prize-2025
+Subset: training
+Model: Julien31/Soar-qwen-32b
+Total tasks: 1000
+Total time: 17772.0s
+Successful API calls: 1000/1000 (100.0%)
+Total tokens used: 203,511,363
+Total cost: $39.762022
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 44.8% (42.8% excl. trans)
+  Pass@2 (Train Majority):  44.4% (43.0% excl. trans)
+  Oracle (Best Attempt):    47.5% (44.0% excl. trans)
+  All Train Correct:        46.8% (41.1% excl. trans)
+  Min 1 Train Correct:      68.0% (58.7% excl. trans)
+  Min 1 Code Success:       99.9%
+  Max Length Responses:     1.2%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.1%
+  Execution Error Responses (of all attempts): 5.3%
+✅ Checkpointed 57136 programs to /workspace/arc-agi-2025/llm_python/datasets/inference/20250913_080413_Julien31_Soar-qwen-32b_arc-prize-2025_training.parquet
+All sampled programs saved to /workspace/arc-agi-2025/llm_python/datasets/inference/20250913_080413_Julien31_Soar-qwen-32b_arc-prize-2025_training.parquet
+
+and now run refinement pointing to that parquet:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 Julien31/Soar-qwen-32b --max-attempts 64 --subset training --max-workers 64 --refinement-ds /workspace/arc-agi-2025/llm_python/datasets/inference/20250913_080413_Julien31_Soar-qwen-32b_arc-prize-2025_training.parquet > julien31_soar_qwen_32b_all_100_training_64x_refine.log 2>&1 &
+```
+[RESULTS PENDING]
 
 ### Quick checks on the strongest models
 And then the strongest models on arc agi 2 are:

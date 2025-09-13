@@ -65,7 +65,7 @@ def prompt_keep_pod(timeout=10):
     except Exception:
         return False
 
-def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="all_evaluation", max_attempts=64, no_transductive_penalty=False, max_workers=32, splitter=False, max_tokens=2000, refinement_ds=None, include_outputs=False, include_outputs_diff=False):
+def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="all_evaluation", max_attempts=64, no_transductive_penalty=False, max_workers=32, splitter=False, max_tokens=2000, refinement_ds=None, early_stop_threshold=None):
     """Run ARC tasks - task runner handles its own graceful shutdown"""
     print(f"\n🎯 Running ARC tasks for {dataset} with subset {subset}...")
     print(f"📊 Task Runner Configuration:")
@@ -85,10 +85,8 @@ def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="
         print(f"   Training data splitter: ENABLED (randomly selecting & shuffling training examples)")
     if refinement_ds:
         print(f"   Refinement mode: ENABLED (using programs from {refinement_ds})")
-        if include_outputs:
-            print(f"   Include outputs: ENABLED (showing predicted outputs to LLM)")
-        if include_outputs_diff:
-            print(f"   Include outputs diff: ENABLED (showing output diffs to LLM)")
+    if early_stop_threshold:
+        print(f"   Early stop threshold: {early_stop_threshold}")
     
     cmd = [
         "uv", "run", "python", "-m", "llm_python.run_arc_tasks_soar",
@@ -114,12 +112,9 @@ def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="
     
     if refinement_ds:
         cmd.extend(["--refinement-ds", refinement_ds])
-    
-    if include_outputs:
-        cmd.append("--include-outputs")
-    
-    if include_outputs_diff:
-        cmd.append("--include-outputs-diff")
+
+    if early_stop_threshold:
+        cmd.extend(["--early-stop-threshold", str(early_stop_threshold)])
     
     print(f"📝 Full command: {' '.join(cmd)}")
     
@@ -265,12 +260,9 @@ This script will:
     parser.add_argument('--refinement-ds',
                        type=str,
                        help='Refinement dataset: HuggingFace dataset or parquet file containing draft programs to refine')
-    parser.add_argument('--include-outputs',
-                       action='store_true',
-                       help='Include the draft program\'s predicted outputs in refinement prompts to show the LLM its errors')
-    parser.add_argument('--include-outputs-diff',
-                       action='store_true',
-                       help='Include a succinct diff of predicted vs expected outputs in refinement prompts (more compact than full outputs)')
+    parser.add_argument('--early-stop-threshold',
+                       type=float,
+                       help='Early stop threshold to pass through to task runner')
     
     args = parser.parse_args()
     
@@ -420,7 +412,7 @@ This script will:
         print(f"\n🎯 Step 2: Running ARC tasks for {args.dataset}")
         
         task_success = run_arc_tasks_with_graceful_handling(
-            args.dataset, args.model_path, base_url, args.subset, args.max_attempts, args.no_transductive_penalty, args.max_workers, args.splitter, args.max_tokens, args.refinement_ds, args.include_outputs, args.include_outputs_diff
+            args.dataset, args.model_path, base_url, args.subset, args.max_attempts, args.no_transductive_penalty, args.max_workers, args.splitter, args.max_tokens, args.refinement_ds, args.early_stop_threshold
         )
         
         if task_success:
