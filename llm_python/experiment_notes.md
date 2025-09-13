@@ -1,20 +1,5 @@
 # Experiment Notes
 
-## 🚨 LOGGING BUG FOUND IN run_arc_tasks_soar.py
-
-**Issue**: Train accuracy reporting is inconsistent, showing "61 train-incorrect" but "best: 50.0% train"
-
-**Root Cause**: Inconsistent filtering between two reporting mechanisms:
-- **Train categorization** (lines 1800-1817): Only counts attempts with `outputs_valid == True`
-- **Best attempt selection** (lines 1820-1823): Includes ALL attempts, even those with invalid outputs
-
-**What happens**: An attempt can achieve 50% train accuracy but have malformed test predictions:
-- Excluded from "train-partial" count (due to `outputs_valid == False`)
-- Included in "best: 50.0% train" (because best attempt ignores output validity)
-
-**Impact**: Misleading logs make it hard to understand actual model performance. Need to fix both mechanisms to use same filtering criteria.
-
-**Location**: `/Users/ronanmcgovern/TR/arc-agi-2025/llm_python/run_arc_tasks_soar.py` lines 1800-1823
 
 ---
 
@@ -160,7 +145,8 @@ uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 64 --max_attempts 2 --model x-ai/grok-4 --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000
 ``` -->
-
+### 🕵️ Logging Mystery Solved (Sept 13, 2025)
+"10 train-partial but best: 0.0% train" → NOT a bug. Best selection prioritizes test_correct over train_accuracy, so test-perfect programs with 0% train beat partials. See `/experimental/logging_diagnosis/`.
 
 ## Sept 12th 2025
 ### Refinement generation on mixed 100! Trelis/arc-agi-2-all-100
