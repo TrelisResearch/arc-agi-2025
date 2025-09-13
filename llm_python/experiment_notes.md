@@ -44,6 +44,45 @@ Todo:
 - Reach back out to openrouter on sponsorship again.
 
 ---
+## Sept 13th 2025
+Checking which models actually solve more training examples.
+
+Julien31/Soar-qwen-14b
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 Julien31/Soar-qwen-14b --max-attempts 64 --subset training --max-workers 16 > julien31_soar_qwen_14b_all_100_training_64x.log 2>&1 &
+```
+
+julien31/Soar-qwen-32b
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 Julien31/Soar-qwen-32b --max-attempts 64 --subset training --max-workers 16 > julien31_soar_qwen_32b_all_100_training_64x.log 2>&1 &
+```
+
+And then the strongest models on arc agi 2 are:
+- openai/gpt-5
+- anthropic/claude-sonnet-4
+- google/gemini-2.5-pro
+- x-ai/grok-4
+
+Try all of the pass@2 on arc-prize-2025 training:
+
+gpt-5:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 64 --max_attempts 2 --model openai/gpt-5 --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000
+```
+anthropic/claude-sonnet-4
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 64 --max_attempts 2 --model anthropic/claude-sonnet-4 --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000
+```
+gemini:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 64 --max_attempts 2 --model google/gemini-2.5-pro --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000
+```
+<!-- grok:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 64 --max_attempts 2 --model x-ai/grok-4 --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000
+``` -->
+
+
 ## Sept 12th 2025
 ### Refinement generation on mixed 100! Trelis/arc-agi-2-all-100
 ```bash
@@ -53,6 +92,12 @@ PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-202
 and do the same with Julien31/Soar-qwen-14b but with 32 workers:
 ```bash
 PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 Julien31/Soar-qwen-14b --max-attempts 1024 --subset training --max-workers 32 --refinement-ds Trelis/arc-agi-2-all-100 > julien31_soar_qwen_14b_all_100_training_1024x.log 2>&1 &
+```
+
+
+and a shorter one:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 Julien31/Soar-qwen-14b --max-attempts 64 --subset training --max-workers 16 --refinement-ds Trelis/arc-agi-2-all-100 > julien31_soar_qwen_14b_all_100_training_64x.log 2>&1 &
 ```
 
 ### Refinement data generation on mixed 20

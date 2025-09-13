@@ -50,6 +50,7 @@ gsutil --version
 
 gcloud auth login --no-launch-browser
 gcloud config set project trelis-arc
+cd /workspace/arc-agi-2025
 gsutil -m cp llm_python/datasets/inference/* gs://trelis-arc/datasets/superking/
 gsutil -m cp llm_python/datasets/rewritten/* gs://trelis-arc/datasets/superking/
 ```
