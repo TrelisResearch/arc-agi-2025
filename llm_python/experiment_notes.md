@@ -2,36 +2,60 @@
 
 
 ---
+Big Picture Status:
+- Our best model is soar-qwen-14b, likely as it contains aa1 eval data. Our near-term pathway to improving is:
+  - Seeing if we can increase sampling via FP8.
+  - Training Qwen 8B on SuperKing augmented with julien's SOAR aa1-evaluation dataset.
+  - Seeing if Qwen3-14B leads to a performance boost.
+  - Other paths: a) refinement, b) ttt, c) compounding, d) teaching (via human created simpler programs).
 
-Big picture status:
-- SOAR near-term data improvements:
-  1. Re-compile SuperKing with the new examples of incorrect -> correct via refinement.
-  2. Re-train Qwen on aa2 train with a. qwen3-4b AND b. GPT-OSS-20B.
-    - Requires partialplus 20 aa2 training, incl. refinements. (Worth finding out how many refinements are in that dataset.)
-  3. Re-sample + refine aa2-eval with the trained models from #2.
-    - Refinement requires best 20 aa2 eval dataset. (or can just run using the parquet from re-sampling.)
-  4. Curriculum post-train on aa2-eval (hopefully we get get more of the aa2-eval tasks correct).
-    - Requires partialplus 20 aa2 eval dataset.
-  5. Submit whichever model scores higher (both will inference at a similar speed).
-- SOAR long-term improvements:
-  1. Have gpt-5-mini re-write all programs in a unified consistent style.
-  2. Co-train the model to do a) grids -> programs, b) programs -> grids, c) grids + draft program -> refined program, d) multiple programs -> compounded program. Use this model to create tasks calibrated to aa2 difficulty (based on gpt-5-mini performance).
+Ideas:
+[ ] Compare FP8 performance to BF16 to see if we can increase sampling by more.
+[ ] Create simpler versions of harder tasks to see if we can teach the model how to solve harder tasks.
+[ ] Have gpt-5-mini re-write all programs in a unified consistent style? Useful?
+[ ] Co-train the model to do a) grids -> programs, b) programs -> grids, c) grids + draft program -> refined program, d) multiple programs -> compounded program. Use this model to create tasks calibrated to aa2 difficulty (based on gpt-5-mini performance).
 
 Lewis Reminders:
-- Dataset prep:
-  - Add a deduplication for programs?
-  - Do we think partials help?
+- ...
 
 Ronan:
 - Why are there programs getting saved to reasoning? for qwen?
 
-Todo:
+Commercial:
 - Reach back out to openrouter on sponsorship again.
 
-To do on training dataset generation:
-- Push up some incorrects and partials, because right now we're skipping easier tasks on that. OR just don't skip and run without skipping.
-
 ---
+## Sept 15th 2025
+### Inspection of Rewrite-refine
+[ ] Find a training-hard task that is a refinement AND solved in a HF dataset.
+[ ] Inspect that program on arcprize.org
+[ ] Inspect the programs for that task.
+[ ] Visualise the outputs of the intermediate program.
+
+### Inspection of Delta-Refine
+[ ] Find a training-hard task that is solved in a parquet refinement. (ideally the same one as above).
+[ ] Inspect that program on arcprize.org.
+[ ] Inspect the programs for that task.
+[ ] Visualise the outputs of the intermediate program.
+
+### Inspection of CodeRankEmbed
+[ ] Calculate the cosine similarities of all programs available for the task above.
+
+
+### Effect of amount of data on performance
+We'll look at two models:
+
+Perfect 50:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Trelis/Qwen3-4B_ds-arc-agi-1-perfect-50-c642" --max-attempts 64 --subset evaluation > perfect-50_arc-prize-2024_evaluation_64x.log 2>&1 &
+```
+
+Partial 100:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542" --max-attempts 64 --subset evaluation > partial-100_arc-prize-2024_evaluation_64x.log 2>&1 &
+```
+
+
 ## Sept 13th 2025
 Checking which models actually solve more training examples.
 
