@@ -26,17 +26,28 @@ Commercial:
 
 ---
 ## Sept 15th 2025
-### Inspection of Rewrite-refine
-[ ] Find a training-hard task that is a refinement AND solved in a HF dataset.
-[ ] Inspect that program on arcprize.org
-[ ] Inspect the programs for that task.
-[ ] Visualise the outputs of the intermediate program.
-
 ### Inspection of Delta-Refine
-[ ] Find a training-hard task that is solved in a parquet refinement. (ideally the same one as above).
-[ ] Inspect that program on arcprize.org.
+[x] Find a training-hard task that is a refinement AND solved in a HF dataset.
+- ff805c23: 16 programs
+- d4469b4b: 15 programs
+- ad3b40cf: 13 programs
+- 53b68214: 13 programs
+- be94b721: 12 programs
+- 8f2ea7aa: 12 programs
+- 9c56f360: 12 programs
+[x] Inspect that task on arcprize.org .
 [ ] Inspect the programs for that task.
+- The all-correct programs are nicely diverse.
 [ ] Visualise the outputs of the intermediate program.
+- Output grids lack a ton of information on the nature of the program, so there is no way to delta-refine for most tasks.
+
+```bash
+uv run python -m llm_python.datasets.viewer /Users/ronanmcgovern/TR/arc-agi-2025/20250913_080534_Julien31_Soar-qwen-14b_arc-prize-2025_training.parquet --task-id ff805c23
+```
+
+### Inspection of Rewrite-refine
+
+
 
 ### Inspection of CodeRankEmbed
 [ ] Calculate the cosine similarities of all programs available for the task above.

@@ -114,13 +114,18 @@ def print_grids_horizontally(
 
 
 def print_soar_dataset(
-    file_path, train_filter="any", test_filter="any", use_colors=True
+    file_path, train_filter="any", test_filter="any", task_id_filter=None, use_colors=True
 ):
     task_loader = get_task_loader()
     df = read_soar_parquet(file_path)
 
     original_size = len(df)
     print(f"Original dataset size: {original_size} rows")
+
+    # Apply task ID filter
+    if task_id_filter:
+        df = df[df["task_id"] == task_id_filter]
+        print(f"Task ID filter: {task_id_filter}")
 
     # Apply train filter
     if train_filter == "all-correct":
@@ -279,11 +284,18 @@ if __name__ == "__main__":
     parser.add_argument(
         "--no-colors", action="store_true", help="Disable colored output for grids"
     )
+    parser.add_argument(
+        "--task-id",
+        type=str,
+        help="Filter to show only the specified task ID"
+    )
     args = parser.parse_args()
     print(f"Using file: {args.file}")
     print(f"Train filter: {args.train_filter}")
     print(f"Test filter: {args.test_filter}")
+    if args.task_id:
+        print(f"Task ID filter: {args.task_id}")
     print(f"Colors: {'disabled' if args.no_colors else 'enabled'}")
     print_soar_dataset(
-        args.file, args.train_filter, args.test_filter, not args.no_colors
+        args.file, args.train_filter, args.test_filter, args.task_id, not args.no_colors
     )
