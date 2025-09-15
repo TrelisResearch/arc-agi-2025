@@ -2,7 +2,9 @@ import asyncio
 import traceback
 from typing import Any, Callable, Coroutine, List, ParamSpec, TypeVar
 
+import numpy as np
 from dotenv import load_dotenv
+
 from experimental.flags import flag, parse_flags
 from experimental.mrr.heuristic_segmenter import (
     TokenizedObject,
@@ -18,12 +20,13 @@ from experimental.mrr.minimal_arc_tester import (
     SingleSolverInput,
     SolverInput,
     evaluate_solver,
+    score_attempts,
     split_multi_test,
 )
-import numpy as np
-
 from llm_python.utils.numpy import convert_numpy_types
 from llm_python.utils.task_loader import Grid
+import json
+from datetime import datetime
 
 load_dotenv()
 
@@ -38,15 +41,17 @@ def tokens_to_grid(tokens: List[TokenizedObject]) -> Grid:
     segmented_objects = detokenize_objects(tokens)
     return convert_numpy_types(reconstruct_grid(segmented_objects))
 
+
 solver_parallelism_flag = flag(
     name="solver_parallelism",
     type=int,
     default=1,
-    help="Number of parallel solver instances to run."
+    help="Number of parallel solver instances to run.",
 )
 
 P = ParamSpec("P")
 R = TypeVar("R")
+
 
 def limit_parallelism(
     func: Callable[P, Coroutine[Any, Any, R]], parallelism: int
@@ -63,6 +68,7 @@ def limit_parallelism(
 
     return wrapper
 
+
 async def main():
     parse_flags()
 
@@ -76,7 +82,7 @@ async def main():
             if example["output"]
         ]
 
-        if max(len(inp) for inp, _ in tokenized_examples) > 20:
+        if max(len(inp) for inp, _ in tokenized_examples) > 10:
             print(
                 f"Warning: Example with {max(len(inp) for inp, _ in tokenized_examples)} objects exceeds token limit, skipping."
             )
@@ -85,10 +91,9 @@ async def main():
         tokenized_test_input = grid_to_tokenized(input.test_input)
 
         prompt = create_prompt(tokenized_examples, tokenized_test_input)
-        # print(f"Prompt for task {input.task_id}:\n{prompt}\n")
 
         try:
-            response, reasoning = await invoke_llm_async(prompt)
+            response = await invoke_llm_async(prompt)
             if response is None:
                 print(f"LLM failed to produce a response for task {input.task_id}.")
                 return [[0]]
@@ -105,9 +110,17 @@ async def main():
             traceback.print_exc()
             return [[0]]
 
-    wrapped_solver = split_multi_test(limit_parallelism(solver, solver_parallelism_flag()))
+    wrapped_solver = split_multi_test(
+        limit_parallelism(solver, solver_parallelism_flag())
+    )
     result = await evaluate_solver(wrapped_solver, "arc-prize-2025/evaluation")
+    print(score_attempts(result))
 
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"objrepr_{timestamp}.json"
+    with open(filename, "w") as f:
+        json.dump(result, f, indent=2)
+    print(f"Result dumped to {filename}")
     print(result)
 
 

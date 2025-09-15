@@ -347,11 +347,15 @@ def create_prompt(
     Returns:
         A string prompt for the LLM.
     """
-    prompt = """You are an expert in solving abstract reasoning problems.
-Your goal is to predict the output grid based on a series of input-output examples.
+    prompt = """
+You are an expert in solving abstract reasoning problems.
+You will be provided with several examples of object-centric representations of input output grids.
+Grids are 2D grids of colored cells, where each cell has a color represented by an integer from 0 to 9.
+Your goal is to determine what the transformation rule is based on the examples, and then apply that rule to a new test input to produce the correct output in the same representation format.
+The intention is you think about the transformation in these object centric representations, rather than the raw grid.
 The grids are represented as a list of layers, where each layer is a colored shape.
-The layers are stacked in order, with the first layer at the bottom.
-The shapes can be rectangles, single cells, or arbitrary masks.
+The layers are stacked in order, with the first layer at the bottom, and subsequent layers override previous layers where they overlap.
+The shapes can be rectangles, single cells, or arbitrary masks - prefer to produce rectangles and single cells where possible where it makes sense.
 
 Follow the schema of the examples to produce the output for the test case.
 The output must be a single JSON object enclosed in ```json ... ```.
@@ -386,7 +390,8 @@ Here are the examples:
     prompt += "```json\n"
     prompt += format_json_list(test_input) + "\n"
     prompt += "```\n\n"
-    prompt += "Output:\n"
+    
+    prompt += "Provide any reasoning, then the representation of the predicted test case output in the json block at the end.\n"
 
     return prompt
 

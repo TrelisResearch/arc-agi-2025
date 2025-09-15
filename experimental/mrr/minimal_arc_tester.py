@@ -1,19 +1,29 @@
 import asyncio
 import traceback
-from typing import Callable, Coroutine, List
+from typing import Callable, Coroutine, List, Optional
 from dataclasses import dataclass
 
 import numpy as np
 
+from experimental.flags import flag
 from llm_python.utils.grids import grids_equal
 from llm_python.utils.task_loader import Grid, TaskExample, get_task_loader
+from collections import defaultdict
+
+max_attempts_flag = flag(
+    name="max_attempts", type=int, help="Number of attempts to make per task.", default=1
+)
 
 
 @dataclass
-class EvaluationResult:
+class Attempt:
+    task_id: str
+    test_outputs: List[Grid]
+    correct: List[bool]
+    correct_size: List[bool]
     pixel_accuracy: float
-    correct_accuracy: float
-    solver_error_rate: float
+    error: str | None = None
+    extra_info: dict | None = None
 
 
 @dataclass
@@ -31,7 +41,7 @@ class SingleSolverInput:
 
 
 def split_multi_test(
-    single_test_solver: Callable[[SingleSolverInput], Coroutine[None, None, Grid]]
+    single_test_solver: Callable[[SingleSolverInput], Coroutine[None, None, Grid]],
 ) -> Callable[[SolverInput], Coroutine[None, None, List[Grid]]]:
     """
     Takes a solver that processes a single test input and returns a solver
@@ -59,17 +69,13 @@ def split_multi_test(
 async def evaluate_solver(
     solver: Callable[[SolverInput], Coroutine[None, None, List[Grid]]],
     subset: str,
-) -> EvaluationResult:
+) -> List[Attempt]:
     task_loader = get_task_loader()
     tasks = task_loader.get_subset_tasks(subset)
 
-    correct_pixels = 0
-    incorrect_pixels = 0
-    total_correct = 0
-    solver_errors = 0
+    task_ids_with_any_correct = set()
 
-    async def solve_task(task_id, task_data):
-        nonlocal correct_pixels, incorrect_pixels, total_correct, solver_errors
+    async def solve_task(task_id, task_data, attempt_number) -> Attempt:
         test_inputs = [test_example["input"] for test_example in task_data["test"]]
         try:
             solver_input = SolverInput(
@@ -78,9 +84,7 @@ async def evaluate_solver(
                 test_inputs=test_inputs,
             )
             outputs = await solver(solver_input)
-            groundtruth_outputs = [
-                example["output"] for example in task_data["test"]
-            ]
+            groundtruth_outputs = [example["output"] for example in task_data["test"]]
 
             # Pad arrays to at least 30x30 for pixel comparison
             def pad_to_30x30(arr):
@@ -89,42 +93,89 @@ async def evaluate_solver(
                 pad_w = max(0, 30 - w)
                 return np.pad(arr, ((0, pad_h), (0, pad_w)), mode="constant")
 
+            test_correct = []
+            test_correct_size = []
+            correct_pixels = 0
+            incorrect_pixels = 0
             for output, groundtruth in zip(outputs, groundtruth_outputs):
-                if grids_equal(output, groundtruth):
-                    total_correct += 1
-                    print(f"Task {task_id} solved correctly!")
+                test_correct_size.append(
+                    len(output) == len(groundtruth)
+                    and len(output[0]) == len(groundtruth[0])
+                )
+                are_equal = grids_equal(output, groundtruth)
+                test_correct.append(are_equal)
+
+                if are_equal:
+                    print(f"✅ Attempt {attempt_number} for task {task_id} passed!")
+                    task_ids_with_any_correct.add(task_id)
                 else:
-                    print(f"Task {task_id} solved incorrectly.")
-                    print(f"Output:\n{np.array(output)}")
-                    print(f"Groundtruth:\n{np.array(groundtruth)}")
+                    print(f"❌ Attempt {attempt_number} for task {task_id} failed.")
 
                 padded_output = pad_to_30x30(np.array(output))
                 padded_groundtruth = pad_to_30x30(np.array(groundtruth))
 
-                correct_pixels += int(
-                    (padded_output == padded_groundtruth).flatten().sum()
+                correct_pixels = int(
+                    (padded_output == padded_groundtruth).flatten().mean()
                 )
-                incorrect_pixels += int(
+                incorrect_pixels = int(
                     (padded_output != padded_groundtruth).flatten().sum()
                 )
+            pixel_accuracy = correct_pixels / (correct_pixels + incorrect_pixels)
+            return Attempt(
+                task_id=task_id,
+                test_outputs=outputs,
+                correct=test_correct,
+                correct_size=test_correct_size,
+                pixel_accuracy=pixel_accuracy,
+                error=None,
+            )
+
         except Exception as e:
             print(f"Solver failed on task {task_id} with error: {e}")
             traceback.print_exc()
-            solver_errors += 1
-
-    await asyncio.gather(*[solve_task(task_id, task_data) for task_id, task_data in tasks])
-
-    total_tests = sum(len(task_data["test"]) for _, task_data in tasks)
-    accuracy = total_correct / total_tests if total_tests > 0 else 0
-    solver_error_rate = solver_errors / len(tasks) if tasks else 0
-    pixel_accuracy = (
-        correct_pixels / (correct_pixels + incorrect_pixels)
-        if (correct_pixels + incorrect_pixels) > 0
-        else 0
+            return Attempt(
+                task_id=task_id,
+                test_outputs=[[[0]] * len(task_data["test"])],
+                correct=[False] * len(task_data["test"]),
+                correct_size=[False] * len(task_data["test"]),
+                pixel_accuracy=0.0,
+                error=str(e),
+            )
+        finally:
+            print(f"ℹ️ Tasks with successes so far: {len(task_ids_with_any_correct)} out of {len(tasks)}")
+    print(
+        f"Evaluating solver on {len(tasks)} tasks from subset '{subset}' with {max_attempts_flag()} attempts..."
     )
 
-    return EvaluationResult(
-        pixel_accuracy=pixel_accuracy,
-        correct_accuracy=accuracy,
-        solver_error_rate=solver_error_rate,
-    )
+    solve_calls = []
+    for task_id, task_data in tasks:
+        for attempt_number in range(max_attempts_flag()):
+            solve_calls.append(solve_task(task_id, task_data, attempt_number))
+
+    attempts = await asyncio.gather(*solve_calls)
+
+    return attempts
+
+
+def score_attempts(attempts: List[Attempt]) -> dict:
+    grouped_attempts = defaultdict(list)
+    for attempt in attempts:
+        grouped_attempts[attempt.task_id].append(attempt)
+
+    oracle_scores = {}
+    total_tasks = len(grouped_attempts)
+
+    for task_id, attempts_list in grouped_attempts.items():
+        num_tests = len(attempts_list[0].correct)
+
+        best_attempt = max(
+            attempts_list, key=lambda a: sum([int(c) for c in a.correct])
+        )
+        oracle_scores[task_id] = sum([int(c) for c in best_attempt.correct]) / num_tests
+
+    accuracy = 100 * sum(oracle_scores.values()) / total_tasks if total_tasks else 0
+
+    return {
+        "total_tasks": total_tasks,
+        "accuracy_percent": accuracy,
+    }

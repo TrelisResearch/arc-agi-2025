@@ -1,6 +1,6 @@
 import openai
 from experimental.flags import flag
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple, cast
 
 # Define the flag for the base URL
 base_url_flag = flag(
@@ -18,8 +18,15 @@ model_name_flag = flag(
     default="gpt-3.5-turbo",
 )
 
+reasoning_effort_flag = flag(
+    name="reasoning_effort",
+    type=str,
+    help="The level of reasoning effort to use (none, low, medium, high).",
+    default="medium",
+)
 
-def invoke_llm(prompt: str) -> Tuple[Optional[str], Optional[str]]:
+
+def invoke_llm(prompt: str) -> Optional[str]:
     """
     Invokes an LLM with a given prompt.
 
@@ -36,10 +43,9 @@ def invoke_llm(prompt: str) -> Tuple[Optional[str], Optional[str]]:
     """
     client = openai.OpenAI(base_url=base_url_flag())
 
-    print(model_name_flag())
-
     completion = client.chat.completions.create(
         model=model_name_flag(),
+        reasoning_effort=cast(Any, reasoning_effort_flag()),
         messages=[
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": prompt},
@@ -47,12 +53,11 @@ def invoke_llm(prompt: str) -> Tuple[Optional[str], Optional[str]]:
     )
 
     response_content = completion.choices[0].message.content
-    reasoning = None  # Placeholder for optional reasoning string
 
-    return response_content, reasoning
+    return response_content
 
 
-async def invoke_llm_async(prompt: str) -> Tuple[Optional[str], Optional[str]]:
+async def invoke_llm_async(prompt: str) -> Optional[str]:
     """
     Invokes an LLM with a given prompt asynchronously.
 
@@ -69,10 +74,9 @@ async def invoke_llm_async(prompt: str) -> Tuple[Optional[str], Optional[str]]:
     """
     client = openai.AsyncOpenAI(base_url=base_url_flag())
 
-    print(model_name_flag())
-
     completion = await client.chat.completions.create(
         model=model_name_flag(),
+        reasoning_effort=cast(Any, reasoning_effort_flag()),
         messages=[
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": prompt},
@@ -80,6 +84,5 @@ async def invoke_llm_async(prompt: str) -> Tuple[Optional[str], Optional[str]]:
     )
 
     response_content = completion.choices[0].message.content
-    reasoning = None  # Placeholder for optional reasoning string
 
-    return response_content, reasoning
+    return response_content
