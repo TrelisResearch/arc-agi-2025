@@ -26,8 +26,10 @@ Commercial:
 
 ---
 ## Sept 15th 2025
+See `experimental/trelis_arc_agi_2_mixed_analysis` for a study of similarity and refinement.
+
 ### Inspection of Delta-Refine
-[x] Find a training-hard task that is a refinement AND solved in a HF dataset.
+[x] Find a training-hard task that is a refinement AND all-correct in a HF dataset Trelis/arc-agi-2-mixed-finetuning-20: 
 - ff805c23: 16 programs
 - d4469b4b: 15 programs
 - ad3b40cf: 13 programs
@@ -36,9 +38,9 @@ Commercial:
 - 8f2ea7aa: 12 programs
 - 9c56f360: 12 programs
 [x] Inspect that task on arcprize.org .
-[ ] Inspect the programs for that task.
+[x] Inspect the programs for that task.
 - The all-correct programs are nicely diverse.
-[ ] Visualise the outputs of the intermediate program.
+[x] Visualise the outputs of the intermediate program.
 - Output grids lack a ton of information on the nature of the program, so there is no way to delta-refine for most tasks.
 
 ```bash
@@ -46,12 +48,209 @@ uv run python -m llm_python.datasets.viewer /Users/ronanmcgovern/TR/arc-agi-2025
 ```
 
 ### Inspection of Rewrite-refine
+[x] Inspect one of the 16 programs program AND inspect the program from which it was refined. Do they follow from one another?
 
+```bash
+  # Original vs Refined Program Comparison
 
+  # ORIGINAL PROGRAM:
+
+  import numpy as np
+  from collections import Counter
+
+  def transform(grid_lst: list[list[int]]) -> list[list[int]]:
+      grid = np.array(grid_lst)
+      rows, cols = grid.shape
+      for row in range(rows - 4):
+          for col in range(cols - 4):
+              subgrid = grid[row:row + 5, col:col + 5]
+              if len(set(subgrid.flatten())) == 1:
+                  shape_row, shape_col = (row, col)
+                  break
+          else:
+              continue
+          break
+      else:
+          shape_row, shape_col = (rows // 2, cols // 2)
+      mirrored_grid = np.copy(grid[:, ::-1])
+      mirrored_5x5 = mirrored_grid[shape_row:shape_row + 5, shape_col:shape_col + 5]
+      count = Counter(mirrored_5x5.flatten())
+      most_frequent_color = count.most_common(1)[0][0]
+      return mirrored_5x5.tolist()
+
+  # REFINED PROGRAM:
+
+  import numpy as np
+
+  def transform(grid_lst: list[list[int]]) -> list[list[int]]:
+      grid = np.array(grid_lst)
+      rows, cols = grid.shape
+      for row in range(rows - 4):
+          for col in range(cols - 4):
+              if len(set(grid[row:row + 5, col:col + 5].flatten())) == 1:
+                  shape_row, shape_col = (row, col)
+                  break
+      mirrored_grid = np.copy(grid[::-1, ::-1])
+      mirrored_5x5 = mirrored_grid[shape_row:shape_row + 5, shape_col:shape_col + 5]
+      count = np.bincount(mirrored_5x5.flatten(), minlength=10)
+      most_frequent_color = np.argmax(count[1:])
+      return mirrored_5x5.tolist()
+```
 
 ### Inspection of CodeRankEmbed
-[ ] Calculate the cosine similarities of all programs available for the task above.
+[x] Calculate the cosine similarities of all programs available for the task above: ff805c23, and inspect two very similar programs.
 
+The programs are sampled from task ff805c23 from dataset Trelis/arc-agi-2-mixed-finetuning-20, 16 of them are all-correct. 55% of program pairs have similarity over 0.9. With a 0.9 similarity threshold, we would drop 15 out of 20 programs (75%)!
+
+#### Programs with high similarity score 0.9984:
+There is just one difference `count = np.bincount(mirrored_5x5.flatten(), minlength=np.max(mirrored_5x5) + 1)` vs `count = np.bincount(mirrored_5x5.flatten())`.
+
+  Program 1 (Row ID: 8fc623d05479bc198c0687ded6927184):
+```bash
+  import numpy as np
+
+  def transform(grid_lst: list[list[int]]) -> list[list[int]]:
+      grid = np.array(grid_lst)
+      rows, cols = grid.shape
+      for row in range(rows - 4):
+          for col in range(cols - 4):
+              subgrid = grid[row:row + 5, col:col + 5]
+              if len(set(subgrid.flatten())) == 1:
+                  shape_row, shape_col = (row, col)
+                  break
+          else:
+              continue
+          break
+      else:
+          shape_row, shape_col = (rows // 2, cols // 2)
+      mirrored_grid = np.copy(grid[::-1, ::-1])
+      mirrored_5x5 = mirrored_grid[shape_row:shape_row + 5, shape_col:shape_col + 5]
+      count = np.bincount(mirrored_5x5.flatten())
+      most_frequent_color = np.argmax(count)
+      return mirrored_5x5.tolist()
+```
+
+  Program 2 (Row ID: 26d66e7dc29bc04c4936ae8fbcaf33c2):
+```bash
+  import numpy as np
+
+  def transform(grid_lst: list[list[int]]) -> list[list[int]]:
+      grid = np.array(grid_lst)
+      rows, cols = grid.shape
+      for row in range(rows - 4):
+          for col in range(cols - 4):
+              subgrid = grid[row:row + 5, col:col + 5]
+              if len(set(subgrid.flatten())) == 1:
+                  shape_row, shape_col = (row, col)
+                  break
+          else:
+              continue
+          break
+      else:
+          shape_row, shape_col = (rows // 2, cols // 2)
+      mirrored_grid = np.copy(grid[::-1, ::-1])
+      mirrored_5x5 = mirrored_grid[shape_row:shape_row + 5, shape_col:shape_col + 5]
+      count = np.bincount(mirrored_5x5.flatten(), minlength=np.max(mirrored_5x5) + 1)
+      most_frequent_color = np.argmax(count)
+      return mirrored_5x5.tolist()
+```
+
+#### Programs with a low similarity score
+Here are the two programs with the lowest similarity score (0.6928) for task ff805c23:
+```bash
+  ## Two Least Similar Programs:
+
+  # Program 1 (Row ID: ea0609885473c45d374f6bf802e0121d):
+  def transform(grid):
+      import numpy as np
+      grid = np.array(grid)
+      rows, cols = grid.shape
+      for i in range(rows - 4):
+          for j in range(cols - 4):
+              if len(set(grid[i:i + 5, j:j + 5].flatten())) == 1:
+                  shape_row, shape_col = (i, j)
+                  break
+      shape_mid_row = shape_row + 2
+      shape_mid_col = shape_col + 2
+      center_row, center_col = (rows // 2, cols // 2)
+      if abs(center_row - (shape_mid_row + 1)) > abs(center_col - (shape_mid_col + 1)):
+          mirrored_grid = np.copy(grid[::-1, :])
+      else:
+          mirrored_grid = np.copy(grid[:, ::-1])
+      mirrored_5x5 = mirrored_grid[shape_row:shape_row + 5, shape_col:shape_col + 5]
+      return mirrored_5x5.tolist()
+
+  # Program 2 (Row ID: 2a03324b1080ce60d88994ba3ec62259):
+  import numpy as np
+
+  def transform(grid_lst: list[list[int]]) -> list[list[int]]:
+      grid = np.array(grid_lst)
+      rows, cols = grid.shape
+      target_size = 5
+      for row in range(rows - target_size + 1):
+          for col in range(cols - target_size + 1):
+              subgrid = grid[row:row + target_size, col:col + target_size]
+              if len(set(subgrid.flatten())) == 1:
+                  shape_row, shape_col = (row, col)
+                  break
+      mirrored_grid = np.copy(grid[::-1, ::-1])
+      mirrored_5x5 = mirrored_grid[shape_row:shape_row + target_size, shape_col:shape_col + target_size]
+      count = np.bincount(mirrored_5x5.flatten(), minlength=11)
+      most_frequent_color = np.argmax(count[1:]) + 1
+      return mirrored_5x5.tolist()
+```
+#### Programs with similarity of 0.9
+```bash
+# Two Programs with ~0.9 Similarity:
+
+  # Program 1 (Row ID: 8e504cb8ffab35cb5a0e42da19eba646):
+  import numpy as np
+
+  def transform(grid_lst: list[list[int]]) -> list[list[int]]:
+      grid = np.array(grid_lst)
+      rows, cols = grid.shape
+      for row in range(rows - 4):
+          for col in range(cols - 4):
+              subgrid = grid[row:row + 5, col:col + 5]
+              if len(set(subgrid.flatten())) == 1:
+                  shape_row, shape_col = (row, col)
+                  break
+          else:
+              continue
+          break
+      else:
+          shape_row, shape_col = (rows // 2, cols // 2)
+      mirrored_grid = np.copy(grid[::-1, ::-1])
+      mirrored_5x5 = mirrored_grid[shape_row:shape_row + 5, shape_col:shape_col + 5]
+      count = np.bincount(mirrored_5x5.flatten())
+      most_frequent_color = np.argmax(count)
+      if most_frequent_color == 8:
+          most_frequent_color = 2
+      return mirrored_5x5.tolist()
+
+  # Program 2 (Row ID: 38d370e4a660cdc96eb15b789820fab8):
+  import numpy as np
+  from collections import Counter
+
+  def transform(grid_lst: list[list[int]]) -> list[list[int]]:
+      grid = np.array(grid_lst)
+      rows, cols = grid.shape
+      for row in range(rows - 4):
+          for col in range(cols - 4):
+              subgrid = grid[row:row + 5, col:col + 5]
+              if len(set(subgrid.flatten())) == 1:
+                  shape_row, shape_col = (row, col)
+                  break
+      center_row, center_col = (rows // 2, cols // 2)
+      if abs(center_row - (shape_row + 2)) > abs(center_col - (shape_col + 2)):
+          mirrored_grid = np.copy(grid[::-1, :])
+      else:
+          mirrored_grid = np.copy(grid[:, ::-1])
+      mirrored_5x5 = mirrored_grid[shape_row:shape_row + 5, shape_col:shape_col + 5]
+      count = Counter(mirrored_5x5.flatten())
+      most_frequent_number = count.most_common(1)[0][0]
+      return mirrored_5x5.tolist()
+```
 
 ### Effect of amount of data on performance
 We'll look at two models:
