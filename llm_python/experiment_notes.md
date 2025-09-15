@@ -259,12 +259,57 @@ Perfect 50:
 ```bash
 PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Trelis/Qwen3-4B_ds-arc-agi-1-perfect-50-c642" --max-attempts 64 --subset evaluation > perfect-50_arc-prize-2024_evaluation_64x.log 2>&1 &
 ```
+Dataset: arc-prize-2024
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-1-perfect-50-c642
+Total tasks: 400
+Total time: 10589.2s
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 101,619,050
+Total cost: $18.593944
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 15.2% (15.0% excl. trans)
+  Pass@2 (Train Majority):  14.8% (14.5% excl. trans)
+  Oracle (Best Attempt):    17.0% (16.2% excl. trans)
+  All Train Correct:        13.0% (11.8% excl. trans)
+  Min 1 Train Correct:      31.0% (27.8% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.5%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 2.9%
+  Execution Error Responses (of all attempts): 12.4%
+✅ Checkpointed 20842 programs to /workspace/arc-agi-2025/llm_python/datasets/inference/20250915_082114_Trelis_Qwen3-4B_ds-arc-agi-1-perfect-50-c642_arc-prize-2024_evaluation.parquet
+All sampled programs saved to /workspace/arc-agi-2025/llm_python/datasets/inference/20250915_082114_Trelis_Qwen3-4B_ds-arc-agi-1-perfect-50-c642_arc-prize-2024_evaluation.parquet
 
 Partial 100:
 ```bash
 PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2024 "Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542" --max-attempts 64 --subset evaluation > partial-100_arc-prize-2024_evaluation_64x.log 2>&1 &
 ```
+Dataset: arc-prize-2024
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-1-partial-100-c1542
+Total tasks: 400
+Total time: 10276.8s
+Successful API calls: 400/400 (100.0%)
+Total tokens used: 101,168,007
+Total cost: $18.319043
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 17.5% (17.5% excl. trans)
+  Pass@2 (Train Majority):  16.2% (16.2% excl. trans)
+  Oracle (Best Attempt):    18.8% (18.2% excl. trans)
+  All Train Correct:        14.2% (13.5% excl. trans)
+  Min 1 Train Correct:      31.5% (30.8% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.2%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 1.5%
+  Execution Error Responses (of all attempts): 8.9%
+✅ Checkpointed 22226 programs to /workspace/arc-agi-2025/llm_python/datasets/inference/20250915_082055_Trelis_Qwen3-4B_ds-arc-agi-1-partial-100-c1542_arc-prize-2024_evaluation.parquet
+All sampled programs saved to /workspace/arc-agi-2025/llm_python/datasets/inference/20250915_082055_Trelis_Qwen3-4B_ds-arc-agi-1-partial-100-c1542_arc-prize-2024_evaluation.parquet
 
 ## Sept 13th 2025
 Checking which models actually solve more training examples.
