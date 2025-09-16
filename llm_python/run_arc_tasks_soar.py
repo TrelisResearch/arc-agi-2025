@@ -2392,6 +2392,19 @@ def main():
         help="Refinement dataset: HuggingFace dataset or parquet file containing draft programs to refine. Uses programs with at least one (but not all) correct training examples. Enables refinement prompts with draft code.",
     )
     parser.add_argument(
+        "--refinement-sampling",
+        type=str,
+        choices=["uniform", "rex"],
+        default="rex",
+        help="Sampling strategy for refinement programs: 'uniform' (random), 'rex' (REX algorithm). Default: rex",
+    )
+    parser.add_argument(
+        "--rex-c",
+        type=float,
+        default=20.0,
+        help="REX algorithm hyperparameter C (default: 20.0). Higher values increase exploration vs exploitation trade-off.",
+    )
+    parser.add_argument(
         "--early-stop-threshold",
         type=int,
         default=7,

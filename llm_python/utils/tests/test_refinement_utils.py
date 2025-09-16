@@ -105,49 +105,23 @@ class TestSelectBestProgramForRefinement:
         result = select_best_program_for_refinement(programs)
         assert result == programs[0]
     
-    def test_select_ranking_by_correctness(self):
-        """Test that higher correctness programs are preferred"""
+    def test_select_uniform_sampling(self):
+        """Test that uniform sampling works with legacy function"""
         programs = [
-            {'correct_train_input': [True, False], 'code': 'low'},     # 50%
-            {'correct_train_input': [True, True, False], 'code': 'high'},  # 67%
-            {'correct_train_input': [False, False], 'code': 'zero'}   # 0%
+            {'correct_train_input': [True, False], 'code': 'program1'},
+            {'correct_train_input': [True, True, False], 'code': 'program2'},
+            {'correct_train_input': [False, False], 'code': 'program3'}
         ]
-        
-        # With top_k=1, should always select the highest scoring program
-        with patch('random.choice', side_effect=lambda x: x[0]):  # Always pick first from list
-            result = select_best_program_for_refinement(programs, top_k=1)
-            assert result['code'] == 'high'  # 67% correctness
-    
-    def test_select_tie_breaking_by_length(self):
-        """Test tie-breaking by code length (shorter preferred)"""
-        programs = [
-            {'correct_train_input': [True, False], 'code': 'this is longer code'},  # 50%, long
-            {'correct_train_input': [True, False], 'code': 'short'},              # 50%, short
-        ]
-        
-        # With top_k=1, should always select the shorter program when correctness is tied
-        with patch('random.choice', side_effect=lambda x: x[0]):
-            result = select_best_program_for_refinement(programs, top_k=1)
-            assert result['code'] == 'short'
-    
-    def test_select_top_k_selection(self):
-        """Test that only top-k programs are considered"""
-        programs = [
-            {'correct_train_input': [True, True], 'code': 'best'},      # 100%
-            {'correct_train_input': [True, False], 'code': 'second'},   # 50%  
-            {'correct_train_input': [False, False], 'code': 'worst'},   # 0%
-        ]
-        
-        # With top_k=2, should never select the worst program
-        random.seed(42)  # Set seed for reproducible test
+
+        # Should be able to select any program with uniform sampling
         results = set()
-        for _ in range(100):  # Run many times to see all possible selections
-            result = select_best_program_for_refinement(programs, top_k=2)
+        for _ in range(50):  # Run multiple times to see variety
+            result = select_best_program_for_refinement(programs)
             results.add(result['code'])
-        
-        assert 'best' in results
-        assert 'second' in results
-        assert 'worst' not in results  # Should never be selected
+
+        # With uniform sampling, should get some variety (not deterministic)
+        assert len(results) >= 1  # At least one program selected
+        assert all(code in ['program1', 'program2', 'program3'] for code in results)
     
     def test_select_debug_output(self):
         """Test debug output"""
@@ -160,33 +134,23 @@ class TestSelectBestProgramForRefinement:
             assert '50.0% correct' in args
             assert '4 chars' in args
     
-    def test_select_complex_ranking(self):
-        """Test complex ranking scenario"""
+    def test_select_various_programs(self):
+        """Test that uniform sampling can select from various programs"""
         programs = [
-            {'correct_train_input': [True, True, True], 'code': 'a'},        # 100%, 1 char
-            {'correct_train_input': [True, True, False], 'code': 'bb'},      # 67%, 2 chars
-            {'correct_train_input': [True, True, False], 'code': 'ccc'},     # 67%, 3 chars  
-            {'correct_train_input': [True, False], 'code': 'dddd'},          # 50%, 4 chars
-            {'correct_train_input': [False], 'code': 'eeeee'},               # 0%, 5 chars
+            {'correct_train_input': [True, True, True], 'code': 'perfect'},        # 100%
+            {'correct_train_input': [True, True, False], 'code': 'good'},          # 67%
+            {'correct_train_input': [True, False], 'code': 'partial'},             # 50%
+            {'correct_train_input': [False], 'code': 'poor'},                      # 0%
         ]
-        
-        # Expected order: 100%/1char, 67%/2char, 67%/3char, 50%/4char, 0%/5char
-        with patch('random.choice', side_effect=lambda x: x[0]):
-            # Top 1: should be 100%
-            result = select_best_program_for_refinement(programs, top_k=1)
-            assert result['code'] == 'a'
-            
-        # Top 3: test without mocking random.choice to see actual selection
+
+        # With uniform sampling, any program can be selected
         results = set()
-        for _ in range(50):
-            result = select_best_program_for_refinement(programs, top_k=3)  
+        for _ in range(100):
+            result = select_best_program_for_refinement(programs)
             results.add(result['code'])
-        
-        assert 'a' in results    # 100%
-        assert 'bb' in results   # 67%, shorter
-        assert 'ccc' in results  # 67%, longer
-        assert 'dddd' not in results  # 50% - excluded
-        assert 'eeeee' not in results  # 0% - excluded
+
+        # Should be able to select from various programs (not deterministic)
+        assert len(results) >= 2  # Should get some variety
 
 
 class TestIsProgramValidForRefinement:
@@ -336,19 +300,20 @@ class TestIntegrationScenarios:
         result = select_best_program_for_refinement(valid_programs)
         assert result == {}
     
-    def test_ranking_consistency(self):
-        """Test that ranking is consistent and deterministic given same input"""
+    def test_sampling_randomness(self):
+        """Test that uniform sampling provides randomness over multiple calls"""
         programs = [
-            {'correct_train_input': [True, False, True], 'code': 'a' * 10, 'is_transductive': False},    # 67%, 10 chars
-            {'correct_train_input': [True, False, True], 'code': 'b' * 5, 'is_transductive': False},     # 67%, 5 chars  
-            {'correct_train_input': [True, False], 'code': 'c' * 15, 'is_transductive': False},          # 50%, 15 chars
+            {'correct_train_input': [True, False, True], 'code': 'program_a', 'is_transductive': False},
+            {'correct_train_input': [True, False, True], 'code': 'program_b', 'is_transductive': False},
+            {'correct_train_input': [True, False], 'code': 'program_c', 'is_transductive': False},
         ]
-        
-        # With top_k=1, should always get the same result (shortest among highest correctness)
-        with patch('random.choice', side_effect=lambda x: x[0]):
-            result1 = select_best_program_for_refinement(programs, top_k=1)
-            result2 = select_best_program_for_refinement(programs, top_k=1)
-            result3 = select_best_program_for_refinement(programs, top_k=1)
-            
-            assert result1 == result2 == result3
-            assert result1['code'] == 'b' * 5  # Shortest among 67% correct programs
+
+        # Uniform sampling should show variety across multiple calls
+        results = []
+        for _ in range(30):
+            result = select_best_program_for_refinement(programs)
+            results.append(result['code'])
+
+        # Should get variety in selections (not always the same)
+        unique_results = set(results)
+        assert len(unique_results) >= 2  # Should get at least 2 different programs

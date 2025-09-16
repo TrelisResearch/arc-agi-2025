@@ -177,27 +177,25 @@ This should work."""
 
         draft_program = "def transform(grid):\n    return grid"
 
-        # Mock prompt loader
+        # Mock prompt loader for refinement mode
         mock_prompt_loader = Mock()
-        mock_prompt_loader.get_system_message.return_value = "You are an AI assistant."
-        mock_prompt_loader.get_initial_turn_prompt.return_value = "{refinement_instructions}{draft_program_section}\n{task_content}"
+        mock_prompt_loader.get_system_message.return_value = "You are an AI assistant specialized in refinement."
+        mock_prompt_loader.get_initial_turn_prompt.return_value = "Refinement prompt: {task_content}"
 
         system_content, user_content = create_arc_prompt(
             task_data, mock_prompt_loader, "soar", draft_program=draft_program
         )
 
-        self.assertEqual(system_content, "You are an AI assistant.")
+        self.assertEqual(system_content, "You are an AI assistant specialized in refinement.")
         self.assertIn("Input 1 (grid shape: 2 by 2)", user_content)
         self.assertIn("Output 1 (grid shape: 2 by 2)", user_content)
         self.assertIn("Test Input 1 (grid shape: 2 by 2)", user_content)
         self.assertIn("def transform(grid):", user_content)
-        self.assertIn("Draft program to refine:", user_content)
-        self.assertIn("You should analyze:", user_content)
-        self.assertNotIn("Draft Program's Output", user_content)  # No predicted outputs
+        self.assertIn("Previous implementation:", user_content)
 
-        # Verify prompt loader was called
-        mock_prompt_loader.get_system_message.assert_called_with("soar")
-        mock_prompt_loader.get_initial_turn_prompt.assert_called_with("soar")
+        # Verify prompt loader was called with soar-refine for refinement mode
+        mock_prompt_loader.get_system_message.assert_called_with("soar-refine")
+        mock_prompt_loader.get_initial_turn_prompt.assert_called_with("soar-refine")
 
     def test_create_arc_prompt_refinement_with_full_outputs(self):
         """Test refinement mode with full predicted outputs"""
@@ -221,21 +219,26 @@ This should work."""
             'train': [[[1, 0], [0, 1]]]  # Wrong - should be [[0, 1], [1, 0]]
         }
 
-        # Mock prompt loader
+        # Mock prompt loader for refinement mode
         mock_prompt_loader = Mock()
-        mock_prompt_loader.get_system_message.return_value = "You are an AI assistant."
-        mock_prompt_loader.get_initial_turn_prompt.return_value = "{refinement_instructions}{draft_program_section}\n{task_content}"
+        mock_prompt_loader.get_system_message.return_value = "You are an AI assistant specialized in refinement."
+        mock_prompt_loader.get_initial_turn_prompt.return_value = "Refinement prompt: {task_content}"
+
+        # Test with correct_train_input for the new format
+        correct_train_input = [False]  # Wrong prediction
 
         system_content, user_content = create_arc_prompt(
             task_data, mock_prompt_loader, "soar",
             draft_program=draft_program,
             predicted_outputs=predicted_outputs,
-            output_mode="full"
+            output_mode="full",
+            correct_train_input=correct_train_input
         )
 
-        self.assertEqual(system_content, "You are an AI assistant.")
-        self.assertIn("Draft Program's Output 1 (grid shape: 2 by 2)", user_content)
+        self.assertEqual(system_content, "You are an AI assistant specialized in refinement.")
+        self.assertIn("Previous implementation:", user_content)
         self.assertIn("[[1 0] [0 1]]", user_content)  # Predicted output
+        self.assertIn("incorrect", user_content)  # Should show incorrect result
 
 
 
