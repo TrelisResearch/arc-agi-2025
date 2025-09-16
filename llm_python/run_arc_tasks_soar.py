@@ -10,6 +10,7 @@ import traceback
 import numpy as np
 import os
 import re
+import signal
 from pathlib import Path
 from typing import Dict, List, NotRequired, Optional, TypedDict, Union, Tuple, Any
 from dotenv import load_dotenv
@@ -195,6 +196,13 @@ class ARCTaskRunnerSimple:
         output_dir = Path(parquet_output_dir) if parquet_output_dir else None
         self.dataset_collector = SoarDatasetCollector(sample_name, output_dir=output_dir)
         self.no_transductive_penalty = no_transductive_penalty
+
+        # Signal handling for graceful shutdown
+        self._shutdown_requested = False
+        self._active_executor = None
+        self._parquet_flushed = False  # Track if parquet data has been flushed
+        signal.signal(signal.SIGTERM, self._handle_shutdown_signal)
+        # Note: SIGINT (Ctrl+C) is handled by existing KeyboardInterrupt exception handling
         
         # Timeout configuration
         api_timeout = 600  # 10 minutes per API request
@@ -426,6 +434,36 @@ class ARCTaskRunnerSimple:
             if "rex_pool" in results:
                 rex_pool = results["rex_pool"]
                 rex_pool.log_pool_summary()
+
+    def _flush_parquet_safely(self, context=""):
+        """Safely flush parquet data only once, with context for logging."""
+        if not self._parquet_flushed:
+            try:
+                self.dataset_collector.flush()
+                self._parquet_flushed = True
+                print(f"📝 Parquet data flushed successfully{' ' + context if context else ''}")
+            except Exception as e:
+                print(f"❌ Error flushing parquet data{' ' + context if context else ''}: {e}")
+        else:
+            if self.debug and context:
+                print(f"ℹ️ Parquet already flushed, skipping{' ' + context if context else ''}")
+
+    def _handle_shutdown_signal(self, signum, frame):
+        """Handle SIGTERM for graceful shutdown with parquet flushing."""
+        print(f"\n🛑 Received signal {signum} - initiating graceful shutdown...")
+        self._shutdown_requested = True
+
+        # Cancel any active executor
+        if self._active_executor:
+            self._flush_parquet_safely("(signal handler)")
+
+            print("🚫 Cancelling remaining futures...")
+            # Cancel remaining futures in the executor
+            for future in getattr(self._active_executor, '_threads', {}).values():
+                if hasattr(future, 'cancel'):
+                    future.cancel()
+
+        print("🏁 Graceful shutdown initiated - parquet data saved")
 
     def _update_rex_pool_with_attempt(self, task_result, attempt_detail, refined_from_id):
         """
@@ -1637,12 +1675,16 @@ class ARCTaskRunnerSimple:
                 return None
 
         executor = ThreadPoolExecutor(self.max_workers)
+        # Store executor reference for signal handling
+        self._active_executor = executor
+
         try:
             futures = [
                 executor.submit(
                     attempt_wrapper, task_idx, task_id, task_data, attempt_num
                 )
                 for task_idx, task_id, task_data, attempt_num in attempt_jobs
+                if not self._shutdown_requested
             ]
 
             print(
@@ -1660,6 +1702,16 @@ class ARCTaskRunnerSimple:
             last_progress_time = time.time()
 
             while remaining:
+                # Check for shutdown request
+                if self._shutdown_requested:
+                    print("🛑 Shutdown requested - cancelling remaining futures...")
+                    cancelled_count = 0
+                    for future in remaining:
+                        if future.cancel():
+                            cancelled_count += 1
+                    print(f"🛑 Cancelled {cancelled_count} futures, waiting for {len(remaining) - cancelled_count} to complete...")
+                    # Let already-running futures complete naturally
+                    break
 
                 # Check for inactivity timeout (no completions in a long time)
                 if time.time() - last_progress_time > self.inactivity_timeout:
@@ -1705,6 +1757,9 @@ class ARCTaskRunnerSimple:
                     print(
                         f"\n🛑 Cancellation requested - cancelling queued requests, waiting for in-flight requests..."
                     )
+
+                    # Flush parquet data immediately to preserve results
+                    self._flush_parquet_safely("(keyboard interrupt)")
 
                     # Cancel futures that haven't started yet
                     cancelled_count = 0
@@ -1774,9 +1829,15 @@ class ARCTaskRunnerSimple:
             )
 
         finally:
+            # Clear executor reference and flush data before shutdown
+            self._active_executor = None
+
+            # Ensure parquet data is flushed even during normal completion
+            self._flush_parquet_safely("(finally block)")
+
             # We don't want to block execution if we have one stuck thread.
             executor.shutdown(wait=False)
-        
+
         # Stop vLLM metrics monitoring
         self._stop_metrics_monitoring()
 
