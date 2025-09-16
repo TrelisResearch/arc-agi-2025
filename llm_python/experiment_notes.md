@@ -11,6 +11,8 @@ Big Picture Status:
 
 Ideas:
 [ ] Compare FP8 performance to BF16 to see if we can increase sampling by more.
+[ ] Start generating refinement data.
+[ ] See how much we can increase sampling + clean up the sampling code so we don't re-load the model. Plus, potentially add a timeout.
 [ ] Create simpler versions of harder tasks to see if we can teach the model how to solve harder tasks.
 [ ] Have gpt-5-mini re-write all programs in a unified consistent style? Useful?
 [ ] Co-train the model to do a) grids -> programs, b) programs -> grids, c) grids + draft program -> refined program, d) multiple programs -> compounded program. Use this model to create tasks calibrated to aa2 difficulty (based on gpt-5-mini performance).
@@ -25,6 +27,13 @@ Commercial:
 - Reach back out to openrouter on sponsorship again.
 
 ---
+## Septebmer 16th 2025
+### Reverting to rewrite refine
+Run a quick task runner using openrouter on the OSS 20B model:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training --max_workers 64 --max_attempts 1 --model openai/gpt-oss-20b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds Trelis/arc-agi-partials-for-refinement --early-stop-threshold 100 --limit 1
+```
+
 ## Sept 15th 2025
 See `experimental/trelis_arc_agi_2_mixed_analysis` for a study of similarity and refinement.
 

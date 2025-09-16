@@ -458,6 +458,8 @@ class TaskLoader:
                         'code': row.get('code', ''),
                         'correct_train_input': row['correct_train_input'],
                         'correct_test_input': row.get('correct_test_input', []),
+                        'predicted_train_output': row.get('predicted_train_output', []),
+                        'predicted_test_output': row.get('predicted_test_output', []),
                         'model': row.get('model', 'unknown'),
                         'reasoning': row.get('reasoning', ''),
                         'is_transductive': row.get('is_transductive', False)
@@ -481,7 +483,7 @@ class TaskLoader:
                 ds = load_dataset(identifier, split="train")
                 if max_rows and max_rows < len(ds):
                     ds = ds.select(range(max_rows))
-                
+
                 # Convert to pandas for easier filtering
                 import pandas as pd
                 df = ds.to_pandas()
@@ -513,6 +515,8 @@ class TaskLoader:
                         'code': row.get('code', ''),
                         'correct_train_input': row['correct_train_input'],
                         'correct_test_input': row.get('correct_test_input', []),
+                        'predicted_train_output': row.get('predicted_train_output', []),
+                        'predicted_test_output': row.get('predicted_test_output', []),
                         'model': row.get('model', 'unknown'),
                         'reasoning': row.get('reasoning', ''),
                         'is_transductive': row.get('is_transductive', False)

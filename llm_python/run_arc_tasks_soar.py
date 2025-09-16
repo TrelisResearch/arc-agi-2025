@@ -179,6 +179,7 @@ class ARCTaskRunnerSimple:
         self.splitter = splitter
         self.refinement_dataset = refinement_dataset
         self.refine_mode = bool(refinement_dataset)  # Enable refinement mode if dataset provided
+        self.include_outputs = bool(refinement_dataset)  # Enable output inclusion by default when using refinement dataset
         self.early_stop_threshold = early_stop_threshold
         self.logged_skipped_tasks = set()  # Track which tasks we've already logged as skipped
         # Use custom output directory if provided, otherwise use default
@@ -747,14 +748,22 @@ class ARCTaskRunnerSimple:
             # Don't let database logging errors crash the main execution
             traceback.print_exc()
 
-    def create_prompt(self, task_data: Dict) -> tuple[str, str]:
+    def create_prompt(self, task_data: Dict, draft_program: Optional[str] = None, predicted_outputs: Optional[Dict] = None) -> tuple[str, str]:
         """Create a prompt for the model to solve an ARC task"""
-        # Use simplified prompt function - no refinement-specific logic needed
+        # Determine output mode based on flags
+        output_mode = None
+        if self.include_outputs:
+            output_mode = "full"
+
+        # Use unified prompt function for both regular and refinement modes
         return create_arc_prompt(
             task_data=task_data,
             prompt_loader=self.prompt_loader,
             prompt_version=self.prompt_version,
-            splitter=self.splitter
+            splitter=self.splitter,
+            draft_program=draft_program,
+            predicted_outputs=predicted_outputs,
+            output_mode=output_mode
         )
 
     def get_sampling_parameters(self) -> Dict:
@@ -1341,32 +1350,36 @@ class ARCTaskRunnerSimple:
             if programs:  # Task has refinement programs available
                 # Select best program for refinement (most correct training examples, then random)
                 selected_program = self._select_best_program_for_refinement(programs)
-                
-                # Create swapped task data: use predicted outputs as inputs, keep original outputs for scoring
-                predicted_train_outputs = selected_program.get('predicted_train_output', [])
-                predicted_test_outputs = selected_program.get('predicted_test_output', [])
-                
-                # Create swapped task data with predicted outputs as inputs
-                swapped_task_data = {
-                    "train": [
-                        {
-                            "input": predicted_train_outputs[i] if i < len(predicted_train_outputs) and predicted_train_outputs[i] is not None else original_example["input"],
-                            "output": original_example["output"]  # Keep original for scoring
-                        }
-                        for i, original_example in enumerate(task_data["train"])
-                    ],
-                    "test": [
-                        {
-                            "input": predicted_test_outputs[i] if i < len(predicted_test_outputs) and predicted_test_outputs[i] is not None else original_example["input"],
-                            "output": original_example.get("output", [])  # Keep original for scoring (may be empty in SUBMIT mode)
-                        }
-                        for i, original_example in enumerate(task_data["test"])
-                    ]
-                }
-                
-                task_results[task_id]["task_data"] = swapped_task_data
+                draft_code = selected_program.get('code', '')
+
+                # Extract predicted outputs if needed for output modes
+                # Only include train outputs since test outputs won't be available during actual runs
+                predicted_outputs = None
+                if self.include_outputs:
+                    predicted_train = selected_program.get('predicted_train_output', [])
+
+                    # Convert numpy arrays to plain Python lists (for HuggingFace datasets)
+                    if hasattr(predicted_train, 'tolist'):
+                        predicted_train = predicted_train.tolist()
+
+                    # Convert individual grids if they're numpy arrays
+                    if predicted_train is not None and len(predicted_train) > 0:
+                        converted_train = []
+                        for grid in predicted_train:
+                            if hasattr(grid, 'tolist'):
+                                converted_train.append(grid.tolist())
+                            else:
+                                converted_train.append(grid)
+                        predicted_train = converted_train
+
+                    predicted_outputs = {
+                        'train': predicted_train
+                    }
+
+                task_results[task_id]["task_data"] = task_data
                 task_results[task_id]["selected_program"] = selected_program  # Store for logging
-                system_content, user_content = self.create_prompt(swapped_task_data)
+                task_results[task_id]["predicted_outputs"] = predicted_outputs  # Store for splitter mode
+                system_content, user_content = self.create_prompt(task_data, draft_program=draft_code, predicted_outputs=predicted_outputs)
                 task_results[task_id]["full_prompt"] = {
                     "system": system_content,
                     "user": user_content,
@@ -1451,12 +1464,21 @@ class ARCTaskRunnerSimple:
                         completed_attempts += 1
                     
                     return dummy_result
-                # Create fresh prompt for each attempt when splitter is enabled, 
+                # Create fresh prompt for each attempt when splitter is enabled,
                 # otherwise use pre-created prompt for consistency
                 if self.splitter:
-                    # Use the task_data stored in task_results (which is already swapped for refinement mode)
+                    # Use the task_data stored in task_results
                     stored_task_data = task_results[task_id]["task_data"]
-                    system_content, user_content = self.create_prompt(stored_task_data)
+
+                    # Check if refinement mode and get draft program/predicted outputs
+                    if self.refine_mode and "selected_program" in task_results[task_id]:
+                        selected_program = task_results[task_id]["selected_program"]
+                        draft_code = selected_program.get('code', '') if selected_program else ''
+                        predicted_outputs = task_results[task_id].get("predicted_outputs")
+                        system_content, user_content = self.create_prompt(stored_task_data, draft_program=draft_code, predicted_outputs=predicted_outputs)
+                    else:
+                        system_content, user_content = self.create_prompt(stored_task_data)
+
                     full_prompt = {"system": system_content, "user": user_content}
                 else:
                     full_prompt = task_results[task_id]["full_prompt"]

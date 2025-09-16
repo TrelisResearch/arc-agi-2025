@@ -5,11 +5,11 @@ Tests for prompt utility functions.
 import unittest
 from unittest.mock import Mock
 
-from llm_python.utils import (
+from llm_python.utils.prompt_utils import (
     create_arc_prompt,
     extract_python_code,
-    format_grid_for_prompt,
-    get_grid_shape_string
+    _format_grid_for_prompt as format_grid_for_prompt,
+    _get_grid_shape_string as get_grid_shape_string
 )
 
 
@@ -158,6 +158,85 @@ This should work."""
         # Should have both test examples
         self.assertIn("Test Input 1 (grid shape: 2 by 1)", user_content)
         self.assertIn("Test Input 2 (grid shape: 2 by 1)", user_content)
+
+    def test_create_arc_prompt_refinement_basic(self):
+        """Test ARC prompt creation in refinement mode with draft program"""
+        task_data = {
+            'train': [
+                {
+                    'input': [[1, 0], [0, 1]],
+                    'output': [[0, 1], [1, 0]]
+                }
+            ],
+            'test': [
+                {
+                    'input': [[1, 1], [0, 0]]
+                }
+            ]
+        }
+
+        draft_program = "def transform(grid):\n    return grid"
+
+        # Mock prompt loader
+        mock_prompt_loader = Mock()
+        mock_prompt_loader.get_system_message.return_value = "You are an AI assistant."
+        mock_prompt_loader.get_initial_turn_prompt.return_value = "{refinement_instructions}{draft_program_section}\n{task_content}"
+
+        system_content, user_content = create_arc_prompt(
+            task_data, mock_prompt_loader, "soar", draft_program=draft_program
+        )
+
+        self.assertEqual(system_content, "You are an AI assistant.")
+        self.assertIn("Input 1 (grid shape: 2 by 2)", user_content)
+        self.assertIn("Output 1 (grid shape: 2 by 2)", user_content)
+        self.assertIn("Test Input 1 (grid shape: 2 by 2)", user_content)
+        self.assertIn("def transform(grid):", user_content)
+        self.assertIn("Draft program to refine:", user_content)
+        self.assertIn("You should analyze:", user_content)
+        self.assertNotIn("Draft Program's Output", user_content)  # No predicted outputs
+
+        # Verify prompt loader was called
+        mock_prompt_loader.get_system_message.assert_called_with("soar")
+        mock_prompt_loader.get_initial_turn_prompt.assert_called_with("soar")
+
+    def test_create_arc_prompt_refinement_with_full_outputs(self):
+        """Test refinement mode with full predicted outputs"""
+        task_data = {
+            'train': [
+                {
+                    'input': [[1, 0], [0, 1]],
+                    'output': [[0, 1], [1, 0]]
+                }
+            ],
+            'test': [
+                {
+                    'input': [[1, 1], [0, 0]]
+                }
+            ]
+        }
+
+        draft_program = "def transform(grid):\n    return grid"
+
+        predicted_outputs = {
+            'train': [[[1, 0], [0, 1]]]  # Wrong - should be [[0, 1], [1, 0]]
+        }
+
+        # Mock prompt loader
+        mock_prompt_loader = Mock()
+        mock_prompt_loader.get_system_message.return_value = "You are an AI assistant."
+        mock_prompt_loader.get_initial_turn_prompt.return_value = "{refinement_instructions}{draft_program_section}\n{task_content}"
+
+        system_content, user_content = create_arc_prompt(
+            task_data, mock_prompt_loader, "soar",
+            draft_program=draft_program,
+            predicted_outputs=predicted_outputs,
+            output_mode="full"
+        )
+
+        self.assertEqual(system_content, "You are an AI assistant.")
+        self.assertIn("Draft Program's Output 1 (grid shape: 2 by 2)", user_content)
+        self.assertIn("[[1 0] [0 1]]", user_content)  # Predicted output
+
 
 
 if __name__ == '__main__':
