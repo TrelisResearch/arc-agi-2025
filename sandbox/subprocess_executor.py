@@ -3,6 +3,7 @@ Simple, self-contained subprocess executor for Python code.
 No dependencies on base classes or complex imports.
 """
 
+import signal
 import subprocess
 import sys
 import pickle
@@ -51,15 +52,13 @@ def _monitor_memory(
                 if rss > memory_limit_bytes:
                     result_container["oom_killed"] = True
                     # Kill the entire process group to be safe
-                    for child in p.children(recursive=True):
-                        child.kill()
-                    p.kill()
+                    os.killpg(os.getpgid(p.pid), signal.SIGKILL)
                     return
-            except psutil.NoSuchProcess:
+            except (psutil.NoSuchProcess, ProcessLookupError):
                 # Process finished between poll() and memory_info()
                 return
             time.sleep(0.05)
-    except psutil.NoSuchProcess:
+    except (psutil.NoSuchProcess, ProcessLookupError):
         # Process already finished before the thread started
         return
 
@@ -113,8 +112,14 @@ except Exception as e:
             command = [sys.executable, "-c", runner_script, encoded_user_code]
 
             # Use Popen to start the process in the background
+            # preexec_fn=os.setsid makes the subprocess a session leader,
+            # allowing us to kill the entire process group reliably.
             process = subprocess.Popen(
-                command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                preexec_fn=os.setsid,
             )
 
             # Start the memory monitor thread
@@ -148,23 +153,25 @@ except Exception as e:
             elif "RESULT_START" in stdout:
                 start_marker, end_marker = (
                     "RESULT_START",
-                    "END_RESULT",
-                )  # Small typo in original, fixed
+                    "RESULT_END",
+                )
                 start_idx = stdout.find(start_marker) + len(start_marker)
-                end_idx = stdout.find("RESULT_END")
+                end_idx = stdout.find(end_marker)
+                if end_idx == -1:
+                    return None, Exception(f"Incomplete result received. Stdout: {stdout}")
                 serialized_result = stdout[start_idx:end_idx]
                 return pickle.loads(base64.b64decode(serialized_result)), None
             else:
                 return None, Exception(f"An unknown error occurred. Stderr: {stderr}")
 
+
         except subprocess.TimeoutExpired:
             if process:
-                # Be thorough in cleanup
-                p = psutil.Process(process.pid)
-                for child in p.children(recursive=True):
-                    child.kill()
-                p.kill()
-            return None, ExecutionTimeout(timeout)
+                try:
+                    os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+                except (psutil.NoSuchProcess, ProcessLookupError):
+                    pass # Process already died
+            return None, ExecutionTimeout(int(timeout) if timeout is not None else 0)
         except Exception as e:
             return None, Exception(f"Subprocess execution failed: {e}")
         finally:
