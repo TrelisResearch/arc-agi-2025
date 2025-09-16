@@ -10,14 +10,12 @@ Big Picture Status:
   - Other paths: a) refinement, b) ttt, c) compounding, d) teaching (via human created simpler programs).
 
 Ideas:
-[ ] Compare FP8 performance to BF16 to see if we can increase sampling by more.
-[ ] Start generating refinement data.
-[ ] See how much we can increase sampling + clean up the sampling code so we don't re-load the model. Plus, potentially add a timeout.
+[x] See how much we can increase sampling + clean up the sampling code so we don't re-load the model. Plus, potentially add a timeout.
 [ ] Create simpler versions of harder tasks to see if we can teach the model how to solve harder tasks.
 [ ] Have gpt-5-mini re-write all programs in a unified consistent style? Useful?
 [ ] Co-train the model to do a) grids -> programs, b) programs -> grids, c) grids + draft program -> refined program, d) multiple programs -> compounded program. Use this model to create tasks calibrated to aa2 difficulty (based on gpt-5-mini performance).
 [ ] Train the compounding.
-[ ] Consider doing short reasoning.
+[ ] Consider doing short reasoning, i.e. perhaps summarize reasoning traces and use those as very short reasoning traces.
 
 Lewis Reminders:
 - Right now we limit programs if they generate larger than 30x30. This may be somewhat limiting. Soar limits to 50x50.
@@ -27,6 +25,8 @@ Lewis Reminders:
 Ronan todo near-term:
 [ ] Add train accuracy quartiles as a refinement method for data generation.
 [ ] Generate refinement data (if we don't get some from Julien) on aa2 training using the quartiles method.
+[ ] Train Qwen 8B on 50-sample + 50-refine.
+[ ] Review REx in more detail to ensure it is effective.
 
 Ronan Qs:
 - Why are there programs getting saved to reasoning? for qwen?
