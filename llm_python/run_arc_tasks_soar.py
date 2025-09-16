@@ -440,10 +440,12 @@ class ARCTaskRunnerSimple:
         if not self._parquet_flushed:
             try:
                 self.dataset_collector.flush()
-                self._parquet_flushed = True
                 print(f"📝 Parquet data flushed successfully{' ' + context if context else ''}")
             except Exception as e:
                 print(f"❌ Error flushing parquet data{' ' + context if context else ''}: {e}")
+            finally:
+                # Set flag regardless of success/failure to prevent retry loops
+                self._parquet_flushed = True
         else:
             if self.debug and context:
                 print(f"ℹ️ Parquet already flushed, skipping{' ' + context if context else ''}")
