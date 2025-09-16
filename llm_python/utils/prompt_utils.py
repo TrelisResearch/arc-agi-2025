@@ -6,8 +6,38 @@ import re
 import random
 from typing import Dict, List, Tuple, Optional
 
-from llm_python.utils.prompt_loader import PromptLoader, get_prompt_loader
+from llm_python.utils.prompt_loader import get_prompt_loader
 from llm_python.utils.task_loader import TaskData
+from llm_python.utils.numpy import convert_numpy_types
+import numpy as np
+
+
+def _format_predicted_output_for_display(output_grid: List[List[int]]) -> Tuple[str, str]:
+    """
+    Format predicted output grid for display in refinement prompts.
+
+    Args:
+        output_grid: 2D list representing the predicted output grid
+
+    Returns:
+        Tuple of (formatted_grid_string, shape_string)
+    """
+    if not isinstance(output_grid, list):
+        return str(output_grid), ""
+
+    try:
+        # Convert to numpy array to get shape
+        arr = np.array(output_grid)
+        height, width = arr.shape
+        shape_string = f"grid shape: {width} by {height}"
+
+        # Format grid with clean display (no commas)
+        formatted_grid = str(output_grid).replace(",", "")
+
+        return formatted_grid, shape_string
+    except (ValueError, TypeError, AttributeError):
+        # Fallback to simple string representation
+        return str(output_grid), ""
 
 
 def _format_grid_for_prompt(grid: List[List[int]]) -> str:
@@ -60,6 +90,7 @@ def create_arc_prompt(
     draft_program: Optional[str] = None,
     predicted_outputs: Optional[Dict] = None,
     output_mode: Optional[str] = None,
+    correct_train_input: Optional[List[bool]] = None,
 ) -> Tuple[str, str]:
     """
     Create a unified prompt for the model to solve an ARC task (both regular and refinement modes).
@@ -72,6 +103,7 @@ def create_arc_prompt(
         draft_program: Existing program code to be refined (enables refinement mode)
         predicted_outputs: Dict containing 'train' predicted outputs from draft program
         output_mode: How to display outputs ('full', 'diff', or None)
+        correct_train_input: Optional list of boolean flags indicating correctness for each training example
 
     Returns:
         Tuple of (system_content, user_content)
@@ -102,28 +134,6 @@ def create_arc_prompt(
         output_str = _format_grid_for_prompt(output_grid)
         task_content += f"## Input {i} (grid shape: {input_shape}):\n{input_str}\n"
         task_content += f"## Output {i} (grid shape: {output_shape}):\n{output_str}\n"
-
-        # Add predicted outputs if available and requested (refinement mode)
-        if refinement_mode and output_mode == "full":
-            if predicted_outputs is None or "train" not in predicted_outputs:
-                raise ValueError(
-                    "Predicted outputs for 'train' are required in refinement full mode."
-                )
-            predicted_train = predicted_outputs["train"]
-            if i <= len(predicted_train):
-                predicted_grid = predicted_train[i - 1]  # Convert to 0-based index
-                if predicted_grid is not None:
-                    # Convert numpy arrays to plain Python lists for formatting
-                    if hasattr(predicted_grid, 'tolist'):
-                        predicted_grid = predicted_grid.tolist()
-                    predicted_str = _format_grid_for_prompt(predicted_grid)
-                    predicted_shape = _get_grid_shape_string(predicted_grid)
-                    task_content += f"## Draft Program's Output {i} (grid shape: {predicted_shape}):\n{predicted_str}\n"
-                else:
-                    task_content += (
-                        f"## Draft Program's Output {i}:\nNone (execution failed)\n"
-                    )
-
         task_content += "\n"
 
     # Add test examples
@@ -137,37 +147,126 @@ def create_arc_prompt(
     system_content = prompt_loader.get_system_message(prompt_version)
     prompt_template = prompt_loader.get_initial_turn_prompt(prompt_version)
 
-    # Simple template placeholders - fill if refinement mode, empty if not
+    # Use different prompt versions for refinement vs regular mode
     if refinement_mode:
-        refinement_instructions = """
-You should analyze:
-1. The task input-output patterns to understand the correct transformation rule
-2. The provided draft program to identify its errors or shortcomings
-3. How to correct and improve the draft to properly solve the task"""
+        # Use soar-refine prompts and generate special task content
+        system_content = prompt_loader.get_system_message("soar-refine")
+        prompt_template = prompt_loader.get_initial_turn_prompt("soar-refine")
 
-        refinement_requirements = " The code should fix bugs in the original draft."
-
-        draft_program_section = f"""
-# Draft program to refine:
-```python
-{draft_program}
-```"""
-
+        # Generate refinement-specific task content with statistics
+        task_content = generate_refinement_task_content(
+            task_data, draft_program, predicted_outputs, train_examples, correct_train_input
+        )
     else:
-        refinement_instructions = ""
-        refinement_requirements = ""
-        draft_program_section = ""
+        # Use regular soar prompts (already loaded above)
+        pass
 
     # Simple template formatting
-    user_content = prompt_template.format(
-        refinement_instructions=refinement_instructions,
-        refinement_requirements=refinement_requirements,
-        draft_program_section=draft_program_section,
-        task_content=task_content,
-    )
+    user_content = prompt_template.format(task_content=task_content)
 
     return system_content, user_content
 
+
+def generate_refinement_task_content(task_data: Dict, draft_program: Optional[str], predicted_outputs: Optional[Dict], train_examples: list, correct_train_input: Optional[List[bool]] = None, show_output_test: bool = True) -> str:
+    """Generate the new refinement prompt format with correctness statistics
+
+    Args:
+        task_data: Dictionary containing 'train' and 'test' examples
+        draft_program: Existing program code to be refined (optional)
+        predicted_outputs: Dict containing 'train' predicted outputs from draft program
+        train_examples: List of training examples
+        correct_train_input: Optional list of boolean flags indicating correctness for each training example
+        show_output_test: Whether to show test outputs (default: True)
+    """
+
+    content = "# Task to solve:"
+
+    # Add train examples with predicted outputs and correctness info
+    correct_count = 0
+    total_count = len(train_examples)
+
+    for i, example in enumerate(train_examples, 1):
+        input_grid = example["input"]
+        output_grid = example["output"]
+        input_shape = _get_grid_shape_string(input_grid)
+        output_shape = _get_grid_shape_string(output_grid)
+        input_str = _format_grid_for_prompt(input_grid)
+        output_str = _format_grid_for_prompt(output_grid)
+
+        content += f"\n## Input {i} (grid shape: {input_shape}):\n{input_str}\n"
+        content += f"## Output {i} (grid shape: {output_shape}):\n{output_str}\n"
+
+    # Add test examples
+    for i, example in enumerate(task_data["test"], 1):
+        input_grid = example["input"]
+        input_shape = _get_grid_shape_string(input_grid)
+        input_str = _format_grid_for_prompt(input_grid)
+        content += f"## Test Input {i} (grid shape: {input_shape}):\n{input_str}\n"
+
+    # Add previous implementation section
+    content += f"\nPrevious implementation:\n```python\n{draft_program or ''}\n```\n"
+
+    # Add correctness statistics
+    if correct_train_input is not None:
+        # Use pre-computed boolean flags for correctness
+        correct_count = sum(correct_train_input)
+        content += f"\nThis implementation of transform function correctly worked on {correct_count}/{total_count} train input-output pairs.\n"
+        content += "Detailed results:\n"
+
+        # Add detailed results for each training example using boolean flags
+        for i, is_correct in enumerate(correct_train_input, 1):
+            content += f"## Output {i} computed by `transform` is "
+            if is_correct:
+                content += "correct.\n"
+            else:
+                content += "incorrect.\n"
+
+            # Show predicted output for all cases (correct and incorrect)
+            if (predicted_outputs and "train" in predicted_outputs
+                and i - 1 < len(predicted_outputs["train"])
+                and predicted_outputs["train"][i - 1] is not None):
+
+                predicted_output = predicted_outputs["train"][i - 1]
+                # Convert numpy arrays if needed
+                if hasattr(predicted_output, 'tolist'):
+                    predicted_output = predicted_output.tolist()
+                predicted_output = convert_numpy_types(predicted_output)
+
+                formatted_grid, shape_string = _format_predicted_output_for_display(predicted_output)
+                content += f"The execution gave the following results ({shape_string}):\n{formatted_grid}\n"
+
+    # Add test output display if requested (before summary message)
+    if show_output_test and predicted_outputs and "test" in predicted_outputs:
+        predicted_test = predicted_outputs["test"]
+        for i, predicted_output in enumerate(predicted_test, 1):
+            content += f"\n## Output Test {i} computed by `transform` (we don't know if it is correct or not)\n"
+
+            if predicted_output is not None:
+                # Convert numpy arrays if needed
+                if hasattr(predicted_output, 'tolist'):
+                    predicted_output = predicted_output.tolist()
+                predicted_output = convert_numpy_types(predicted_output)
+
+                formatted_grid, shape_string = _format_predicted_output_for_display(predicted_output)
+                content += f"The execution gave the following results ({shape_string}):\n{formatted_grid}\n"
+
+    # Add summary message if we have correctness data
+    if correct_train_input is not None:
+        # List which outputs were incorrect using boolean flags
+        incorrect_outputs = []
+        for i, is_correct in enumerate(correct_train_input, 1):
+            if not is_correct:
+                incorrect_outputs.append(f"Output {i}")
+
+        # Match their message format
+        if len(incorrect_outputs) == 0:
+            content += "The previous code gives correct output grids for all Train input.\n"
+            print("WARNING: The previous code gives correct output grids for all Train input. This is not expected.")
+        else:
+            incorrect_list = ', '.join(incorrect_outputs)
+            content += f"\nThe previous code gives incorrect output grids for: {incorrect_list}. Now, you need to fix the code to produce correct output for all inputs."
+
+    return content
 
 
 def create_compound_prompt(

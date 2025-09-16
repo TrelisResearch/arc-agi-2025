@@ -748,7 +748,7 @@ class ARCTaskRunnerSimple:
             # Don't let database logging errors crash the main execution
             traceback.print_exc()
 
-    def create_prompt(self, task_data: Dict, draft_program: Optional[str] = None, predicted_outputs: Optional[Dict] = None) -> tuple[str, str]:
+    def create_prompt(self, task_data: Dict, draft_program: Optional[str] = None, predicted_outputs: Optional[Dict] = None, correct_train_input: Optional[List[bool]] = None) -> tuple[str, str]:
         """Create a prompt for the model to solve an ARC task"""
         # Determine output mode based on flags
         output_mode = None
@@ -763,7 +763,8 @@ class ARCTaskRunnerSimple:
             splitter=self.splitter,
             draft_program=draft_program,
             predicted_outputs=predicted_outputs,
-            output_mode=output_mode
+            output_mode=output_mode,
+            correct_train_input=correct_train_input
         )
 
     def get_sampling_parameters(self) -> Dict:
@@ -1353,14 +1354,16 @@ class ARCTaskRunnerSimple:
                 draft_code = selected_program.get('code', '')
 
                 # Extract predicted outputs if needed for output modes
-                # Only include train outputs since test outputs won't be available during actual runs
                 predicted_outputs = None
                 if self.include_outputs:
                     predicted_train = selected_program.get('predicted_train_output', [])
+                    predicted_test = selected_program.get('predicted_test_output', [])
 
                     # Convert numpy arrays to plain Python lists (for HuggingFace datasets)
                     if hasattr(predicted_train, 'tolist'):
                         predicted_train = predicted_train.tolist()
+                    if hasattr(predicted_test, 'tolist'):
+                        predicted_test = predicted_test.tolist()
 
                     # Convert individual grids if they're numpy arrays
                     if predicted_train is not None and len(predicted_train) > 0:
@@ -1372,14 +1375,25 @@ class ARCTaskRunnerSimple:
                                 converted_train.append(grid)
                         predicted_train = converted_train
 
+                    if predicted_test is not None and len(predicted_test) > 0:
+                        converted_test = []
+                        for grid in predicted_test:
+                            if hasattr(grid, 'tolist'):
+                                converted_test.append(grid.tolist())
+                            else:
+                                converted_test.append(grid)
+                        predicted_test = converted_test
+
                     predicted_outputs = {
-                        'train': predicted_train
+                        'train': predicted_train,
+                        'test': predicted_test
                     }
 
                 task_results[task_id]["task_data"] = task_data
                 task_results[task_id]["selected_program"] = selected_program  # Store for logging
                 task_results[task_id]["predicted_outputs"] = predicted_outputs  # Store for splitter mode
-                system_content, user_content = self.create_prompt(task_data, draft_program=draft_code, predicted_outputs=predicted_outputs)
+                correct_train_input = selected_program.get('correct_train_input') if selected_program else None
+                system_content, user_content = self.create_prompt(task_data, draft_program=draft_code, predicted_outputs=predicted_outputs, correct_train_input=correct_train_input)
                 task_results[task_id]["full_prompt"] = {
                     "system": system_content,
                     "user": user_content,
@@ -1475,7 +1489,8 @@ class ARCTaskRunnerSimple:
                         selected_program = task_results[task_id]["selected_program"]
                         draft_code = selected_program.get('code', '') if selected_program else ''
                         predicted_outputs = task_results[task_id].get("predicted_outputs")
-                        system_content, user_content = self.create_prompt(stored_task_data, draft_program=draft_code, predicted_outputs=predicted_outputs)
+                        correct_train_input = selected_program.get('correct_train_input') if selected_program else None
+                        system_content, user_content = self.create_prompt(stored_task_data, draft_program=draft_code, predicted_outputs=predicted_outputs, correct_train_input=correct_train_input)
                     else:
                         system_content, user_content = self.create_prompt(stored_task_data)
 
