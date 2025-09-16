@@ -459,11 +459,7 @@ class ARCTaskRunnerSimple:
         if self._active_executor:
             self._flush_parquet_safely("(signal handler)")
 
-            print("🚫 Cancelling remaining futures...")
-            # Cancel remaining futures in the executor
-            for future in getattr(self._active_executor, '_threads', {}).values():
-                if hasattr(future, 'cancel'):
-                    future.cancel()
+            print("🚫 Signal handler completed - futures will be cancelled by main loop...")
 
         print("🏁 Graceful shutdown initiated - parquet data saved")
 
