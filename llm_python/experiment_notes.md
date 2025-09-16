@@ -38,8 +38,9 @@ Commercial:
 ## Septebmer 16th 2025
 ### Adding REX sampling
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training --max_workers 64 --max_attempts 1 --model openai/gpt-oss-20b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds Trelis/arc-agi-partials-for-refinement --early-stop-threshold 100 --limit 1
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training --max_workers 64 --max_attempts 16 --model gpt-4.1-nano --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds Trelis/arc-agi-partials-for-refinement --early-stop-threshold 100 --limit 2 --rex-stats
 ```
+Test out REx sampling on SOAR Qwen 14B passing in that same refinement dataset.
 
 ### Reverting to rewrite refine
 Run a quick task runner using openrouter on the OSS 20B model:

@@ -28,6 +28,7 @@ from llm_python.utils.metrics_utils import (
     calculate_task_metrics,
     metrics_to_percentages,
 )
+from llm_python.utils.refinement_utils import REXProgramPool
 from llm_python.transduction.code_classifier import CodeTransductionClassifier
 from llm_python.utils.prompt_loader import PromptLoader
 from llm_python.utils.serialization import ResponseSerializer
@@ -168,6 +169,9 @@ class ARCTaskRunnerSimple:
         splitter: bool = False,
         refinement_dataset: Optional[str] = None,
         early_stop_threshold: int = 7,
+        refinement_sampling: str = "rex",
+        rex_stats: bool = False,
+        rex_c: float = 20.0,
     ):
         # Core configuration
         self.max_workers = max_workers
@@ -182,6 +186,11 @@ class ARCTaskRunnerSimple:
         self.include_outputs = bool(refinement_dataset)  # Enable output inclusion by default when using refinement dataset
         self.early_stop_threshold = early_stop_threshold
         self.logged_skipped_tasks = set()  # Track which tasks we've already logged as skipped
+
+        # REX configuration
+        self.refinement_sampling = refinement_sampling
+        self.rex_stats = rex_stats
+        self.rex_c = rex_c
         # Use custom output directory if provided, otherwise use default
         output_dir = Path(parquet_output_dir) if parquet_output_dir else None
         self.dataset_collector = SoarDatasetCollector(sample_name, output_dir=output_dir)
@@ -410,7 +419,62 @@ class ARCTaskRunnerSimple:
             return True
             
         return False
-    
+
+    def _log_rex_pool_stats(self, task_results):
+        """Log REX pool statistics for all tasks with pools"""
+        for task_id, results in task_results.items():
+            if "rex_pool" in results:
+                rex_pool = results["rex_pool"]
+                rex_pool.log_pool_summary()
+
+    def _update_rex_pool_with_attempt(self, task_result, attempt_detail, refined_from_id):
+        """
+        Add successful refinements back to the REX pool.
+
+        Criteria for adding:
+        - Program executes successfully (no errors/timeouts)
+        - Produces valid grids (outputs_valid=True)
+        - Is non-transductive
+        - Is NOT 100% correct on training (to avoid perfect programs)
+        """
+        rex_pool = task_result.get("rex_pool")
+        if not rex_pool:
+            return
+
+        # Check if attempt meets criteria for adding to pool
+        if (attempt_detail.get("program_extracted", False) and
+            attempt_detail.get("outputs_valid", False) and
+            not attempt_detail.get("is_transductive", False) and
+            attempt_detail.get("train_accuracy", 0.0) < 1.0):  # Not 100% correct
+
+            # Create refined program entry
+            from llm_python.utils.refinement_utils import create_refined_program_entry
+
+            # Build task results for the refined program
+            train_results = attempt_detail.get("train_results", [])
+            correct_train_input = [r.get("correct", False) for r in train_results]
+
+            original_program = {"row_id": refined_from_id} if refined_from_id else {}
+            task_results = {
+                "correct_train_input": correct_train_input,
+                "predicted_train_output": [r.get("predicted") for r in train_results],
+                "correct_test_input": [attempt_detail.get("test_correct", False)],
+                "predicted_test_output": [attempt_detail.get("test_predicted")]
+            }
+
+            refined_program = create_refined_program_entry(
+                original_program=original_program,
+                refined_code=attempt_detail.get("program", ""),
+                task_results=task_results,
+                model="refined"
+            )
+
+            # Add to pool with deduplication
+            added_count = rex_pool.add_programs([refined_program], deduplicate=True)
+
+            if added_count > 0 and self.rex_stats:
+                print(f"➕ Added refined program to REX pool: {attempt_detail.get('train_accuracy', 0):.1%} train accuracy")
+
     def _get_llm_metrics(self):
         """Fetch metrics from LLM server (vLLM or SGLang)"""
         if not self.metrics_url:
@@ -1349,8 +1413,15 @@ class ARCTaskRunnerSimple:
             task_id, task_data, programs = task_tuple
             
             if programs:  # Task has refinement programs available
-                # Select best program for refinement (most correct training examples, then random)
-                selected_program = self._select_best_program_for_refinement(programs)
+                # Create REX pool for this task if using REX sampling
+                if self.refinement_sampling == "rex":
+                    rex_pool = REXProgramPool(programs)
+                    task_results[task_id]["rex_pool"] = rex_pool
+                    # For REX mode, program selection happens per-attempt
+                    selected_program = programs[0]  # Temporary, will be replaced per-attempt
+                else:
+                    # Select best program for refinement (most correct training examples, then random)
+                    selected_program = self._select_best_program_for_refinement(programs)
                 draft_code = selected_program.get('code', '')
 
                 # Extract predicted outputs if needed for output modes
@@ -1480,13 +1551,22 @@ class ARCTaskRunnerSimple:
                     return dummy_result
                 # Create fresh prompt for each attempt when splitter is enabled,
                 # otherwise use pre-created prompt for consistency
-                if self.splitter:
+                # REX mode requires per-attempt prompt generation, similar to splitter
+                if self.splitter or (self.refine_mode and "rex_pool" in task_results[task_id]):
                     # Use the task_data stored in task_results
                     stored_task_data = task_results[task_id]["task_data"]
 
                     # Check if refinement mode and get draft program/predicted outputs
                     if self.refine_mode and "selected_program" in task_results[task_id]:
-                        selected_program = task_results[task_id]["selected_program"]
+                        # Use REX sampling per-attempt if enabled
+                        if "rex_pool" in task_results[task_id]:
+                            rex_pool = task_results[task_id]["rex_pool"]
+                            selected_program = rex_pool.sample_program("rex", self.rex_c)
+                            if self.debug:
+                                print(f"🔄 REX sampled program for attempt {attempt_num + 1}")
+                        else:
+                            selected_program = task_results[task_id]["selected_program"]
+
                         draft_code = selected_program.get('code', '') if selected_program else ''
                         predicted_outputs = task_results[task_id].get("predicted_outputs")
                         correct_train_input = selected_program.get('correct_train_input') if selected_program else None
@@ -1501,9 +1581,16 @@ class ARCTaskRunnerSimple:
                 # Get refined_from_id if in refinement mode
                 refined_from_id = None
                 if self.refine_mode and task_id in task_results:
-                    selected_program = task_results[task_id].get("selected_program")
-                    if selected_program:
-                        refined_from_id = selected_program.get("row_id")
+                    # Use the program that was actually selected for this attempt
+                    if "rex_pool" in task_results[task_id] and 'selected_program' in locals():
+                        # REX mode: use the program sampled for this specific attempt
+                        if selected_program:
+                            refined_from_id = selected_program.get("row_id")
+                    else:
+                        # Non-REX mode: use the pre-selected program
+                        selected_program = task_results[task_id].get("selected_program")
+                        if selected_program:
+                            refined_from_id = selected_program.get("row_id")
                 
                 # Individual API timeouts handled by OpenAI client
                 result = self.run_single_attempt(
@@ -1523,6 +1610,10 @@ class ARCTaskRunnerSimple:
                         )
                         # Prompt is already stored at task level during initialization
                         completed_attempts += 1
+
+                        # Add successful refinements back to REX pool
+                        if "rex_pool" in task_results[task_id] and self.refine_mode:
+                            self._update_rex_pool_with_attempt(task_results[task_id], result["attempt_detail"], refined_from_id)
 
                         # Check if task is complete
                         if len(task_results[task_id]["attempts"]) == self.max_attempts:
@@ -1601,6 +1692,12 @@ class ARCTaskRunnerSimple:
                             print(f"🚨 Future #{completed_count} error: {future_e}")
                     # Periodic progress log
                     done_now = total_attempts - len(remaining)
+
+                    # Add REX pool stats logging every 8 attempts if enabled
+                    if (self.rex_stats and self.refinement_sampling == "rex" and
+                        self.refine_mode and done_now > 0 and done_now % 8 == 0):
+                        self._log_rex_pool_stats(task_results)
+
                     print(
                         f"⏳ Progress: {done_now}/{total_attempts} attempts done; {len(remaining)} remaining"
                     )
@@ -2399,6 +2496,11 @@ def main():
         help="Sampling strategy for refinement programs: 'uniform' (random), 'rex' (REX algorithm). Default: rex",
     )
     parser.add_argument(
+        "--rex-stats",
+        action="store_true",
+        help="Enable periodic REX pool statistics logging every 8 attempts (only applies when using REX sampling)",
+    )
+    parser.add_argument(
         "--rex-c",
         type=float,
         default=20.0,
@@ -2459,6 +2561,9 @@ def main():
         splitter=args.splitter,
         refinement_dataset=args.refinement_ds,
         early_stop_threshold=args.early_stop_threshold,
+        refinement_sampling=args.refinement_sampling,
+        rex_stats=args.rex_stats,
+        rex_c=args.rex_c,
     )
 
     # Run the task subset

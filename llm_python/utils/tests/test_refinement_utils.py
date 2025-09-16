@@ -6,7 +6,10 @@ from unittest.mock import patch
 from llm_python.utils.refinement_utils import (
     calculate_program_metrics,
     select_best_program_for_refinement,
-    is_program_valid_for_refinement
+    is_program_valid_for_refinement,
+    REXProgramPool,
+    select_program_for_refinement,
+    create_refined_program_entry
 )
 
 
@@ -317,3 +320,312 @@ class TestIntegrationScenarios:
         # Should get variety in selections (not always the same)
         unique_results = set(results)
         assert len(unique_results) >= 2  # Should get at least 2 different programs
+
+
+class TestREXProgramPool:
+    """Test the REXProgramPool class"""
+
+    def test_init_empty_pool(self):
+        """Test initializing empty pool"""
+        pool = REXProgramPool([])
+        assert len(pool.programs) == 0
+        assert len(pool.refinement_counts) == 0
+        assert len(pool.program_hashes) == 0
+
+    def test_init_with_programs(self):
+        """Test initializing pool with programs"""
+        programs = [
+            {'row_id': 'prog1', 'code': 'def solve(): pass', 'correct_train_input': [True, False]},
+            {'row_id': 'prog2', 'code': 'def solve(): return []', 'correct_train_input': [False, False]}
+        ]
+        pool = REXProgramPool(programs)
+        assert len(pool.programs) == 2
+        assert len(pool.program_hashes) == 2
+
+    def test_sample_program_empty_pool(self):
+        """Test sampling from empty pool returns None"""
+        pool = REXProgramPool([])
+        result = pool.sample_program("uniform")
+        assert result is None
+
+        result = pool.sample_program("rex")
+        assert result is None
+
+    def test_sample_program_uniform(self):
+        """Test uniform sampling from pool"""
+        programs = [
+            {'row_id': 'prog1', 'code': 'code1', 'correct_train_input': [True, False]},
+            {'row_id': 'prog2', 'code': 'code2', 'correct_train_input': [True, True]}
+        ]
+        pool = REXProgramPool(programs)
+
+        # Sample multiple times and check we get variety
+        results = set()
+        for _ in range(20):
+            result = pool.sample_program("uniform")
+            results.add(result['code'])
+
+        assert len(results) >= 1  # Should get at least one program
+        assert all(code in ['code1', 'code2'] for code in results)
+
+    def test_sample_program_rex(self):
+        """Test REX sampling from pool"""
+        programs = [
+            {'row_id': 'prog1', 'code': 'code1', 'correct_train_input': [True, False]},  # 50% correct
+            {'row_id': 'prog2', 'code': 'code2', 'correct_train_input': [True, True]}    # 100% correct
+        ]
+        pool = REXProgramPool(programs)
+
+        # REX should be able to sample both programs
+        results = []
+        for _ in range(10):
+            result = pool.sample_program("rex", C=1.0)
+            results.append(result['code'])
+
+        assert len(results) == 10
+        assert all(code in ['code1', 'code2'] for code in results)
+
+    def test_rex_refinement_count_tracking(self):
+        """Test that REX sampling tracks refinement counts"""
+        programs = [
+            {'row_id': 'prog1', 'code': 'code1', 'correct_train_input': [True, False]}
+        ]
+        pool = REXProgramPool(programs)
+
+        # Sample same program multiple times
+        for i in range(3):
+            result = pool.sample_program("rex")
+            assert result['row_id'] == 'prog1'
+            # Check refinement count increases
+            assert pool.refinement_counts['prog1'] == i + 1
+
+    def test_add_programs_basic(self):
+        """Test adding new programs to pool"""
+        pool = REXProgramPool([])
+        new_programs = [
+            {'row_id': 'new1', 'code': 'new code', 'correct_train_input': [False]}
+        ]
+
+        added = pool.add_programs(new_programs)
+        assert added == 1
+        assert len(pool.programs) == 1
+        assert pool.programs[0]['code'] == 'new code'
+
+    def test_add_programs_with_deduplication(self):
+        """Test deduplication when adding programs"""
+        initial_program = {'row_id': 'orig', 'code': 'def solve(): pass', 'correct_train_input': [True]}
+        pool = REXProgramPool([initial_program])
+
+        # Try to add duplicate code
+        duplicate_program = {'row_id': 'dup', 'code': 'def solve(): pass', 'correct_train_input': [False]}
+        added = pool.add_programs([duplicate_program], deduplicate=True)
+
+        assert added == 0  # Should not add duplicate
+        assert len(pool.programs) == 1  # Still only original program
+
+        # Try to add genuinely new program
+        new_program = {'row_id': 'new', 'code': 'def solve(): return []', 'correct_train_input': [True]}
+        added = pool.add_programs([new_program], deduplicate=True)
+
+        assert added == 1  # Should add new program
+        assert len(pool.programs) == 2
+
+    def test_add_programs_without_deduplication(self):
+        """Test adding programs without deduplication"""
+        initial_program = {'row_id': 'orig', 'code': 'def solve(): pass', 'correct_train_input': [True]}
+        pool = REXProgramPool([initial_program])
+
+        # Add duplicate with deduplication disabled
+        duplicate_program = {'row_id': 'dup', 'code': 'def solve(): pass', 'correct_train_input': [False]}
+        added = pool.add_programs([duplicate_program], deduplicate=False)
+
+        assert added == 1  # Should add even if duplicate
+        assert len(pool.programs) == 2
+
+    def test_get_pool_stats_empty(self):
+        """Test pool statistics for empty pool"""
+        pool = REXProgramPool([])
+        stats = pool.get_pool_stats()
+
+        expected = {"total_programs": 0, "avg_correctness": 0.0, "total_refinements": 0}
+        assert stats == expected
+
+    def test_get_pool_stats_with_programs(self):
+        """Test pool statistics with programs"""
+        programs = [
+            {'row_id': 'prog1', 'code': 'code1', 'correct_train_input': [True, False]},    # 50%
+            {'row_id': 'prog2', 'code': 'code2', 'correct_train_input': [True, True]}      # 100%
+        ]
+        pool = REXProgramPool(programs)
+
+        # Sample to generate refinement counts
+        pool.sample_program("rex")
+        pool.sample_program("rex")
+
+        stats = pool.get_pool_stats()
+
+        assert stats["total_programs"] == 2
+        assert stats["avg_correctness"] == 0.75  # (0.5 + 1.0) / 2
+        assert stats["total_refinements"] == 2
+        assert stats["unique_hashes"] == 2
+
+    def test_program_hash_generation(self):
+        """Test that program hashing works correctly with normalization"""
+        pool = REXProgramPool([])
+
+        program1 = {'code': 'def solve(): pass'}
+        program2 = {'code': 'def solve(): return []'}
+        program3 = {'code': 'def solve(): pass'}  # Same as program1
+        program4 = {'code': 'DEF SOLVE():    PASS'}  # Same as program1 but different case/whitespace
+
+        hash1 = pool._get_program_hash(program1)
+        hash2 = pool._get_program_hash(program2)
+        hash3 = pool._get_program_hash(program3)
+        hash4 = pool._get_program_hash(program4)
+
+        assert hash1 == hash3  # Same code, same hash
+        assert hash1 == hash4  # Same code with different case/whitespace, same hash
+        assert hash1 != hash2  # Different code, different hash
+        assert len(hash1) == 16  # Should be 16 chars (truncated SHA256)
+
+
+class TestCreateRefinedProgramEntry:
+    """Test the create_refined_program_entry function"""
+
+    def test_create_basic_refined_entry(self):
+        """Test creating a basic refined program entry"""
+        original = {
+            'row_id': 'orig123',
+            'code': 'original code',
+            'correct_train_input': [True, False]
+        }
+
+        refined_code = 'refined code'
+        entry = create_refined_program_entry(original, refined_code)
+
+        assert entry['code'] == 'refined code'
+        assert entry['model'] == 'unknown'
+        assert entry['is_transductive'] == False
+        assert entry['parent_program_id'] == 'orig123'
+        assert entry['row_id'].startswith('refined_')
+        assert len(entry['row_id']) == 16  # 'refined_' + 8 hex chars
+
+        # Should copy correctness from original
+        assert entry['correct_train_input'] == [True, False]
+
+    def test_create_refined_entry_with_task_results(self):
+        """Test creating refined entry with new task results"""
+        original = {
+            'row_id': 'orig123',
+            'code': 'original code'
+        }
+
+        task_results = {
+            'correct_train_input': [False, True],
+            'correct_test_input': [True],
+            'predicted_train_output': [[[1, 0]], [[0, 1]]],
+            'predicted_test_output': [[[1, 1]]]
+        }
+
+        entry = create_refined_program_entry(
+            original, 'new code', task_results, model='gpt-4'
+        )
+
+        assert entry['code'] == 'new code'
+        assert entry['model'] == 'gpt-4'
+        assert entry['correct_train_input'] == [False, True]
+        assert entry['correct_test_input'] == [True]
+        assert entry['predicted_train_output'] == [[[1, 0]], [[0, 1]]]
+        assert entry['predicted_test_output'] == [[[1, 1]]]
+
+    def test_create_refined_entry_missing_original_fields(self):
+        """Test creating refined entry when original lacks some fields"""
+        original = {
+            'code': 'original code'
+            # Missing row_id and correctness data
+        }
+
+        entry = create_refined_program_entry(original, 'refined code')
+
+        assert entry['code'] == 'refined code'
+        assert entry['parent_program_id'] is None  # original had no row_id
+        assert entry['correct_train_input'] == []  # default empty
+        assert entry['correct_test_input'] == []
+
+
+class TestSelectProgramForRefinementWithPool:
+    """Test select_program_for_refinement with program_pool parameter"""
+
+    def test_select_with_pool_uniform(self):
+        """Test selection with program pool using uniform sampling"""
+        programs = [
+            {'row_id': 'prog1', 'code': 'code1', 'correct_train_input': [True, False]},
+            {'row_id': 'prog2', 'code': 'code2', 'correct_train_input': [False, False]}
+        ]
+        pool = REXProgramPool(programs)
+
+        result = select_program_for_refinement(
+            programs=None,  # Should be ignored when pool is provided
+            sampling_mode="uniform",
+            program_pool=pool
+        )
+
+        assert result['code'] in ['code1', 'code2']
+
+    def test_select_with_pool_rex(self):
+        """Test selection with program pool using REX sampling"""
+        programs = [
+            {'row_id': 'prog1', 'code': 'code1', 'correct_train_input': [True, False]},
+            {'row_id': 'prog2', 'code': 'code2', 'correct_train_input': [True, True]}
+        ]
+        pool = REXProgramPool(programs)
+
+        result = select_program_for_refinement(
+            sampling_mode="rex",
+            rex_params={"C": 10.0},
+            program_pool=pool
+        )
+
+        assert result['code'] in ['code1', 'code2']
+        # Check that refinement count was incremented
+        selected_id = result['row_id']
+        assert pool.refinement_counts[selected_id] == 1
+
+    def test_select_with_empty_pool(self):
+        """Test selection with empty program pool"""
+        pool = REXProgramPool([])
+
+        result = select_program_for_refinement(program_pool=pool)
+        assert result == {}
+
+    def test_select_fallback_to_list_based(self):
+        """Test fallback to list-based approach when no pool provided"""
+        programs = [
+            {'row_id': 'prog1', 'code': 'code1', 'correct_train_input': [True, False]}
+        ]
+
+        result = select_program_for_refinement(
+            programs=programs,
+            sampling_mode="uniform"
+        )
+
+        assert result['code'] == 'code1'
+
+    def test_select_with_debug_pool(self):
+        """Test debug output when using program pool"""
+        programs = [
+            {'row_id': 'prog1', 'code': 'code1', 'correct_train_input': [True, False]}
+        ]
+        pool = REXProgramPool(programs)
+
+        with patch('builtins.print') as mock_print:
+            result = select_program_for_refinement(
+                sampling_mode="uniform",
+                program_pool=pool,
+                debug=True
+            )
+
+            mock_print.assert_called_once()
+            args = mock_print.call_args[0][0]
+            assert 'uniform pool' in args
+            assert '50.0% correct' in args
