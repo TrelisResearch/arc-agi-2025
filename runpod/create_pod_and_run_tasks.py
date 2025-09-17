@@ -65,7 +65,7 @@ def prompt_keep_pod(timeout=10):
     except Exception:
         return False
 
-def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="all_evaluation", max_attempts=64, no_transductive_penalty=False, max_workers=32, splitter=False, max_tokens=2000, reasoning_effort="low", refinement_ds=None, early_stop_threshold=None):
+def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="all_evaluation", max_attempts=64, no_transductive_penalty=False, max_workers=32, splitter=False, max_tokens=2000, reasoning_effort="low", refinement_ds=None, early_stop_threshold=None, rex_stats=False):
     """Run ARC tasks - task runner handles its own graceful shutdown"""
     print(f"\n🎯 Running ARC tasks for {dataset} with subset {subset}...")
     print(f"📊 Task Runner Configuration:")
@@ -88,6 +88,8 @@ def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="
         print(f"   Refinement mode: ENABLED (using programs from {refinement_ds})")
     if early_stop_threshold:
         print(f"   Early stop threshold: {early_stop_threshold}")
+    if rex_stats:
+        print(f"   REx stats: ENABLED")
     
     cmd = [
         "uv", "run", "python", "-m", "llm_python.run_arc_tasks_soar",
@@ -117,6 +119,9 @@ def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="
 
     if early_stop_threshold:
         cmd.extend(["--early-stop-threshold", str(early_stop_threshold)])
+
+    if rex_stats:
+        cmd.append("--rex-stats")
     
     print(f"📝 Full command: {' '.join(cmd)}")
     
@@ -269,6 +274,9 @@ This script will:
     parser.add_argument('--early-stop-threshold',
                        type=int,
                        help='Early stop threshold to pass through to task runner')
+    parser.add_argument('--rex-stats',
+                       action='store_true',
+                       help='Enable REx stats logging for refinement tracking')
     
     args = parser.parse_args()
     
@@ -418,7 +426,7 @@ This script will:
         print(f"\n🎯 Step 2: Running ARC tasks for {args.dataset}")
         
         task_success = run_arc_tasks_with_graceful_handling(
-            args.dataset, args.model_path, base_url, args.subset, args.max_attempts, args.no_transductive_penalty, args.max_workers, args.splitter, args.max_tokens, args.reasoning_effort, args.refinement_ds, args.early_stop_threshold
+            args.dataset, args.model_path, base_url, args.subset, args.max_attempts, args.no_transductive_penalty, args.max_workers, args.splitter, args.max_tokens, args.reasoning_effort, args.refinement_ds, args.early_stop_threshold, args.rex_stats
         )
         
         if task_success:

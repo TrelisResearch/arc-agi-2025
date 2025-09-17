@@ -283,6 +283,33 @@ Some tests were built on experimental/reasoning_tests and openrouter returns whi
 ```bash
 PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "openai/gpt-oss-20b" --max-attempts 64 --subset evaluation --reasoning-effort low --max-workers 256 --max-tokens 32000 > gpt_oss_20b_evaluation_low_32k_64x.log 2>&1 &
 ```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: openai/gpt-oss-20b
+Total tasks: 120
+Total time: 6613.8s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 84,816,686
+Total cost: $7.827074
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 1.7% (1.7% excl. trans)
+  Pass@2 (Train Majority):  1.7% (1.7% excl. trans)
+  Oracle (Best Attempt):    1.7% (1.7% excl. trans)
+  All Train Correct:        4.2% (3.3% excl. trans)
+  Min 1 Train Correct:      23.3% (20.8% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.1%
+  Execution Error Responses (of all attempts): 2.7%
+✅ Checkpointed 6388 programs to /workspace/arc-agi-2025/llm_python/datasets/inference/20250917_143659_openai_gpt-oss-20b_arc-prize-2025_evaluation.parquet
+
+Now run a refinement on this with the parquet generated:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "openai/gpt-oss-20b" --max-attempts 64 --subset evaluation --reasoning-effort low --max-workers 256 --max-tokens 32000 --refinement-ds /workspace/arc-agi-2025/llm_python/datasets/inference/20250917_143659_openai_gpt-oss-20b_arc-prize-2025_evaluation.parquet > gpt_oss_20b_evaluation_low_32k_64x_refine.log --rex-stats 2>&1 &
+```
 
 ### Test out reasoning effort with OSS
 
