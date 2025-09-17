@@ -56,6 +56,11 @@ Commercial:
 
 ---
 ## September 17th 2025
+### Allow multiple refinement datasets
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training --max_workers 64 --max_attempts 4 --model openai/gpt-oss-20b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250917_133733_openai_gpt-oss-20b_arc-prize-2025_training-hard.parquet /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250917_140718_openai_gpt-oss-20b_arc-prize-2025_training-hard.parquet --early-stop-threshold 3 --limit 1 --rex-stats
+```
+
 ### Adding REX refinement bonus!
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training --max_workers 64 --max_attempts 4 --model openai/gpt-oss-20b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds Trelis/arc-agi-partials-for-refinement --early-stop-threshold 3 --limit 8 --rex-stats
@@ -332,7 +337,7 @@ Total cost: $1.047034
   API Failure Responses:    0.0%
   Execution Timeout Responses (of all attempts): 0.2%
   Execution Error Responses (of all attempts): 2.1%
-  
+
 high
 ```bash
 PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "openai/gpt-oss-20b" --max-attempts 8 --subset evaluation --reasoning-effort high --max-workers 256 --max-tokens 64000 > gpt_oss_20b_evaluation_high.log 2>&1 &

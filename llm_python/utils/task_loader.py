@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, TypedDict
+from typing import Dict, List, Optional, Tuple, TypedDict, Union
 
 import threading
 
@@ -402,15 +402,15 @@ class TaskLoader:
         print(f"✅ Successfully loaded {len(tasks)} tasks from {dataset_type} dataset")
         return tasks
 
-    def get_program_data_for_refinement(self, identifier: str, max_rows: Optional[int] = None) -> Dict:
+    def get_program_data_for_refinement(self, identifiers: Union[str, List[str]], max_rows: Optional[int] = None) -> Dict:
         """Get program data from HF/parquet datasets for refinement mode.
-        
+
         This method is specifically for refinement mode and returns the raw program data
         along with metadata like correctness information, rather than just task IDs.
-        
+
         Args:
-            identifier: Dataset identifier (HF dataset slug or parquet path)
-            max_rows: Maximum number of rows to load from dataset
+            identifiers: Dataset identifier(s) (HF dataset slug or parquet path(s))
+            max_rows: Maximum number of rows to load from dataset (total across all datasets)
             
         Returns:
             Dictionary mapping task_id to program information including:
@@ -420,121 +420,146 @@ class TaskLoader:
         Raises:
             ValueError: If dataset type not supported, no programs found, or only traditional subset provided
         """
-        dataset_type = self._detect_dataset_type(identifier)
-        
-        if dataset_type == "traditional":
-            raise ValueError("Refinement mode requires HuggingFace dataset or parquet file. Traditional subsets not supported.")
-        
-        programs_by_task = {}
-        
-        if dataset_type == "parquet":
-            # Load parquet and get full program data
-            from llm_python.datasets.io import read_soar_parquet
-            
-            try:
-                df = read_soar_parquet(identifier)
-                if max_rows and len(df) > max_rows:
-                    df = df.head(max_rows)
-                
-                # Filter programs for refinement using new strategy:
-                # 1. Exclude transductive programs
-                # 2. Exclude programs that solve ALL training examples (100% correct - nothing to improve)
-                # 3. Include ALL other programs (0% correct might have useful partial logic)
-                from llm_python.utils.refinement_utils import is_program_valid_for_refinement
-                
-                valid_df = df[df.apply(is_program_valid_for_refinement, axis=1)].copy()
-                
-                if len(valid_df) == 0:
-                    raise ValueError("No valid programs found for refinement (need non-transductive, non-perfect programs)")
-                
-                print(f"📊 Found {len(valid_df)} refineable programs out of {len(df)} total programs (non-transductive, non-perfect)")
-                
-                # Group by task_id and collect program data
-                for _, row in valid_df.iterrows():
-                    task_id = row['task_id']
-                    
-                    program_info = {
-                        'row_id': row.get('row_id', ''),  # Capture row_id for refinement tracking
-                        'code': row.get('code', ''),
-                        'correct_train_input': row['correct_train_input'],
-                        'correct_test_input': row.get('correct_test_input', []),
-                        'predicted_train_output': row.get('predicted_train_output', []),
-                        'predicted_test_output': row.get('predicted_test_output', []),
-                        'model': row.get('model', 'unknown'),
-                        'reasoning': row.get('reasoning', ''),
-                        'is_transductive': row.get('is_transductive', False)
-                    }
-                    
-                    if task_id not in programs_by_task:
-                        programs_by_task[task_id] = {
-                            'programs': [],
-                            'task_data': self.tasks.get(task_id)
-                        }
-                    
-                    programs_by_task[task_id]['programs'].append(program_info)
-                    
-            except Exception as e:
-                raise ValueError(f"Failed to load parquet dataset '{identifier}': {e}")
-                
-        elif dataset_type == "huggingface":
-            # Load HF dataset and get full program data
-            try:
-                from datasets import load_dataset, Dataset
-                ds = load_dataset(identifier, split="train")
-                if max_rows and max_rows < len(ds):
-                    ds = ds.select(range(max_rows))
+        # Convert single identifier to list for uniform processing
+        if isinstance(identifiers, str):
+            identifiers = [identifiers]
 
-                # Convert to pandas for easier filtering
-                import pandas as pd
-                df = ds.to_pandas()
-                
-                # Determine task_id column
-                task_id_col = 'task_id' if 'task_id' in df.columns else 'row_id'
-                if task_id_col not in df.columns:
-                    raise ValueError("Dataset must contain either 'task_id' or 'row_id' column")
-                
-                # Filter programs for refinement using new strategy (same logic as parquet)
-                from llm_python.utils.refinement_utils import is_program_valid_for_refinement
-                
-                if 'correct_train_input' not in df.columns:
-                    raise ValueError("Dataset must contain 'correct_train_input' column for refinement mode")
-                    
-                valid_df = df[df.apply(is_program_valid_for_refinement, axis=1)].copy()
-                
-                if len(valid_df) == 0:
-                    raise ValueError("No valid programs found for refinement (need non-transductive, non-perfect programs)")
-                
-                print(f"📊 Found {len(valid_df)} programs that are non-transductive and non-perfect for refinement out of {len(df)} total programs")
-                
-                # Group by task_id and collect program data
-                for _, row in valid_df.iterrows():
-                    task_id = row[task_id_col]
-                    
-                    program_info = {
-                        'row_id': row.get('row_id', ''),  # Capture row_id for refinement tracking
-                        'code': row.get('code', ''),
-                        'correct_train_input': row['correct_train_input'],
-                        'correct_test_input': row.get('correct_test_input', []),
-                        'predicted_train_output': row.get('predicted_train_output', []),
-                        'predicted_test_output': row.get('predicted_test_output', []),
-                        'model': row.get('model', 'unknown'),
-                        'reasoning': row.get('reasoning', ''),
-                        'is_transductive': row.get('is_transductive', False)
-                    }
-                    
-                    if task_id not in programs_by_task:
-                        programs_by_task[task_id] = {
-                            'programs': [],
-                            'task_data': self.tasks.get(task_id)
+        programs_by_task = {}
+        total_rows_loaded = 0
+
+        for identifier in identifiers:
+            dataset_type = self._detect_dataset_type(identifier)
+
+            if dataset_type == "parquet":
+                # Load parquet and get full program data
+                from llm_python.datasets.io import read_soar_parquet
+
+                try:
+                    df = read_soar_parquet(identifier)
+                    current_rows = len(df)
+
+                    # Apply max_rows constraint across all datasets
+                    if max_rows and total_rows_loaded + current_rows > max_rows:
+                        remaining_rows = max_rows - total_rows_loaded
+                        if remaining_rows <= 0:
+                            print(f"⚠️ Skipping {identifier} - max_rows limit reached")
+                            break
+                        df = df.head(remaining_rows)
+                        current_rows = remaining_rows
+
+                    total_rows_loaded += current_rows
+
+                    # Filter programs for refinement using new strategy:
+                    # 1. Exclude transductive programs
+                    # 2. Exclude programs that solve ALL training examples (100% correct - nothing to improve)
+                    # 3. Include ALL other programs (0% correct might have useful partial logic)
+                    from llm_python.utils.refinement_utils import is_program_valid_for_refinement
+
+                    valid_df = df[df.apply(is_program_valid_for_refinement, axis=1)].copy()
+
+                    if len(valid_df) == 0:
+                        print(f"⚠️ No valid programs found for refinement in {identifier}")
+                        continue
+
+                    print(f"📊 Found {len(valid_df)} refineable programs out of {len(df)} total programs in {identifier}")
+
+                    # Group by task_id and collect program data
+                    for _, row in valid_df.iterrows():
+                        task_id = row['task_id']
+
+                        program_info = {
+                            'row_id': row.get('row_id', ''),  # Capture row_id for refinement tracking
+                            'code': row.get('code', ''),
+                            'correct_train_input': row['correct_train_input'],
+                            'correct_test_input': row.get('correct_test_input', []),
+                            'predicted_train_output': row.get('predicted_train_output', []),
+                            'predicted_test_output': row.get('predicted_test_output', []),
+                            'model': row.get('model', 'unknown'),
+                            'reasoning': row.get('reasoning', ''),
+                            'is_transductive': row.get('is_transductive', False)
                         }
-                    
-                    programs_by_task[task_id]['programs'].append(program_info)
-                    
-            except Exception as e:
-                raise ValueError(f"Failed to load HuggingFace dataset '{identifier}': {e}")
-        
-        else:
-            raise ValueError(f"Unsupported dataset type for refinement: {dataset_type}")
+
+                        if task_id not in programs_by_task:
+                            programs_by_task[task_id] = {
+                                'programs': [],
+                                'task_data': self.tasks.get(task_id)
+                            }
+
+                        programs_by_task[task_id]['programs'].append(program_info)
+
+                except Exception as e:
+                    raise ValueError(f"Failed to load parquet dataset '{identifier}': {e}")
+
+            elif dataset_type == "huggingface":
+                # Load HF dataset and get full program data
+                try:
+                    from datasets import load_dataset, Dataset
+                    ds = load_dataset(identifier, split="train")
+                    current_rows = len(ds)
+
+                    # Apply max_rows constraint across all datasets
+                    if max_rows and total_rows_loaded + current_rows > max_rows:
+                        remaining_rows = max_rows - total_rows_loaded
+                        if remaining_rows <= 0:
+                            print(f"⚠️ Skipping {identifier} - max_rows limit reached")
+                            break
+                        ds = ds.select(range(remaining_rows))
+                        current_rows = remaining_rows
+
+                    total_rows_loaded += current_rows
+
+                    # Convert to pandas for easier filtering
+                    import pandas as pd
+                    df = ds.to_pandas()
+
+                    # Determine task_id column
+                    task_id_col = 'task_id' if 'task_id' in df.columns else 'row_id'
+                    if task_id_col not in df.columns:
+                        raise ValueError("Dataset must contain either 'task_id' or 'row_id' column")
+
+                    # Filter programs for refinement using new strategy (same logic as parquet)
+                    from llm_python.utils.refinement_utils import is_program_valid_for_refinement
+
+                    if 'correct_train_input' not in df.columns:
+                        raise ValueError("Dataset must contain 'correct_train_input' column for refinement mode")
+
+                    valid_df = df[df.apply(is_program_valid_for_refinement, axis=1)].copy()
+
+                    if len(valid_df) == 0:
+                        print(f"⚠️ No valid programs found for refinement in {identifier}")
+                        continue
+
+                    print(f"📊 Found {len(valid_df)} refineable programs out of {len(df)} total programs in {identifier}")
+
+                    # Group by task_id and collect program data
+                    for _, row in valid_df.iterrows():
+                        task_id = row[task_id_col]
+
+                        program_info = {
+                            'row_id': row.get('row_id', ''),  # Capture row_id for refinement tracking
+                            'code': row.get('code', ''),
+                            'correct_train_input': row['correct_train_input'],
+                            'correct_test_input': row.get('correct_test_input', []),
+                            'predicted_train_output': row.get('predicted_train_output', []),
+                            'predicted_test_output': row.get('predicted_test_output', []),
+                            'model': row.get('model', 'unknown'),
+                            'reasoning': row.get('reasoning', ''),
+                            'is_transductive': row.get('is_transductive', False)
+                        }
+
+                        if task_id not in programs_by_task:
+                            programs_by_task[task_id] = {
+                                'programs': [],
+                                'task_data': self.tasks.get(task_id)
+                            }
+
+                        programs_by_task[task_id]['programs'].append(program_info)
+
+                except Exception as e:
+                    raise ValueError(f"Failed to load HuggingFace dataset '{identifier}': {e}")
+
+            else:
+                raise ValueError(f"Unsupported dataset type for refinement: {dataset_type}")
         
         # Remove tasks that don't have corresponding task data in our cache
         valid_programs_by_task = {}
@@ -550,68 +575,75 @@ class TaskLoader:
             print(f"Warning: {len(missing_tasks)} tasks from dataset not found in cached task data: {missing_tasks[:5]}{'...' if len(missing_tasks) > 5 else ''}")
         
         if not valid_programs_by_task:
-            raise ValueError(f"No valid tasks with program data found for refinement from dataset '{identifier}'")
+            raise ValueError(f"No valid tasks with program data found for refinement from datasets {identifiers}")
         
         print(f"✅ Successfully loaded program data for {len(valid_programs_by_task)} tasks for refinement")
         return valid_programs_by_task
     
-    def get_all_programs_for_early_stopping(self, identifier: str) -> Dict[str, int]:
+    def get_all_programs_for_early_stopping(self, identifiers: Union[str, List[str]]) -> Dict[str, int]:
         """Get count of all non-transductive all-train-correct programs by task_id for early stopping.
-        
+
         This loads ALL programs from the dataset (not filtered for refinement) and counts
         only the non-transductive all-train-correct ones.
-        
+
         Args:
-            identifier: Dataset identifier (HF dataset slug, parquet file, or traditional subset name)
-            
+            identifiers: Dataset identifier(s) (HF dataset slug or parquet file(s))
+
         Returns:
             Dict mapping task_id -> count of non-transductive all-train-correct programs
         """
-        dataset_type = self._detect_dataset_type(identifier)
-        
-        if dataset_type == "huggingface":
-            # Load the full HuggingFace dataset without filtering
-            try:
-                import datasets
-                dataset = datasets.load_dataset(identifier, split="train")
-                df = dataset.to_pandas()
-            except ImportError:
-                raise ImportError("datasets library not installed. Install with: pip install datasets")
-                
-        elif dataset_type == "parquet":
-            # Load full parquet without filtering
-            import pandas as pd
-            df = pd.read_parquet(identifier)
-            
-        else:
-            raise ValueError(f"Early stopping count only supported for HuggingFace and Parquet datasets, got: {dataset_type}")
-        
-        if 'task_id' not in df.columns or 'correct_train_input' not in df.columns or 'is_transductive' not in df.columns:
-            raise ValueError("Dataset must contain 'task_id', 'correct_train_input', and 'is_transductive' columns")
-        
-        # Count all-train-correct non-transductive programs per task
-        task_counts = {}
-        for _, row in df.iterrows():
-            task_id = row['task_id']
-            
-            # Count only non-transductive all-train-correct programs
-            if not row.get('is_transductive', False):
-                correct_train_input = row.get('correct_train_input', [])
-                if hasattr(correct_train_input, 'tolist'):
-                    correct_train_input = correct_train_input.tolist()
-                
-                # Check if all-train-correct (opposite of refinement filtering)
-                if isinstance(correct_train_input, list) and len(correct_train_input) > 0:
-                    if all(correct_train_input):  # All-train-correct
-                        task_counts[task_id] = task_counts.get(task_id, 0) + 1
-                else:
-                    # Single value case
-                    if bool(correct_train_input):  # All-train-correct
-                        task_counts[task_id] = task_counts.get(task_id, 0) + 1
-        
-        print(f"📊 Found {sum(task_counts.values())} all-train-correct non-transductive programs across {len(task_counts)} tasks for early stopping")
-        
-        return task_counts
+        # Convert single identifier to list for uniform processing
+        if isinstance(identifiers, str):
+            identifiers = [identifiers]
+
+        task_program_counts = {}
+
+        for identifier in identifiers:
+            dataset_type = self._detect_dataset_type(identifier)
+
+            if dataset_type == "huggingface":
+                # Load the full HuggingFace dataset without filtering
+                try:
+                    import datasets
+                    dataset = datasets.load_dataset(identifier, split="train")
+                    df = dataset.to_pandas()
+                except ImportError:
+                    raise ImportError("datasets library not installed. Install with: pip install datasets")
+
+            elif dataset_type == "parquet":
+                # Load full parquet without filtering
+                import pandas as pd
+                df = pd.read_parquet(identifier)
+
+            else:
+                raise ValueError(f"Early stopping count only supported for HuggingFace and Parquet datasets, got: {dataset_type}")
+
+            if 'task_id' not in df.columns or 'correct_train_input' not in df.columns or 'is_transductive' not in df.columns:
+                raise ValueError("Dataset must contain 'task_id', 'correct_train_input', and 'is_transductive' columns")
+
+            # Count all-train-correct non-transductive programs per task from this dataset
+            for _, row in df.iterrows():
+                task_id = row['task_id']
+
+                # Count only non-transductive all-train-correct programs
+                if not row.get('is_transductive', False):
+                    correct_train_input = row.get('correct_train_input', [])
+                    if hasattr(correct_train_input, 'tolist'):
+                        correct_train_input = correct_train_input.tolist()
+
+                    # Check if all-train-correct (opposite of refinement filtering)
+                    if isinstance(correct_train_input, list) and len(correct_train_input) > 0:
+                        if all(correct_train_input):  # All-train-correct
+                            task_program_counts[task_id] = task_program_counts.get(task_id, 0) + 1
+                    else:
+                        # Single value case
+                        if bool(correct_train_input):  # All-train-correct
+                            task_program_counts[task_id] = task_program_counts.get(task_id, 0) + 1
+
+
+        print(f"📊 Total: {sum(task_program_counts.values())} all-train-correct non-transductive programs across {len(task_program_counts)} tasks for early stopping")
+
+        return task_program_counts
 
 
 def get_default_data_root() -> str:

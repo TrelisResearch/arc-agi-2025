@@ -2377,6 +2377,9 @@ class ARCTaskRunnerSimple:
             print(
                 f"  Execution Error Responses (of all attempts): {percentage_metrics['execution_error_responses']:.1%}"
             )
+            print(
+                f"  No Program Responses (of all attempts): {percentage_metrics['no_program_responses']:.1%}"
+            )
 
     def _print_submit_mode_summary(
         self,
@@ -2435,6 +2438,14 @@ class ARCTaskRunnerSimple:
                 for att in result.get("attempt_details", [])
                 if ((att.get("train_exec_errors", 0) > 0 or att.get("test_exec_error", False)) and
                     not (att.get("train_exec_timeouts", 0) > 0 or att.get("test_exec_timeout", False)))
+            )
+            for result in results
+        )
+        no_program_responses = sum(
+            sum(
+                1
+                for att in result.get("attempt_details", [])
+                if not att.get("program_extracted", False)
             )
             for result in results
         )
@@ -2507,6 +2518,9 @@ class ARCTaskRunnerSimple:
             )
             print(
                 f"  Execution error responses (of all attempts): {execution_error_responses}/{total_responses} ({execution_error_responses / total_responses:.1%})"
+            )
+            print(
+                f"  No program responses (of all attempts): {no_program_responses}/{total_responses} ({no_program_responses / total_responses:.1%})"
             )
 
             print(f"\n📊 TRAIN METRICS:")
@@ -2656,7 +2670,8 @@ def main():
     parser.add_argument(
         "--refinement-ds",
         type=str,
-        help="Refinement dataset: HuggingFace dataset or parquet file containing draft programs to refine. Uses programs with at least one (but not all) correct training examples. Enables refinement prompts with draft code.",
+        nargs='+',
+        help="Refinement dataset(s): HuggingFace dataset or one or more parquet files containing draft programs to refine. Uses programs with at least one (but not all) correct training examples. Enables refinement prompts with draft code.",
     )
     parser.add_argument(
         "--refinement-sampling",
@@ -2696,13 +2711,6 @@ def main():
         parser.error("--max_workers must be at least 1")
     if args.temperature is not None and not (0.0 <= args.temperature <= 2.0):
         parser.error("--temperature must be between 0.0 and 2.0")
-    if args.refinement_ds:
-        # Refinement mode requires HF/parquet dataset for source programs (not traditional subsets)
-        from llm_python.utils.task_loader import TaskLoader, get_default_data_root
-        temp_loader = TaskLoader(get_default_data_root())
-        dataset_type = temp_loader._detect_dataset_type(args.refinement_ds)
-        if dataset_type == "traditional":
-            parser.error("--refinement-ds requires HuggingFace dataset or parquet file. Traditional subsets not supported for refinement programs.")
 
     dataset = args.dataset
     subset = args.subset
