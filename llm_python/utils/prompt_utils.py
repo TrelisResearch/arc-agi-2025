@@ -326,6 +326,20 @@ def extract_python_code(text: str, debug: bool = False) -> str:
     # Look for python code blocks
     python_blocks = re.findall(r"```python\s*\n(.*?)\n```", text, re.DOTALL)
     if python_blocks:
+        if debug:
+            print(f"🔍 Found {len(python_blocks)} Python code block(s)")
+
+        # Look for the code block that contains the transform function
+        for i, block in enumerate(reversed(python_blocks)):  # Start from last and work backwards
+            if "def transform" in block:
+                if debug:
+                    block_index = len(python_blocks) - 1 - i
+                    print(f"🎯 Using code block {block_index + 1} (contains 'def transform')")
+                return block.strip()
+
+        # If no block contains def transform, fall back to the last block
+        if debug:
+            print(f"⚠️ No block contains 'def transform', using last block")
         return python_blocks[-1].strip()
 
     return ""

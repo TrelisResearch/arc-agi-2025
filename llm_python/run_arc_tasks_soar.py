@@ -465,6 +465,38 @@ class ARCTaskRunnerSimple:
 
         print("🏁 Graceful shutdown initiated - parquet data saved")
 
+    def _save_llm_response_to_file(self, task_id: str, attempt_num: int, content: str) -> None:
+        """TEMPORARY: Save LLM response content to text file for debugging"""
+        try:
+            # Create tmp directory if it doesn't exist
+            tmp_dir = Path("tmp")
+            tmp_dir.mkdir(exist_ok=True)
+
+            # Create filename with timestamp for uniqueness
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            filename = f"llm_response_{task_id}_attempt{attempt_num}_{timestamp}.txt"
+            filepath = tmp_dir / filename
+
+            # Write content to file
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(f"Task ID: {task_id}\n")
+                f.write(f"Attempt: {attempt_num}\n")
+                f.write(f"Timestamp: {datetime.datetime.now().isoformat()}\n")
+                f.write(f"Model: {self.model}\n")
+                f.write("=" * 80 + "\n")
+                f.write("LLM Response Content:\n")
+                f.write("=" * 80 + "\n")
+                f.write(content or "[EMPTY RESPONSE]")
+                f.write("\n")
+
+            if self.debug:
+                print(f"📁 Saved LLM response to: {filepath}")
+
+        except Exception as e:
+            # Don't let logging errors crash the main execution
+            if self.debug:
+                print(f"⚠️ Failed to save LLM response: {e}")
+
     def _update_rex_pool_with_attempt(self, task_result, attempt_detail, refined_from_id):
         """
         Add successful refinements back to the REX pool.
@@ -1021,6 +1053,10 @@ class ARCTaskRunnerSimple:
                     if hasattr(message, "content")
                     else ""
                 )
+
+                # # TEMPORARY: Save LLM response to file for debugging
+                # self._save_llm_response_to_file(task_id, attempt_num, content)
+
                 empty_response = not content or content.strip() == ""
             else:
                 empty_response = True
@@ -1381,6 +1417,7 @@ class ARCTaskRunnerSimple:
         print(f"Model: {self.model}")
         print(f"API: All Attempts Mode ({self.max_attempts} attempts per task)")
         print(f"Mode: True parallelization - {total_attempts} total attempts")
+        # print("🗂️  TEMPORARY: LLM responses will be saved to ./tmp/ directory")
         
         # Display splitter status prominently
         if self.splitter:

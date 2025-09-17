@@ -104,6 +104,139 @@ Total cost: $0.019055
 ✅ Checkpointed 15 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250917_105613_openai_gpt-oss-20b_arc-prize-2025_training.parque
 
 ## Septebmer 16th 2025
+### OSS 20B Performance
+Now using REx with refinement bonus!
+
+*with --splitter and default reasoning and 8x attempts*
+Dataset: arc-prize-2025
+Subset: evaluation
+Reference tasks: 120
+Tasks scored: 120
+Total predictions: 344
+
+📊 PREDICTION-LEVEL METRICS:
+  Pass@1 (first attempt): 2/344 (0.6%)
+  Pass@2 (either attempt): 2/344 (0.6%)
+
+📊 TASK-LEVEL METRICS:
+  Tasks Pass@1 (all outputs correct on first attempt): 2/120 (1.7%)
+  Tasks Pass@2 (all outputs correct on either attempt): 2/120 (1.7%)
+
+refinement:
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: openai/gpt-oss-20b
+Total tasks: 120
+Total time: 583.7s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 2,653,562
+Total cost: $0.234724
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 1.7% (1.7% excl. trans)
+  Pass@2 (Train Majority):  1.7% (1.7% excl. trans)
+  Oracle (Best Attempt):    1.7% (1.7% excl. trans)
+  All Train Correct:        2.5% (2.5% excl. trans)
+  Min 1 Train Correct:      5.0% (4.2% excl. trans)
+  Min 1 Code Success:       46.7%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 1.5%
+
+Sampling:
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: openai/gpt-oss-20b
+Total tasks: 120
+Total time: 575.4s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 2,878,116
+Total cost: $0.290273
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.8% (0.8% excl. trans)
+  Pass@2 (Train Majority):  0.8% (0.8% excl. trans)
+  Oracle (Best Attempt):    0.8% (0.8% excl. trans)
+  All Train Correct:        1.7% (1.7% excl. trans)
+  Min 1 Train Correct:      5.0% (4.2% excl. trans)
+  Min 1 Code Success:       87.5%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 1.1%
+
+*with --splitter and high reasoning and 8x attempts*
+Dataset: arc-prize-2025
+Subset: evaluation
+Reference tasks: 120
+Tasks scored: 120
+Total predictions: 344
+
+📊 PREDICTION-LEVEL METRICS:
+  Pass@1 (first attempt): 2/344 (0.6%)
+  Pass@2 (either attempt): 2/344 (0.6%)
+
+📊 TASK-LEVEL METRICS:
+  Tasks Pass@1 (all outputs correct on first attempt): 2/120 (1.7%)
+  Tasks Pass@2 (all outputs correct on either attempt): 2/120 (1.7%)
+  
+refinement:
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: openai/gpt-oss-20b
+Total tasks: 120
+Total time: 967.8s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 1,629,631
+Total cost: $0.133147
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 1.7% (1.7% excl. trans)
+  Pass@2 (Train Majority):  1.7% (1.7% excl. trans)
+  Oracle (Best Attempt):    1.7% (1.7% excl. trans)
+  All Train Correct:        1.7% (1.7% excl. trans)
+  Min 1 Train Correct:      2.5% (2.5% excl. trans)
+  Min 1 Code Success:       35.8%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 0.9%
+
+sampling:
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: openai/gpt-oss-20b
+Total tasks: 120
+Total time: 918.3s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 2,149,777
+Total cost: $0.213873
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.8% (0.8% excl. trans)
+  Pass@2 (Train Majority):  0.8% (0.8% excl. trans)
+  Oracle (Best Attempt):    0.8% (0.8% excl. trans)
+  All Train Correct:        1.7% (1.7% excl. trans)
+  Min 1 Train Correct:      7.5% (7.5% excl. trans)
+  Min 1 Code Success:       62.5%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 1.0%
+
+### Running on 1xH200 SXM
+8x attempts with sampling and refinement takes about 1.75 x 2 = 3.5 hours. Possibly this may squeeze into 4xL4.
+
+### Testing no-programs
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training --max_workers 64 --max_attempts 1 --model openai/gpt-oss-20b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds Trelis/arc-agi-partials-for-refinement --early-stop-threshold 100 --limit 1 --rex-stats
+```
+
 ### Adding REX sampling
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training --max_workers 64 --max_attempts 1 --model gpt-4.1-nano --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds Trelis/arc-agi-partials-for-refinement --early-stop-threshold 100 --limit 1 --rex-stats
