@@ -1819,9 +1819,6 @@ class ARCTaskRunnerSimple:
                     f"❌ {failed_attempts} attempts failed out of {total_attempts} total"
                 )
 
-            if cancelled_attempts > 0:
-                print(f"🛑 {cancelled_attempts} attempts were cancelled due to inactivity timeout")
-
             print(
                 f"📊 Final status: {successful_attempts} successful, {failed_attempts} failed, {cancelled_attempts} cancelled"
             )
