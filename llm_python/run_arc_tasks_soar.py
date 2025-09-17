@@ -483,6 +483,11 @@ class ARCTaskRunnerSimple:
         if refined_from_id:
             refined_correctness = attempt_detail.get("train_accuracy", 0.0)
 
+            # Treat transductive programs as 0% correct for learning purposes
+            # (they don't represent genuine pattern learning)
+            if attempt_detail.get("is_transductive", False):
+                refined_correctness = 0.0
+
             # Find original program correctness
             original_correctness = 0.0
             for program in rex_pool.programs:

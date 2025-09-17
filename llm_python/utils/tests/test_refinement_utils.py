@@ -808,3 +808,26 @@ class TestREXEnhancedFunctionality:
         # Quality score should equal correctness (no bonus)
         expected_quality = 0.5  # Just the correctness percentage
         assert abs(result['_rex_quality_score'] - expected_quality) < 0.001
+
+    def test_transductive_penalty_behavior(self):
+        """Test that transductive programs are treated as 0% correct for learning"""
+        programs = [
+            {'row_id': 'prog1', 'code': 'code1', 'correct_train_input': [True, False]}  # 50%
+        ]
+        pool = REXProgramPool(programs)
+
+        # Simulate a transductive refinement that appears to be 100% correct
+        # but should be treated as 0% for learning purposes
+        pool.track_refinement_attempt('prog1', 0.0, 0.50)  # Transductive = 0% in tracking
+
+        stats = pool.refinement_success_stats['prog1']
+        assert stats['attempts'] == 1
+        assert stats['improvements'] == 0  # No improvement since 0% < 50%
+        assert stats['total_improvement'] == -0.50  # Treated as degradation
+        assert stats['avg_improvement'] == -0.50  # This program gets penalized
+
+        # After this "bad" refinement history, quality score should be penalized
+        result = pool.sample_program("rex", C=10.0, refinement_bonus_weight=1.0)
+        expected_quality = 0.5 + (-0.50 * 1.0)  # correctness + penalty
+        assert abs(result['_rex_quality_score'] - expected_quality) < 0.001
+        assert result['_rex_quality_score'] == 0.0  # Heavily penalized
