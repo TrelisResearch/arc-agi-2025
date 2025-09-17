@@ -465,7 +465,7 @@ class ARCTaskRunnerSimple:
 
         print("🏁 Graceful shutdown initiated - parquet data saved")
 
-    def _save_llm_response_to_file(self, task_id: str, attempt_num: int, content: str) -> None:
+    def _save_llm_response_to_file(self, task_id: str, attempt_num: int, content: str, message=None, error_info: str = "") -> None:
         """TEMPORARY: Save LLM response content to text file for debugging"""
         try:
             # Create tmp directory if it doesn't exist
@@ -483,10 +483,42 @@ class ARCTaskRunnerSimple:
                 f.write(f"Attempt: {attempt_num}\n")
                 f.write(f"Timestamp: {datetime.datetime.now().isoformat()}\n")
                 f.write(f"Model: {self.model}\n")
+
+                if error_info:
+                    f.write(f"Error Info: {error_info}\n")
+
                 f.write("=" * 80 + "\n")
-                f.write("LLM Response Content:\n")
+
+                # If we have a message object, extract all available fields
+                if message:
+                    f.write("Message Object Fields:\n")
+                    f.write("=" * 80 + "\n")
+
+                    # Check for content
+                    if hasattr(message, 'content') and message.content:
+                        f.write(f"Content: {message.content}\n\n")
+                    else:
+                        f.write("Content: [NO CONTENT FIELD]\n\n")
+
+                    # Check for reasoning (o1 models)
+                    if hasattr(message, 'reasoning') and message.reasoning:
+                        f.write(f"Reasoning: {message.reasoning}\n\n")
+
+                    # Check for other fields that might exist
+                    for attr in ['tool_calls', 'function_call', 'role', 'refusal']:
+                        if hasattr(message, attr):
+                            value = getattr(message, attr)
+                            if value:
+                                f.write(f"{attr.title()}: {value}\n\n")
+
+                    # Raw message dump for debugging
+                    f.write("Raw Message Object:\n")
+                    f.write("-" * 40 + "\n")
+                    f.write(str(message) + "\n\n")
+
+                f.write("LLM Response Content (extracted):\n")
                 f.write("=" * 80 + "\n")
-                f.write(content or "[EMPTY RESPONSE]")
+                f.write(content or "[EMPTY CONTENT]")
                 f.write("\n")
 
             if self.debug:
@@ -1055,13 +1087,17 @@ class ARCTaskRunnerSimple:
                 )
 
                 # # TEMPORARY: Save LLM response to file for debugging
-                # self._save_llm_response_to_file(task_id, attempt_num, content)
+                # self._save_llm_response_to_file(task_id, attempt_num, content, message)
 
                 empty_response = not content or content.strip() == ""
             else:
                 empty_response = True
+                # # TEMPORARY: Save empty response info for debugging
+                # self._save_llm_response_to_file(task_id, attempt_num, "", None, "No choices in response")
         elif api_call_successful:
             empty_response = True
+            # # TEMPORARY: Save empty API response for debugging
+            # self._save_llm_response_to_file(task_id, attempt_num, "", None, "Empty API response")
 
         # Check for max tokens hit
         hit_max_tokens = False

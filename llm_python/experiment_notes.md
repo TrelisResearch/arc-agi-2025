@@ -182,7 +182,7 @@ Total predictions: 344
 📊 TASK-LEVEL METRICS:
   Tasks Pass@1 (all outputs correct on first attempt): 2/120 (1.7%)
   Tasks Pass@2 (all outputs correct on either attempt): 2/120 (1.7%)
-  
+
 refinement:
 Dataset: arc-prize-2025
 Subset: evaluation
@@ -229,12 +229,15 @@ Total cost: $0.213873
   Execution Timeout Responses (of all attempts): 0.0%
   Execution Error Responses (of all attempts): 1.0%
 
+*with --splitter and low reasoning and 16x attempts*
+
+
 ### Running on 1xH200 SXM
 8x attempts with sampling and refinement takes about 1.75 x 2 = 3.5 hours. Possibly this may squeeze into 4xL4.
 
 ### Testing no-programs
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training --max_workers 64 --max_attempts 1 --model openai/gpt-oss-20b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds Trelis/arc-agi-partials-for-refinement --early-stop-threshold 100 --limit 1 --rex-stats
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 64 --max_attempts 1 --model openai/gpt-oss-20b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --limit 1
 ```
 
 ### Adding REX sampling
