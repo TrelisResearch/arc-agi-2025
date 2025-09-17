@@ -931,6 +931,10 @@ class ARCTaskRunnerSimple:
         system_content = full_prompt["system"]
         user_content = full_prompt["user"]
 
+        # Add reasoning instruction for OSS models
+        if "oss" in self.model.lower():
+            system_content += " Reasoning: high"
+
         attempt_start_time = datetime.datetime.now()
         exec_start_time = time.time()  # Track execution timing
         conversation_history = [
