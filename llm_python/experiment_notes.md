@@ -109,7 +109,7 @@ Total cost: $0.019055
 ✅ Checkpointed 15 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250917_105613_openai_gpt-oss-20b_arc-prize-2025_training.parque
 
 ## Septebmer 16th 2025
-### Soar Qwen 14B Performance with REx.
+### Soar Qwen 14B Performance with REx 256 sample 256 refine
 Sampling:
 Dataset: arc-prize-2025
 Subset: evaluation
@@ -134,10 +134,43 @@ Total cost: $26.697095
   Execution Error Responses (of all attempts): 8.1%
 
 Refinement:
-...PENDING...
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Soar-qwen-14b-FP8-Dynamic
+Total tasks: 120
+Total time: 12657.5s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 298,730,678
+Total cost: $50.179721
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 1.7% (1.7% excl. trans)
+  Pass@2 (Train Majority):  1.7% (1.7% excl. trans)
+  Oracle (Best Attempt):    2.5% (1.7% excl. trans)
+  All Train Correct:        5.0% (1.7% excl. trans)
+  Min 1 Train Correct:      26.7% (10.8% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.7%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.3%
+  Execution Error Responses (of all attempts): 8.2%
+✅ Checkpointed 27171 programs to /workspace/arc-agi-2025/llm_python/datasets/inference/20250917_141222_Trelis_Soar-qwen-14b-FP8-Dynamic_arc-prize-2025_evaluation.parquet
 
 Final scoring:
-...
+Dataset: arc-prize-2025
+Subset: evaluation
+Reference tasks: 120
+Tasks scored: 120
+Total predictions: 344
+
+📊 PREDICTION-LEVEL METRICS:
+  Pass@1 (first attempt): 2/344 (0.6%)
+  Pass@2 (either attempt): 2/344 (0.6%)
+
+📊 TASK-LEVEL METRICS:
+  Tasks Pass@1 (all outputs correct on first attempt): 2/120 (1.7%)
+  Tasks Pass@2 (all outputs correct on either attempt): 2/120 (1.7%)
 
 ### OSS 20B Performance
 Now using REx with refinement bonus!
