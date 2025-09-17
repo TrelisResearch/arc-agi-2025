@@ -343,10 +343,55 @@ Now run a refinement on this with the parquet generated:
 ```bash
 PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "openai/gpt-oss-20b" --max-attempts 64 --subset evaluation --reasoning-effort low --max-workers 256 --max-tokens 32000 --refinement-ds /workspace/arc-agi-2025/llm_python/datasets/inference/20250917_143659_openai_gpt-oss-20b_arc-prize-2025_evaluation.parquet > gpt_oss_20b_evaluation_low_32k_64x_refine.log --rex-stats 2>&1 &
 ```
-PENDING...
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: openai/gpt-oss-20b
+Total tasks: 118
+Total time: 8235.6s
+Successful API calls: 118/118 (100.0%)
+Total tokens used: 109,765,743
+Total cost: $8.590490
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.8% (0.8% excl. trans)
+  Pass@2 (Train Majority):  0.8% (0.8% excl. trans)
+  Oracle (Best Attempt):    0.8% (0.8% excl. trans)
+  All Train Correct:        6.8% (3.4% excl. trans)
+  Min 1 Train Correct:      25.4% (22.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.4%
+  Execution Error Responses (of all attempts): 3.4%
+  No Program Responses (of all attempts): 27.5%
+  20250917_165109_openai_gpt-oss-20b_arc-prize-2025_evaluation.parquet
 
 and try to score both of those parquet files...
+  Files Used:
+
+  - 20250917_165109_openai_gpt-oss-20b_arc-prize-2025_evaluation.parquet (5,045 rows)
+  - 20250917_143659_openai_gpt-oss-20b_arc-prize-2025_evaluation.parquet (6,388 rows)
+  - Total combined: 11,433 prediction attempts
+
+  Submission Created:
+
+  - submission.json - Official submission file
+  - submission_arc-prize-2025_evaluation_165109_openai_20250917_225009.json - Backup with timestamp
+  - Coverage: All 120 tasks in arc-prize-2025/evaluation dataset
+
+  Scoring Results:
+
+  - Pass@1 (first attempt): 2/344 (0.6%)
+  - Pass@2 (either attempt): 2/344 (0.6%)
+  - Task-level Pass@1: 2/120 tasks (1.7%)
+  - Task-level Pass@2: 2/120 tasks (1.7%)
+
+  Tasks Solved:
+
+  Only 2 tasks were solved correctly:
+  - 1818057f ✅
+  - 45a5af55 ✅
 
 ### Test out reasoning effort with OSS
 
