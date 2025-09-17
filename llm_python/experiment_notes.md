@@ -343,6 +343,10 @@ Now run a refinement on this with the parquet generated:
 ```bash
 PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "openai/gpt-oss-20b" --max-attempts 64 --subset evaluation --reasoning-effort low --max-workers 256 --max-tokens 32000 --refinement-ds /workspace/arc-agi-2025/llm_python/datasets/inference/20250917_143659_openai_gpt-oss-20b_arc-prize-2025_evaluation.parquet > gpt_oss_20b_evaluation_low_32k_64x_refine.log --rex-stats 2>&1 &
 ```
+PENDING...
+
+
+and try to score both of those parquet files...
 
 ### Test out reasoning effort with OSS
 
