@@ -65,13 +65,14 @@ def prompt_keep_pod(timeout=10):
     except Exception:
         return False
 
-def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="all_evaluation", max_attempts=64, no_transductive_penalty=False, max_workers=32, splitter=False, max_tokens=2000, refinement_ds=None, early_stop_threshold=None):
+def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="all_evaluation", max_attempts=64, no_transductive_penalty=False, max_workers=32, splitter=False, max_tokens=2000, reasoning_effort="low", refinement_ds=None, early_stop_threshold=None):
     """Run ARC tasks - task runner handles its own graceful shutdown"""
     print(f"\n🎯 Running ARC tasks for {dataset} with subset {subset}...")
     print(f"📊 Task Runner Configuration:")
     print(f"   Max workers: {max_workers}")
     print(f"   Max attempts: {max_attempts}")
     print(f"   Max tokens: {max_tokens}")
+    print(f"   Reasoning effort: {reasoning_effort}")
     
     # Check if this is a Qwen model
     is_qwen_model = 'qwen' in model_path.lower()
@@ -98,6 +99,7 @@ def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="
         "--base-url", base_url,
         "--unsafe-executor",
         "--max-tokens", str(max_tokens),
+        "--reasoning-effort", reasoning_effort,
     ]
     
     # Only add --qwen-no-think for Qwen models
@@ -257,6 +259,10 @@ This script will:
                        type=int,
                        default=2000,
                        help='Maximum tokens for model generation (default: 2000)')
+    parser.add_argument('--reasoning-effort',
+                       choices=['low', 'medium', 'high'],
+                       default='medium',
+                       help='Reasoning effort level for OSS models (low, medium, high)')
     parser.add_argument('--refinement-ds',
                        type=str,
                        help='Refinement dataset: HuggingFace dataset or parquet file containing draft programs to refine')
@@ -412,7 +418,7 @@ This script will:
         print(f"\n🎯 Step 2: Running ARC tasks for {args.dataset}")
         
         task_success = run_arc_tasks_with_graceful_handling(
-            args.dataset, args.model_path, base_url, args.subset, args.max_attempts, args.no_transductive_penalty, args.max_workers, args.splitter, args.max_tokens, args.refinement_ds, args.early_stop_threshold
+            args.dataset, args.model_path, base_url, args.subset, args.max_attempts, args.no_transductive_penalty, args.max_workers, args.splitter, args.max_tokens, args.reasoning_effort, args.refinement_ds, args.early_stop_threshold
         )
         
         if task_success:

@@ -236,8 +236,29 @@ Total cost: $0.213873
 8x attempts with sampling and refinement takes about 1.75 x 2 = 3.5 hours. Possibly this may squeeze into 4xL4.
 
 ### Testing no-programs
+Why do we get No Programs so often on low and high reasoning for OSS with OpenRouter?
+
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 64 --max_attempts 1 --model openai/gpt-oss-20b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --limit 1 --reasoning-effort low
+```
+
+Some tests were built on experimental/reasoning_tests and openrouter returns whitespace on low and high sometimes. Changing temperature doesn't appear to help with the issue! Medium reasoning also seems to have issues sometimes, but less often.
+
+### Test out reasoning effort with OSS
+
+We can test on a pod where we run our own endpoint, just create a pod and run tasks:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "openai/gpt-oss-20b" --max-attempts 8 --subset evaluation --reasoning-effort low --max-workers 256 --max-tokens 64000 > gpt_oss_20b_evaluation_low.log 2>&1 &
+```
+
+medium
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "openai/gpt-oss-20b" --max-attempts 8 --subset evaluation --reasoning-effort medium --max-workers 256 --max-tokens 64000 > gpt_oss_20b_evaluation_medium.log 2>&1 &
+```
+
+high
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "openai/gpt-oss-20b" --max-attempts 8 --subset evaluation --reasoning-effort high --max-workers 256 --max-tokens 64000 > gpt_oss_20b_evaluation_high.log 2>&1 &
 ```
 
 ### Adding REX sampling
