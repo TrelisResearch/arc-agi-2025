@@ -127,7 +127,7 @@ class ARCAPIClient:
         if self.temperature is not None:
             kwargs["temperature"] = self.temperature
         else:
-            kwargs["temperature"] = 0.7  # Default temperature
+            kwargs["temperature"] = 1.0  # Default temperature
 
         # Add reasoning parameters for OpenRouter
         if self.base_url and "openrouter" in self.base_url.lower():
@@ -161,17 +161,17 @@ class ARCAPIClient:
                 and ":" in self.base_url
                 and not self.base_url.startswith("https://")
             ):
-                # if "extra_body" not in kwargs:
-                #     kwargs["extra_body"] = {}
-                # kwargs["extra_body"]["min_p"] = 0.05
-                kwargs["top_p"] = 0.9
                 if "extra_body" not in kwargs:
                     kwargs["extra_body"] = {}
-                if "top_k" not in kwargs["extra_body"]:
-                    kwargs["extra_body"]["top_k"] = 20
+                kwargs["extra_body"]["min_p"] = 0.05
+                # kwargs["top_p"] = 0.9
+                # if "extra_body" not in kwargs:
+                #     kwargs["extra_body"] = {}
+                # if "top_k" not in kwargs["extra_body"]:
+                #     kwargs["extra_body"]["top_k"] = 20
             else:
                 # For most endpoints, use top_p and top_k defaults
-                kwargs["top_p"] = 0.9
+                kwargs["top_p"] = 0.95
                 if "extra_body" not in kwargs:
                     kwargs["extra_body"] = {}
                 if "top_k" not in kwargs["extra_body"]:
