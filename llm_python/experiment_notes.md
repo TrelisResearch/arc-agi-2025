@@ -104,6 +104,36 @@ Total cost: $0.019055
 ✅ Checkpointed 15 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250917_105613_openai_gpt-oss-20b_arc-prize-2025_training.parque
 
 ## Septebmer 16th 2025
+### Soar Qwen 14B Performance with REx.
+Sampling:
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Soar-qwen-14b-FP8-Dynamic
+Total tasks: 120
+Total time: 9696.5s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 146,632,206
+Total cost: $26.697095
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 1.7% (1.7% excl. trans)
+  Pass@2 (Train Majority):  1.7% (1.7% excl. trans)
+  Oracle (Best Attempt):    1.7% (1.7% excl. trans)
+  All Train Correct:        4.2% (1.7% excl. trans)
+  Min 1 Train Correct:      21.7% (9.2% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.5%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.1%
+  Execution Error Responses (of all attempts): 8.1%
+
+Refinement:
+...PENDING...
+
+Final scoring:
+...
+
 ### OSS 20B Performance
 Now using REx with refinement bonus!
 
@@ -230,7 +260,7 @@ Total cost: $0.213873
   Execution Error Responses (of all attempts): 1.0%
 
 *with --splitter and low reasoning and 16x attempts*
-
+failed due to no programs too often.
 
 ### Running on 1xH200 SXM
 8x attempts with sampling and refinement takes about 1.75 x 2 = 3.5 hours. Possibly this may squeeze into 4xL4.
@@ -244,22 +274,90 @@ uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset
 
 Some tests were built on experimental/reasoning_tests and openrouter returns whitespace on low and high sometimes. Changing temperature doesn't appear to help with the issue! Medium reasoning also seems to have issues sometimes, but less often.
 
+### Try higher sampling with OSS using low reasoning 
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "openai/gpt-oss-20b" --max-attempts 64 --subset evaluation --reasoning-effort low --max-workers 256 --max-tokens 32000 > gpt_oss_20b_evaluation_low_32k_64x.log 2>&1 &
+```
+
 ### Test out reasoning effort with OSS
 
 We can test on a pod where we run our own endpoint, just create a pod and run tasks:
 ```bash
 PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "openai/gpt-oss-20b" --max-attempts 8 --subset evaluation --reasoning-effort low --max-workers 256 --max-tokens 64000 > gpt_oss_20b_evaluation_low.log 2>&1 &
 ```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: openai/gpt-oss-20b
+Total tasks: 120
+Total time: 882.0s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 10,310,964
+Total cost: $0.933843
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 1.7% (1.7% excl. trans)
+  Pass@2 (Train Majority):  1.7% (1.7% excl. trans)
+  Oracle (Best Attempt):    1.7% (1.7% excl. trans)
+  All Train Correct:        3.3% (3.3% excl. trans)
+  Min 1 Train Correct:      10.8% (10.8% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.2%
+  Execution Error Responses (of all attempts): 2.8%
 
 medium
 ```bash
 PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "openai/gpt-oss-20b" --max-attempts 8 --subset evaluation --reasoning-effort medium --max-workers 256 --max-tokens 64000 > gpt_oss_20b_evaluation_medium.log 2>&1 &
 ```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: openai/gpt-oss-20b
+Total tasks: 120
+Total time: 5359.0s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 9,867,091
+Total cost: $1.047034
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 1.7% (1.7% excl. trans)
+  Pass@2 (Train Majority):  1.7% (1.7% excl. trans)
+  Oracle (Best Attempt):    1.7% (1.7% excl. trans)
+  All Train Correct:        3.3% (3.3% excl. trans)
+  Min 1 Train Correct:      10.0% (9.2% excl. trans)
+  Min 1 Code Success:       97.5%
+  Max Length Responses:     0.1%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.2%
+  Execution Error Responses (of all attempts): 2.1%
+  
 high
 ```bash
 PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "openai/gpt-oss-20b" --max-attempts 8 --subset evaluation --reasoning-effort high --max-workers 256 --max-tokens 64000 > gpt_oss_20b_evaluation_high.log 2>&1 &
 ```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: openai/gpt-oss-20b
+Total tasks: 120
+Total time: 6117.4s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 6,182,801
+Total cost: $0.645230
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 1.7% (1.7% excl. trans)
+  Pass@2 (Train Majority):  1.7% (1.7% excl. trans)
+  Oracle (Best Attempt):    1.7% (1.7% excl. trans)
+  All Train Correct:        3.3% (3.3% excl. trans)
+  Min 1 Train Correct:      9.2% (8.3% excl. trans)
+  Min 1 Code Success:       81.7%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 1.5%
 
 ### Adding REX sampling
 ```bash
