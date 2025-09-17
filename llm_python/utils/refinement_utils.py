@@ -82,6 +82,14 @@ class REXProgramPool:
         self.refinement_counts = defaultdict(lambda: 0)
         self.program_hashes = set()  # For deduplication
 
+        # Track refinement success for each program
+        self.refinement_success_stats = defaultdict(lambda: {
+            'attempts': 0,
+            'improvements': 0,
+            'total_improvement': 0.0,
+            'avg_improvement': 0.0
+        })
+
         # Index initial programs
         for program in self.programs:
             self._add_program_hash(program)
@@ -98,13 +106,15 @@ class REXProgramPool:
         program_hash = self._get_program_hash(program)
         self.program_hashes.add(program_hash)
 
-    def sample_program(self, sampling_mode: Literal["uniform", "rex"] = "rex", C: float = 20.0) -> Optional[Dict[str, Any]]:
+    def sample_program(self, sampling_mode: Literal["uniform", "rex"] = "rex", C: float = 20.0,
+                      refinement_bonus_weight: float = 0.5) -> Optional[Dict[str, Any]]:
         """
         Thread-safe sampling from the program pool.
 
         Args:
             sampling_mode: Sampling strategy to use
             C: REX hyperparameter for beta distribution
+            refinement_bonus_weight: Weight for refinement success bonus (0.0-1.0, default 0.5)
 
         Returns:
             Selected program or None if pool is empty
@@ -116,20 +126,29 @@ class REXProgramPool:
             if sampling_mode == "uniform":
                 return random.choice(self.programs)
             elif sampling_mode == "rex":
-                return self._rex_sample(C)
+                return self._rex_sample(C, refinement_bonus_weight)
             else:
                 raise ValueError(f"Unknown sampling mode: {sampling_mode}")
 
-    def _rex_sample(self, C: float) -> Dict[str, Any]:
+    def _rex_sample(self, C: float, refinement_bonus_weight: float = 0.5) -> Dict[str, Any]:
         """Internal REX sampling with lock already held."""
         # Calculate Beta distribution weights for each program
         weights = []
+        quality_scores = []  # For logging
+
         for program in self.programs:
             correctness_pct, _ = calculate_program_metrics(program)
             program_id = program.get('row_id', id(program))
 
-            # REX Beta sampling formula
-            alpha = 1 + C * correctness_pct
+            # Calculate refinement bonus from success history with weighting
+            refinement_bonus = self.refinement_success_stats[program_id]['avg_improvement'] * refinement_bonus_weight
+
+            # Enhanced quality score combining correctness and weighted refinement success
+            quality_score = correctness_pct + refinement_bonus
+            quality_scores.append(quality_score)
+
+            # REX Beta sampling formula with refinement bonus
+            alpha = 1 + C * quality_score
             beta = 1 + C * (1 - correctness_pct) + self.refinement_counts[program_id]
 
             # Sample from Beta distribution to get weight
@@ -139,6 +158,9 @@ class REXProgramPool:
         # Select program with highest weight
         max_idx = np.argmax(weights)
         selected = self.programs[max_idx]
+
+        # Store quality score for logging (attach to selected program temporarily)
+        selected['_rex_quality_score'] = quality_scores[max_idx]
 
         # Update refinement count for selected program
         selected_id = selected.get('row_id', id(selected))
@@ -171,6 +193,31 @@ class REXProgramPool:
 
             return added_count
 
+    def track_refinement_attempt(self, parent_program_id: str, refined_correctness: float,
+                                original_correctness: float) -> None:
+        """
+        Track a refinement attempt and update success statistics.
+
+        Args:
+            parent_program_id: ID of the program that was refined
+            refined_correctness: Correctness of the refined program
+            original_correctness: Correctness of the original program
+        """
+        with self.lock:
+            stats = self.refinement_success_stats[parent_program_id]
+            stats['attempts'] += 1
+
+            # Calculate improvement (can be positive or negative)
+            improvement = refined_correctness - original_correctness
+            stats['total_improvement'] += improvement  # Always count improvement/degradation
+
+            if improvement > 0:
+                stats['improvements'] += 1  # Still track positive improvements for success rate
+
+            # Update running average (now truly reflects average change)
+            if stats['attempts'] > 0:
+                stats['avg_improvement'] = stats['total_improvement'] / stats['attempts']
+
     def get_pool_stats(self) -> Dict[str, Any]:
         """Get statistics about the current program pool."""
         with self.lock:
@@ -179,22 +226,44 @@ class REXProgramPool:
                 return {"total_programs": 0, "avg_correctness": 0.0, "total_refinements": 0}
 
             correctness_scores = []
+            quality_scores = []
+            total_attempts = 0
+            total_improvements = 0
+
             for program in self.programs:
                 correctness_pct, _ = calculate_program_metrics(program)
                 correctness_scores.append(correctness_pct)
 
+                program_id = program.get('row_id', id(program))
+                refinement_bonus = self.refinement_success_stats[program_id]['avg_improvement'] * 0.5  # Use default weight
+                quality_scores.append(correctness_pct + refinement_bonus)
+
+                # Aggregate refinement success stats
+                stats = self.refinement_success_stats[program_id]
+                total_attempts += stats['attempts']
+                total_improvements += stats['improvements']
+
             return {
                 "total_programs": total_programs,
                 "avg_correctness": sum(correctness_scores) / len(correctness_scores),
+                "avg_quality_score": sum(quality_scores) / len(quality_scores),
                 "total_refinements": sum(self.refinement_counts.values()),
-                "unique_hashes": len(self.program_hashes)
+                "unique_hashes": len(self.program_hashes),
+                "refinement_success_rate": total_improvements / total_attempts if total_attempts > 0 else 0.0,
+                "total_refinement_attempts": total_attempts
             }
 
     def log_pool_summary(self) -> None:
         """Log a summary of the current pool state."""
         stats = self.get_pool_stats()
         if stats["total_programs"] > 0:
-            print(f"🔍 REX Pool: {stats['total_programs']} programs, {stats['avg_correctness']:.1%} avg correct, {stats['total_refinements']} refinements")
+            success_rate = stats['refinement_success_rate']
+            quality_score = stats['avg_quality_score']
+            print(f"🔍 REX Pool: {stats['total_programs']} programs, "
+                  f"{stats['avg_correctness']:.1%} avg correct, "
+                  f"{quality_score:.1%} avg quality score, "
+                  f"{success_rate:.1%} refinement success rate, "
+                  f"{stats['total_refinements']} selections")
 
 
 def calculate_program_metrics(program: Dict[str, Any]) -> Tuple[float, int]:
@@ -237,7 +306,8 @@ def select_program_for_refinement(
     if program_pool is not None:
         rex_params = rex_params or {}
         C = rex_params.get("C", 20.0)
-        selected = program_pool.sample_program(sampling_mode, C)
+        refinement_bonus_weight = rex_params.get("refinement_bonus_weight", 0.5)
+        selected = program_pool.sample_program(sampling_mode, C, refinement_bonus_weight)
 
         if debug and selected:
             pool_stats = program_pool.get_pool_stats()

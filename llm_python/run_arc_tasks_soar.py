@@ -173,6 +173,7 @@ class ARCTaskRunnerSimple:
         refinement_sampling: str = "rex",
         rex_stats: bool = False,
         rex_c: float = 20.0,
+        rex_bonus_weight: float = 0.5,
     ):
         # Core configuration
         self.max_workers = max_workers
@@ -192,6 +193,7 @@ class ARCTaskRunnerSimple:
         self.refinement_sampling = refinement_sampling
         self.rex_stats = rex_stats
         self.rex_c = rex_c
+        self.rex_bonus_weight = rex_bonus_weight
         # Use custom output directory if provided, otherwise use default
         output_dir = Path(parquet_output_dir) if parquet_output_dir else None
         self.dataset_collector = SoarDatasetCollector(sample_name, output_dir=output_dir)
@@ -476,6 +478,21 @@ class ARCTaskRunnerSimple:
         rex_pool = task_result.get("rex_pool")
         if not rex_pool:
             return
+
+        # Track refinement attempt if we have a parent program ID
+        if refined_from_id:
+            refined_correctness = attempt_detail.get("train_accuracy", 0.0)
+
+            # Find original program correctness
+            original_correctness = 0.0
+            for program in rex_pool.programs:
+                if program.get('row_id') == refined_from_id:
+                    from llm_python.utils.refinement_utils import calculate_program_metrics
+                    original_correctness, _ = calculate_program_metrics(program)
+                    break
+
+            # Track the refinement attempt
+            rex_pool.track_refinement_attempt(refined_from_id, refined_correctness, original_correctness)
 
         # Check if attempt meets criteria for adding to pool
         if (attempt_detail.get("program_extracted", False) and
@@ -1597,9 +1614,15 @@ class ARCTaskRunnerSimple:
                         # Use REX sampling per-attempt if enabled
                         if "rex_pool" in task_results[task_id]:
                             rex_pool = task_results[task_id]["rex_pool"]
-                            selected_program = rex_pool.sample_program("rex", self.rex_c)
-                            if self.debug:
-                                print(f"🔄 REX sampled program for attempt {attempt_num + 1}")
+                            selected_program = rex_pool.sample_program("rex", self.rex_c, self.rex_bonus_weight)
+                            if self.debug or self.rex_stats:
+                                quality_score = selected_program.get('_rex_quality_score', 0.0)
+                                msg = f"🔄 REX sampled program for attempt {attempt_num + 1}"
+                                if self.rex_stats:
+                                    msg += f" (quality score: {quality_score:.1%})"
+                                print(msg)
+                                # Clean up temporary quality score
+                                selected_program.pop('_rex_quality_score', None)
                         else:
                             selected_program = task_results[task_id]["selected_program"]
 
@@ -2563,6 +2586,12 @@ def main():
         help="REX algorithm hyperparameter C (default: 20.0). Higher values increase exploration vs exploitation trade-off.",
     )
     parser.add_argument(
+        "--rex-bonus-weight",
+        type=float,
+        default=0.5,
+        help="Weight for refinement success bonus in REX sampling (default: 0.5). 0.0 disables bonus, 1.0 uses full bonus.",
+    )
+    parser.add_argument(
         "--early-stop-threshold",
         type=int,
         default=7,
@@ -2620,6 +2649,7 @@ def main():
         refinement_sampling=args.refinement_sampling,
         rex_stats=args.rex_stats,
         rex_c=args.rex_c,
+        rex_bonus_weight=args.rex_bonus_weight,
     )
 
     # Run the task subset

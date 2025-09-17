@@ -55,10 +55,58 @@ Commercial:
 - Reach back out to openrouter on sponsorship again.
 
 ---
+## September 17th 2025
+### Adding REX refinement bonus!
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training --max_workers 64 --max_attempts 4 --model openai/gpt-oss-20b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds Trelis/arc-agi-partials-for-refinement --early-stop-threshold 3 --limit 8 --rex-stats
+```
+🔍 REX Pool: 9 programs, 50.0% avg correct, 61.1% avg quality score, 100.0% refinement success rate, 4 selections
+🔍 REX Pool: 1 programs, 66.7% avg correct, 66.7% avg quality score, 0.0% refinement success rate, 0 selections
+🔍 REX Pool: 10 programs, 48.0% avg correct, 48.3% avg quality score, 75.0% refinement success rate, 4 selections
+🔍 REX Pool: 8 programs, 50.0% avg correct, 45.3% avg quality score, 0.0% refinement success rate, 4 selections
+🔍 REX Pool: 1 programs, 66.7% avg correct, 33.3% avg quality score, 0.0% refinement success rate, 4 selections
+🔍 REX Pool: 10 programs, 62.5% avg correct, 53.8% avg quality score, 25.0% refinement success rate, 4 selections
+🔍 REX Pool: 10 programs, 62.0% avg correct, 51.0% avg quality score, 25.0% refinement success rate, 4 selections
+🔍 REX Pool: 11 programs, 74.5% avg correct, 66.4% avg quality score, 0.0% refinement success rate, 4 selections
+⏳ Progress: 32/32 attempts done; 0 remaining
+✅ All 32 attempts completed in 156.2s
+📊 Final status: 28 successful, 0 failed, 0 cancelled
+✅ Checkpointed 15 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250917_105613_openai_gpt-oss-20b_arc-prize-2025_training.parquet
+📝 Parquet data flushed successfully (finally block)
+Converting task results to summary format...
+⚠️ Task 017c7c7b has no valid attempts - skipping
+✅ Converted results for 7/8 tasks
+
+==================================================
+SUMMARY
+==================================================
+Dataset: arc-prize-2025
+Subset: training
+Model: openai/gpt-oss-20b
+Total tasks: 7
+Total time: 156.2s
+Successful API calls: 7/7 (100.0%)
+Total tokens used: 193,189
+Total cost: $0.019055
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 85.7% (71.4% excl. trans)
+  Pass@2 (Train Majority):  71.4% (71.4% excl. trans)
+  Oracle (Best Attempt):    85.7% (71.4% excl. trans)
+  All Train Correct:        57.1% (57.1% excl. trans)
+  Min 1 Train Correct:      85.7% (85.7% excl. trans)
+  Min 1 Code Success:       85.7%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 3.6%
+✅ Checkpointed 15 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250917_105613_openai_gpt-oss-20b_arc-prize-2025_training.parque
+
 ## Septebmer 16th 2025
 ### Adding REX sampling
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training --max_workers 64 --max_attempts 16 --model gpt-4.1-nano --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds Trelis/arc-agi-partials-for-refinement --early-stop-threshold 100 --limit 2 --rex-stats
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training --max_workers 64 --max_attempts 1 --model gpt-4.1-nano --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --refinement-ds Trelis/arc-agi-partials-for-refinement --early-stop-threshold 100 --limit 1 --rex-stats
 ```
 Test out REx sampling on SOAR Qwen 14B passing in that same refinement dataset.
 

@@ -629,3 +629,182 @@ class TestSelectProgramForRefinementWithPool:
             args = mock_print.call_args[0][0]
             assert 'uniform pool' in args
             assert '50.0% correct' in args
+
+
+class TestREXEnhancedFunctionality:
+    """Test enhanced REx functionality with refinement success tracking"""
+
+    def test_track_refinement_attempt_improvement(self):
+        """Test tracking a successful refinement attempt"""
+        programs = [
+            {'row_id': 'prog1', 'code': 'code1', 'correct_train_input': [True, False]}  # 50%
+        ]
+        pool = REXProgramPool(programs)
+
+        # Track an improvement: 50% -> 75%
+        pool.track_refinement_attempt('prog1', 0.75, 0.50)
+
+        stats = pool.refinement_success_stats['prog1']
+        assert stats['attempts'] == 1
+        assert stats['improvements'] == 1
+        assert stats['total_improvement'] == 0.25
+        assert stats['avg_improvement'] == 0.25
+
+    def test_track_refinement_attempt_no_improvement(self):
+        """Test tracking a failed refinement attempt"""
+        programs = [
+            {'row_id': 'prog1', 'code': 'code1', 'correct_train_input': [True, False]}
+        ]
+        pool = REXProgramPool(programs)
+
+        # Track degradation: 50% -> 25% (-0.25)
+        pool.track_refinement_attempt('prog1', 0.25, 0.50)
+
+        stats = pool.refinement_success_stats['prog1']
+        assert stats['attempts'] == 1
+        assert stats['improvements'] == 0  # No improvement
+        assert stats['total_improvement'] == -0.25  # Now tracks negative change
+        assert stats['avg_improvement'] == -0.25
+
+    def test_track_multiple_refinement_attempts(self):
+        """Test tracking multiple refinement attempts with mixed results"""
+        programs = [
+            {'row_id': 'prog1', 'code': 'code1', 'correct_train_input': [True, False]}
+        ]
+        pool = REXProgramPool(programs)
+
+        # First attempt: improvement from 50% to 75% (+0.25)
+        pool.track_refinement_attempt('prog1', 0.75, 0.50)
+
+        # Second attempt: degradation from 50% to 25% (-0.25)
+        pool.track_refinement_attempt('prog1', 0.25, 0.50)
+
+        # Third attempt: improvement from 50% to 100% (+0.50)
+        pool.track_refinement_attempt('prog1', 1.00, 0.50)
+
+        stats = pool.refinement_success_stats['prog1']
+        assert stats['attempts'] == 3
+        assert stats['improvements'] == 2  # Two successful improvements
+        assert stats['total_improvement'] == 0.50  # 0.25 + (-0.25) + 0.50
+        assert abs(stats['avg_improvement'] - (0.50/3)) < 0.001  # 0.50 / 3 ≈ 0.167
+
+    def test_enhanced_rex_sampling_with_bonus(self):
+        """Test that REX sampling incorporates refinement bonus"""
+        programs = [
+            {'row_id': 'prog1', 'code': 'code1', 'correct_train_input': [True, False]},   # 50% correct
+            {'row_id': 'prog2', 'code': 'code2', 'correct_train_input': [True, False]}    # 50% correct
+        ]
+        pool = REXProgramPool(programs)
+
+        # Give prog1 a refinement success history
+        pool.track_refinement_attempt('prog1', 0.80, 0.50)  # +0.30 improvement
+        pool.track_refinement_attempt('prog1', 0.70, 0.50)  # +0.20 improvement
+        # prog1 avg_improvement = 0.25
+
+        # prog2 has no refinement history (avg_improvement = 0.0)
+
+        # Sample multiple times and track selections (use full weight to amplify effect)
+        selections = {'prog1': 0, 'prog2': 0}
+        for _ in range(100):
+            result = pool.sample_program("rex", C=5.0, refinement_bonus_weight=1.0)  # Full weight
+            selections[result['row_id']] += 1
+
+        # prog1 should be selected more often due to refinement bonus
+        # Both have 50% correctness, but prog1 has +0.25 refinement bonus (full weight)
+        assert selections['prog1'] > selections['prog2']
+        # With 100 samples and a meaningful bonus, should get at least modest bias
+        assert selections['prog1'] >= 51  # Just needs to be better than random (50/50)
+
+    def test_quality_score_attachment_during_sampling(self):
+        """Test that quality score is temporarily attached during REX sampling"""
+        programs = [
+            {'row_id': 'prog1', 'code': 'code1', 'correct_train_input': [True, True, False]}  # 67% correct
+        ]
+        pool = REXProgramPool(programs)
+
+        # Add some refinement success history
+        pool.track_refinement_attempt('prog1', 0.80, 0.67)  # +0.13 improvement
+
+        result = pool.sample_program("rex", C=10.0)
+
+        # Should have quality score attached temporarily
+        assert '_rex_quality_score' in result
+        expected_quality = 2/3 + (0.13 * 0.5)  # correctness + weighted refinement_bonus
+        assert abs(result['_rex_quality_score'] - expected_quality) < 0.001
+
+    def test_enhanced_pool_stats(self):
+        """Test enhanced pool statistics with refinement success metrics"""
+        programs = [
+            {'row_id': 'prog1', 'code': 'code1', 'correct_train_input': [True, False]},    # 50%
+            {'row_id': 'prog2', 'code': 'code2', 'correct_train_input': [True, True]}      # 100%
+        ]
+        pool = REXProgramPool(programs)
+
+        # Add refinement history
+        pool.track_refinement_attempt('prog1', 0.75, 0.50)  # +0.25 improvement
+        pool.track_refinement_attempt('prog1', 0.25, 0.50)  # -0.25 degradation (now counted)
+        pool.track_refinement_attempt('prog2', 0.80, 1.00)  # -0.20 degradation (now counted)
+
+        # Sample to create refinement counts
+        pool.sample_program("rex")
+        pool.sample_program("rex")
+
+        stats = pool.get_pool_stats()
+
+        assert stats['total_programs'] == 2
+        assert stats['avg_correctness'] == 0.75  # (0.5 + 1.0) / 2
+
+        # avg_quality_score should include refinement bonuses (now symmetric with 0.5 weight)
+        # prog1: 0.5 + (0.0 * 0.5) = 0.5 (avg_improvement = (0.25-0.25)/2 = 0.0)
+        # prog2: 1.0 + (-0.20 * 0.5) = 0.9 (avg_improvement = -0.20/1 = -0.20, weighted = -0.10)
+        expected_avg_quality = (0.5 + 0.9) / 2
+        assert abs(stats['avg_quality_score'] - expected_avg_quality) < 0.001
+
+        assert stats['refinement_success_rate'] == 1/3  # 1 improvement out of 3 attempts
+        assert stats['total_refinement_attempts'] == 3
+        assert stats['total_refinements'] == 2  # Number of times programs were selected
+
+    def test_thread_safety_of_refinement_tracking(self):
+        """Test thread safety of refinement success tracking"""
+        import threading
+        import time
+
+        programs = [
+            {'row_id': 'prog1', 'code': 'code1', 'correct_train_input': [True, False]}
+        ]
+        pool = REXProgramPool(programs)
+
+        def track_attempts():
+            for i in range(10):
+                pool.track_refinement_attempt('prog1', 0.6 + i*0.01, 0.5)
+                time.sleep(0.001)  # Small delay to encourage race conditions
+
+        # Run multiple threads tracking refinement attempts
+        threads = []
+        for _ in range(3):
+            thread = threading.Thread(target=track_attempts)
+            threads.append(thread)
+            thread.start()
+
+        for thread in threads:
+            thread.join()
+
+        # Should have tracked all attempts safely
+        stats = pool.refinement_success_stats['prog1']
+        assert stats['attempts'] == 30  # 3 threads * 10 attempts each
+        assert stats['improvements'] == 30  # All were improvements
+        assert stats['total_improvement'] > 0  # Should have accumulated improvements
+
+    def test_refinement_bonus_zero_for_new_programs(self):
+        """Test that new programs without history have zero refinement bonus"""
+        programs = [
+            {'row_id': 'prog1', 'code': 'code1', 'correct_train_input': [True, False]}
+        ]
+        pool = REXProgramPool(programs)
+
+        # Sample without any refinement history
+        result = pool.sample_program("rex", C=10.0)
+
+        # Quality score should equal correctness (no bonus)
+        expected_quality = 0.5  # Just the correctness percentage
+        assert abs(result['_rex_quality_score'] - expected_quality) < 0.001
