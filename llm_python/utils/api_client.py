@@ -131,17 +131,13 @@ class ARCAPIClient:
 
         # Add reasoning parameters for OpenRouter
         if self.base_url and "openrouter" in self.base_url.lower():
-            reasoning_tokens = {"low": 2000, "medium": 8000, "high": 16000}
-            if self.reasoning_effort in reasoning_tokens:
-                if "gemini" in self.model.lower():
-                    kwargs["extra_body"] = {
-                        "reasoning": {
-                            "max_tokens": reasoning_tokens[self.reasoning_effort]
-                        }
-                    }
-                else:
-                    if self.max_tokens is None:
-                        kwargs["max_tokens"] = reasoning_tokens[self.reasoning_effort]
+            if "extra_body" not in kwargs:
+                kwargs["extra_body"] = {}
+            kwargs["extra_body"]["reasoning"] = {
+                "effort": self.reasoning_effort,
+                "exclude": False,
+                "enabled": True
+            }
 
         # Add thinking_budget for DashScope (Qwen thinking models)
         if self.base_url == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1":

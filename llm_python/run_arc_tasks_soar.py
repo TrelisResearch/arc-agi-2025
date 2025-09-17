@@ -995,9 +995,12 @@ class ARCTaskRunnerSimple:
         system_content = full_prompt["system"]
         user_content = full_prompt["user"]
 
-        # Add reasoning instruction for OSS models
+        # Add reasoning instruction for OSS models on local/TCP endpoints
         if "oss" in self.model.lower():
-            system_content += " Reasoning: high"
+            base_url = self.api_client.base_url or ""
+            # For local/TCP endpoints (not OpenRouter), append reasoning to system prompt
+            if base_url and ("http://" in base_url or not "openrouter" in base_url.lower()):
+                system_content += f" Reasoning: {self.api_client.reasoning_effort}"
 
         attempt_start_time = datetime.datetime.now()
         exec_start_time = time.time()  # Track execution timing
@@ -2562,6 +2565,12 @@ def main():
         help="Use a parquet dataset for synthetic tasks rather than a predefined subset",
     )
     parser.add_argument("--model", default="gpt-4.1-mini", help="Model to use")
+    parser.add_argument(
+        "--reasoning-effort",
+        choices=["low", "medium", "high"],
+        default="medium",
+        help="Reasoning effort level for OSS models (low, medium, high)"
+    )
     parser.add_argument("--limit", type=int, help="Limit number of tasks to run")
     parser.add_argument(
         "--base-url", type=str, help="Base URL for OpenAI-compatible API endpoint"
