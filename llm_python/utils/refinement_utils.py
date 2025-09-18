@@ -217,11 +217,14 @@ class REXProgramPool:
                 # Skip size bonus on error (e.g., numpy array truth value issues)
                 pass
 
+            # cap the quality score at 1.0 (although it technically should hardly be able to exceed as the max size bonus is 0.1 and the max partial score is 0.9 plus a max of 0.05 for the refinement bonus, which would put it over but is likely rare)
+            quality_score = min(quality_score, 1.0)
+
             quality_scores.append(quality_score)
 
             # REX Beta sampling formula with refinement bonus
             alpha = 1 + REX_C * quality_score
-            beta = 1 + REX_C * (1 - correctness_pct) + self.refinement_counts[program_id]
+            beta = 1 + REX_C * (1 - quality_score) + self.refinement_counts[program_id]
 
             # Sample from Beta distribution to get weight
             weight = np.random.beta(alpha, beta)
