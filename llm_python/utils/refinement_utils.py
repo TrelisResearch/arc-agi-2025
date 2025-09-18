@@ -56,6 +56,11 @@ def _has_size_mismatches(program_data: Dict[str, Any], task_data: Optional[Dict]
         True if there are size mismatches in any training outputs
     """
     predicted_outputs = program_data.get('predicted_train_output', [])
+
+    # Convert numpy arrays to lists recursively
+    if hasattr(predicted_outputs, 'tolist'):
+        predicted_outputs = predicted_outputs.tolist()
+
     if not predicted_outputs:
         return False
 
@@ -64,7 +69,20 @@ def _has_size_mismatches(program_data: Dict[str, Any], task_data: Optional[Dict]
         expected_outputs = [example.get('output', []) for example in task_data['train']]
 
         for pred, expected in zip(predicted_outputs, expected_outputs):
-            if not pred or not expected:
+            # Handle None values
+            if pred is None or expected is None:
+                continue
+
+            # Convert numpy arrays to lists to avoid ambiguous truth value errors
+            if hasattr(pred, 'tolist'):
+                pred = pred.tolist()
+            if hasattr(expected, 'tolist'):
+                expected = expected.tolist()
+
+            # Use len() checks instead of truthiness to avoid numpy array issues
+            if not isinstance(pred, (list, tuple)) or not isinstance(expected, (list, tuple)):
+                continue
+            if len(pred) == 0 or len(expected) == 0:
                 continue
 
             # Check if dimensions match
@@ -190,8 +208,12 @@ class REXProgramPool:
             quality_score = correctness_pct + refinement_bonus
 
             # Apply size penalty for programs with grid size mismatches
-            if _has_size_mismatches(program, task_data):
-                quality_score *= REX_SIZE_PENALTY_MULTIPLIER
+            try:
+                if _has_size_mismatches(program, task_data):
+                    quality_score *= REX_SIZE_PENALTY_MULTIPLIER
+            except (ValueError, TypeError) as e:
+                # Skip size penalty on error (e.g., numpy array truth value issues)
+                pass
 
             quality_scores.append(quality_score)
 

@@ -379,7 +379,7 @@ class TestREXProgramPool:
         # REX should be able to sample both programs
         results = []
         for _ in range(10):
-            result = pool.sample_program("rex", C=1.0)
+            result = pool.sample_program("rex")
             results.append(result['code'])
 
         assert len(results) == 10
@@ -582,7 +582,6 @@ class TestSelectProgramForRefinementWithPool:
 
         result = select_program_for_refinement(
             sampling_mode="rex",
-            rex_params={"C": 10.0},
             program_pool=pool
         )
 
@@ -706,7 +705,7 @@ class TestREXEnhancedFunctionality:
         # Sample multiple times and track selections (use full weight to amplify effect)
         selections = {'prog1': 0, 'prog2': 0}
         for _ in range(100):
-            result = pool.sample_program("rex", C=5.0, refinement_bonus_weight=1.0)  # Full weight
+            result = pool.sample_program("rex")  # Full weight
             selections[result['row_id']] += 1
 
         # prog1 should be selected more often due to refinement bonus
@@ -725,7 +724,7 @@ class TestREXEnhancedFunctionality:
         # Add some refinement success history
         pool.track_refinement_attempt('prog1', 0.80, 0.67)  # +0.13 improvement
 
-        result = pool.sample_program("rex", C=10.0)
+        result = pool.sample_program("rex")
 
         # Should have quality score attached temporarily
         assert '_rex_quality_score' in result
@@ -803,7 +802,7 @@ class TestREXEnhancedFunctionality:
         pool = REXProgramPool(programs)
 
         # Sample without any refinement history
-        result = pool.sample_program("rex", C=10.0)
+        result = pool.sample_program("rex")
 
         # Quality score should equal correctness (no bonus)
         expected_quality = 0.5  # Just the correctness percentage
@@ -827,7 +826,81 @@ class TestREXEnhancedFunctionality:
         assert stats['avg_improvement'] == -0.50  # This program gets penalized
 
         # After this "bad" refinement history, quality score should be penalized
-        result = pool.sample_program("rex", C=10.0, refinement_bonus_weight=1.0)
-        expected_quality = 0.5 + (-0.50 * 1.0)  # correctness + penalty
+        result = pool.sample_program("rex")
+        expected_quality = 0.5 + (-0.50 * 0.5)  # correctness + penalty (using REX_REFINEMENT_BONUS_WEIGHT=0.5)
         assert abs(result['_rex_quality_score'] - expected_quality) < 0.001
-        assert result['_rex_quality_score'] == 0.0  # Heavily penalized
+        assert result['_rex_quality_score'] == 0.25  # Penalized (0.5 + (-0.50 * 0.5) = 0.25)
+
+    def test_has_size_mismatches_with_numpy_arrays(self):
+        """Test that _has_size_mismatches handles numpy arrays without truth value errors"""
+        import numpy as np
+        from ..refinement_utils import _has_size_mismatches
+
+        # Test with numpy arrays in predicted outputs
+        program_data = {
+            'predicted_train_output': [
+                np.array([[1, 2], [3, 4]]),  # Numpy array
+                [[5, 6], [7, 8]]  # Regular list
+            ]
+        }
+
+        task_data = {
+            'train': [
+                {'output': np.array([[1, 2], [3, 4]])},  # Numpy array in expected
+                {'output': [[5, 6], [7, 8]]}  # Regular list in expected
+            ]
+        }
+
+        # This should not raise "truth value of an array" error
+        result = _has_size_mismatches(program_data, task_data)
+        assert isinstance(result, bool)
+        assert result == False  # Sizes match
+
+        # Test with size mismatches
+        program_data_mismatch = {
+            'predicted_train_output': [
+                np.array([[1, 2, 3], [4, 5, 6]]),  # Different size
+                [[5, 6], [7, 8]]
+            ]
+        }
+
+        result_mismatch = _has_size_mismatches(program_data_mismatch, task_data)
+        assert isinstance(result_mismatch, bool)
+        assert result_mismatch == True  # Sizes don't match
+
+        # Test with None values
+        program_data_none = {
+            'predicted_train_output': [
+                None,  # None value
+                [[5, 6], [7, 8]]
+            ]
+        }
+
+        result_none = _has_size_mismatches(program_data_none, task_data)
+        assert isinstance(result_none, bool)
+
+        # Test with empty arrays
+        program_data_empty = {
+            'predicted_train_output': [
+                np.array([]),  # Empty numpy array
+                [[5, 6], [7, 8]]
+            ]
+        }
+
+        result_empty = _has_size_mismatches(program_data_empty, task_data)
+        assert isinstance(result_empty, bool)
+
+        # Test with no task data
+        result_no_task = _has_size_mismatches(program_data, None)
+        assert isinstance(result_no_task, bool)
+
+        # Test with nested numpy arrays
+        program_data_nested = {
+            'predicted_train_output': np.array([
+                np.array([[1, 2], [3, 4]]),
+                np.array([[5, 6], [7, 8]])
+            ])
+        }
+
+        result_nested = _has_size_mismatches(program_data_nested, task_data)
+        assert isinstance(result_nested, bool)

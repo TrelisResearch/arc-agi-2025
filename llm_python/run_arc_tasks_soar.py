@@ -1714,7 +1714,7 @@ class ARCTaskRunnerSimple:
                         # Use REX sampling per-attempt if enabled
                         if "rex_pool" in task_results[task_id]:
                             rex_pool = task_results[task_id]["rex_pool"]
-                            selected_program = rex_pool.sample_program("rex", self.rex_c, self.rex_bonus_weight)
+                            selected_program = rex_pool.sample_program("rex")
                             if self.debug or self.rex_stats:
                                 quality_score = selected_program.get('_rex_quality_score', 0.0)
                                 msg = f"🔄 REX sampled program for attempt {attempt_num + 1}"
