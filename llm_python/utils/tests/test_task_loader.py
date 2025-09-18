@@ -430,3 +430,179 @@ class TestTaskLoaderIntegration:
             # Should return the same tasks
             assert len(tasks_old) == len(tasks_new)
             assert set(t[0] for t in tasks_old) == set(t[0] for t in tasks_new)
+
+
+class TestTaskLoaderRefinementMultipleDatasets:
+    """Tests for refinement functionality with multiple parquet files"""
+
+    @pytest.fixture
+    def loader(self):
+        """Create a TaskLoader instance for testing"""
+        return TaskLoader(get_default_data_root())
+
+    @patch('llm_python.datasets.io.read_soar_parquet')
+    def test_get_program_data_for_refinement_multiple_parquet(self, mock_read_parquet, loader):
+        """Test loading program data from multiple parquet files"""
+        import pandas as pd
+
+        # Mock parquet data for first file - non-perfect programs (some train cases wrong)
+        mock_df1 = pd.DataFrame({
+            'task_id': ['task_001', 'task_002'],
+            'code': ['code1', 'code2'],
+            'correct_train_input': [[True, False], [False, True]],  # Not 100% correct
+            'correct_test_input': [[], []],
+            'predicted_train_output': [[], []],
+            'predicted_test_output': [[], []],
+            'model': ['model1', 'model1'],
+            'reasoning': ['reason1', 'reason2'],
+            'is_transductive': [False, False]  # Not transductive
+        })
+
+        # Mock parquet data for second file
+        mock_df2 = pd.DataFrame({
+            'task_id': ['task_002', 'task_003'],  # task_002 overlaps with first file
+            'code': ['code3', 'code4'],
+            'correct_train_input': [[True, False], [False, False]],  # Not 100% correct
+            'correct_test_input': [[], []],
+            'predicted_train_output': [[], []],
+            'predicted_test_output': [[], []],
+            'model': ['model2', 'model2'],
+            'reasoning': ['reason3', 'reason4'],
+            'is_transductive': [False, False]  # Not transductive
+        })
+
+        # Configure mock to return different dataframes for different files
+        mock_read_parquet.side_effect = [mock_df1, mock_df2]
+
+        # Add corresponding tasks to the loader's cache
+        loader.tasks['task_001'] = {
+            'train': [{'input': [[1, 2]], 'output': [[2, 1]]}],
+            'test': [{'input': [[3, 4]], 'output': [[4, 3]]}]
+        }
+        loader.tasks['task_002'] = {
+            'train': [{'input': [[5, 6]], 'output': [[6, 5]]}],
+            'test': [{'input': [[7, 8]], 'output': [[8, 7]]}]
+        }
+        loader.tasks['task_003'] = {
+            'train': [{'input': [[9, 10]], 'output': [[10, 9]]}],
+            'test': [{'input': [[11, 12]], 'output': [[12, 11]]}]
+        }
+
+        # Call with multiple parquet files
+        program_data = loader.get_program_data_for_refinement([
+            "/path/to/data1.parquet",
+            "/path/to/data2.parquet"
+        ])
+
+        # Verify both parquet files were loaded
+        assert mock_read_parquet.call_count == 2
+        mock_read_parquet.assert_any_call("/path/to/data1.parquet")
+        mock_read_parquet.assert_any_call("/path/to/data2.parquet")
+
+        # Verify all tasks are present
+        assert len(program_data) == 3  # task_001, task_002, task_003
+        assert 'task_001' in program_data
+        assert 'task_002' in program_data
+        assert 'task_003' in program_data
+
+        # Verify task_002 has programs from both files (3 total: code2, code3)
+        assert len(program_data['task_002']['programs']) == 2
+
+        # Verify other tasks have one program each
+        assert len(program_data['task_001']['programs']) == 1
+        assert len(program_data['task_003']['programs']) == 1
+
+        # Verify task data is included
+        assert program_data['task_001']['task_data'] is not None
+        assert program_data['task_002']['task_data'] is not None
+        assert program_data['task_003']['task_data'] is not None
+
+    @patch('llm_python.datasets.io.read_soar_parquet')
+    def test_get_program_data_for_refinement_single_string(self, mock_read_parquet, loader):
+        """Test that single string input still works (backward compatibility)"""
+        import pandas as pd
+
+        # Mock parquet data
+        mock_df = pd.DataFrame({
+            'task_id': ['task_001'],
+            'code': ['code1'],
+            'correct_train_input': [[True, False]],  # Not 100% correct
+            'correct_test_input': [[]],
+            'predicted_train_output': [[]],
+            'predicted_test_output': [[]],
+            'model': ['model1'],
+            'reasoning': ['reason1'],
+            'is_transductive': [False]  # Not transductive
+        })
+        mock_read_parquet.return_value = mock_df
+
+        # Add task to cache
+        loader.tasks['task_001'] = {
+            'train': [{'input': [[1, 2]], 'output': [[2, 1]]}],
+            'test': [{'input': [[3, 4]], 'output': [[4, 3]]}]
+        }
+
+        # Call with single string (not list)
+        program_data = loader.get_program_data_for_refinement("/path/to/data.parquet")
+
+        # Verify it works
+        assert len(program_data) == 1
+        assert 'task_001' in program_data
+        mock_read_parquet.assert_called_once_with("/path/to/data.parquet")
+
+    @patch('llm_python.datasets.io.read_soar_parquet')
+    def test_get_program_data_for_refinement_max_rows_across_files(self, mock_read_parquet, loader):
+        """Test that max_rows constraint works across multiple files"""
+        import pandas as pd
+
+        # Create larger dataframes
+        mock_df1 = pd.DataFrame({
+            'task_id': [f'task_{i:03d}' for i in range(1, 51)],  # 50 rows
+            'code': [f'code{i}' for i in range(1, 51)],
+            'correct_train_input': [[True, False]] * 50,  # Not 100% correct
+            'correct_test_input': [[]] * 50,
+            'predicted_train_output': [[]] * 50,
+            'predicted_test_output': [[]] * 50,
+            'model': ['model1'] * 50,
+            'reasoning': [f'reason{i}' for i in range(1, 51)],
+            'is_transductive': [False] * 50  # Not transductive
+        })
+
+        mock_df2 = pd.DataFrame({
+            'task_id': [f'task_{i:03d}' for i in range(51, 101)],  # 50 more rows
+            'code': [f'code{i}' for i in range(51, 101)],
+            'correct_train_input': [[True, False]] * 50,  # Not 100% correct
+            'correct_test_input': [[]] * 50,
+            'predicted_train_output': [[]] * 50,
+            'predicted_test_output': [[]] * 50,
+            'model': ['model2'] * 50,
+            'reasoning': [f'reason{i}' for i in range(51, 101)],
+            'is_transductive': [False] * 50  # Not transductive
+        })
+
+        mock_read_parquet.side_effect = [mock_df1, mock_df2]
+
+        # Add tasks to cache (only first 70 tasks)
+        for i in range(1, 71):
+            task_id = f'task_{i:03d}'
+            loader.tasks[task_id] = {
+                'train': [{'input': [[i]], 'output': [[i+1]]}],
+                'test': [{'input': [[i+100]], 'output': [[i+101]]}]
+            }
+
+        # Call with max_rows=60 (should load all of first file + 10 from second)
+        program_data = loader.get_program_data_for_refinement([
+            "/path/to/data1.parquet",
+            "/path/to/data2.parquet"
+        ], max_rows=60)
+
+        # Should get 60 tasks total (task_001 through task_060)
+        assert len(program_data) == 60
+        for i in range(1, 61):
+            task_id = f'task_{i:03d}'
+            assert task_id in program_data
+
+    def test_get_program_data_for_refinement_empty_list(self, loader):
+        """Test handling of empty list input"""
+        with pytest.raises(ValueError, match="No valid tasks with program data found"):
+            loader.get_program_data_for_refinement([])

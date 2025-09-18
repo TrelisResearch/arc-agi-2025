@@ -127,21 +127,17 @@ class ARCAPIClient:
         if self.temperature is not None:
             kwargs["temperature"] = self.temperature
         else:
-            kwargs["temperature"] = 0.7  # Default temperature
+            kwargs["temperature"] = 1.0  # Default temperature
 
         # Add reasoning parameters for OpenRouter
         if self.base_url and "openrouter" in self.base_url.lower():
-            reasoning_tokens = {"low": 2000, "medium": 8000, "high": 16000}
-            if self.reasoning_effort in reasoning_tokens:
-                if "gemini" in self.model.lower():
-                    kwargs["extra_body"] = {
-                        "reasoning": {
-                            "max_tokens": reasoning_tokens[self.reasoning_effort]
-                        }
-                    }
-                else:
-                    if self.max_tokens is None:
-                        kwargs["max_tokens"] = reasoning_tokens[self.reasoning_effort]
+            if "extra_body" not in kwargs:
+                kwargs["extra_body"] = {}
+            kwargs["extra_body"]["reasoning"] = {
+                "effort": self.reasoning_effort,
+                "exclude": False,
+                "enabled": True
+            }
 
         # Add thinking_budget for DashScope (Qwen thinking models)
         if self.base_url == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1":
@@ -161,17 +157,17 @@ class ARCAPIClient:
                 and ":" in self.base_url
                 and not self.base_url.startswith("https://")
             ):
-                # if "extra_body" not in kwargs:
-                #     kwargs["extra_body"] = {}
-                # kwargs["extra_body"]["min_p"] = 0.05
-                kwargs["top_p"] = 0.9
                 if "extra_body" not in kwargs:
                     kwargs["extra_body"] = {}
-                if "top_k" not in kwargs["extra_body"]:
-                    kwargs["extra_body"]["top_k"] = 20
+                kwargs["extra_body"]["min_p"] = 0.05
+                # kwargs["top_p"] = 0.9
+                # if "extra_body" not in kwargs:
+                #     kwargs["extra_body"] = {}
+                # if "top_k" not in kwargs["extra_body"]:
+                #     kwargs["extra_body"]["top_k"] = 20
             else:
                 # For most endpoints, use top_p and top_k defaults
-                kwargs["top_p"] = 0.9
+                kwargs["top_p"] = 0.95
                 if "extra_body" not in kwargs:
                     kwargs["extra_body"] = {}
                 if "top_k" not in kwargs["extra_body"]:

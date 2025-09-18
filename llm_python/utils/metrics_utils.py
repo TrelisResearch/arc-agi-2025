@@ -40,6 +40,7 @@ def calculate_task_metrics(
     # response‑level counters
     total_responses = max_length_responses = 0
     timeout_responses = api_failure_responses = execution_timeout_responses = execution_error_responses = 0
+    no_program_responses = 0
     transductive_responses = non_transductive_responses = 0
 
     # --------------- iterate through tasks -----------------
@@ -70,9 +71,12 @@ def calculate_task_metrics(
                 if False:  # Set to True to debug
                     print(f"DEBUG: Found timeout - train_exec_timeouts={att.get('train_exec_timeouts', 0)}, test_exec_timeout={att.get('test_exec_timeout', False)}")
             # Count execution errors (excluding timeouts)
-            if ((att.get("train_exec_errors", 0) > 0 or att.get("test_exec_error", False)) and 
+            if ((att.get("train_exec_errors", 0) > 0 or att.get("test_exec_error", False)) and
                 not (att.get("train_exec_timeouts", 0) > 0 or att.get("test_exec_timeout", False))):
                 execution_error_responses += 1
+            # Count no program responses (code extraction failed)
+            if not att.get("program_extracted", False):
+                no_program_responses += 1
 
         # ---------- track transductive for stats ----------
         trans_count = sum(1 for att in attempts if att.get("is_transductive", False))
@@ -213,6 +217,7 @@ def calculate_task_metrics(
         "api_failure_responses":  api_failure_responses,
         "execution_timeout_responses": execution_timeout_responses,
         "execution_error_responses": execution_error_responses,
+        "no_program_responses": no_program_responses,
     }
 
 
@@ -296,6 +301,7 @@ def metrics_to_percentages(metrics: Dict) -> Dict:
             "api_failure_responses":metrics["api_failure_responses"]/ total_responses,
             "execution_timeout_responses": metrics["execution_timeout_responses"] / total_responses,
             "execution_error_responses": metrics["execution_error_responses"] / total_responses,
+            "no_program_responses": metrics["no_program_responses"] / total_responses,
         })
     else:
         pct.update({
@@ -304,5 +310,6 @@ def metrics_to_percentages(metrics: Dict) -> Dict:
             "api_failure_responses":0.0,
             "execution_timeout_responses": 0.0,
             "execution_error_responses": 0.0,
+            "no_program_responses": 0.0,
         })
     return pct

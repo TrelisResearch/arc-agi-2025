@@ -5,13 +5,12 @@ Tests for prompt utility functions.
 import unittest
 from unittest.mock import Mock
 
-from llm_python.utils import (
+from llm_python.utils.prompt_utils import (
     create_arc_prompt,
     extract_python_code,
-    format_grid_for_prompt,
-    get_grid_shape_string
+    _format_grid_for_prompt as format_grid_for_prompt,
+    _get_grid_shape_string as get_grid_shape_string
 )
-from llm_python.utils.prompt_utils import generate_output_diff
 
 
 class TestPromptUtils(unittest.TestCase):
@@ -70,8 +69,8 @@ This should work."""
         result = extract_python_code(response_content)
         self.assertEqual(result, expected)
     
-    def test_create_arc_prompt(self):
-        """Test ARC prompt creation"""
+    def test_create_arc_prompt_basic(self):
+        """Test basic ARC prompt creation"""
         # Mock task data
         task_data = {
             'train': [
@@ -105,255 +104,143 @@ This should work."""
         mock_prompt_loader.get_system_message.assert_called_with("soar")
         mock_prompt_loader.get_initial_turn_prompt.assert_called_with("soar")
 
-    def test_generate_output_diff_perfect_match(self):
-        """Test diff generation for perfect match"""
-        expected = [[0, 1, 2], [3, 4, 5]]
-        predicted = [[0, 1, 2], [3, 4, 5]]
-        result = generate_output_diff(expected, predicted)
-        
-        self.assertIn("ACCURACY: 6/6 cells correct (100.0%)", result)
-        self.assertIn("✓ ✓ ✓", result)
-        self.assertNotIn("✗", result)
-    
-    def test_generate_output_diff_some_errors(self):
-        """Test diff generation with some incorrect cells"""
-        expected = [[0, 1, 2], [3, 4, 5]]
-        predicted = [[0, 2, 2], [3, 4, 9]]
-        result = generate_output_diff(expected, predicted)
-        
-        self.assertIn("ACCURACY: 4/6 cells correct (66.7%)", result)
-        self.assertIn("✓ ✗(1→2) ✓", result)
-        self.assertIn("✓ ✓ ✗(5→9)", result)
-    
-    def test_generate_output_diff_shape_mismatch(self):
-        """Test diff generation with shape mismatch"""
-        expected = [[0, 1, 2], [3, 4, 5]]
-        predicted = [[0, 1], [3, 4]]
-        result = generate_output_diff(expected, predicted)
-        
-        self.assertIn("SHAPE MISMATCH: Expected 3 by 2, got 2 by 2", result)
-        self.assertIn("EXPECTED: [[0 1 2] [3 4 5]]", result)
-        self.assertIn("PREDICTED: [[0 1] [3 4]]", result)
-    
-    def test_generate_output_diff_none_prediction(self):
-        """Test diff generation with None prediction (execution failed)"""
-        expected = [[0, 1, 2], [3, 4, 5]]
-        predicted = None
-        result = generate_output_diff(expected, predicted)
-        
-        self.assertEqual(result, "PREDICTED: None (execution failed)")
-    
-    def test_create_arc_prompt_refinement_mode_basic(self):
-        """Test unified function in refinement mode without predicted outputs"""
+    def test_create_arc_prompt_with_splitter(self):
+        """Test ARC prompt creation with splitter enabled"""
         task_data = {
             'train': [
-                {
-                    'input': [[1, 0], [0, 1]],
-                    'output': [[0, 1], [1, 0]]
-                }
+                {'input': [[1, 0]], 'output': [[0, 1]]},
+                {'input': [[0, 1]], 'output': [[1, 0]]},
+                {'input': [[1, 1]], 'output': [[0, 0]]}
             ],
             'test': [
-                {
-                    'input': [[1, 1], [0, 0]]
-                }
+                {'input': [[0, 0]]}
             ]
         }
         
-        draft_program = "def transform(grid):\n    return grid"
-        
-        # Mock prompt loader  
-        mock_prompt_loader = Mock()
-        mock_prompt_loader.get_system_message.return_value = "You are an AI assistant."
-        mock_prompt_loader.get_initial_turn_prompt.return_value = "{refinement_instructions}{draft_program_section}\n{task_content}"
-        
-        system_content, user_content = create_arc_prompt(
-            task_data, mock_prompt_loader, "soar", draft_program=draft_program
-        )
-        
-        self.assertEqual(system_content, "You are an AI assistant.")
-        self.assertIn("Input 1 (grid shape: 2 by 2)", user_content)
-        self.assertIn("Output 1 (grid shape: 2 by 2)", user_content)
-        self.assertIn("Test Input 1 (grid shape: 2 by 2)", user_content)
-        self.assertIn("def transform(grid):", user_content)
-        self.assertNotIn("Draft Program's Output", user_content)  # No predicted outputs
-        
-        # Verify prompt loader was called
-        mock_prompt_loader.get_system_message.assert_called_with("soar")
-        mock_prompt_loader.get_initial_turn_prompt.assert_called_with("soar")
-    
-    def test_create_arc_prompt_refinement_with_full_outputs(self):
-        """Test unified function in refinement mode with full predicted outputs"""
-        task_data = {
-            'train': [
-                {
-                    'input': [[1, 0], [0, 1]],
-                    'output': [[0, 1], [1, 0]]
-                }
-            ],
-            'test': [
-                {
-                    'input': [[1, 1], [0, 0]]
-                }
-            ]
-        }
-        
-        draft_program = "def transform(grid):\n    return grid"
-        
-        predicted_outputs = {
-            'train': [[[1, 0], [0, 1]]]  # Wrong - should be [[0, 1], [1, 0]]
-        }
-        
-        # Mock prompt loader  
-        mock_prompt_loader = Mock()
-        mock_prompt_loader.get_system_message.return_value = "You are an AI assistant."
-        mock_prompt_loader.get_initial_turn_prompt.return_value = "{refinement_instructions}{draft_program_section}\n{task_content}"
-        
-        system_content, user_content = create_arc_prompt(
-            task_data, mock_prompt_loader, "soar", 
-            draft_program=draft_program,
-            predicted_outputs=predicted_outputs, 
-            output_mode="full"
-        )
-        
-        self.assertEqual(system_content, "You are an AI assistant.")
-        self.assertIn("Draft Program's Output 1 (grid shape: 2 by 2)", user_content)
-        self.assertIn("[[1 0] [0 1]]", user_content)  # Predicted output
-    
-    def test_create_arc_prompt_refinement_with_diff_outputs(self):
-        """Test unified function in refinement mode with diff output mode - verifies diff approach works correctly"""
-        task_data = {
-            'train': [
-                {
-                    'input': [[1, 0], [0, 1]],
-                    'output': [[0, 1], [1, 0]]
-                }
-            ],
-            'test': [
-                {
-                    'input': [[1, 1], [0, 0]]
-                }
-            ]
-        }
-        
-        draft_program = "def transform(grid):\n    return grid"
-        
-        predicted_outputs = {
-            'train': [[[1, 0], [0, 1]]]  # Wrong - should be [[0, 1], [1, 0]]
-        }
-        
-        # Mock prompt loader  
-        mock_prompt_loader = Mock()
-        mock_prompt_loader.get_system_message.return_value = "You are an AI assistant."
-        mock_prompt_loader.get_initial_turn_prompt.return_value = "{refinement_instructions}{draft_program_section}\n{task_content}"
-        
-        system_content, user_content = create_arc_prompt(
-            task_data, mock_prompt_loader, "soar", 
-            draft_program=draft_program,
-            predicted_outputs=predicted_outputs, 
-            output_mode="diff"
-        )
-        
-        self.assertEqual(system_content, "You are an AI assistant.")
-        self.assertIn("Draft Program vs Expected Output 1:", user_content)
-        self.assertIn("ACCURACY: 0/4 cells correct (0.0%)", user_content)
-        self.assertIn("✗(0→1) ✗(1→0)", user_content)
-        self.assertIn("✗(1→0) ✗(0→1)", user_content)
-    
-    def test_create_arc_prompt_regular_mode_unchanged(self):
-        """Test that regular mode (no draft program) works exactly as before"""
-        task_data = {
-            'train': [
-                {
-                    'input': [[1, 0], [0, 1]],
-                    'output': [[0, 1], [1, 0]]
-                }
-            ],
-            'test': [
-                {
-                    'input': [[1, 1], [0, 0]]
-                }
-            ]
-        }
-        
-        # Mock prompt loader
         mock_prompt_loader = Mock()
         mock_prompt_loader.get_system_message.return_value = "You are an AI assistant."
         mock_prompt_loader.get_initial_turn_prompt.return_value = "Solve this task:\n{task_content}"
         
-        system_content, user_content = create_arc_prompt(task_data, mock_prompt_loader, "soar")
+        # With splitter enabled, we should get a subset of training examples
+        system_content, user_content = create_arc_prompt(
+            task_data, mock_prompt_loader, "soar", splitter=True
+        )
         
         self.assertEqual(system_content, "You are an AI assistant.")
-        self.assertIn("Input 1 (grid shape: 2 by 2)", user_content)
-        self.assertIn("Output 1 (grid shape: 2 by 2)", user_content)
-        self.assertIn("Test Input 1 (grid shape: 2 by 2)", user_content)
-        self.assertIn("[[1 0] [0 1]]", user_content)  # Input grid formatted
-        self.assertIn("[[0 1] [1 0]]", user_content)  # Output grid formatted
-        self.assertNotIn("Draft Program", user_content)  # No refinement content
-        
-        # Verify prompt loader was called with regular template
-        mock_prompt_loader.get_system_message.assert_called_with("soar")
-        mock_prompt_loader.get_initial_turn_prompt.assert_called_with("soar")
-    
-    def test_diff_approach_comprehensive_verification(self):
-        """Comprehensive test of diff generation approach with various scenarios"""
-        # Test 1: Mixed correct/incorrect cells
-        expected = [[0, 1, 2], [3, 4, 5], [6, 7, 8]]
-        predicted = [[0, 9, 2], [3, 4, 1], [6, 7, 8]]
-        result = generate_output_diff(expected, predicted)
-        
-        self.assertIn("ACCURACY: 7/9 cells correct (77.8%)", result)
-        self.assertIn("✓ ✗(1→9) ✓", result)  # First row
-        self.assertIn("✓ ✓ ✗(5→1)", result)  # Second row
-        self.assertIn("✓ ✓ ✓", result)  # Third row - all correct
-        
-        # Test 2: Complete failure
-        expected = [[0, 1], [2, 3]]
-        predicted = [[9, 8], [7, 6]]
-        result = generate_output_diff(expected, predicted)
-        
-        self.assertIn("ACCURACY: 0/4 cells correct (0.0%)", result)
-        self.assertIn("✗(0→9) ✗(1→8)", result)
-        self.assertIn("✗(2→7) ✗(3→6)", result)
-        
-        # Test 3: Shape mismatch detection
-        expected = [[0, 1, 2]]
-        predicted = [[0], [1]]  # Different shape
-        result = generate_output_diff(expected, predicted)
-        
-        self.assertIn("SHAPE MISMATCH: Expected 3 by 1, got 1 by 2", result)
-        self.assertIn("EXPECTED: [[0 1 2]]", result)
-        self.assertIn("PREDICTED: [[0] [1]]", result)
-        
-        # Test 4: Execution failure (None prediction)
-        expected = [[0, 1], [2, 3]]
-        predicted = None
-        result = generate_output_diff(expected, predicted)
-        
-        self.assertEqual(result, "PREDICTED: None (execution failed)")
-    
-    def test_unified_template_generates_correct_refinement_content(self):
-        """Test that the unified template generates correct refinement-specific content"""
+        self.assertIn("Test Input 1", user_content)  # Test input should always be present
+        # Training examples should be present but may be a subset due to random selection
+
+    def test_create_arc_prompt_multiple_examples(self):
+        """Test ARC prompt creation with multiple train and test examples"""
         task_data = {
-            'train': [{'input': [[1, 0]], 'output': [[0, 1]]}],
-            'test': [{'input': [[1, 1]]}]
+            'train': [
+                {'input': [[1, 0]], 'output': [[0, 1]]},
+                {'input': [[0, 1]], 'output': [[1, 0]]}
+            ],
+            'test': [
+                {'input': [[1, 1]]},
+                {'input': [[0, 0]]}
+            ]
         }
         
-        draft_program = "def transform(grid): return grid"
-        
         mock_prompt_loader = Mock()
-        mock_prompt_loader.get_system_message.return_value = "System message"
-        mock_prompt_loader.get_initial_turn_prompt.return_value = "Analyzing and refining existing Python code.{refinement_instructions}{draft_program_section}\n{task_content}"
+        mock_prompt_loader.get_system_message.return_value = "You are an AI assistant."
+        mock_prompt_loader.get_initial_turn_prompt.return_value = "Solve this task:\n{task_content}"
         
+        system_content, user_content = create_arc_prompt(task_data, mock_prompt_loader)
+        
+        # Should have both training examples
+        self.assertIn("Input 1 (grid shape: 2 by 1)", user_content)
+        self.assertIn("Input 2 (grid shape: 2 by 1)", user_content)
+        self.assertIn("Output 1 (grid shape: 2 by 1)", user_content)
+        self.assertIn("Output 2 (grid shape: 2 by 1)", user_content)
+        
+        # Should have both test examples
+        self.assertIn("Test Input 1 (grid shape: 2 by 1)", user_content)
+        self.assertIn("Test Input 2 (grid shape: 2 by 1)", user_content)
+
+    def test_create_arc_prompt_refinement_basic(self):
+        """Test ARC prompt creation in refinement mode with draft program"""
+        task_data = {
+            'train': [
+                {
+                    'input': [[1, 0], [0, 1]],
+                    'output': [[0, 1], [1, 0]]
+                }
+            ],
+            'test': [
+                {
+                    'input': [[1, 1], [0, 0]]
+                }
+            ]
+        }
+
+        draft_program = "def transform(grid):\n    return grid"
+
+        # Mock prompt loader for refinement mode
+        mock_prompt_loader = Mock()
+        mock_prompt_loader.get_system_message.return_value = "You are an AI assistant specialized in refinement."
+        mock_prompt_loader.get_initial_turn_prompt.return_value = "Refinement prompt: {task_content}"
+
         system_content, user_content = create_arc_prompt(
             task_data, mock_prompt_loader, "soar", draft_program=draft_program
         )
-        
-        self.assertEqual(system_content, "System message")
-        self.assertIn("Analyzing and refining existing", user_content)
-        self.assertIn("Draft program to refine:", user_content)
-        self.assertIn("def transform(grid): return grid", user_content)
-        self.assertIn("You should analyze:", user_content)
+
+        self.assertEqual(system_content, "You are an AI assistant specialized in refinement.")
+        self.assertIn("Input 1 (grid shape: 2 by 2)", user_content)
+        self.assertIn("Output 1 (grid shape: 2 by 2)", user_content)
+        self.assertIn("Test Input 1 (grid shape: 2 by 2)", user_content)
+        self.assertIn("def transform(grid):", user_content)
+        self.assertIn("Previous implementation:", user_content)
+
+        # Verify prompt loader was called with soar-refine for refinement mode
+        mock_prompt_loader.get_system_message.assert_called_with("soar-refine")
+        mock_prompt_loader.get_initial_turn_prompt.assert_called_with("soar-refine")
+
+    def test_create_arc_prompt_refinement_with_full_outputs(self):
+        """Test refinement mode with full predicted outputs"""
+        task_data = {
+            'train': [
+                {
+                    'input': [[1, 0], [0, 1]],
+                    'output': [[0, 1], [1, 0]]
+                }
+            ],
+            'test': [
+                {
+                    'input': [[1, 1], [0, 0]]
+                }
+            ]
+        }
+
+        draft_program = "def transform(grid):\n    return grid"
+
+        predicted_outputs = {
+            'train': [[[1, 0], [0, 1]]]  # Wrong - should be [[0, 1], [1, 0]]
+        }
+
+        # Mock prompt loader for refinement mode
+        mock_prompt_loader = Mock()
+        mock_prompt_loader.get_system_message.return_value = "You are an AI assistant specialized in refinement."
+        mock_prompt_loader.get_initial_turn_prompt.return_value = "Refinement prompt: {task_content}"
+
+        # Test with correct_train_input for the new format
+        correct_train_input = [False]  # Wrong prediction
+
+        system_content, user_content = create_arc_prompt(
+            task_data, mock_prompt_loader, "soar",
+            draft_program=draft_program,
+            predicted_outputs=predicted_outputs,
+            output_mode="full",
+            correct_train_input=correct_train_input
+        )
+
+        self.assertEqual(system_content, "You are an AI assistant specialized in refinement.")
+        self.assertIn("Previous implementation:", user_content)
+        self.assertIn("[[1 0] [0 1]]", user_content)  # Predicted output
+        self.assertIn("incorrect", user_content)  # Should show incorrect result
+
 
 
 if __name__ == '__main__':
-    unittest.main() 
+    unittest.main()

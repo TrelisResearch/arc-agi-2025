@@ -10,6 +10,7 @@ import traceback
 import numpy as np
 import os
 import re
+import signal
 from pathlib import Path
 from typing import Dict, List, NotRequired, Optional, TypedDict, Union, Tuple, Any
 from dotenv import load_dotenv
@@ -28,6 +29,7 @@ from llm_python.utils.metrics_utils import (
     calculate_task_metrics,
     metrics_to_percentages,
 )
+from llm_python.utils.refinement_utils import REXProgramPool
 from llm_python.transduction.code_classifier import CodeTransductionClassifier
 from llm_python.utils.prompt_loader import PromptLoader
 from llm_python.utils.serialization import ResponseSerializer
@@ -167,9 +169,11 @@ class ARCTaskRunnerSimple:
         parquet_output_dir: Optional[str] = None,
         splitter: bool = False,
         refinement_dataset: Optional[str] = None,
-        include_outputs: bool = False,
-        include_outputs_diff: bool = False,
         early_stop_threshold: int = 7,
+        refinement_sampling: str = "rex",
+        rex_stats: bool = False,
+        rex_c: float = 20.0,
+        rex_bonus_weight: float = 0.5,
     ):
         # Core configuration
         self.max_workers = max_workers
@@ -181,14 +185,26 @@ class ARCTaskRunnerSimple:
         self.splitter = splitter
         self.refinement_dataset = refinement_dataset
         self.refine_mode = bool(refinement_dataset)  # Enable refinement mode if dataset provided
-        self.include_outputs = include_outputs
-        self.include_outputs_diff = include_outputs_diff
+        self.include_outputs = bool(refinement_dataset)  # Enable output inclusion by default when using refinement dataset
         self.early_stop_threshold = early_stop_threshold
         self.logged_skipped_tasks = set()  # Track which tasks we've already logged as skipped
+
+        # REX configuration
+        self.refinement_sampling = refinement_sampling
+        self.rex_stats = rex_stats
+        self.rex_c = rex_c
+        self.rex_bonus_weight = rex_bonus_weight
         # Use custom output directory if provided, otherwise use default
         output_dir = Path(parquet_output_dir) if parquet_output_dir else None
         self.dataset_collector = SoarDatasetCollector(sample_name, output_dir=output_dir)
         self.no_transductive_penalty = no_transductive_penalty
+
+        # Signal handling for graceful shutdown
+        self._shutdown_requested = False
+        self._active_executor = None
+        self._parquet_flushed = False  # Track if parquet data has been flushed
+        signal.signal(signal.SIGTERM, self._handle_shutdown_signal)
+        # Note: SIGINT (Ctrl+C) is handled by existing KeyboardInterrupt exception handling
         
         # Timeout configuration
         api_timeout = 600  # 10 minutes per API request
@@ -413,7 +429,174 @@ class ARCTaskRunnerSimple:
             return True
             
         return False
-    
+
+    def _log_rex_pool_stats(self, task_results):
+        """Log REX pool statistics for all tasks with pools"""
+        for task_id, results in task_results.items():
+            if "rex_pool" in results:
+                rex_pool = results["rex_pool"]
+                rex_pool.log_pool_summary()
+
+    def _flush_parquet_safely(self, context=""):
+        """Safely flush parquet data only once, with context for logging."""
+        if not self._parquet_flushed:
+            try:
+                self.dataset_collector.flush()
+                print(f"📝 Parquet data flushed successfully{' ' + context if context else ''}")
+            except Exception as e:
+                print(f"❌ Error flushing parquet data{' ' + context if context else ''}: {e}")
+            finally:
+                # Set flag regardless of success/failure to prevent retry loops
+                self._parquet_flushed = True
+        else:
+            if self.debug and context:
+                print(f"ℹ️ Parquet already flushed, skipping{' ' + context if context else ''}")
+
+    def _handle_shutdown_signal(self, signum, frame):
+        """Handle SIGTERM for graceful shutdown with parquet flushing."""
+        print(f"\n🛑 Received signal {signum} - initiating graceful shutdown...")
+        self._shutdown_requested = True
+
+        # Cancel any active executor
+        if self._active_executor:
+            self._flush_parquet_safely("(signal handler)")
+
+            print("🚫 Signal handler completed - futures will be cancelled by main loop...")
+
+        print("🏁 Graceful shutdown initiated - parquet data saved")
+
+    def _save_llm_response_to_file(self, task_id: str, attempt_num: int, content: str, message=None, error_info: str = "") -> None:
+        """TEMPORARY: Save LLM response content to text file for debugging"""
+        try:
+            # Create tmp directory if it doesn't exist
+            tmp_dir = Path("tmp")
+            tmp_dir.mkdir(exist_ok=True)
+
+            # Create filename with timestamp for uniqueness
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            filename = f"llm_response_{task_id}_attempt{attempt_num}_{timestamp}.txt"
+            filepath = tmp_dir / filename
+
+            # Write content to file
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(f"Task ID: {task_id}\n")
+                f.write(f"Attempt: {attempt_num}\n")
+                f.write(f"Timestamp: {datetime.datetime.now().isoformat()}\n")
+                f.write(f"Model: {self.model}\n")
+
+                if error_info:
+                    f.write(f"Error Info: {error_info}\n")
+
+                f.write("=" * 80 + "\n")
+
+                # If we have a message object, extract all available fields
+                if message:
+                    f.write("Message Object Fields:\n")
+                    f.write("=" * 80 + "\n")
+
+                    # Check for content
+                    if hasattr(message, 'content') and message.content:
+                        f.write(f"Content: {message.content}\n\n")
+                    else:
+                        f.write("Content: [NO CONTENT FIELD]\n\n")
+
+                    # Check for reasoning (o1 models)
+                    if hasattr(message, 'reasoning') and message.reasoning:
+                        f.write(f"Reasoning: {message.reasoning}\n\n")
+
+                    # Check for other fields that might exist
+                    for attr in ['tool_calls', 'function_call', 'role', 'refusal']:
+                        if hasattr(message, attr):
+                            value = getattr(message, attr)
+                            if value:
+                                f.write(f"{attr.title()}: {value}\n\n")
+
+                    # Raw message dump for debugging
+                    f.write("Raw Message Object:\n")
+                    f.write("-" * 40 + "\n")
+                    f.write(str(message) + "\n\n")
+
+                f.write("LLM Response Content (extracted):\n")
+                f.write("=" * 80 + "\n")
+                f.write(content or "[EMPTY CONTENT]")
+                f.write("\n")
+
+            if self.debug:
+                print(f"📁 Saved LLM response to: {filepath}")
+
+        except Exception as e:
+            # Don't let logging errors crash the main execution
+            if self.debug:
+                print(f"⚠️ Failed to save LLM response: {e}")
+
+    def _update_rex_pool_with_attempt(self, task_result, attempt_detail, refined_from_id):
+        """
+        Add successful refinements back to the REX pool.
+
+        Criteria for adding:
+        - Program executes successfully (no errors/timeouts)
+        - Produces valid grids (outputs_valid=True)
+        - Is non-transductive
+        - Is NOT 100% correct on training (to avoid perfect programs)
+        """
+        rex_pool = task_result.get("rex_pool")
+        if not rex_pool:
+            return
+
+        # Track refinement attempt if we have a parent program ID
+        if refined_from_id:
+            refined_correctness = attempt_detail.get("train_accuracy", 0.0)
+
+            # Treat transductive programs as 0% correct for learning purposes
+            # (they don't represent genuine pattern learning)
+            if attempt_detail.get("is_transductive", False):
+                refined_correctness = 0.0
+
+            # Find original program correctness
+            original_correctness = 0.0
+            for program in rex_pool.programs:
+                if program.get('row_id') == refined_from_id:
+                    from llm_python.utils.refinement_utils import calculate_program_metrics
+                    original_correctness, _ = calculate_program_metrics(program)
+                    break
+
+            # Track the refinement attempt
+            rex_pool.track_refinement_attempt(refined_from_id, refined_correctness, original_correctness)
+
+        # Check if attempt meets criteria for adding to pool
+        if (attempt_detail.get("program_extracted", False) and
+            attempt_detail.get("outputs_valid", False) and
+            not attempt_detail.get("is_transductive", False) and
+            attempt_detail.get("train_accuracy", 0.0) < 1.0):  # Not 100% correct
+
+            # Create refined program entry
+            from llm_python.utils.refinement_utils import create_refined_program_entry
+
+            # Build task results for the refined program
+            train_results = attempt_detail.get("train_results", [])
+            correct_train_input = [r.get("correct", False) for r in train_results]
+
+            original_program = {"row_id": refined_from_id} if refined_from_id else {}
+            task_results = {
+                "correct_train_input": correct_train_input,
+                "predicted_train_output": [r.get("predicted") for r in train_results],
+                "correct_test_input": [attempt_detail.get("test_correct", False)],
+                "predicted_test_output": [attempt_detail.get("test_predicted")]
+            }
+
+            refined_program = create_refined_program_entry(
+                original_program=original_program,
+                refined_code=attempt_detail.get("program", ""),
+                task_results=task_results,
+                model="refined"
+            )
+
+            # Add to pool with deduplication
+            added_count = rex_pool.add_programs([refined_program], deduplicate=True)
+
+            if added_count > 0 and self.rex_stats:
+                print(f"➕ Added refined program to REX pool: {attempt_detail.get('train_accuracy', 0):.1%} train accuracy")
+
     def _get_llm_metrics(self):
         """Fetch metrics from LLM server (vLLM or SGLang)"""
         if not self.metrics_url:
@@ -751,15 +934,13 @@ class ARCTaskRunnerSimple:
             # Don't let database logging errors crash the main execution
             traceback.print_exc()
 
-    def create_prompt(self, task_data: Dict, draft_program: Optional[str] = None, predicted_outputs: Optional[Dict] = None) -> tuple[str, str]:
+    def create_prompt(self, task_data: Dict, draft_program: Optional[str] = None, predicted_outputs: Optional[Dict] = None, correct_train_input: Optional[List[bool]] = None) -> tuple[str, str]:
         """Create a prompt for the model to solve an ARC task"""
         # Determine output mode based on flags
         output_mode = None
         if self.include_outputs:
             output_mode = "full"
-        elif self.include_outputs_diff:
-            output_mode = "diff"
-        
+
         # Use unified prompt function for both regular and refinement modes
         return create_arc_prompt(
             task_data=task_data,
@@ -768,7 +949,8 @@ class ARCTaskRunnerSimple:
             splitter=self.splitter,
             draft_program=draft_program,
             predicted_outputs=predicted_outputs,
-            output_mode=output_mode
+            output_mode=output_mode,
+            correct_train_input=correct_train_input
         )
 
     def get_sampling_parameters(self) -> Dict:
@@ -812,6 +994,13 @@ class ARCTaskRunnerSimple:
         """Run a single attempt for an ARC task"""
         system_content = full_prompt["system"]
         user_content = full_prompt["user"]
+
+        # Add reasoning instruction for OSS models on local/TCP endpoints
+        if "oss" in self.model.lower():
+            base_url = self.api_client.base_url or ""
+            # For local/TCP endpoints (not OpenRouter), append reasoning to system prompt
+            if base_url and ("http://" in base_url or not "openrouter" in base_url.lower()):
+                system_content += f" Reasoning: {self.api_client.reasoning_effort}"
 
         attempt_start_time = datetime.datetime.now()
         exec_start_time = time.time()  # Track execution timing
@@ -899,11 +1088,19 @@ class ARCTaskRunnerSimple:
                     if hasattr(message, "content")
                     else ""
                 )
+
+                # # TEMPORARY: Save LLM response to file for debugging
+                # self._save_llm_response_to_file(task_id, attempt_num, content, message)
+
                 empty_response = not content or content.strip() == ""
             else:
                 empty_response = True
+                # # TEMPORARY: Save empty response info for debugging
+                # self._save_llm_response_to_file(task_id, attempt_num, "", None, "No choices in response")
         elif api_call_successful:
             empty_response = True
+            # # TEMPORARY: Save empty API response for debugging
+            # self._save_llm_response_to_file(task_id, attempt_num, "", None, "Empty API response")
 
         # Check for max tokens hit
         hit_max_tokens = False
@@ -1259,6 +1456,7 @@ class ARCTaskRunnerSimple:
         print(f"Model: {self.model}")
         print(f"API: All Attempts Mode ({self.max_attempts} attempts per task)")
         print(f"Mode: True parallelization - {total_attempts} total attempts")
+        # print("🗂️  TEMPORARY: LLM responses will be saved to ./tmp/ directory")
         
         # Display splitter status prominently
         if self.splitter:
@@ -1353,22 +1551,58 @@ class ARCTaskRunnerSimple:
             task_id, task_data, programs = task_tuple
             
             if programs:  # Task has refinement programs available
-                # Select best program for refinement (most correct training examples, then random)
-                selected_program = self._select_best_program_for_refinement(programs)
+                # Create REX pool for this task if using REX sampling
+                if self.refinement_sampling == "rex":
+                    rex_pool = REXProgramPool(programs)
+                    task_results[task_id]["rex_pool"] = rex_pool
+                    # For REX mode, program selection happens per-attempt
+                    selected_program = programs[0]  # Temporary, will be replaced per-attempt
+                else:
+                    # Select best program for refinement (most correct training examples, then random)
+                    selected_program = self._select_best_program_for_refinement(programs)
                 draft_code = selected_program.get('code', '')
-                
+
                 # Extract predicted outputs if needed for output modes
-                # Only include train outputs since test outputs won't be available during actual runs
                 predicted_outputs = None
-                if self.include_outputs or self.include_outputs_diff:
+                if self.include_outputs:
+                    predicted_train = selected_program.get('predicted_train_output', [])
+                    predicted_test = selected_program.get('predicted_test_output', [])
+
+                    # Convert numpy arrays to plain Python lists (for HuggingFace datasets)
+                    if hasattr(predicted_train, 'tolist'):
+                        predicted_train = predicted_train.tolist()
+                    if hasattr(predicted_test, 'tolist'):
+                        predicted_test = predicted_test.tolist()
+
+                    # Convert individual grids if they're numpy arrays
+                    if predicted_train is not None and len(predicted_train) > 0:
+                        converted_train = []
+                        for grid in predicted_train:
+                            if hasattr(grid, 'tolist'):
+                                converted_train.append(grid.tolist())
+                            else:
+                                converted_train.append(grid)
+                        predicted_train = converted_train
+
+                    if predicted_test is not None and len(predicted_test) > 0:
+                        converted_test = []
+                        for grid in predicted_test:
+                            if hasattr(grid, 'tolist'):
+                                converted_test.append(grid.tolist())
+                            else:
+                                converted_test.append(grid)
+                        predicted_test = converted_test
+
                     predicted_outputs = {
-                        'train': selected_program.get('predicted_train_output', [])
+                        'train': predicted_train,
+                        'test': predicted_test
                     }
-                
+
                 task_results[task_id]["task_data"] = task_data
                 task_results[task_id]["selected_program"] = selected_program  # Store for logging
                 task_results[task_id]["predicted_outputs"] = predicted_outputs  # Store for splitter mode
-                system_content, user_content = self.create_prompt(task_data, draft_program=draft_code, predicted_outputs=predicted_outputs)
+                correct_train_input = selected_program.get('correct_train_input') if selected_program else None
+                system_content, user_content = self.create_prompt(task_data, draft_program=draft_code, predicted_outputs=predicted_outputs, correct_train_input=correct_train_input)
                 task_results[task_id]["full_prompt"] = {
                     "system": system_content,
                     "user": user_content,
@@ -1393,10 +1627,15 @@ class ARCTaskRunnerSimple:
             print(first_prompt['system'])
             print("\nUSER:")
             print(first_prompt['user'])
+            # Show selected program info if in refinement mode
             if self.refine_mode and "selected_program" in task_results[first_task_id]:
-                draft_program = task_results[first_task_id]["selected_program"].get('code', '')
-                # print(f"\nDRAFT PROGRAM TO REFINE:")
-                # print(draft_program)
+                selected_program = task_results[first_task_id]["selected_program"]
+                predicted_train_count = len(selected_program.get('predicted_train_output', []))
+                predicted_test_count = len(selected_program.get('predicted_test_output', []))
+                print(f"\nSELECTED PROGRAM INFO:")
+                print(f"  - Train predictions: {predicted_train_count}")
+                print(f"  - Test predictions: {predicted_test_count}")
+                print(f"  - Row ID: {selected_program.get('row_id', 'N/A')}")
             print("=" * 80)
             first_prompt_shown = True
 
@@ -1448,17 +1687,37 @@ class ARCTaskRunnerSimple:
                         completed_attempts += 1
                     
                     return dummy_result
-                # Create fresh prompt for each attempt when splitter is enabled, 
+                # Create fresh prompt for each attempt when splitter is enabled,
                 # otherwise use pre-created prompt for consistency
-                if self.splitter:
-                    if self.refine_mode:
-                        # In refinement mode, we need to get the selected program again
-                        selected_program = task_results[task_id]["selected_program"]
-                        draft_code = selected_program.get('code', '')
-                        predicted_outputs = task_results[task_id].get("predicted_outputs")  # Use stored outputs
-                        system_content, user_content = self.create_prompt(task_data, draft_program=draft_code, predicted_outputs=predicted_outputs)
+                # REX mode requires per-attempt prompt generation, similar to splitter
+                if self.splitter or (self.refine_mode and "rex_pool" in task_results[task_id]):
+                    # Use the task_data stored in task_results
+                    stored_task_data = task_results[task_id]["task_data"]
+
+                    # Check if refinement mode and get draft program/predicted outputs
+                    if self.refine_mode and "selected_program" in task_results[task_id]:
+                        # Use REX sampling per-attempt if enabled
+                        if "rex_pool" in task_results[task_id]:
+                            rex_pool = task_results[task_id]["rex_pool"]
+                            selected_program = rex_pool.sample_program("rex", self.rex_c, self.rex_bonus_weight)
+                            if self.debug or self.rex_stats:
+                                quality_score = selected_program.get('_rex_quality_score', 0.0)
+                                msg = f"🔄 REX sampled program for attempt {attempt_num + 1}"
+                                if self.rex_stats:
+                                    msg += f" (quality score: {quality_score:.1%})"
+                                print(msg)
+                                # Clean up temporary quality score
+                                selected_program.pop('_rex_quality_score', None)
+                        else:
+                            selected_program = task_results[task_id]["selected_program"]
+
+                        draft_code = selected_program.get('code', '') if selected_program else ''
+                        predicted_outputs = task_results[task_id].get("predicted_outputs")
+                        correct_train_input = selected_program.get('correct_train_input') if selected_program else None
+                        system_content, user_content = self.create_prompt(stored_task_data, draft_program=draft_code, predicted_outputs=predicted_outputs, correct_train_input=correct_train_input)
                     else:
-                        system_content, user_content = self.create_prompt(task_data)
+                        system_content, user_content = self.create_prompt(stored_task_data)
+
                     full_prompt = {"system": system_content, "user": user_content}
                 else:
                     full_prompt = task_results[task_id]["full_prompt"]
@@ -1466,9 +1725,16 @@ class ARCTaskRunnerSimple:
                 # Get refined_from_id if in refinement mode
                 refined_from_id = None
                 if self.refine_mode and task_id in task_results:
-                    selected_program = task_results[task_id].get("selected_program")
-                    if selected_program:
-                        refined_from_id = selected_program.get("row_id")
+                    # Use the program that was actually selected for this attempt
+                    if "rex_pool" in task_results[task_id] and 'selected_program' in locals():
+                        # REX mode: use the program sampled for this specific attempt
+                        if selected_program:
+                            refined_from_id = selected_program.get("row_id")
+                    else:
+                        # Non-REX mode: use the pre-selected program
+                        selected_program = task_results[task_id].get("selected_program")
+                        if selected_program:
+                            refined_from_id = selected_program.get("row_id")
                 
                 # Individual API timeouts handled by OpenAI client
                 result = self.run_single_attempt(
@@ -1488,6 +1754,10 @@ class ARCTaskRunnerSimple:
                         )
                         # Prompt is already stored at task level during initialization
                         completed_attempts += 1
+
+                        # Add successful refinements back to REX pool
+                        if "rex_pool" in task_results[task_id] and self.refine_mode:
+                            self._update_rex_pool_with_attempt(task_results[task_id], result["attempt_detail"], refined_from_id)
 
                         # Check if task is complete
                         if len(task_results[task_id]["attempts"]) == self.max_attempts:
@@ -1511,12 +1781,16 @@ class ARCTaskRunnerSimple:
                 return None
 
         executor = ThreadPoolExecutor(self.max_workers)
+        # Store executor reference for signal handling
+        self._active_executor = executor
+
         try:
             futures = [
                 executor.submit(
                     attempt_wrapper, task_idx, task_id, task_data, attempt_num
                 )
                 for task_idx, task_id, task_data, attempt_num in attempt_jobs
+                if not self._shutdown_requested
             ]
 
             print(
@@ -1534,6 +1808,16 @@ class ARCTaskRunnerSimple:
             last_progress_time = time.time()
 
             while remaining:
+                # Check for shutdown request
+                if self._shutdown_requested:
+                    print("🛑 Shutdown requested - cancelling remaining futures...")
+                    cancelled_count = 0
+                    for future in remaining:
+                        if future.cancel():
+                            cancelled_count += 1
+                    print(f"🛑 Cancelled {cancelled_count} futures, waiting for {len(remaining) - cancelled_count} to complete...")
+                    # Let already-running futures complete naturally
+                    break
 
                 # Check for inactivity timeout (no completions in a long time)
                 if time.time() - last_progress_time > self.inactivity_timeout:
@@ -1566,6 +1850,12 @@ class ARCTaskRunnerSimple:
                             print(f"🚨 Future #{completed_count} error: {future_e}")
                     # Periodic progress log
                     done_now = total_attempts - len(remaining)
+
+                    # Add REX pool stats logging every 8 attempts if enabled
+                    if (self.rex_stats and self.refinement_sampling == "rex" and
+                        self.refine_mode and done_now > 0 and done_now % 8 == 0):
+                        self._log_rex_pool_stats(task_results)
+
                     print(
                         f"⏳ Progress: {done_now}/{total_attempts} attempts done; {len(remaining)} remaining"
                     )
@@ -1573,6 +1863,9 @@ class ARCTaskRunnerSimple:
                     print(
                         f"\n🛑 Cancellation requested - cancelling queued requests, waiting for in-flight requests..."
                     )
+
+                    # Flush parquet data immediately to preserve results
+                    self._flush_parquet_safely("(keyboard interrupt)")
 
                     # Cancel futures that haven't started yet
                     cancelled_count = 0
@@ -1634,17 +1927,20 @@ class ARCTaskRunnerSimple:
                     f"❌ {failed_attempts} attempts failed out of {total_attempts} total"
                 )
 
-            if cancelled_attempts > 0:
-                print(f"🛑 {cancelled_attempts} attempts were cancelled due to inactivity timeout")
-
             print(
                 f"📊 Final status: {successful_attempts} successful, {failed_attempts} failed, {cancelled_attempts} cancelled"
             )
 
         finally:
+            # Clear executor reference and flush data before shutdown
+            self._active_executor = None
+
+            # Ensure parquet data is flushed even during normal completion
+            self._flush_parquet_safely("(finally block)")
+
             # We don't want to block execution if we have one stuck thread.
             executor.shutdown(wait=False)
-        
+
         # Stop vLLM metrics monitoring
         self._stop_metrics_monitoring()
 
@@ -2081,6 +2377,9 @@ class ARCTaskRunnerSimple:
             print(
                 f"  Execution Error Responses (of all attempts): {percentage_metrics['execution_error_responses']:.1%}"
             )
+            print(
+                f"  No Program Responses (of all attempts): {percentage_metrics['no_program_responses']:.1%}"
+            )
 
     def _print_submit_mode_summary(
         self,
@@ -2139,6 +2438,14 @@ class ARCTaskRunnerSimple:
                 for att in result.get("attempt_details", [])
                 if ((att.get("train_exec_errors", 0) > 0 or att.get("test_exec_error", False)) and
                     not (att.get("train_exec_timeouts", 0) > 0 or att.get("test_exec_timeout", False)))
+            )
+            for result in results
+        )
+        no_program_responses = sum(
+            sum(
+                1
+                for att in result.get("attempt_details", [])
+                if not att.get("program_extracted", False)
             )
             for result in results
         )
@@ -2212,6 +2519,9 @@ class ARCTaskRunnerSimple:
             print(
                 f"  Execution error responses (of all attempts): {execution_error_responses}/{total_responses} ({execution_error_responses / total_responses:.1%})"
             )
+            print(
+                f"  No program responses (of all attempts): {no_program_responses}/{total_responses} ({no_program_responses / total_responses:.1%})"
+            )
 
             print(f"\n📊 TRAIN METRICS:")
             print(
@@ -2269,6 +2579,12 @@ def main():
         help="Use a parquet dataset for synthetic tasks rather than a predefined subset",
     )
     parser.add_argument("--model", default="gpt-4.1-mini", help="Model to use")
+    parser.add_argument(
+        "--reasoning-effort",
+        choices=["low", "medium", "high"],
+        default="medium",
+        help="Reasoning effort level for OSS models (low, medium, high)"
+    )
     parser.add_argument("--limit", type=int, help="Limit number of tasks to run")
     parser.add_argument(
         "--base-url", type=str, help="Base URL for OpenAI-compatible API endpoint"
@@ -2354,17 +2670,32 @@ def main():
     parser.add_argument(
         "--refinement-ds",
         type=str,
-        help="Refinement dataset: HuggingFace dataset or parquet file containing draft programs to refine. Uses programs with at least one (but not all) correct training examples. Enables refinement prompts with draft code.",
+        nargs='+',
+        help="Refinement dataset(s): HuggingFace dataset or one or more parquet files containing draft programs to refine. Uses programs with at least one (but not all) correct training examples. Enables refinement prompts with draft code.",
     )
     parser.add_argument(
-        "--include-outputs",
-        action="store_true",
-        help="Include the draft program's predicted outputs in refinement prompts to show the LLM its errors",
+        "--refinement-sampling",
+        type=str,
+        choices=["uniform", "rex"],
+        default="rex",
+        help="Sampling strategy for refinement programs: 'uniform' (random), 'rex' (REX algorithm). Default: rex",
     )
     parser.add_argument(
-        "--include-outputs-diff",
+        "--rex-stats",
         action="store_true",
-        help="Include a succinct diff of predicted vs expected outputs in refinement prompts (more compact than full outputs)",
+        help="Enable periodic REX pool statistics logging every 8 attempts (only applies when using REX sampling)",
+    )
+    parser.add_argument(
+        "--rex-c",
+        type=float,
+        default=20.0,
+        help="REX algorithm hyperparameter C (default: 20.0). Higher values increase exploration vs exploitation trade-off.",
+    )
+    parser.add_argument(
+        "--rex-bonus-weight",
+        type=float,
+        default=0.5,
+        help="Weight for refinement success bonus in REX sampling (default: 0.5). 0.0 disables bonus, 1.0 uses full bonus.",
     )
     parser.add_argument(
         "--early-stop-threshold",
@@ -2380,17 +2711,6 @@ def main():
         parser.error("--max_workers must be at least 1")
     if args.temperature is not None and not (0.0 <= args.temperature <= 2.0):
         parser.error("--temperature must be between 0.0 and 2.0")
-    if args.include_outputs and args.include_outputs_diff:
-        parser.error("--include-outputs and --include-outputs-diff are mutually exclusive")
-    if (args.include_outputs or args.include_outputs_diff) and not args.refinement_ds:
-        parser.error("--include-outputs and --include-outputs-diff require --refinement-ds")
-    if args.refinement_ds:
-        # Refinement mode requires HF/parquet dataset for source programs (not traditional subsets)
-        from llm_python.utils.task_loader import TaskLoader, get_default_data_root
-        temp_loader = TaskLoader(get_default_data_root())
-        dataset_type = temp_loader._detect_dataset_type(args.refinement_ds)
-        if dataset_type == "traditional":
-            parser.error("--refinement-ds requires HuggingFace dataset or parquet file. Traditional subsets not supported for refinement programs.")
 
     dataset = args.dataset
     subset = args.subset
@@ -2424,9 +2744,11 @@ def main():
         parquet_output_dir=args.parquet_output_dir,
         splitter=args.splitter,
         refinement_dataset=args.refinement_ds,
-        include_outputs=args.include_outputs,
-        include_outputs_diff=args.include_outputs_diff,
         early_stop_threshold=args.early_stop_threshold,
+        refinement_sampling=args.refinement_sampling,
+        rex_stats=args.rex_stats,
+        rex_c=args.rex_c,
+        rex_bonus_weight=args.rex_bonus_weight,
     )
 
     # Run the task subset

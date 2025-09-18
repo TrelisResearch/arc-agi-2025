@@ -65,13 +65,14 @@ def prompt_keep_pod(timeout=10):
     except Exception:
         return False
 
-def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="all_evaluation", max_attempts=64, no_transductive_penalty=False, max_workers=32, splitter=False, max_tokens=2000, refinement_ds=None, include_outputs=False, include_outputs_diff=False):
+def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="all_evaluation", max_attempts=64, no_transductive_penalty=False, max_workers=32, splitter=False, max_tokens=2000, reasoning_effort="low", refinement_ds=None, early_stop_threshold=None, rex_stats=False):
     """Run ARC tasks - task runner handles its own graceful shutdown"""
     print(f"\n🎯 Running ARC tasks for {dataset} with subset {subset}...")
     print(f"📊 Task Runner Configuration:")
     print(f"   Max workers: {max_workers}")
     print(f"   Max attempts: {max_attempts}")
     print(f"   Max tokens: {max_tokens}")
+    print(f"   Reasoning effort: {reasoning_effort}")
     
     # Check if this is a Qwen model
     is_qwen_model = 'qwen' in model_path.lower()
@@ -85,10 +86,10 @@ def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="
         print(f"   Training data splitter: ENABLED (randomly selecting & shuffling training examples)")
     if refinement_ds:
         print(f"   Refinement mode: ENABLED (using programs from {refinement_ds})")
-        if include_outputs:
-            print(f"   Include outputs: ENABLED (showing predicted outputs to LLM)")
-        if include_outputs_diff:
-            print(f"   Include outputs diff: ENABLED (showing output diffs to LLM)")
+    if early_stop_threshold:
+        print(f"   Early stop threshold: {early_stop_threshold}")
+    if rex_stats:
+        print(f"   REx stats: ENABLED")
     
     cmd = [
         "uv", "run", "python", "-m", "llm_python.run_arc_tasks_soar",
@@ -100,6 +101,7 @@ def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="
         "--base-url", base_url,
         "--unsafe-executor",
         "--max-tokens", str(max_tokens),
+        "--reasoning-effort", reasoning_effort,
     ]
     
     # Only add --qwen-no-think for Qwen models
@@ -114,12 +116,12 @@ def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="
     
     if refinement_ds:
         cmd.extend(["--refinement-ds", refinement_ds])
-    
-    if include_outputs:
-        cmd.append("--include-outputs")
-    
-    if include_outputs_diff:
-        cmd.append("--include-outputs-diff")
+
+    if early_stop_threshold:
+        cmd.extend(["--early-stop-threshold", str(early_stop_threshold)])
+
+    if rex_stats:
+        cmd.append("--rex-stats")
     
     print(f"📝 Full command: {' '.join(cmd)}")
     
@@ -262,15 +264,19 @@ This script will:
                        type=int,
                        default=2000,
                        help='Maximum tokens for model generation (default: 2000)')
+    parser.add_argument('--reasoning-effort',
+                       choices=['low', 'medium', 'high'],
+                       default='medium',
+                       help='Reasoning effort level for OSS models (low, medium, high)')
     parser.add_argument('--refinement-ds',
                        type=str,
                        help='Refinement dataset: HuggingFace dataset or parquet file containing draft programs to refine')
-    parser.add_argument('--include-outputs',
+    parser.add_argument('--early-stop-threshold',
+                       type=int,
+                       help='Early stop threshold to pass through to task runner')
+    parser.add_argument('--rex-stats',
                        action='store_true',
-                       help='Include the draft program\'s predicted outputs in refinement prompts to show the LLM its errors')
-    parser.add_argument('--include-outputs-diff',
-                       action='store_true',
-                       help='Include a succinct diff of predicted vs expected outputs in refinement prompts (more compact than full outputs)')
+                       help='Enable REx stats logging for refinement tracking')
     
     args = parser.parse_args()
     
@@ -420,7 +426,7 @@ This script will:
         print(f"\n🎯 Step 2: Running ARC tasks for {args.dataset}")
         
         task_success = run_arc_tasks_with_graceful_handling(
-            args.dataset, args.model_path, base_url, args.subset, args.max_attempts, args.no_transductive_penalty, args.max_workers, args.splitter, args.max_tokens, args.refinement_ds, args.include_outputs, args.include_outputs_diff
+            args.dataset, args.model_path, base_url, args.subset, args.max_attempts, args.no_transductive_penalty, args.max_workers, args.splitter, args.max_tokens, args.reasoning_effort, args.refinement_ds, args.early_stop_threshold, args.rex_stats
         )
         
         if task_success:

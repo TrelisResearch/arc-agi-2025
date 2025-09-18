@@ -140,28 +140,35 @@ class SubmissionGenerator:
     def find_recent_parquets(self, path: Union[str, Path], n_files: int = 1) -> List[Path]:
         """Find the most recent n parquet files at a given path"""
         path = Path(path)
-        
+
         if path.is_file() and path.suffix == '.parquet':
             # Single file provided
             return [path]
-        
+
         if path.is_dir():
             # Directory provided - find recent parquet files
             parquet_files = list(path.glob("*.parquet"))
             if not parquet_files:
                 raise ValueError(f"No parquet files found in directory: {path}")
-            
+
             # Sort by modification time (most recent first)
             parquet_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-            
-            selected_files = parquet_files[:n_files]
-            print(f"🔍 Selected {len(selected_files)} most recent parquet files from {path}:")
+
+            if n_files == -1:
+                # Special case: use ALL files
+                selected_files = parquet_files
+                print(f"🔍 Selected ALL {len(selected_files)} parquet files from {path}:")
+            else:
+                # Use most recent n files
+                selected_files = parquet_files[:n_files]
+                print(f"🔍 Selected {len(selected_files)} most recent parquet files from {path}:")
+
             for f in selected_files:
                 mtime = datetime.datetime.fromtimestamp(f.stat().st_mtime)
                 print(f"  • {f.name} (modified: {mtime.strftime('%Y-%m-%d %H:%M:%S')})")
-            
+
             return selected_files
-        
+
         raise ValueError(f"Invalid path: {path} (must be a parquet file or directory)")
     
     def generate_submission(
@@ -361,7 +368,7 @@ def main():
         "--n-files",
         type=int,
         default=1,
-        help="Number of most recent parquet files to use (when providing directory)",
+        help="Number of most recent parquet files to use (when providing directory). Use -1 for ALL files.",
     )
     parser.add_argument(
         "--dataset",

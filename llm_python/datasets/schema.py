@@ -6,8 +6,8 @@ PARQUET_SCHEMA = pa.schema(
     (
         pa.field("row_id", pa.string(), nullable=False),  # Required
         pa.field("task_id", pa.string(), nullable=False),  # Required
-        pa.field("reasoning", pa.string(), nullable=True),  # Optional - can be null
-        pa.field("code", pa.string(), nullable=False),  # Required
+        pa.field("reasoning", pa.large_string(), nullable=True),  # Optional - can be null
+        pa.field("code", pa.large_string(), nullable=False),  # Required
         pa.field(
             "correct_train_input", pa.list_(pa.bool_()), nullable=False
         ),  # Required

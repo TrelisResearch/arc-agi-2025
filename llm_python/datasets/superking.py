@@ -68,6 +68,30 @@ def load_superking() -> pd.DataFrame:
     return pd.concat(dataframes, ignore_index=True)
 
 
+def load_superking_with_date() -> pd.DataFrame:
+    # Load the superking dataset from local parquet files
+    local_files = sync_superking()
+    print("Loading superking dataset with dates...")
+    dataframes = []
+    for file_path in local_files:
+        df = read_soar_parquet(file_path)
+        filename = Path(file_path).name
+        try:
+            # Check if the filename starts with an 8-digit date
+            date_str = filename[:8]
+            if len(date_str) == 8 and date_str.isdigit():
+                # Add date column
+                df["date"] = pd.to_datetime(date_str, format="%Y%m%d")
+            else:
+                # If no date is found, fill with NaT
+                df["date"] = pd.NaT
+        except Exception:
+            # If any error in parsing, fill with NaT
+            df["date"] = pd.NaT
+        dataframes.append(df)
+    return pd.concat(dataframes, ignore_index=True)
+
+
 def download_superking(output_path: str = "/tmp/superking.parquet") -> str:
     try:
         df = load_superking()
