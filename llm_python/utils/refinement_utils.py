@@ -8,6 +8,11 @@ import uuid
 from collections import defaultdict
 from typing import List, Dict, Any, Optional, Tuple, Literal
 
+# Hardcoded REx parameters - change these values here to adjust behavior
+REX_C = 20.0  # Beta distribution parameter
+REX_REFINEMENT_BONUS_WEIGHT = 0.5  # Weight for refinement success bonus
+REX_SIZE_PENALTY_MULTIPLIER = 0.5  # Penalty for programs with size mismatches
+
 
 def _extract_correctness_data(program_data: Dict[str, Any], field_name: str = 'correct_train_input') -> List[bool]:
     """
@@ -37,6 +42,45 @@ def _extract_correctness_data(program_data: Dict[str, Any], field_name: str = 'c
 def _calculate_correctness_percentage(correct_data: List[bool]) -> float:
     """Calculate correctness percentage from boolean list."""
     return sum(correct_data) / len(correct_data) if correct_data else 0.0
+
+
+def _has_size_mismatches(program_data: Dict[str, Any], task_data: Optional[Dict] = None) -> bool:
+    """
+    Check if a program produces outputs with incorrect grid sizes on training examples.
+
+    Args:
+        program_data: Program data dictionary containing predicted_train_output
+        task_data: Optional task data containing expected train outputs
+
+    Returns:
+        True if there are size mismatches in any training outputs
+    """
+    predicted_outputs = program_data.get('predicted_train_output', [])
+    if not predicted_outputs:
+        return False
+
+    # If we have task data, compare against expected sizes
+    if task_data and 'train' in task_data:
+        expected_outputs = [example.get('output', []) for example in task_data['train']]
+
+        for pred, expected in zip(predicted_outputs, expected_outputs):
+            if not pred or not expected:
+                continue
+
+            # Check if dimensions match
+            if (len(pred) != len(expected) or
+                (len(pred) > 0 and len(expected) > 0 and len(pred[0]) != len(expected[0]))):
+                return True
+    else:
+        # If no task data, check for obviously malformed outputs (empty, None, wrong structure)
+        for pred in predicted_outputs:
+            if pred is None or not isinstance(pred, list):
+                return True
+            # Check for empty outputs or inconsistent row lengths
+            if not pred or any(not isinstance(row, list) for row in pred):
+                return True
+
+    return False
 
 
 def _debug_print_program_selection(program: Dict[str, Any], context: str, extra_info: str = "") -> None:
@@ -106,15 +150,14 @@ class REXProgramPool:
         program_hash = self._get_program_hash(program)
         self.program_hashes.add(program_hash)
 
-    def sample_program(self, sampling_mode: Literal["uniform", "rex"] = "rex", C: float = 20.0,
-                      refinement_bonus_weight: float = 0.5) -> Optional[Dict[str, Any]]:
+    def sample_program(self, sampling_mode: Literal["uniform", "rex"] = "rex",
+                      task_data: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
         """
         Thread-safe sampling from the program pool.
 
         Args:
             sampling_mode: Sampling strategy to use
-            C: REX hyperparameter for beta distribution
-            refinement_bonus_weight: Weight for refinement success bonus (0.0-1.0, default 0.5)
+            task_data: Optional task data for size mismatch detection
 
         Returns:
             Selected program or None if pool is empty
@@ -126,11 +169,11 @@ class REXProgramPool:
             if sampling_mode == "uniform":
                 return random.choice(self.programs)
             elif sampling_mode == "rex":
-                return self._rex_sample(C, refinement_bonus_weight)
+                return self._rex_sample(task_data)
             else:
                 raise ValueError(f"Unknown sampling mode: {sampling_mode}")
 
-    def _rex_sample(self, C: float, refinement_bonus_weight: float = 0.5) -> Dict[str, Any]:
+    def _rex_sample(self, task_data: Optional[Dict] = None) -> Dict[str, Any]:
         """Internal REX sampling with lock already held."""
         # Calculate Beta distribution weights for each program
         weights = []
@@ -140,16 +183,21 @@ class REXProgramPool:
             correctness_pct, _ = calculate_program_metrics(program)
             program_id = program.get('row_id', id(program))
 
-            # Calculate refinement bonus from success history with weighting
-            refinement_bonus = self.refinement_success_stats[program_id]['avg_improvement'] * refinement_bonus_weight
+            # Calculate refinement bonus from success history
+            refinement_bonus = self.refinement_success_stats[program_id]['avg_improvement'] * REX_REFINEMENT_BONUS_WEIGHT
 
             # Enhanced quality score combining correctness and weighted refinement success
             quality_score = correctness_pct + refinement_bonus
+
+            # Apply size penalty for programs with grid size mismatches
+            if _has_size_mismatches(program, task_data):
+                quality_score *= REX_SIZE_PENALTY_MULTIPLIER
+
             quality_scores.append(quality_score)
 
             # REX Beta sampling formula with refinement bonus
-            alpha = 1 + C * quality_score
-            beta = 1 + C * (1 - correctness_pct) + self.refinement_counts[program_id]
+            alpha = 1 + REX_C * quality_score
+            beta = 1 + REX_C * (1 - correctness_pct) + self.refinement_counts[program_id]
 
             # Sample from Beta distribution to get weight
             weight = np.random.beta(alpha, beta)
@@ -285,9 +333,9 @@ def calculate_program_metrics(program: Dict[str, Any]) -> Tuple[float, int]:
 def select_program_for_refinement(
     programs: List[Dict[str, Any]] = None,
     sampling_mode: Literal["uniform", "rex"] = "rex",
-    rex_params: Optional[Dict[str, Any]] = None,
     debug: bool = False,
-    program_pool: Optional[REXProgramPool] = None
+    program_pool: Optional[REXProgramPool] = None,
+    task_data: Optional[Dict] = None
 ) -> Dict[str, Any]:
     """
     Select a program for refinement using different sampling strategies.
@@ -295,19 +343,16 @@ def select_program_for_refinement(
     Args:
         programs: List of program dictionaries (if not using program_pool)
         sampling_mode: Strategy to use ("uniform" or "rex")
-        rex_params: Parameters for REX algorithm if using rex mode
         debug: Whether to print debug information
         program_pool: Optional REXProgramPool for thread-safe operations
+        task_data: Optional task data for size mismatch detection
 
     Returns:
         Selected program dictionary, or empty dict if no programs available
     """
     # Use program pool if provided
     if program_pool is not None:
-        rex_params = rex_params or {}
-        C = rex_params.get("C", 20.0)
-        refinement_bonus_weight = rex_params.get("refinement_bonus_weight", 0.5)
-        selected = program_pool.sample_program(sampling_mode, C, refinement_bonus_weight)
+        selected = program_pool.sample_program(sampling_mode, task_data)
 
         if debug and selected:
             pool_stats = program_pool.get_pool_stats()
@@ -395,8 +440,8 @@ def _uniform_sampling(programs: List[Dict[str, Any]], debug: bool = False) -> Di
 @_require_non_empty_programs
 def _rex_sampling(
     programs: List[Dict[str, Any]],
-    rex_params: Dict[str, Any],
-    debug: bool = False
+    debug: bool = False,
+    task_data: Optional[Dict] = None
 ) -> Dict[str, Any]:
     """
     REX (Refinement through EM-based sampling) algorithm selection.
@@ -405,19 +450,8 @@ def _rex_sampling(
 
     # Create temporary pool and delegate to pool-based implementation
     temp_pool = REXProgramPool(programs)
-    C = rex_params.get("C", 20.0)
 
-    # Pre-populate refinement counts if provided
-    refinement_counts = rex_params.get("refinement_counts")
-    if refinement_counts:
-        temp_pool.refinement_counts.update(refinement_counts)
-
-    result = temp_pool.sample_program("rex", C)
-
-    # Update original refinement_counts dict if provided
-    if refinement_counts and result:
-        program_id = result.get('row_id', id(result))
-        refinement_counts[program_id] = temp_pool.refinement_counts[program_id]
+    result = temp_pool.sample_program("rex", task_data)
 
     if debug and result:
         program_id = result.get('row_id', id(result))
