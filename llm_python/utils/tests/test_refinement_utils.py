@@ -831,10 +831,10 @@ class TestREXEnhancedFunctionality:
         assert abs(result['_rex_quality_score'] - expected_quality) < 0.001
         assert result['_rex_quality_score'] == 0.25  # Penalized (0.5 + (-0.50 * 0.5) = 0.25)
 
-    def test_has_size_mismatches_with_numpy_arrays(self):
-        """Test that _has_size_mismatches handles numpy arrays without truth value errors"""
+    def test_count_correct_size_outputs_with_numpy_arrays(self):
+        """Test that _count_correct_size_outputs handles numpy arrays without truth value errors"""
         import numpy as np
-        from ..refinement_utils import _has_size_mismatches
+        from ..refinement_utils import _count_correct_size_outputs
 
         # Test with numpy arrays in predicted outputs
         program_data = {
@@ -852,47 +852,49 @@ class TestREXEnhancedFunctionality:
         }
 
         # This should not raise "truth value of an array" error
-        result = _has_size_mismatches(program_data, task_data)
-        assert isinstance(result, bool)
-        assert result == False  # Sizes match
+        result = _count_correct_size_outputs(program_data, task_data)
+        assert isinstance(result, int)
+        assert result == 2  # Both outputs have correct sizes
 
         # Test with size mismatches
         program_data_mismatch = {
             'predicted_train_output': [
-                np.array([[1, 2, 3], [4, 5, 6]]),  # Different size
-                [[5, 6], [7, 8]]
+                np.array([[1, 2, 3], [4, 5, 6]]),  # Different size (2x3 vs 2x2)
+                [[5, 6], [7, 8]]  # Correct size
             ]
         }
 
-        result_mismatch = _has_size_mismatches(program_data_mismatch, task_data)
-        assert isinstance(result_mismatch, bool)
-        assert result_mismatch == True  # Sizes don't match
+        result_mismatch = _count_correct_size_outputs(program_data_mismatch, task_data)
+        assert isinstance(result_mismatch, int)
+        assert result_mismatch == 1  # Only one output has correct size
 
         # Test with None values
         program_data_none = {
             'predicted_train_output': [
                 None,  # None value
-                [[5, 6], [7, 8]]
+                [[5, 6], [7, 8]]  # Correct size
             ]
         }
 
-        result_none = _has_size_mismatches(program_data_none, task_data)
-        assert isinstance(result_none, bool)
+        result_none = _count_correct_size_outputs(program_data_none, task_data)
+        assert isinstance(result_none, int)
+        assert result_none == 1  # Only one valid output
 
         # Test with empty arrays
         program_data_empty = {
             'predicted_train_output': [
                 np.array([]),  # Empty numpy array
-                [[5, 6], [7, 8]]
+                [[5, 6], [7, 8]]  # Correct size
             ]
         }
 
-        result_empty = _has_size_mismatches(program_data_empty, task_data)
-        assert isinstance(result_empty, bool)
+        result_empty = _count_correct_size_outputs(program_data_empty, task_data)
+        assert isinstance(result_empty, int)
 
         # Test with no task data
-        result_no_task = _has_size_mismatches(program_data, None)
-        assert isinstance(result_no_task, bool)
+        result_no_task = _count_correct_size_outputs(program_data, None)
+        assert isinstance(result_no_task, int)
+        assert result_no_task >= 0  # Should count well-formed outputs
 
         # Test with nested numpy arrays
         program_data_nested = {
@@ -902,5 +904,6 @@ class TestREXEnhancedFunctionality:
             ])
         }
 
-        result_nested = _has_size_mismatches(program_data_nested, task_data)
-        assert isinstance(result_nested, bool)
+        result_nested = _count_correct_size_outputs(program_data_nested, task_data)
+        assert isinstance(result_nested, int)
+        assert result_nested >= 0

@@ -11,7 +11,7 @@ from typing import List, Dict, Any, Optional, Tuple, Literal
 # Hardcoded REx parameters - change these values here to adjust behavior
 REX_C = 20.0  # Beta distribution parameter
 REX_REFINEMENT_BONUS_WEIGHT = 0.5  # Weight for refinement success bonus
-REX_SIZE_PENALTY_MULTIPLIER = 0.5  # Penalty for programs with size mismatches
+REX_SIZE_MATCH_BONUS = 0.01  # Bonus per correctly-sized output grid
 
 
 def _extract_correctness_data(program_data: Dict[str, Any], field_name: str = 'correct_train_input') -> List[bool]:
@@ -44,16 +44,16 @@ def _calculate_correctness_percentage(correct_data: List[bool]) -> float:
     return sum(correct_data) / len(correct_data) if correct_data else 0.0
 
 
-def _has_size_mismatches(program_data: Dict[str, Any], task_data: Optional[Dict] = None) -> bool:
+def _count_correct_size_outputs(program_data: Dict[str, Any], task_data: Optional[Dict] = None) -> int:
     """
-    Check if a program produces outputs with incorrect grid sizes on training examples.
+    Count how many training outputs have correct grid sizes.
 
     Args:
         program_data: Program data dictionary containing predicted_train_output
         task_data: Optional task data containing expected train outputs
 
     Returns:
-        True if there are size mismatches in any training outputs
+        Number of training outputs with correct grid sizes
     """
     predicted_outputs = program_data.get('predicted_train_output', [])
 
@@ -62,7 +62,9 @@ def _has_size_mismatches(program_data: Dict[str, Any], task_data: Optional[Dict]
         predicted_outputs = predicted_outputs.tolist()
 
     if not predicted_outputs:
-        return False
+        return 0
+
+    correct_size_count = 0
 
     # If we have task data, compare against expected sizes
     if task_data and 'train' in task_data:
@@ -85,20 +87,19 @@ def _has_size_mismatches(program_data: Dict[str, Any], task_data: Optional[Dict]
             if len(pred) == 0 or len(expected) == 0:
                 continue
 
-            # Check if dimensions match
-            if (len(pred) != len(expected) or
-                (len(pred) > 0 and len(expected) > 0 and len(pred[0]) != len(expected[0]))):
-                return True
+            # Check if dimensions match - if they do, increment count
+            if (len(pred) == len(expected) and
+                (len(pred) == 0 or len(expected) == 0 or len(pred[0]) == len(expected[0]))):
+                correct_size_count += 1
     else:
-        # If no task data, check for obviously malformed outputs (empty, None, wrong structure)
+        # If no task data, count well-formed outputs
         for pred in predicted_outputs:
-            if pred is None or not isinstance(pred, list):
-                return True
-            # Check for empty outputs or inconsistent row lengths
-            if not pred or any(not isinstance(row, list) for row in pred):
-                return True
+            if pred is not None and isinstance(pred, (list, tuple)):
+                # Check for non-empty and consistent structure
+                if pred and all(isinstance(row, (list, tuple)) for row in pred):
+                    correct_size_count += 1
 
-    return False
+    return correct_size_count
 
 
 def _debug_print_program_selection(program: Dict[str, Any], context: str, extra_info: str = "") -> None:
@@ -207,12 +208,13 @@ class REXProgramPool:
             # Enhanced quality score combining correctness and weighted refinement success
             quality_score = correctness_pct + refinement_bonus
 
-            # Apply size penalty for programs with grid size mismatches
+            # Apply bonus for programs with correctly-sized outputs
             try:
-                if _has_size_mismatches(program, task_data):
-                    quality_score *= REX_SIZE_PENALTY_MULTIPLIER
+                correct_size_count = _count_correct_size_outputs(program, task_data)
+                size_bonus = correct_size_count * REX_SIZE_MATCH_BONUS
+                quality_score += size_bonus
             except (ValueError, TypeError) as e:
-                # Skip size penalty on error (e.g., numpy array truth value issues)
+                # Skip size bonus on error (e.g., numpy array truth value issues)
                 pass
 
             quality_scores.append(quality_score)
