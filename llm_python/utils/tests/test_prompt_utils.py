@@ -163,6 +163,62 @@ This should work."""
         self.assertIn("Output 1 (grid shape:", user_content)  # Should have exactly one training output
         self.assertNotIn("Output 2 (grid shape:", user_content)  # Should not have second training output
 
+    def test_create_arc_prompt_single_with_refinement_results(self):
+        """Test that --single flag also limits detailed results in refinement mode"""
+        task_data = {
+            'train': [
+                {'input': [[1, 0]], 'output': [[0, 1]]},
+                {'input': [[0, 1]], 'output': [[1, 0]]},
+                {'input': [[1, 1]], 'output': [[0, 0]]}
+            ],
+            'test': [
+                {'input': [[0, 0]]}
+            ]
+        }
+
+        mock_prompt_loader = Mock()
+        mock_prompt_loader.get_system_message.return_value = "You are an AI assistant."
+        mock_prompt_loader.get_initial_turn_prompt.return_value = "Solve this task:\n{task_content}"
+
+        # Mock predicted outputs and correctness for all training examples
+        predicted_outputs = {
+            'train': [[[1, 1]], [[2, 2]], [[3, 3]]]  # 3 predicted outputs
+        }
+        correct_train_input = [False, False, True]  # First two incorrect, third correct
+
+        # With single enabled, we should get results for only one training example
+        system_content, user_content = create_arc_prompt(
+            task_data, mock_prompt_loader, "soar", single=True,
+            draft_program="def transform(grid): return grid",
+            predicted_outputs=predicted_outputs,
+            correct_train_input=correct_train_input
+        )
+
+        # Check that only one training example appears (excluding test inputs)
+        # Split at "Test Input" to isolate the training examples section
+        prompt_parts = user_content.split("## Test Input")
+        training_section = prompt_parts[0] if len(prompt_parts) > 1 else user_content
+
+        self.assertEqual(training_section.count("Input 1 (grid shape:"), 1)
+        self.assertEqual(training_section.count("Input 2 (grid shape:"), 0)
+        self.assertEqual(training_section.count("Output 1 (grid shape:"), 1)
+        self.assertEqual(training_section.count("Output 2 (grid shape:"), 0)
+
+        # Check that detailed results section also shows only one example
+        self.assertEqual(user_content.count("## Output 1 computed by `transform`"), 1)
+        self.assertEqual(user_content.count("## Output 2 computed by `transform`"), 0)
+        self.assertEqual(user_content.count("## Output 3 computed by `transform`"), 0)
+
+        # Check that the correctness count reflects only the selected example
+        self.assertIn("correctly worked on", user_content)
+        # Should show "X/1 train input-output pairs" not "X/3"
+        self.assertIn("/1 train input-output pairs", user_content)
+
+        # In refinement mode with --single, should prefer incorrect examples
+        # With our setup (first two incorrect, third correct), should show incorrect result
+        self.assertIn("is incorrect", user_content)
+        self.assertNotIn("is correct", user_content)
+
     def test_create_arc_prompt_multiple_examples(self):
         """Test ARC prompt creation with multiple train and test examples"""
         task_data = {

@@ -9,7 +9,7 @@ from collections import defaultdict
 from typing import List, Dict, Any, Optional, Tuple, Literal
 
 # Hardcoded REx parameters - change these values here to adjust behavior
-REX_C = 20.0  # Beta distribution parameter
+REX_C = 2.5  # Beta distribution parameter
 REX_REFINEMENT_BONUS_WEIGHT = 0.5  # Weight for refinement success bonus
 REX_SIZE_MATCH_BONUS = 0.01  # Bonus per correctly-sized output grid
 

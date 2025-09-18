@@ -119,20 +119,43 @@ def create_arc_prompt(
     # Format the task data
     task_content = ""
 
-    # Get training examples
-    train_examples = task_data["train"].copy()
+    # Get training examples with indices to track selection
+    train_examples_with_indices = [(i, example) for i, example in enumerate(task_data["train"])]
 
     # Apply splitter logic if enabled
-    if splitter and len(train_examples) > 1:
+    if splitter and len(train_examples_with_indices) > 1:
         # Select a random number of examples (between 1 and total available)
-        num_to_select = random.randint(1, len(train_examples))
+        num_to_select = random.randint(1, len(train_examples_with_indices))
         # Randomly select and shuffle the examples
-        train_examples = random.sample(train_examples, num_to_select)
+        train_examples_with_indices = random.sample(train_examples_with_indices, num_to_select)
 
     # Apply single mode logic if enabled (overrides splitter)
-    if single and len(train_examples) > 0:
-        # Select exactly one random training example
-        train_examples = random.sample(train_examples, 1)
+    if single and len(train_examples_with_indices) > 0:
+        # In refinement mode, prefer selecting from incorrect examples
+        if refinement_mode and correct_train_input is not None:
+            # Filter to only incorrect examples
+            incorrect_examples_with_indices = [
+                (idx, example) for idx, example in train_examples_with_indices
+                if idx < len(correct_train_input) and not correct_train_input[idx]
+            ]
+
+            if incorrect_examples_with_indices:
+                # Select randomly from incorrect examples
+                train_examples_with_indices = random.sample(incorrect_examples_with_indices, 1)
+            else:
+                # Fallback: select from all examples if no incorrect ones found
+                train_examples_with_indices = random.sample(train_examples_with_indices, 1)
+        else:
+            # Normal mode: select randomly from all examples
+            train_examples_with_indices = random.sample(train_examples_with_indices, 1)
+
+    # Extract the selected indices and examples
+    selected_indices = [idx for idx, _ in train_examples_with_indices]
+    train_examples = [example for _, example in train_examples_with_indices]
+
+    # If no filtering was applied, selected_indices should be all indices
+    if not splitter and not single:
+        selected_indices = list(range(len(train_examples)))
 
     # Add training examples
     for i, example in enumerate(train_examples, 1):
@@ -165,7 +188,7 @@ def create_arc_prompt(
 
         # Generate refinement-specific task content with statistics
         task_content = generate_refinement_task_content(
-            task_data, draft_program, predicted_outputs, train_examples, correct_train_input
+            task_data, draft_program, predicted_outputs, train_examples, correct_train_input, selected_indices
         )
     else:
         # Use regular soar prompts (already loaded above)
@@ -177,7 +200,7 @@ def create_arc_prompt(
     return system_content, user_content
 
 
-def generate_refinement_task_content(task_data: Dict, draft_program: Optional[str], predicted_outputs: Optional[Dict], train_examples: list, correct_train_input: Optional[List[bool]] = None, show_output_test: bool = True) -> str:
+def generate_refinement_task_content(task_data: Dict, draft_program: Optional[str], predicted_outputs: Optional[Dict], train_examples: list, correct_train_input: Optional[List[bool]] = None, selected_indices: Optional[List[int]] = None, show_output_test: bool = True) -> str:
     """Generate the new refinement prompt format with correctness statistics
 
     Args:
@@ -218,14 +241,23 @@ def generate_refinement_task_content(task_data: Dict, draft_program: Optional[st
 
     # Add correctness statistics
     if correct_train_input is not None:
-        # Use pre-computed boolean flags for correctness
-        correct_count = sum(correct_train_input)
-        content += f"\nThis implementation of transform function correctly worked on {correct_count}/{total_count} train input-output pairs.\n"
+        # Filter correctness data to match selected training examples
+        if selected_indices is not None:
+            selected_correct_train_input = [correct_train_input[idx] for idx in selected_indices]
+        else:
+            # Backward compatibility: use all training examples
+            selected_indices = list(range(len(correct_train_input)))
+            selected_correct_train_input = correct_train_input
+
+        # Use pre-computed boolean flags for correctness (only for selected examples)
+        correct_count = sum(selected_correct_train_input)
+        total_selected_count = len(selected_indices)
+        content += f"\nThis implementation of transform function correctly worked on {correct_count}/{total_selected_count} train input-output pairs.\n"
         content += "Detailed results:\n"
 
-        # Add detailed results for each training example using boolean flags
-        for i, is_correct in enumerate(correct_train_input, 1):
-            content += f"## Output {i} computed by `transform` is "
+        # Add detailed results for each selected training example using boolean flags
+        for display_idx, (original_idx, is_correct) in enumerate(zip(selected_indices, selected_correct_train_input), 1):
+            content += f"## Output {display_idx} computed by `transform` is "
             if is_correct:
                 content += "correct.\n"
             else:
@@ -233,10 +265,10 @@ def generate_refinement_task_content(task_data: Dict, draft_program: Optional[st
 
             # Show predicted output for all cases (correct and incorrect)
             if (predicted_outputs and "train" in predicted_outputs
-                and i - 1 < len(predicted_outputs["train"])
-                and predicted_outputs["train"][i - 1] is not None):
+                and original_idx < len(predicted_outputs["train"])
+                and predicted_outputs["train"][original_idx] is not None):
 
-                predicted_output = predicted_outputs["train"][i - 1]
+                predicted_output = predicted_outputs["train"][original_idx]
                 # Convert numpy arrays if needed
                 if hasattr(predicted_output, 'tolist'):
                     predicted_output = predicted_output.tolist()
@@ -262,9 +294,9 @@ def generate_refinement_task_content(task_data: Dict, draft_program: Optional[st
 
     # Add summary message if we have correctness data
     if correct_train_input is not None:
-        # List which outputs were incorrect using boolean flags
+        # List which outputs were incorrect using boolean flags (only for selected examples)
         incorrect_outputs = []
-        for i, is_correct in enumerate(correct_train_input, 1):
+        for i, is_correct in enumerate(selected_correct_train_input, 1):
             if not is_correct:
                 incorrect_outputs.append(f"Output {i}")
 
