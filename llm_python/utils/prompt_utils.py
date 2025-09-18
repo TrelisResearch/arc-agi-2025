@@ -90,6 +90,7 @@ def create_arc_prompt(
     prompt_loader,
     prompt_version: str = "soar",
     splitter: bool = False,
+    single: bool = False,
     draft_program: Optional[str] = None,
     predicted_outputs: Optional[Dict] = None,
     output_mode: Optional[str] = None,
@@ -103,6 +104,7 @@ def create_arc_prompt(
         prompt_loader: PromptLoader instance for getting system message and prompt template
         prompt_version: Version of prompts to use (default: "soar")
         splitter: Whether to randomly select and shuffle a subset of training examples
+        single: Whether to use only a single randomly selected training example
         draft_program: Existing program code to be refined (enables refinement mode)
         predicted_outputs: Dict containing 'train' predicted outputs from draft program
         output_mode: How to display outputs ('full', 'diff', or None)
@@ -126,6 +128,11 @@ def create_arc_prompt(
         num_to_select = random.randint(1, len(train_examples))
         # Randomly select and shuffle the examples
         train_examples = random.sample(train_examples, num_to_select)
+
+    # Apply single mode logic if enabled (overrides splitter)
+    if single and len(train_examples) > 0:
+        # Select exactly one random training example
+        train_examples = random.sample(train_examples, 1)
 
     # Add training examples
     for i, example in enumerate(train_examples, 1):

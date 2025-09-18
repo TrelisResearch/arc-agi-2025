@@ -168,6 +168,7 @@ class ARCTaskRunnerSimple:
         no_transductive_penalty: bool = False,
         parquet_output_dir: Optional[str] = None,
         splitter: bool = False,
+        single: bool = False,
         refinement_dataset: Optional[str] = None,
         early_stop_threshold: int = 7,
         refinement_sampling: str = "rex",
@@ -183,6 +184,7 @@ class ARCTaskRunnerSimple:
         self.debug = debug
         self.prompt_version = prompt_version
         self.splitter = splitter
+        self.single = single
         self.refinement_dataset = refinement_dataset
         self.refine_mode = bool(refinement_dataset)  # Enable refinement mode if dataset provided
         self.include_outputs = bool(refinement_dataset)  # Enable output inclusion by default when using refinement dataset
@@ -947,6 +949,7 @@ class ARCTaskRunnerSimple:
             prompt_loader=self.prompt_loader,
             prompt_version=self.prompt_version,
             splitter=self.splitter,
+            single=self.single,
             draft_program=draft_program,
             predicted_outputs=predicted_outputs,
             output_mode=output_mode,
@@ -1468,11 +1471,13 @@ class ARCTaskRunnerSimple:
         print(f"Mode: True parallelization - {total_attempts} total attempts")
         # print("🗂️  TEMPORARY: LLM responses will be saved to ./tmp/ directory")
         
-        # Display splitter status prominently
-        if self.splitter:
-            print("🔀 Training Data Splitter: ENABLED (randomly selecting & shuffling training examples)")
+        # Display training data selection status prominently
+        if self.single:
+            print("🎯 Training Data Mode: SINGLE (using exactly one random training example)")
+        elif self.splitter:
+            print("🔀 Training Data Mode: SPLITTER (randomly selecting & shuffling training examples)")
         else:
-            print("🔀 Training Data Splitter: DISABLED (using all training examples)")
+            print("🔀 Training Data Mode: ALL (using all training examples)")
 
         if self.max_workers > 1:
             print(f"Parallelization: ENABLED ({self.max_workers} workers)")
@@ -1697,10 +1702,10 @@ class ARCTaskRunnerSimple:
                         completed_attempts += 1
                     
                     return dummy_result
-                # Create fresh prompt for each attempt when splitter is enabled,
+                # Create fresh prompt for each attempt when splitter or single is enabled,
                 # otherwise use pre-created prompt for consistency
-                # REX mode requires per-attempt prompt generation, similar to splitter
-                if self.splitter or (self.refine_mode and "rex_pool" in task_results[task_id]):
+                # REX mode requires per-attempt prompt generation, similar to splitter/single
+                if self.splitter or self.single or (self.refine_mode and "rex_pool" in task_results[task_id]):
                     # Use the task_data stored in task_results
                     stored_task_data = task_results[task_id]["task_data"]
 
@@ -2678,6 +2683,11 @@ def main():
         help="Randomly select and shuffle a subset of training input-output pairs",
     )
     parser.add_argument(
+        "--single",
+        action="store_true",
+        help="Use only a single randomly selected training input-output pair (plus test inputs)",
+    )
+    parser.add_argument(
         "--refinement-ds",
         type=str,
         nargs='+',
@@ -2758,6 +2768,7 @@ def main():
         sample_name=f"{args.model.replace('/', '_').replace(':', '_')}_{dataset}_{subset}",
         parquet_output_dir=args.parquet_output_dir,
         splitter=args.splitter,
+        single=args.single,
         refinement_dataset=args.refinement_ds,
         early_stop_threshold=args.early_stop_threshold,
         refinement_sampling=args.refinement_sampling,

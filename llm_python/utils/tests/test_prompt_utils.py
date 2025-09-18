@@ -120,19 +120,48 @@ This should work."""
                 {'input': [[0, 0]]}
             ]
         }
-        
+
         mock_prompt_loader = Mock()
         mock_prompt_loader.get_system_message.return_value = "You are an AI assistant."
         mock_prompt_loader.get_initial_turn_prompt.return_value = "Solve this task:\n{task_content}"
-        
+
         # With splitter enabled, we should get a subset of training examples
         system_content, user_content = create_arc_prompt(
             task_data, mock_prompt_loader, "soar", splitter=True
         )
-        
+
         self.assertEqual(system_content, "You are an AI assistant.")
         self.assertIn("Test Input 1", user_content)  # Test input should always be present
         # Training examples should be present but may be a subset due to random selection
+
+    def test_create_arc_prompt_with_single(self):
+        """Test ARC prompt creation with single mode enabled"""
+        task_data = {
+            'train': [
+                {'input': [[1, 0]], 'output': [[0, 1]]},
+                {'input': [[0, 1]], 'output': [[1, 0]]},
+                {'input': [[1, 1]], 'output': [[0, 0]]}
+            ],
+            'test': [
+                {'input': [[0, 0]]}
+            ]
+        }
+
+        mock_prompt_loader = Mock()
+        mock_prompt_loader.get_system_message.return_value = "You are an AI assistant."
+        mock_prompt_loader.get_initial_turn_prompt.return_value = "Solve this task:\n{task_content}"
+
+        # With single enabled, we should get exactly one training example
+        system_content, user_content = create_arc_prompt(
+            task_data, mock_prompt_loader, "soar", single=True
+        )
+
+        self.assertEqual(system_content, "You are an AI assistant.")
+        self.assertIn("Test Input 1", user_content)  # Test input should always be present
+        self.assertIn("Input 1 (grid shape:", user_content)  # Should have exactly one training input
+        self.assertNotIn("Input 2 (grid shape:", user_content)  # Should not have second training input
+        self.assertIn("Output 1 (grid shape:", user_content)  # Should have exactly one training output
+        self.assertNotIn("Output 2 (grid shape:", user_content)  # Should not have second training output
 
     def test_create_arc_prompt_multiple_examples(self):
         """Test ARC prompt creation with multiple train and test examples"""
