@@ -25,8 +25,41 @@ reasoning_effort_flag = flag(
     default="medium",
 )
 
+DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant."
 
-def invoke_llm(prompt: str) -> Optional[str]:
+_async_api_client: Optional[openai.AsyncOpenAI] = None
+
+
+def get_async_client() -> openai.AsyncOpenAI:
+    """
+    Creates and returns an asynchronous OpenAI client using the base URL from the flag.
+
+    Returns:
+        An instance of `openai.AsyncOpenAI` configured with the specified base URL.
+    """
+    global _async_api_client
+    if _async_api_client is None:
+        _async_api_client = openai.AsyncOpenAI(base_url=base_url_flag())
+    return _async_api_client
+
+
+_api_client: Optional[openai.OpenAI] = None
+
+
+def get_client() -> openai.OpenAI:
+    """
+    Creates and returns a synchronous OpenAI client using the base URL from the flag.
+
+    Returns:
+        An instance of `openai.OpenAI` configured with the specified base URL.
+    """
+    global _api_client
+    if _api_client is None:
+        _api_client = openai.OpenAI(base_url=base_url_flag())
+    return _api_client
+
+
+def invoke_llm(prompt: str, system_prompt: Optional[str] = None) -> Optional[str]:
     """
     Invokes an LLM with a given prompt.
 
@@ -41,13 +74,16 @@ def invoke_llm(prompt: str) -> Optional[str]:
         - The response string from the model.
         - An optional reasoning string (currently returns None).
     """
-    client = openai.OpenAI(base_url=base_url_flag())
+    client = get_client()
 
     completion = client.chat.completions.create(
         model=model_name_flag(),
         reasoning_effort=cast(Any, reasoning_effort_flag()),
         messages=[
-            {"role": "system", "content": "You are a helpful assistant."},
+            {
+                "role": "system",
+                "content": system_prompt if system_prompt else DEFAULT_SYSTEM_PROMPT,
+            },
             {"role": "user", "content": prompt},
         ],
     )
@@ -57,7 +93,9 @@ def invoke_llm(prompt: str) -> Optional[str]:
     return response_content
 
 
-async def invoke_llm_async(prompt: str) -> Optional[str]:
+async def invoke_llm_async(
+    prompt: str, system_prompt: Optional[str] = None
+) -> Optional[str]:
     """
     Invokes an LLM with a given prompt asynchronously.
 
@@ -72,13 +110,16 @@ async def invoke_llm_async(prompt: str) -> Optional[str]:
         - The response string from the model.
         - An optional reasoning string (currently returns None).
     """
-    client = openai.AsyncOpenAI(base_url=base_url_flag())
+    client = get_async_client()
 
     completion = await client.chat.completions.create(
         model=model_name_flag(),
         reasoning_effort=cast(Any, reasoning_effort_flag()),
         messages=[
-            {"role": "system", "content": "You are a helpful assistant."},
+            {
+                "role": "system",
+                "content": system_prompt if system_prompt else DEFAULT_SYSTEM_PROMPT,
+            },
             {"role": "user", "content": prompt},
         ],
     )

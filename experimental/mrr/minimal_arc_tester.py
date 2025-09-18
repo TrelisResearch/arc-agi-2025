@@ -1,19 +1,21 @@
 import asyncio
+import logging
 import traceback
-from typing import Callable, Coroutine, List, Optional
+from typing import Callable, Coroutine, List, Optional, Tuple
 from dataclasses import dataclass
 
 import numpy as np
 
 from experimental.flags import flag
 from llm_python.utils.grids import grids_equal
-from llm_python.utils.task_loader import Grid, TaskExample, get_task_loader
+from llm_python.utils.task_loader import Grid, TaskData, TaskExample, get_task_loader
 from collections import defaultdict
 
 max_attempts_flag = flag(
     name="max_attempts", type=int, help="Number of attempts to make per task.", default=1
 )
 
+logger = logging.getLogger(__name__)
 
 @dataclass
 class Attempt:
@@ -68,11 +70,8 @@ def split_multi_test(
 
 async def evaluate_solver(
     solver: Callable[[SolverInput], Coroutine[None, None, List[Grid]]],
-    subset: str,
+    tasks: List[Tuple[str, TaskData]]
 ) -> List[Attempt]:
-    task_loader = get_task_loader()
-    tasks = task_loader.get_subset_tasks(subset)
-
     task_ids_with_any_correct = set()
 
     async def solve_task(task_id, task_data, attempt_number) -> Attempt:
@@ -144,7 +143,7 @@ async def evaluate_solver(
         finally:
             print(f"ℹ️ Tasks with successes so far: {len(task_ids_with_any_correct)} out of {len(tasks)}")
     print(
-        f"Evaluating solver on {len(tasks)} tasks from subset '{subset}' with {max_attempts_flag()} attempts..."
+        f"Evaluating solver on {len(tasks)} tasks with {max_attempts_flag()} attempts..."
     )
 
     solve_calls = []
