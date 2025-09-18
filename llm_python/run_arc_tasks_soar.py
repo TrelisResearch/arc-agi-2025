@@ -1348,6 +1348,7 @@ class ARCTaskRunnerSimple:
         subset_name: str,
         dataset: str = "arc-prize-2025",
         limit: Optional[int] = None,
+        task_id: Optional[str] = None,
     ) -> List[Dict]:
         """Run all tasks in a subset with true parallelization at the attempt level"""
         try:
@@ -1363,8 +1364,17 @@ class ARCTaskRunnerSimple:
                 if limit:
                     tasks = tasks[:limit]
             
+            # Filter by task_id if specified
+            if task_id:
+                original_count = len(tasks)
+                # Filter to only the specified task_id
+                tasks = [(tid, task_data) for tid, task_data in tasks if tid == task_id]
+                if not tasks:
+                    raise ValueError(f"Task ID '{task_id}' not found in {dataset}/{subset_name}")
+                print(f"Filtered to specific task ID '{task_id}': {len(tasks)}/{original_count} tasks")
+
             total_tasks = len(tasks)
-            
+
             # If refinement mode, load program data separately and augment tasks
             program_lookup = {}
             early_stop_counts = {}
@@ -2703,6 +2713,11 @@ def main():
         default=7,
         help="Stop dispatching new attempts for a task when it has this many non-transductive all-train-correct programs (default: 7)",
     )
+    parser.add_argument(
+        "--task-id",
+        type=str,
+        help="Run only the specified task ID from the dataset subset",
+    )
 
     args = parser.parse_args()
 
@@ -2752,7 +2767,7 @@ def main():
     )
 
     # Run the task subset
-    results = runner.run_subset(subset, dataset, args.limit)
+    results = runner.run_subset(subset, dataset, args.limit, args.task_id)
     runner.dataset_collector.flush()
     print(f"All sampled programs saved to {runner.dataset_collector.output_path()}")
 
