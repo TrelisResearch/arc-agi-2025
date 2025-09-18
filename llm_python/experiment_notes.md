@@ -181,10 +181,62 @@ Total cost: $0.591370
   No Program Responses (of all attempts): 73.1%
 ✅ Checkpointed 237 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250918_173238_openai_gpt-oss-20b_arc-prize-2025_evaluation.parquet
 
-and try with C=2.5 for aggressive pursuit of the strongest programs:
+and try with C=2.5 for aggressive pursuit of the strongest programs [was wrong, should have stuck to C=20]:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 128 --max_attempts 8 --model openai/gpt-oss-20b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000 --reasoning-effort medium --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250918_154255_openai_gpt-oss-20b_arc-prize-2025_evaluation.parquet --rex-stats
 ```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: openai/gpt-oss-20b
+Total tasks: 120
+Total time: 1928.3s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 6,306,255
+Total cost: $0.596289
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 2.5% (1.7% excl. trans)
+  Pass@2 (Train Majority):  2.5% (1.7% excl. trans)
+  Oracle (Best Attempt):    2.5% (1.7% excl. trans)
+  All Train Correct:        3.3% (2.5% excl. trans)
+  Min 1 Train Correct:      9.2% (8.3% excl. trans)
+  Min 1 Code Success:       84.2%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.2%
+  Execution Error Responses (of all attempts): 1.8%
+  No Program Responses (of all attempts): 71.5%
+✅ Checkpointed 248 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250918_175657_openai_gpt-oss-20b_arc-prize-2025_evaluation.parquet
+
+Now rerun again with the last two parquet files:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 128 --max_attempts 8 --model openai/gpt-oss-20b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000 --reasoning-effort medium --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250918_154255_openai_gpt-oss-20b_arc-prize-2025_evaluation.parquet /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250918_175657_openai_gpt-oss-20b_arc-prize-2025_evaluation.parquet --rex-stats --single
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: openai/gpt-oss-20b
+Total tasks: 120
+Total time: 1448.4s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 5,709,724
+Total cost: $0.601866
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 1.7% (1.7% excl. trans)
+  Pass@2 (Train Majority):  1.7% (1.7% excl. trans)
+  Oracle (Best Attempt):    1.7% (1.7% excl. trans)
+  All Train Correct:        2.5% (2.5% excl. trans)
+  Min 1 Train Correct:      15.0% (13.3% excl. trans)
+  Min 1 Code Success:       94.2%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.2%
+  Execution Error Responses (of all attempts): 1.8%
+  No Program Responses (of all attempts): 63.3%
+✅ Checkpointed 320 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250918_203453_openai_gpt-oss-20b_arc-prize-2025_evaluation.parquet
+
 
 Low reasoning effort:
 ```bash
