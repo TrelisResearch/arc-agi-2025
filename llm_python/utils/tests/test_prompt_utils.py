@@ -18,9 +18,13 @@ class TestPromptUtils(unittest.TestCase):
     def test_format_grid_for_prompt(self):
         """Test grid formatting for prompts"""
         grid = [[1, 2], [3, 4]]
-        expected = "[[1 2] [3 4]]"
         result = format_grid_for_prompt(grid)
-        self.assertEqual(result, expected)
+
+        # Check that the original format is present
+        self.assertIn("[[1 2] [3 4]]", result)  # Original format only
+
+        # Should be a simple string representation
+        self.assertEqual(result, "[[1 2] [3 4]]")
     
     def test_get_grid_shape_string(self):
         """Test grid shape string generation"""

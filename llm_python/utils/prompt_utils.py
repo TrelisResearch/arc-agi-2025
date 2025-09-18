@@ -60,6 +60,8 @@ def _format_grid_for_prompt(grid: List[List[int]]) -> str:
             return obj
 
     grid = convert_to_list(grid)
+
+    # Return original format only
     return str(grid).replace(",", "")
 
 
@@ -80,6 +82,7 @@ def _get_grid_shape_string(grid: List[List[int]]) -> str:
     if not grid or len(grid) == 0:
         return "0 by 0"
     return f"{len(grid[0])} by {len(grid)}"
+
 
 
 def create_arc_prompt(
