@@ -151,13 +151,35 @@ and now run on all tasks:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 2 --max_attempts 8 --model openai/gpt-oss-20b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000 --reasoning-effort medium --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250918_154255_openai_gpt-oss-20b_arc-prize-2025_evaluation.parquet --rex-stats
 ```
-PENDING!
+Fails, don't know why. Hits the no activity timeout. I suppose not enough requests.....
 
-and try with many more workers, which won't give iterative refinement:
+and try with many more workers, which won't give iterative refinement - but C=20:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 128 --max_attempts 8 --model openai/gpt-oss-20b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000 --reasoning-effort medium --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250918_154255_openai_gpt-oss-20b_arc-prize-2025_evaluation.parquet --rex-stats
 ```
-PENDING RESULTS
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: openai/gpt-oss-20b
+Total tasks: 120
+Total time: 1751.9s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 6,371,350
+Total cost: $0.591370
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.8% (0.8% excl. trans)
+  Pass@2 (Train Majority):  0.8% (0.8% excl. trans)
+  Oracle (Best Attempt):    0.8% (0.8% excl. trans)
+  All Train Correct:        1.7% (1.7% excl. trans)
+  Min 1 Train Correct:      8.3% (5.8% excl. trans)
+  Min 1 Code Success:       82.5%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 1.2%
+  No Program Responses (of all attempts): 73.1%
+✅ Checkpointed 237 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250918_173238_openai_gpt-oss-20b_arc-prize-2025_evaluation.parquet
 
 and try with C=2.5 for aggressive pursuit of the strongest programs:
 ```bash
