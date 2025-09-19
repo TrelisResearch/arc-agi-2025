@@ -65,14 +65,15 @@ def prompt_keep_pod(timeout=10):
     except Exception:
         return False
 
-def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="all_evaluation", max_attempts=64, no_transductive_penalty=False, max_workers=32, splitter=False, max_tokens=2000, reasoning_effort="low", refinement_ds=None, early_stop_threshold=None, rex_stats=False):
+def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="all_evaluation", max_attempts=64, no_transductive_penalty=False, max_workers=32, splitter=False, max_tokens=2000, reasoning_effort=None, refinement_ds=None, early_stop_threshold=None, rex_stats=False):
     """Run ARC tasks - task runner handles its own graceful shutdown"""
     print(f"\n🎯 Running ARC tasks for {dataset} with subset {subset}...")
     print(f"📊 Task Runner Configuration:")
     print(f"   Max workers: {max_workers}")
     print(f"   Max attempts: {max_attempts}")
     print(f"   Max tokens: {max_tokens}")
-    print(f"   Reasoning effort: {reasoning_effort}")
+    if reasoning_effort:
+        print(f"   Reasoning effort: {reasoning_effort}")
     
     # Check if this is a Qwen model
     is_qwen_model = 'qwen' in model_path.lower() and 'thinking' not in model_path.lower()
@@ -101,13 +102,16 @@ def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="
         "--base-url", base_url,
         "--unsafe-executor",
         "--max-tokens", str(max_tokens),
-        "--reasoning-effort", reasoning_effort,
     ]
     
     # Only add --qwen-no-think for Qwen models
     if is_qwen_model:
         cmd.append("--qwen-no-think")
-    
+
+    # Only add reasoning effort if explicitly provided
+    if reasoning_effort:
+        cmd.extend(["--reasoning-effort", reasoning_effort])
+
     if no_transductive_penalty:
         cmd.append("--no-transductive-penalty")
     
@@ -266,7 +270,6 @@ This script will:
                        help='Maximum tokens for model generation (default: 2000)')
     parser.add_argument('--reasoning-effort',
                        choices=['low', 'medium', 'high'],
-                       default='medium',
                        help='Reasoning effort level for OSS models (low, medium, high)')
     parser.add_argument('--refinement-ds',
                        type=str,
