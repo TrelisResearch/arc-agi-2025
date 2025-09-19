@@ -5,7 +5,7 @@ Provides comprehensive validation including schema checks, business logic valida
 and program correctness testing.
 """
 
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from dataclasses import dataclass
 import argparse
 import random
@@ -70,7 +70,9 @@ def validate_soar_row(row: dict) -> ValidateRowResult:
                 errors.append(f"{field} is an empty list")
             else:
                 # Use common prediction validator
-                _, validation_errors = ARCTaskValidator.validate_prediction_list(row[field], field)
+                _, validation_errors = ARCTaskValidator.validate_prediction_list(
+                    row[field], field
+                )
                 errors.extend(validation_errors)
     if (
         "reasoning" in row
@@ -109,6 +111,16 @@ class ValidationResult:
             for issue in self.business_logic_issues[:3]:
                 lines.append(f"      {issue}")
         return "\n".join(lines)
+
+
+@dataclass
+class CorrectnessRowValidationResult:
+    correctness_valid: bool
+    correctness_errors: List[str]
+    new_predicted_train_output: Optional[List[List[str]]] = None
+    new_predicted_test_output: Optional[List[List[str]]] = None
+    new_correct_train_input: Optional[List[bool]] = None
+    new_correct_test_input: Optional[List[bool]] = None
 
 
 @dataclass
@@ -168,6 +180,36 @@ def validate_soar_dataframe(df: pd.DataFrame) -> ValidationResult:
     )
 
 
+def validate_soar_row_correctness(
+    row: pd.Series, arc_tester: ArcTester
+) -> CorrectnessRowValidationResult:
+    task_loader = get_task_loader()
+    correctness_errors: List[str] = []
+    try:
+        result = arc_tester.test_program(
+            row["code"], task_loader.get_task(row["task_id"])
+        )
+        for i, train_output in enumerate(row["predicted_train_output"]):
+            if not grids_equal(result.train_outputs[i], train_output):
+                correctness_errors.append(f"Train Output {i}: predicted != actual")
+        for i, test_output in enumerate(row["predicted_test_output"]):
+            if not grids_equal(result.test_outputs[i], test_output):
+                correctness_errors.append(f"Test Output {i}: predicted != actual")
+        return CorrectnessRowValidationResult(
+            correctness_valid=not correctness_errors,
+            correctness_errors=correctness_errors,
+            new_correct_train_input=result.correct_train_input,
+            new_correct_test_input=result.correct_test_input,
+            new_predicted_train_output=result.train_outputs,
+            new_predicted_test_output=result.test_outputs,
+        )
+    except Exception as e:
+        correctness_errors.append(f"Program execution failed - {str(e)}")
+        return CorrectnessRowValidationResult(
+            correctness_valid=False, correctness_errors=correctness_errors
+        )
+
+
 def validate_soar_dataframe_correctness(
     df: pd.DataFrame, correctness_samples: int = 1000, seed: int = 42
 ) -> CorrectnessValidationResult:
@@ -185,27 +227,12 @@ def validate_soar_dataframe_correctness(
         else:
             sample_indices = random.sample(range(total_rows), sample_size)
             sample_df = df.iloc[sample_indices]
-        task_loader = get_task_loader()
         arc_tester = ArcTester()
         for idx, row in sample_df.iterrows():
-            try:
-                result = arc_tester.test_program(
-                    row["code"], task_loader.get_task(row["task_id"])
-                )
-                for i, train_output in enumerate(row["predicted_train_output"]):
-                    if not grids_equal(result.train_outputs[i], train_output):
-                        correctness_errors.append(
-                            f"Row {idx}, Train Output {i}: predicted != actual"
-                        )
-                for i, test_output in enumerate(row["predicted_test_output"]):
-                    if not grids_equal(result.test_outputs[i], test_output):
-                        correctness_errors.append(
-                            f"Row {idx}, Test Output {i}: predicted != actual"
-                        )
-            except Exception as e:
-                correctness_errors.append(
-                    f"Row {idx}: Program execution failed - {str(e)}"
-                )
+            result = validate_soar_row_correctness(row, arc_tester)
+            if not result.correctness_valid:
+                for err in result.correctness_errors:
+                    correctness_errors.append(f"Row {idx} (task {row['task_id']}): {err}")
     if correctness_errors:
         correctness_valid = False
     return CorrectnessValidationResult(
