@@ -47,7 +47,12 @@ Start a pod and run 4 attempts with Qwen/Qwen3-4B-Thinking-2507 on arc-prize-202
 ```bash
 uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 Qwen/Qwen3-4B-Thinking-2507 --max-attempts 4 --subset evaluation --max-workers 256
 ```
+this model thinks for too long to give answers.
 
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 Qwen/Qwen3-4B --max-attempts 4 --subset evaluation --max-workers 256
+```
+hits 12k limit in 8% of cases.
 
 ### Use simple pixel match for refinement
 Test it out:
