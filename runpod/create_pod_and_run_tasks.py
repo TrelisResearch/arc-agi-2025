@@ -293,7 +293,7 @@ This script will:
     if ('gpt-oss' in model_lower and ('20b' in model_lower or '120b' in model_lower)) or 'thinking' in model_lower:
         if args.max_tokens == 2000:  # Only if user didn't override the default
             args.max_tokens = 12000
-            print(f"🧠 Detected GPT-OSS model, auto-setting max_tokens to {args.max_tokens}")
+            print(f"🧠 Detected GPT-OSS or Qwen Thinking model, auto-setting max_tokens to {args.max_tokens}")
     
     # Step 1: Create the pod
     print(f"🚀 Step 1: Creating RunPod pod with model {args.model_path}")

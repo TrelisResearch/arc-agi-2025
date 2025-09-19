@@ -479,7 +479,7 @@ The healthCheck section is automatically stripped before sending to RunPod.
     model_lower = args.model.lower()
     if 'gpt-oss' in model_lower and ('20b' in model_lower or '120b' in model_lower):
         extra_args.extend(['--reasoning-parser', 'gpt-oss'])
-        print(f"🧠 Detected GPT-OSS model, adding --reasoning-parser gpt-oss")
+        print(f"🧠 Detected GPT-OSS or Qwen Thinking model, adding --reasoning-parser gpt-oss")
     
     # Print configuration info
     print(f"🚀 Creating pod with model: {args.model}")
