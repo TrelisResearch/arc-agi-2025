@@ -95,7 +95,7 @@ This should work."""
         mock_prompt_loader.get_system_message.return_value = "You are an AI assistant."
         mock_prompt_loader.get_initial_turn_prompt.return_value = "Solve this task:\n{task_content}"
         
-        system_content, user_content = create_arc_prompt(task_data, mock_prompt_loader, "soar")
+        system_content, user_content, reasoning = create_arc_prompt(task_data, mock_prompt_loader, "soar")
         
         self.assertEqual(system_content, "You are an AI assistant.")
         self.assertIn("Input 1 (grid shape: 2 by 2)", user_content)
@@ -103,7 +103,8 @@ This should work."""
         self.assertIn("Test Input 1 (grid shape: 2 by 2)", user_content)
         self.assertIn("[[1 0] [0 1]]", user_content)  # Input grid formatted
         self.assertIn("[[0 1] [1 0]]", user_content)  # Output grid formatted
-        
+        self.assertIsNone(reasoning)  # No reasoning field in basic task data
+
         # Verify prompt loader was called with correct version
         mock_prompt_loader.get_system_message.assert_called_with("soar")
         mock_prompt_loader.get_initial_turn_prompt.assert_called_with("soar")
@@ -126,7 +127,7 @@ This should work."""
         mock_prompt_loader.get_initial_turn_prompt.return_value = "Solve this task:\n{task_content}"
 
         # With splitter enabled, we should get a subset of training examples
-        system_content, user_content = create_arc_prompt(
+        system_content, user_content, reasoning = create_arc_prompt(
             task_data, mock_prompt_loader, "soar", splitter=True
         )
 
@@ -152,7 +153,7 @@ This should work."""
         mock_prompt_loader.get_initial_turn_prompt.return_value = "Solve this task:\n{task_content}"
 
         # With single enabled, we should get exactly one training example
-        system_content, user_content = create_arc_prompt(
+        system_content, user_content, reasoning = create_arc_prompt(
             task_data, mock_prompt_loader, "soar", single=True
         )
 
@@ -187,7 +188,7 @@ This should work."""
         correct_train_input = [False, False, True]  # First two incorrect, third correct
 
         # With single enabled, we should get results for only one training example
-        system_content, user_content = create_arc_prompt(
+        system_content, user_content, reasoning = create_arc_prompt(
             task_data, mock_prompt_loader, "soar", single=True,
             draft_program="def transform(grid): return grid",
             predicted_outputs=predicted_outputs,
@@ -236,7 +237,7 @@ This should work."""
         mock_prompt_loader.get_system_message.return_value = "You are an AI assistant."
         mock_prompt_loader.get_initial_turn_prompt.return_value = "Solve this task:\n{task_content}"
         
-        system_content, user_content = create_arc_prompt(task_data, mock_prompt_loader)
+        system_content, user_content, reasoning = create_arc_prompt(task_data, mock_prompt_loader)
         
         # Should have both training examples
         self.assertIn("Input 1 (grid shape: 2 by 1)", user_content)
@@ -271,7 +272,7 @@ This should work."""
         mock_prompt_loader.get_system_message.return_value = "You are an AI assistant specialized in refinement."
         mock_prompt_loader.get_initial_turn_prompt.return_value = "Refinement prompt: {task_content}"
 
-        system_content, user_content = create_arc_prompt(
+        system_content, user_content, reasoning = create_arc_prompt(
             task_data, mock_prompt_loader, "soar", draft_program=draft_program
         )
 
@@ -316,11 +317,10 @@ This should work."""
         # Test with correct_train_input for the new format
         correct_train_input = [False]  # Wrong prediction
 
-        system_content, user_content = create_arc_prompt(
+        system_content, user_content, reasoning = create_arc_prompt(
             task_data, mock_prompt_loader, "soar",
             draft_program=draft_program,
             predicted_outputs=predicted_outputs,
-            output_mode="full",
             correct_train_input=correct_train_input
         )
 
@@ -329,6 +329,66 @@ This should work."""
         self.assertIn("[[1 0] [0 1]]", user_content)  # Predicted output
         self.assertIn("incorrect", user_content)  # Should show incorrect result
 
+    def test_create_arc_prompt_with_reasoning(self):
+        """Test ARC prompt creation with reasoning field present"""
+        # Mock task data with reasoning field
+        task_data = {
+            'train': [
+                {
+                    'input': [[1, 0], [0, 1]],
+                    'output': [[0, 1], [1, 0]]
+                }
+            ],
+            'test': [
+                {
+                    'input': [[1, 1], [0, 0]]
+                }
+            ],
+            'reasoning': 'This task involves flipping the grid diagonally.'
+        }
+
+        # Mock prompt loader
+        mock_prompt_loader = Mock()
+        mock_prompt_loader.get_system_message.return_value = "You are an AI assistant."
+        mock_prompt_loader.get_initial_turn_prompt.return_value = "Solve this task:\n{task_content}"
+
+        system_content, user_content, reasoning = create_arc_prompt(task_data, mock_prompt_loader, "soar")
+
+        self.assertEqual(system_content, "You are an AI assistant.")
+        self.assertIn("Input 1 (grid shape: 2 by 2)", user_content)
+        self.assertIn("Output 1 (grid shape: 2 by 2)", user_content)
+        self.assertIn("Test Input 1 (grid shape: 2 by 2)", user_content)
+        self.assertEqual(reasoning, 'This task involves flipping the grid diagonally.')  # Reasoning extracted
+
+    def test_create_arc_prompt_without_reasoning(self):
+        """Test ARC prompt creation without reasoning field"""
+        # Mock task data without reasoning field
+        task_data = {
+            'train': [
+                {
+                    'input': [[1, 0], [0, 1]],
+                    'output': [[0, 1], [1, 0]]
+                }
+            ],
+            'test': [
+                {
+                    'input': [[1, 1], [0, 0]]
+                }
+            ]
+        }
+
+        # Mock prompt loader
+        mock_prompt_loader = Mock()
+        mock_prompt_loader.get_system_message.return_value = "You are an AI assistant."
+        mock_prompt_loader.get_initial_turn_prompt.return_value = "Solve this task:\n{task_content}"
+
+        system_content, user_content, reasoning = create_arc_prompt(task_data, mock_prompt_loader, "soar")
+
+        self.assertEqual(system_content, "You are an AI assistant.")
+        self.assertIn("Input 1 (grid shape: 2 by 2)", user_content)
+        self.assertIn("Output 1 (grid shape: 2 by 2)", user_content)
+        self.assertIn("Test Input 1 (grid shape: 2 by 2)", user_content)
+        self.assertIsNone(reasoning)  # No reasoning field returns None
 
 
 if __name__ == '__main__':

@@ -936,26 +936,6 @@ class ARCTaskRunnerSimple:
             # Don't let database logging errors crash the main execution
             traceback.print_exc()
 
-    def create_prompt(self, task_data: Dict, draft_program: Optional[str] = None, predicted_outputs: Optional[Dict] = None, correct_train_input: Optional[List[bool]] = None) -> tuple[str, str]:
-        """Create a prompt for the model to solve an ARC task"""
-        # Determine output mode based on flags
-        output_mode = None
-        if self.include_outputs:
-            output_mode = "full"
-
-        # Use unified prompt function for both regular and refinement modes
-        return create_arc_prompt(
-            task_data=task_data,
-            prompt_loader=self.prompt_loader,
-            prompt_version=self.prompt_version,
-            splitter=self.splitter,
-            single=self.single,
-            draft_program=draft_program,
-            predicted_outputs=predicted_outputs,
-            output_mode=output_mode,
-            correct_train_input=correct_train_input
-        )
-
     def get_sampling_parameters(self) -> Dict:
         """Get the sampling parameters that will be used for API calls"""
         return self.api_client.get_sampling_parameters()
@@ -1617,7 +1597,16 @@ class ARCTaskRunnerSimple:
                 task_results[task_id]["selected_program"] = selected_program  # Store for logging
                 task_results[task_id]["predicted_outputs"] = predicted_outputs  # Store for splitter mode
                 correct_train_input = selected_program.get('correct_train_input') if selected_program else None
-                system_content, user_content = self.create_prompt(task_data, draft_program=draft_code, predicted_outputs=predicted_outputs, correct_train_input=correct_train_input)
+                system_content, user_content, reasoning = create_arc_prompt(
+                    task_data=task_data,
+                    prompt_loader=self.prompt_loader,
+                    prompt_version=self.prompt_version,
+                    splitter=self.splitter,
+                    single=self.single,
+                    draft_program=draft_code,
+                    predicted_outputs=predicted_outputs,
+                    correct_train_input=correct_train_input
+                )
                 task_results[task_id]["full_prompt"] = {
                     "system": system_content,
                     "user": user_content,
@@ -1625,7 +1614,13 @@ class ARCTaskRunnerSimple:
             else:
                 # Normal mode: task has no programs available
                 task_results[task_id]["task_data"] = task_data
-                system_content, user_content = self.create_prompt(task_data)
+                system_content, user_content, reasoning = create_arc_prompt(
+                    task_data=task_data,
+                    prompt_loader=self.prompt_loader,
+                    prompt_version=self.prompt_version,
+                    splitter=self.splitter,
+                    single=self.single
+                )
                 task_results[task_id]["full_prompt"] = {
                     "system": system_content,
                     "user": user_content,
@@ -1729,9 +1724,24 @@ class ARCTaskRunnerSimple:
                         draft_code = selected_program.get('code', '') if selected_program else ''
                         predicted_outputs = task_results[task_id].get("predicted_outputs")
                         correct_train_input = selected_program.get('correct_train_input') if selected_program else None
-                        system_content, user_content = self.create_prompt(stored_task_data, draft_program=draft_code, predicted_outputs=predicted_outputs, correct_train_input=correct_train_input)
+                        system_content, user_content, reasoning = create_arc_prompt(
+                            task_data=stored_task_data,
+                            prompt_loader=self.prompt_loader,
+                            prompt_version=self.prompt_version,
+                            splitter=self.splitter,
+                            single=self.single,
+                            draft_program=draft_code,
+                            predicted_outputs=predicted_outputs,
+                            correct_train_input=correct_train_input
+                        )
                     else:
-                        system_content, user_content = self.create_prompt(stored_task_data)
+                        system_content, user_content, reasoning = create_arc_prompt(
+                            task_data=stored_task_data,
+                            prompt_loader=self.prompt_loader,
+                            prompt_version=self.prompt_version,
+                            splitter=self.splitter,
+                            single=self.single
+                        )
 
                     full_prompt = {"system": system_content, "user": user_content}
                 else:

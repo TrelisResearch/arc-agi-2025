@@ -93,9 +93,8 @@ def create_arc_prompt(
     single: bool = False,
     draft_program: Optional[str] = None,
     predicted_outputs: Optional[Dict] = None,
-    output_mode: Optional[str] = None,
     correct_train_input: Optional[List[bool]] = None,
-) -> Tuple[str, str]:
+) -> Tuple[str, str, Optional[str]]:
     """
     Create a unified prompt for the model to solve an ARC task (both regular and refinement modes).
 
@@ -107,11 +106,10 @@ def create_arc_prompt(
         single: Whether to use only a single randomly selected training example
         draft_program: Existing program code to be refined (enables refinement mode)
         predicted_outputs: Dict containing 'train' predicted outputs from draft program
-        output_mode: How to display outputs ('full', 'diff', or None)
         correct_train_input: Optional list of boolean flags indicating correctness for each training example
 
     Returns:
-        Tuple of (system_content, user_content)
+        Tuple of (system_content, user_content, reasoning)
     """
     # Determine if we're in refinement mode
     refinement_mode = draft_program is not None
@@ -197,7 +195,10 @@ def create_arc_prompt(
     # Simple template formatting
     user_content = prompt_template.format(task_content=task_content)
 
-    return system_content, user_content
+    # Extract reasoning field if present
+    reasoning = task_data.get("reasoning")
+
+    return system_content, user_content, reasoning
 
 
 def generate_refinement_task_content(task_data: Dict, draft_program: Optional[str], predicted_outputs: Optional[Dict], train_examples: list, correct_train_input: Optional[List[bool]] = None, selected_indices: Optional[List[int]] = None, show_output_test: bool = True) -> str:
