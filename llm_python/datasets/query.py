@@ -10,6 +10,8 @@ def filter_soar_df(
     all_train_correct=None,
     all_test_correct=None,
     any_train_correct=None,
+    no_train_correct=None,
+    no_test_correct=None,
     exclude_transductive=True,
     max_rows=None,
 ):
@@ -23,6 +25,8 @@ def filter_soar_df(
         all_train_correct (bool, optional): If True, only rows where all train inputs are correct.
         all_test_correct (bool, optional): If True, only rows where all test inputs are correct.
         any_train_correct (bool, optional): If True, only rows where any train input is correct.
+        no_train_correct (bool, optional): If True, only rows where no train inputs are correct.
+        no_test_correct (bool, optional): If True, only rows where no test inputs are correct.
         exclude_transductive (bool, optional): If True, exclude transductive programs.
         max_rows (int, optional): Limit number of rows returned.
 
@@ -50,6 +54,14 @@ def filter_soar_df(
         df = df[df["correct_test_input"].apply(lambda x: all(x) == all_test_correct)]
     if any_train_correct is not None:
         df = df[df["correct_train_input"].apply(lambda x: any(x) == any_train_correct)]
+    if no_train_correct is not None:
+        df = df[
+            df["correct_train_input"].apply(lambda x: (not any(x)) == no_train_correct)
+        ]
+    if no_test_correct is not None:
+        df = df[
+            df["correct_test_input"].apply(lambda x: (not any(x)) == no_test_correct)
+        ]
 
     # Exclude transductive
     if exclude_transductive:
