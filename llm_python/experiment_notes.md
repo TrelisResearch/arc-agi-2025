@@ -41,6 +41,12 @@ Commercial:
 
 ---
 ## September 19th 2025
+### Use simple pixel match for refinement
+Test it out:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 128 --max_attempts 8 --model openai/gpt-oss-20b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000 --reasoning-effort medium --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250918_154255_openai_gpt-oss-20b_arc-prize-2025_evaluation.parquet --rex-stats --single
+```
+
 ### Notes on last night's submission - 4x samples and 4x refines with OSS
 
 ### Scoring

@@ -11,7 +11,6 @@ from typing import List, Dict, Any, Optional, Tuple, Literal
 # Hardcoded REx parameters - change these values here to adjust behavior
 REX_C = 20  # Beta distribution parameter
 REX_REFINEMENT_BONUS_WEIGHT = 0.5  # Weight for refinement success bonus
-REX_SIZE_MATCH_BONUS = 0.01  # Bonus per correctly-sized output grid
 
 
 def _extract_correctness_data(program_data: Dict[str, Any], field_name: str = 'correct_train_input') -> List[bool]:
@@ -44,62 +43,145 @@ def _calculate_correctness_percentage(correct_data: List[bool]) -> float:
     return sum(correct_data) / len(correct_data) if correct_data else 0.0
 
 
-def _count_correct_size_outputs(program_data: Dict[str, Any], task_data: Optional[Dict] = None) -> int:
+def _calculate_pixel_match_percentage(predicted: Any, expected: Any) -> float:
     """
-    Count how many training outputs have correct grid sizes.
+    Calculate pixel match percentage between predicted and expected grids.
 
     Args:
-        program_data: Program data dictionary containing predicted_train_output
+        predicted: Predicted grid (can be numpy array or list)
+        expected: Expected grid (can be numpy array or list)
+
+    Returns:
+        Pixel match percentage (0.0 to 1.0)
+    """
+    if predicted is None or expected is None:
+        return 0.0
+
+    # Convert numpy arrays to lists to avoid ambiguous truth value errors
+    if hasattr(predicted, 'tolist'):
+        predicted = predicted.tolist()
+    if hasattr(expected, 'tolist'):
+        expected = expected.tolist()
+
+    # Check if both are valid grids
+    if (not isinstance(predicted, (list, tuple)) or
+        not isinstance(expected, (list, tuple)) or
+        len(predicted) == 0 or len(expected) == 0):
+        return 0.0
+
+    # Check if dimensions match
+    if (len(predicted) != len(expected) or
+        len(predicted[0]) != len(expected[0])):
+        return 0.0
+
+    # Calculate pixel matches
+    total_pixels = 0
+    matching_pixels = 0
+
+    for pred_row, exp_row in zip(predicted, expected):
+        # Convert numpy arrays to lists for row-level processing
+        if hasattr(pred_row, 'tolist'):
+            pred_row = pred_row.tolist()
+        if hasattr(exp_row, 'tolist'):
+            exp_row = exp_row.tolist()
+
+        if not isinstance(pred_row, (list, tuple)) or not isinstance(exp_row, (list, tuple)):
+            continue
+
+        for pred_cell, exp_cell in zip(pred_row, exp_row):
+            total_pixels += 1
+            # Handle numpy scalar comparisons safely
+            try:
+                # Convert numpy scalars to Python scalars for comparison
+                if hasattr(pred_cell, 'item'):
+                    pred_cell = pred_cell.item()
+                if hasattr(exp_cell, 'item'):
+                    exp_cell = exp_cell.item()
+
+                if pred_cell == exp_cell:
+                    matching_pixels += 1
+            except (ValueError, TypeError):
+                # If comparison fails, assume no match
+                pass
+
+    return (matching_pixels / total_pixels) if total_pixels > 0 else 0.0
+
+
+def _calculate_pixel_match_bonus(program_data: Dict[str, Any], task_data: Optional[Dict] = None) -> float:
+    """
+    Calculate pixel match bonus for incorrect train examples that have correct grid sizes.
+    For each incorrect train example with correct size, adds (pixel_match_% * 1 / num_train_examples).
+
+    Args:
+        program_data: Program data dictionary containing predicted_train_output and correct_train_input
         task_data: Optional task data containing expected train outputs
 
     Returns:
-        Number of training outputs with correct grid sizes
+        Pixel match bonus to add to quality score
     """
+    if not task_data or 'train' not in task_data:
+        return 0.0
+
     predicted_outputs = program_data.get('predicted_train_output', [])
+    correct_data = _extract_correctness_data(program_data)
 
     # Convert numpy arrays to lists recursively
     if hasattr(predicted_outputs, 'tolist'):
         predicted_outputs = predicted_outputs.tolist()
 
-    if not predicted_outputs:
-        return 0
+    if not predicted_outputs or not correct_data:
+        return 0.0
 
-    correct_size_count = 0
+    expected_outputs = [example.get('output', []) for example in task_data['train']]
+    num_train_examples = len(expected_outputs)
 
-    # If we have task data, compare against expected sizes
-    if task_data and 'train' in task_data:
-        expected_outputs = [example.get('output', []) for example in task_data['train']]
+    if num_train_examples == 0:
+        return 0.0
 
-        for pred, expected in zip(predicted_outputs, expected_outputs):
-            # Handle None values
-            if pred is None or expected is None:
-                continue
+    total_bonus = 0.0
 
-            # Convert numpy arrays to lists to avoid ambiguous truth value errors
-            if hasattr(pred, 'tolist'):
-                pred = pred.tolist()
-            if hasattr(expected, 'tolist'):
-                expected = expected.tolist()
+    # For each train example, check if it's incorrect but has correct size and calculate pixel match
+    for i, (predicted, expected, is_correct) in enumerate(zip(predicted_outputs, expected_outputs, correct_data)):
+        # Only process incorrect examples
+        if is_correct:
+            continue
 
-            # Use len() checks instead of truthiness to avoid numpy array issues
-            if not isinstance(pred, (list, tuple)) or not isinstance(expected, (list, tuple)):
-                continue
-            if len(pred) == 0 or len(expected) == 0:
-                continue
+        # Check if grid has correct size (dimensions match)
+        if predicted is None or expected is None:
+            continue
 
-            # Check if dimensions match - if they do, increment count
-            if (len(pred) == len(expected) and
-                (len(pred) == 0 or len(expected) == 0 or len(pred[0]) == len(expected[0]))):
-                correct_size_count += 1
-    else:
-        # If no task data, count well-formed outputs
-        for pred in predicted_outputs:
-            if pred is not None and isinstance(pred, (list, tuple)):
-                # Check for non-empty and consistent structure
-                if pred and all(isinstance(row, (list, tuple)) for row in pred):
-                    correct_size_count += 1
+        # Convert numpy arrays to lists
+        if hasattr(predicted, 'tolist'):
+            predicted = predicted.tolist()
+        if hasattr(expected, 'tolist'):
+            expected = expected.tolist()
 
-    return correct_size_count
+        # Check dimensions match
+        if (not isinstance(predicted, (list, tuple)) or
+            not isinstance(expected, (list, tuple)) or
+            len(predicted) == 0 or len(expected) == 0):
+            continue
+
+        # Safely check dimensions
+        try:
+            if (len(predicted) != len(expected)):
+                continue  # Skip if row count doesn't match
+
+            # Check column count for first row (if it exists)
+            if len(predicted) > 0 and len(expected) > 0:
+                if len(predicted[0]) != len(expected[0]):
+                    continue  # Skip if column count doesn't match
+        except (IndexError, TypeError):
+            continue  # Skip if dimension checking fails
+
+        # Calculate pixel match percentage for this incorrect example
+        pixel_match_pct = _calculate_pixel_match_percentage(predicted, expected)
+
+        # Add (pixel_match_% * 1 / num_train_examples) to bonus
+        contribution = pixel_match_pct / num_train_examples
+        total_bonus += contribution
+
+    return total_bonus
 
 
 def _debug_print_program_selection(program: Dict[str, Any], context: str, extra_info: str = "") -> None:
@@ -208,16 +290,15 @@ class REXProgramPool:
             # Enhanced quality score combining correctness and weighted refinement success
             quality_score = correctness_pct + refinement_bonus
 
-            # Apply bonus for programs with correctly-sized outputs
+            # Apply pixel match bonus for incorrect train examples with correct size
             try:
-                correct_size_count = _count_correct_size_outputs(program, task_data)
-                size_bonus = correct_size_count * REX_SIZE_MATCH_BONUS
-                quality_score += size_bonus
+                pixel_match_bonus = _calculate_pixel_match_bonus(program, task_data)
+                quality_score += pixel_match_bonus * 0.1  # Scale down pixel bonus to 10%
             except (ValueError, TypeError) as e:
-                # Skip size bonus on error (e.g., numpy array truth value issues)
+                # Skip pixel match bonus on error (e.g., numpy array truth value issues)
                 pass
 
-            # cap the quality score at 1.0 (although it technically should hardly be able to exceed as the max size bonus is 0.1 and the max partial score is 0.9 plus a max of 0.05 for the refinement bonus, which would put it over but is likely rare)
+            # cap the quality score at 1.0 (max partial score 0.9 + refinement bonus ~0.05 + scaled pixel match bonus <0.1 = <1.05)
             quality_score = min(quality_score, 1.0)
 
             quality_scores.append(quality_score)

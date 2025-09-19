@@ -832,79 +832,66 @@ class TestREXEnhancedFunctionality:
         assert abs(result['_rex_quality_score'] - expected_quality) < 0.001
         assert result['_rex_quality_score'] == 0.25  # Penalized (0.5 + (-0.50 * 0.5) = 0.25)
 
-    def test_count_correct_size_outputs_with_numpy_arrays(self):
-        """Test that _count_correct_size_outputs handles numpy arrays without truth value errors"""
+    def test_pixel_match_calculation_with_numpy_arrays(self):
+        """Test that pixel match functions handle numpy arrays without truth value errors"""
         import numpy as np
-        from ..refinement_utils import _count_correct_size_outputs
+        from ..refinement_utils import _calculate_pixel_match_percentage, _calculate_pixel_match_bonus
 
-        # Test with numpy arrays in predicted outputs
+        # Test pixel match percentage with numpy arrays
+        predicted = np.array([[1, 2], [3, 4]])
+        expected = np.array([[1, 2], [3, 5]])  # 3/4 pixels match
+        result = _calculate_pixel_match_percentage(predicted, expected)
+        assert result == 0.75  # 3 out of 4 pixels match
+
+        # Test with perfect match
+        predicted_perfect = np.array([[1, 2], [3, 4]])
+        expected_perfect = np.array([[1, 2], [3, 4]])
+        result_perfect = _calculate_pixel_match_percentage(predicted_perfect, expected_perfect)
+        assert result_perfect == 1.0
+
+        # Test with no match
+        predicted_no_match = np.array([[0, 0], [0, 0]])
+        expected_no_match = np.array([[1, 2], [3, 4]])
+        result_no_match = _calculate_pixel_match_percentage(predicted_no_match, expected_no_match)
+        assert result_no_match == 0.0
+
+        # Test with size mismatch
+        predicted_wrong_size = np.array([[1, 2, 3]])
+        expected_right_size = np.array([[1, 2], [3, 4]])
+        result_size_mismatch = _calculate_pixel_match_percentage(predicted_wrong_size, expected_right_size)
+        assert result_size_mismatch == 0.0
+
+        # Test pixel match bonus calculation
         program_data = {
             'predicted_train_output': [
-                np.array([[1, 2], [3, 4]]),  # Numpy array
-                [[5, 6], [7, 8]]  # Regular list
-            ]
+                np.array([[1, 2], [3, 4]]),  # 75% pixel match
+                np.array([[0, 0], [0, 0]])   # 0% pixel match
+            ],
+            'correct_train_input': [False, False]  # Both incorrect
         }
 
         task_data = {
             'train': [
-                {'output': np.array([[1, 2], [3, 4]])},  # Numpy array in expected
-                {'output': [[5, 6], [7, 8]]}  # Regular list in expected
+                {'output': np.array([[1, 2], [3, 5]])},  # Expected for first example
+                {'output': np.array([[1, 2], [3, 4]])}   # Expected for second example
             ]
         }
 
-        # This should not raise "truth value of an array" error
-        result = _count_correct_size_outputs(program_data, task_data)
-        assert isinstance(result, int)
-        assert result == 2  # Both outputs have correct sizes
+        bonus = _calculate_pixel_match_bonus(program_data, task_data)
+        # First example: 75% pixel match / 2 train examples = 0.375
+        # Second example: 0% pixel match / 2 train examples = 0.0
+        # Total bonus = 0.375 + 0.0 = 0.375 (before 0.1 scaling in REX)
+        assert abs(bonus - 0.375) < 0.001
 
-        # Test with size mismatches
-        program_data_mismatch = {
+        # Test with correct examples (should be ignored)
+        program_data_mixed = {
             'predicted_train_output': [
-                np.array([[1, 2, 3], [4, 5, 6]]),  # Different size (2x3 vs 2x2)
-                [[5, 6], [7, 8]]  # Correct size
-            ]
+                np.array([[1, 2], [3, 4]]),  # This would be 75% but is correct
+                np.array([[0, 0], [0, 0]])   # This is 0% and incorrect
+            ],
+            'correct_train_input': [True, False]  # First correct, second incorrect
         }
 
-        result_mismatch = _count_correct_size_outputs(program_data_mismatch, task_data)
-        assert isinstance(result_mismatch, int)
-        assert result_mismatch == 1  # Only one output has correct size
-
-        # Test with None values
-        program_data_none = {
-            'predicted_train_output': [
-                None,  # None value
-                [[5, 6], [7, 8]]  # Correct size
-            ]
-        }
-
-        result_none = _count_correct_size_outputs(program_data_none, task_data)
-        assert isinstance(result_none, int)
-        assert result_none == 1  # Only one valid output
-
-        # Test with empty arrays
-        program_data_empty = {
-            'predicted_train_output': [
-                np.array([]),  # Empty numpy array
-                [[5, 6], [7, 8]]  # Correct size
-            ]
-        }
-
-        result_empty = _count_correct_size_outputs(program_data_empty, task_data)
-        assert isinstance(result_empty, int)
-
-        # Test with no task data
-        result_no_task = _count_correct_size_outputs(program_data, None)
-        assert isinstance(result_no_task, int)
-        assert result_no_task >= 0  # Should count well-formed outputs
-
-        # Test with nested numpy arrays
-        program_data_nested = {
-            'predicted_train_output': np.array([
-                np.array([[1, 2], [3, 4]]),
-                np.array([[5, 6], [7, 8]])
-            ])
-        }
-
-        result_nested = _count_correct_size_outputs(program_data_nested, task_data)
-        assert isinstance(result_nested, int)
-        assert result_nested >= 0
+        bonus_mixed = _calculate_pixel_match_bonus(program_data_mixed, task_data)
+        # Only second example counts: 0% pixel match / 2 train examples = 0.0
+        assert bonus_mixed == 0.0
