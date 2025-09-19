@@ -20,6 +20,7 @@ Ideas:
 So obvious submisison bugs to fix/investigate:
 1. Why does transductive status change on some tasks.
 2. ⁠Update the task runner to accept a file name slug
+3. Could max_tokens be causing an issue? If there are some very long tasks - what happens then? Just failed API call?
 
 Lewis Reminders:
 - Right now we limit programs if they generate larger than 30x30. This may be somewhat limiting. Soar limits to 50x50.
@@ -41,6 +42,13 @@ Commercial:
 
 ---
 ## September 19th 2025
+### Test the Qwen Reasoning Model
+Start a pod and run 4 attempts with Qwen/Qwen3-4B-Thinking-2507 on arc-prize-2025 evaluation, start pod and run tasks:
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 Qwen/Qwen3-4B-Thinking-2507 --max-attempts 4 --subset evaluation --max-workers 256
+```
+
+
 ### Use simple pixel match for refinement
 Test it out:
 ```bash

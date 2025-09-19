@@ -75,7 +75,7 @@ def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="
     print(f"   Reasoning effort: {reasoning_effort}")
     
     # Check if this is a Qwen model
-    is_qwen_model = 'qwen' in model_path.lower()
+    is_qwen_model = 'qwen' in model_path.lower() and 'thinking' not in model_path.lower()
     if is_qwen_model:
         print(f"   Qwen thinking: DISABLED (--qwen-no-think)")
     
@@ -287,9 +287,9 @@ This script will:
     
     # Auto-adjust max_tokens for GPT-OSS models if not explicitly set by user
     model_lower = args.model_path.lower()
-    if 'gpt-oss' in model_lower and ('20b' in model_lower or '120b' in model_lower):
+    if ('gpt-oss' in model_lower and ('20b' in model_lower or '120b' in model_lower)) or 'thinking' in model_lower:
         if args.max_tokens == 2000:  # Only if user didn't override the default
-            args.max_tokens = 32000
+            args.max_tokens = 12000
             print(f"🧠 Detected GPT-OSS model, auto-setting max_tokens to {args.max_tokens}")
     
     # Step 1: Create the pod
