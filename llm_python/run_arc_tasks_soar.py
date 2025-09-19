@@ -210,7 +210,7 @@ class ARCTaskRunnerSimple:
         
         # Timeout configuration
         api_timeout = 600  # 10 minutes per API request
-        self.inactivity_timeout = 600  # 10 minutes inactivity timeout for execution
+        self.inactivity_timeout = 1500  # 25 minutes inactivity timeout for execution
 
 
         # Warn about safety settings
