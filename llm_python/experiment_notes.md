@@ -42,6 +42,137 @@ Commercial:
 
 ---
 ## September 19th 2025
+### Qwen 4B-thinking Reasoning Fine-tuning
+4x sampling:
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-4B-Thinking-2507_ds-arc-agi-2-reasoning-5-c178
+Total tasks: 120
+Total time: 3590.8s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 8,164,108
+Total cost: $3.656056
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.8% (0.8% excl. trans)
+  Pass@2 (Train Majority):  0.8% (0.8% excl. trans)
+  Oracle (Best Attempt):    0.8% (0.8% excl. trans)
+  All Train Correct:        1.7% (1.7% excl. trans)
+  Min 1 Train Correct:      5.0% (5.0% excl. trans)
+  Min 1 Code Success:       98.3%
+  Max Length Responses:     6.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.6%
+  Execution Error Responses (of all attempts): 20.0%
+  No Program Responses (of all attempts): 6.2%
+✅ Checkpointed 325 programs to /workspace/arc-agi-2025/llm_python/datasets/inference/20250919_165958_Trelis_Qwen3-4B-Thinking-2507_ds-arc-agi-2-reasoning-5-c178_arc-prize-2025_evaluation.parquet
+
+4x refinement:
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-4B-Thinking-2507_ds-arc-agi-2-reasoning-5-c178
+Total tasks: 120
+Total time: 4083.4s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 9,269,437
+Total cost: $3.591371
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.8% (0.8% excl. trans)
+  Pass@2 (Train Majority):  0.8% (0.8% excl. trans)
+  Oracle (Best Attempt):    0.8% (0.8% excl. trans)
+  All Train Correct:        1.7% (1.7% excl. trans)
+  Min 1 Train Correct:      5.8% (5.8% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     4.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.4%
+  Execution Error Responses (of all attempts): 16.0%
+  No Program Responses (of all attempts): 15.0%
+✅ Checkpointed 312 programs to /workspace/arc-agi-2025/llm_python/datasets/inference/20250919_180002_Trelis_Qwen3-4B-Thinking-2507_ds-arc-agi-2-reasoning-5-c178_arc-prize-2025_evaluation.parquet
+
+Scoring:
+Dataset: arc-prize-2025
+Subset: evaluation
+Reference tasks: 120
+Tasks scored: 120
+Total predictions: 344
+
+📊 PREDICTION-LEVEL METRICS:
+  Pass@1 (first attempt): 2/344 (0.6%)
+  Pass@2 (either attempt): 2/344 (0.6%)
+
+📊 TASK-LEVEL METRICS:
+  Tasks Pass@1 (all outputs correct on first attempt): 1/120 (0.8%)
+  Tasks Pass@2 (all outputs correct on either attempt): 1/120 (0.8%)
+
+### Qwen 4B Reasoning Fine-tuning
+
+sampling 4x:
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-2-reasoning-5-c178
+Total tasks: 120
+Total time: 2661.5s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 6,922,871
+Total cost: $2.911746
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    0.0% (0.0% excl. trans)
+  All Train Correct:        0.0% (0.0% excl. trans)
+  Min 1 Train Correct:      4.2% (4.2% excl. trans)
+  Min 1 Code Success:       99.2%
+  Max Length Responses:     4.4%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.6%
+  Execution Error Responses (of all attempts): 17.5%
+  No Program Responses (of all attempts): 3.1%
+
+refinement 4x:
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-2-reasoning-5-c178
+Total tasks: 120
+Total time: 3182.4s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 8,476,404
+Total cost: $3.160113
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    0.0% (0.0% excl. trans)
+  All Train Correct:        0.0% (0.0% excl. trans)
+  Min 1 Train Correct:      2.5% (2.5% excl. trans)
+  Min 1 Code Success:       98.3%
+  Max Length Responses:     2.3%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.2%
+  Execution Error Responses (of all attempts): 20.6%
+  No Program Responses (of all attempts): 5.0%
+
+Scoring:
+Dataset: arc-prize-2025
+Subset: evaluation
+Reference tasks: 120
+Tasks scored: 120
+Total predictions: 344
+
+📊 PREDICTION-LEVEL METRICS:
+  Pass@1 (first attempt): 0/344 (0.0%)
+  Pass@2 (either attempt): 0/344 (0.0%)
+
+📊 TASK-LEVEL METRICS:
+  Tasks Pass@1 (all outputs correct on first attempt): 0/120 (0.0%)
+  Tasks Pass@2 (all outputs correct on either attempt): 0/120 (0.0%)
+
 ### Test the Qwen Reasoning Model
 Start a pod and run 4 attempts with Qwen/Qwen3-4B-Thinking-2507 on arc-prize-2025 evaluation, start pod and run tasks:
 ```bash
