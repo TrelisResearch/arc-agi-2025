@@ -42,6 +42,37 @@ Commercial:
 
 ---
 ## September 22nd 2025
+### Test the Eric method on a training hard example: 045e512c
+
+We'll run the gpt-5-mini model using this file to do refinement from - /Users/ronanmcgovern/TR/arc-agi-2025/task_045e512c_transferred_program.parquet, we'll run with openrouter using 2 attempts:
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training_hard_unique_5 --max_workers 32 --max_attempts 2 --model gpt-5-mini --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000 --reasoning-effort medium --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/task_045e512c_transferred_program.parquet --rex-stats --task-id 045e512c
+```
+Dataset: arc-prize-2025
+Subset: training_hard_unique_5
+Model: gpt-5-mini
+Total tasks: 1
+Total time: 170.7s
+Successful API calls: 1/1 (100.0%)
+Total tokens used: 49,341
+Total cost: $0.053627
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    0.0% (0.0% excl. trans)
+  All Train Correct:        0.0% (0.0% excl. trans)
+  Min 1 Train Correct:      0.0% (0.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 0.0%
+  No Program Responses (of all attempts): 0.0%
+✅ Checkpointed 2 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250922_153814_gpt-5-mini_arc-prize-2025_training_hard_unique_5.parquet
+
 ### Manually creating tasks for five unsolved training-hard tasks
 Plan:
 1. Identify 5 tasks. First 5 unique tasks: ['045e512c', '0607ce86', '09c534e7', '14754a24', '15113be4']
