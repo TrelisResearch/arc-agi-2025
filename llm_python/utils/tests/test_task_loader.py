@@ -63,7 +63,7 @@ class TestTaskLoader:
         for task_id in loader.tasks:
             assert task_id in loader.task_sources
             source = loader.task_sources[task_id]
-            assert source in ["arc-prize-2024", "arc-prize-2025"]
+            assert source in ["arc-prize-2024", "arc-prize-2025", "manual"]
 
     def test_conflict_resolution(self):
         """Test that canonical dataset preference resolves conflicts correctly"""
