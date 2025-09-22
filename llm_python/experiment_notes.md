@@ -253,11 +253,56 @@ Total cost: $0.198221
   No Program Responses (of all attempts): 0.0%
 ✅ Checkpointed 18 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250922_141115_gpt-5-mini_manual_training.parquet
 
-and view that last parquet:
-```bash
-uv run python -m llm_python.datasets.viewer /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250922_141115_gpt-5-mini_manual_training.parquet
+Scoring:
+```
+  - Tasks with predictions: 10/10
+  - Tasks with empty fallback: 0/10
+
+  However, most of the programs produced incorrect outputs. Here are the tasks that failed (8 out of 10):
+
+  Failed tasks (incorrect predictions):
+  1. 9dbiy9ly - 1 output, both attempts wrong
+  2. g4eujgzo - 1 output, both attempts wrong
+  3. s7rge3ka - 1 output, both attempts wrong
+  4. 54468uwx - 2 outputs, both attempts wrong on both outputs
+  5. 136euavv - 2 outputs, both attempts wrong on output 1 (output 0 was correct)
+  6. v9ybxgev - 1 output, both attempts wrong
+  7. acqa3svi - 2 outputs, both attempts wrong on both outputs
+  8. 6khsastk - 1 output, both attempts wrong
+
+  Successful tasks:
+  - 5lrmovc6 - All outputs correct
+  - wxpaa7nb - All outputs correct
+
+
+  ✅ 8/10 tasks DO have non-transductive programs with training errors:
+  - acqa3svi - 8 non-transductive programs with errors
+  - 136euavv - 8 non-transductive programs with errors
+  - 54468uwx - 4 non-transductive programs with errors
+  - 5lrmovc6 - 3 non-transductive programs with errors
+  - 6khsastk - 7 non-transductive programs with errors
+  - g4eujgzo - 2 non-transductive programs with errors
+  - 9dbiy9ly - 6 non-transductive programs with errors
+  - s7rge3ka - 3 non-transductive programs with errors
+
+  ❌ 2/10 tasks are MISSING this requirement:
+
+  1. v9ybxgev: Has 7 non-transductive programs, but ALL got perfect training accuracy (no training errors)
+  2. wxpaa7nb: Has only 1 non-transductive program (out of 9 total), and that single non-transductive program got perfect training
+  accuracy
 ```
 
+Conclusions:
+- Refinement does help to improve performance, perhaps by 2x, but noise is high.
+- There is soft evidence for ascii diffs helping.
+- Ultimately, the programs remain too hard for gpt-5-mini to solve, although it reaches 80% with min-1-train.
+
+Let's just run gpt-5-mini only on this task: v9ybxgev:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset manual --subset training --max_workers 32 --max_attempts 2 --model gpt-5-mini --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000 --reasoning-effort medium --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250922_141115_gpt-5-mini_manual_training.parquet --rex-stats --task-id s7rge3ka
+```
+
+I created a training set - training_hard_5_pretrain.parquet to train qwen on.
 
 ## September 19th 2025
 ### Qwen 4B-thinking Reasoning Fine-tuning
