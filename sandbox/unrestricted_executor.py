@@ -1,6 +1,6 @@
 from typing import Optional, Any, Tuple
 from .base_executor import BaseExecutor
-from .subprocess_executor import execute_code_in_subprocess
+from .forkserver_executor import execute_code
 
 
 class UnrestrictedExecutor(BaseExecutor):
@@ -39,4 +39,4 @@ class UnrestrictedExecutor(BaseExecutor):
         if not self._setup_done:
             self.setup()
             
-        return execute_code_in_subprocess(code, timeout)
+        return execute_code(code, timeout)
