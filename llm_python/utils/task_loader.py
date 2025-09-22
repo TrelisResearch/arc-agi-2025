@@ -145,8 +145,8 @@ class TaskLoader:
                 self.task_sources[task_id] = source_dataset
 
     def _load_all_competition_data(self):
-        """Load all competition format data from arc-prize-2024 and arc-prize-2025"""
-        for dataset in ["arc-prize-2024", "arc-prize-2025"]:
+        """Load all competition format data from arc-prize-2024, arc-prize-2025, and manual"""
+        for dataset in ["arc-prize-2024", "arc-prize-2025", "manual"]:
             dataset_path = self.data_root / dataset
             if not dataset_path.exists():
                 continue
