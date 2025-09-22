@@ -93,7 +93,7 @@ def _generate_ascii_diff(expected: List[List[int]], predicted: List[List[int]]) 
         predicted: Predicted output grid
 
     Returns:
-        ASCII diff string showing differences
+        ASCII diff string showing differences or size mismatch info
     """
     # Handle numpy arrays
     if hasattr(expected, 'tolist'):
@@ -101,67 +101,52 @@ def _generate_ascii_diff(expected: List[List[int]], predicted: List[List[int]]) 
     if hasattr(predicted, 'tolist'):
         predicted = predicted.tolist()
 
-    # Ensure both grids have the same dimensions for comparison
+    # Check if grids are empty
     if not expected or not predicted:
         return "Cannot generate diff: one or both grids are empty"
 
-    max_height = max(len(expected), len(predicted))
-    max_width = max(len(row) for row in expected + predicted) if expected + predicted else 0
+    # Check grid dimensions
+    expected_height = len(expected)
+    predicted_height = len(predicted)
+    expected_width = len(expected[0])
+    predicted_width = len(predicted[0])
 
-    # Pad grids to same size for comparison
-    def pad_grid(grid, height, width):
-        padded = []
-        for i in range(height):
-            if i < len(grid):
-                row = grid[i][:width] + [-1] * max(0, width - len(grid[i]))  # -1 for missing cells
-            else:
-                row = [-1] * width
-            padded.append(row)
-        return padded
+    # Only show diff if grids are the same size
+    if expected_height != predicted_height or expected_width != predicted_width:
+        return (f"Size mismatch: predicted grid is {predicted_height}x{predicted_width}, "
+                f"expected grid is {expected_height}x{expected_width}")
 
-    expected_padded = pad_grid(expected, max_height, max_width)
-    predicted_padded = pad_grid(predicted, max_height, max_width)
-
-    # Generate diff notation
+    # Generate diff notation for same-size grids
     diff_lines = []
     diff_lines.append("Difference notation (actual→expected):")
 
-    # Create header with column indices
-    if max_width <= 10:
-        header = "   |" + "".join(f" {i}" for i in range(max_width)) + " |"
-        diff_lines.append(header)
-        diff_lines.append("   +" + "-" * (max_width * 2 + 1) + "+")
-
-    # Show row-by-row differences
-    for i in range(max_height):
-        row_diff = []
-        has_differences = False
-
-        for j in range(max_width):
-            expected_val = expected_padded[i][j] if expected_padded[i][j] != -1 else "·"
-            predicted_val = predicted_padded[i][j] if predicted_padded[i][j] != -1 else "·"
+    # Show grid with differences, calculating max width for alignment
+    all_cells = []
+    for i in range(expected_height):
+        row_cells = []
+        for j in range(expected_width):
+            expected_val = expected[i][j]
+            predicted_val = predicted[i][j]
 
             if expected_val != predicted_val:
-                if max_width <= 10:
-                    row_diff.append(f"{predicted_val}→{expected_val}")
-                else:
-                    row_diff.append(f"{predicted_val}→{expected_val}")
-                has_differences = True
+                cell = f"{predicted_val}→{expected_val}"
             else:
-                if max_width <= 10:
-                    row_diff.append(f" {expected_val}")
-                else:
-                    row_diff.append(f"{expected_val}")
+                cell = f"{expected_val}"
+            row_cells.append(cell)
+        all_cells.append(row_cells)
 
-        if has_differences or max_width <= 10:  # Always show if small grid, otherwise only show rows with differences
-            if max_width <= 10:
-                row_str = f" {i} |" + " ".join(row_diff) + " |"
-            else:
-                row_str = f"Row {i}: " + " ".join(row_diff)
-            diff_lines.append(row_str)
+    # Calculate max width for each column
+    max_widths = []
+    for j in range(expected_width):
+        max_width = max(len(all_cells[i][j]) for i in range(expected_height))
+        max_widths.append(max_width)
 
-    if max_width <= 10:
-        diff_lines.append("   +" + "-" * (max_width * 2 + 1) + "+")
+    # Format rows with proper alignment
+    for row_cells in all_cells:
+        aligned_cells = []
+        for j, cell in enumerate(row_cells):
+            aligned_cells.append(cell.ljust(max_widths[j]))
+        diff_lines.append(" ".join(aligned_cells))
 
     return "\n".join(diff_lines)
 
@@ -171,8 +156,6 @@ def create_arc_prompt(
     task_data: Dict,
     prompt_loader,
     prompt_version: str = "soar",
-    splitter: bool = False,
-    single: bool = False,
     draft_program: Optional[str] = None,
     predicted_outputs: Optional[Dict] = None,
     correct_train_input: Optional[List[bool]] = None,
@@ -184,8 +167,6 @@ def create_arc_prompt(
         task_data: Dictionary containing 'train' and 'test' examples
         prompt_loader: PromptLoader instance for getting system message and prompt template
         prompt_version: Version of prompts to use (default: "soar")
-        splitter: Whether to randomly select and shuffle a subset of training examples
-        single: Whether to use only a single randomly selected training example
         draft_program: Existing program code to be refined (enables refinement mode)
         predicted_outputs: Dict containing 'train' predicted outputs from draft program
         correct_train_input: Optional list of boolean flags indicating correctness for each training example
@@ -199,43 +180,9 @@ def create_arc_prompt(
     # Format the task data
     task_content = ""
 
-    # Get training examples with indices to track selection
-    train_examples_with_indices = [(i, example) for i, example in enumerate(task_data["train"])]
-
-    # Apply splitter logic if enabled
-    if splitter and len(train_examples_with_indices) > 1:
-        # Select a random number of examples (between 1 and total available)
-        num_to_select = random.randint(1, len(train_examples_with_indices))
-        # Randomly select and shuffle the examples
-        train_examples_with_indices = random.sample(train_examples_with_indices, num_to_select)
-
-    # Apply single mode logic if enabled (overrides splitter)
-    if single and len(train_examples_with_indices) > 0:
-        # In refinement mode, prefer selecting from incorrect examples
-        if refinement_mode and correct_train_input is not None:
-            # Filter to only incorrect examples
-            incorrect_examples_with_indices = [
-                (idx, example) for idx, example in train_examples_with_indices
-                if idx < len(correct_train_input) and not correct_train_input[idx]
-            ]
-
-            if incorrect_examples_with_indices:
-                # Select randomly from incorrect examples
-                train_examples_with_indices = random.sample(incorrect_examples_with_indices, 1)
-            else:
-                # Fallback: select from all examples if no incorrect ones found
-                train_examples_with_indices = random.sample(train_examples_with_indices, 1)
-        else:
-            # Normal mode: select randomly from all examples
-            train_examples_with_indices = random.sample(train_examples_with_indices, 1)
-
-    # Extract the selected indices and examples
-    selected_indices = [idx for idx, _ in train_examples_with_indices]
-    train_examples = [example for _, example in train_examples_with_indices]
-
-    # If no filtering was applied, selected_indices should be all indices
-    if not splitter and not single:
-        selected_indices = list(range(len(train_examples)))
+    # Use all training examples
+    train_examples = task_data["train"]
+    selected_indices = list(range(len(train_examples)))
 
     # Add training examples
     for i, example in enumerate(train_examples, 1):
