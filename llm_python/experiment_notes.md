@@ -41,6 +41,47 @@ Commercial:
 - Reach back out to openrouter on sponsorship again.
 
 ---
+## September 22nd 2025
+### Manually creating tasks for five unsolved training-hard tasks
+Plan:
+1. Identify 5 tasks. First 5 unique tasks: ['045e512c', '0607ce86', '09c534e7', '14754a24', '15113be4']
+2. Test out our model performance on those tasks (our qwen 4b model).
+3. Create easier task versions.
+4. Train our model on data from those tasks.
+5. Try to solve the tasks again.
+
+2. Test out our model performance on those tasks (our qwen 4b model).
+Ok, we'll start a pod and run inference on the trainin_hard_unique_5 subsplit for 64 attempts - Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806:
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806" --max-attempts 64 --max-workers 64 --subset training_hard_unique_5
+```
+Dataset: arc-prize-2025
+Subset: training_hard_unique_5
+Model: Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806
+Total tasks: 5
+Total time: 44.4s
+Successful API calls: 5/5 (100.0%)
+Total tokens used: 2,447,698
+Total cost: $0.417246
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    0.0% (0.0% excl. trans)
+  All Train Correct:        0.0% (0.0% excl. trans)
+  Min 1 Train Correct:      0.0% (0.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 14.4%
+  No Program Responses (of all attempts): 0.0%
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250922_103317_Trelis_Qwen3-4B_ds-arc-agi-2-partial-100-c2806_arc-prize-2025_training_hard_unique_5.parquet
+
+3. Preparing data to train on.
+
+
 ## September 19th 2025
 ### Qwen 4B-thinking Reasoning Fine-tuning
 4x sampling:
