@@ -57,7 +57,7 @@ def validate_soar_row(row: dict) -> ValidateRowResult:
     for field in ["correct_train_input", "correct_test_input"]:
         if field in row:
             if not isinstance(row[field], list):
-                errors.append(f"{field} must be a list")
+                errors.append(f"{field} must be a list, got {type(row[field])}")
             elif not all(isinstance(x, bool) for x in row[field]):
                 errors.append(f"{field} must be a list of booleans")
             elif len(row[field]) == 0:
@@ -65,7 +65,7 @@ def validate_soar_row(row: dict) -> ValidateRowResult:
     for field in ["predicted_train_output", "predicted_test_output"]:
         if field in row:
             if not isinstance(row[field], list):
-                errors.append(f"{field} must be a list")
+                errors.append(f"{field} must be a list, got {type(row[field])}")
             elif len(row[field]) == 0:
                 errors.append(f"{field} is an empty list")
             else:
@@ -79,7 +79,7 @@ def validate_soar_row(row: dict) -> ValidateRowResult:
         and row["reasoning"] is not None
         and not isinstance(row["reasoning"], str)
     ):
-        errors.append("reasoning must be a string if provided")
+        errors.append(f"reasoning must be a string if provided, was type {type(row['reasoning'])}")
     if "is_transductive" in row and not isinstance(row["is_transductive"], bool):
         errors.append("is_transductive must be a boolean")
     return ValidateRowResult(is_valid=not errors, errors=errors)
