@@ -42,6 +42,98 @@ Commercial:
 
 ---
 ## September 22nd 2025
+### Running our best model with refinement
+Conclusion: Our model (not trained on refinement) doesn't do any useful refinement.
+
+Ran submisison with 4 refinement steps and:
+```
+# Single model for both initial inference and refinement
+MODEL_HF = "Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806"  # For local/RunPod
+# MODEL_HF = "Trelis/Soar-qwen-14b-FP8-Dynamic"  # For local/RunPod
+# MODEL_KAGGLE = "gpt-oss-20b/transformers/default"  # Kaggle dataset name
+MODEL_KAGGLE = "arc-1-fake-ttt-blended-c802-dataset"  # Kaggle dataset name
+
+# ============================================================================
+# Inference Configuration
+# ============================================================================
+
+# Sampling attempts (initial inference)
+SAMPLING_ATTEMPTS = 64     # Number of attempts for sampling phase
+# Refinement attempts (second inference)
+REFINEMENT_ATTEMPTS = 64    # Number of attempts for refinement phase
+
+# Number of refinement phases
+R = 4  # Number of refinement phases
+REFINEMENT_ATTEMPTS_PER_PHASE = REFINEMENT_ATTEMPTS // R
+
+# Global workers setting
+MAX_WORKERS = 128            # Number of workers for all inference phases
+```
+
+Sampling:
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806
+Total tasks: 120
+Total time: 1461.9s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 46,805,178
+Total cost: $8.197657
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.8% (0.8% excl. trans)
+  Pass@2 (Train Majority):  0.8% (0.8% excl. trans)
+  Oracle (Best Attempt):    0.8% (0.8% excl. trans)
+  All Train Correct:        0.8% (0.8% excl. trans)
+  Min 1 Train Correct:      8.3% (6.7% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.1%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.3%
+  Execution Error Responses (of all attempts): 16.3%
+  No Program Responses (of all attempts): 0.1%
+✅ Checkpointed 6208 programs to /workspace/arc-agi-2025/llm_python/datasets/inference/20250922_143313_Trelis_Qwen3-4B_ds-arc-agi-2-partial-100-c2806_arc-prize-2025_evaluation.parquet
+
+Final 4th refinement:
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806
+Total tasks: 119
+Total time: 604.7s
+Successful API calls: 119/119 (100.0%)
+Total tokens used: 22,287,316
+Total cost: $3.627347
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    0.0% (0.0% excl. trans)
+  All Train Correct:        0.0% (0.0% excl. trans)
+  Min 1 Train Correct:      5.9% (5.9% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.2%
+  Execution Error Responses (of all attempts): 33.2%
+  No Program Responses (of all attempts): 0.0%
+
+Scoring:
+Dataset: arc-prize-2025
+Subset: evaluation
+Reference tasks: 120
+Tasks scored: 120
+Total predictions: 344
+
+📊 PREDICTION-LEVEL METRICS:
+  Pass@1 (first attempt): 1/344 (0.3%)
+  Pass@2 (either attempt): 1/344 (0.3%)
+
+📊 TASK-LEVEL METRICS:
+  Tasks Pass@1 (all outputs correct on first attempt): 1/120 (0.8%)
+  Tasks Pass@2 (all outputs correct on either attempt): 1/120 (0.8%)
+
 ### Test the Eric method on a training hard example: 045e512c
 
 We'll run the gpt-5-mini model using this file to do refinement from - /Users/ronanmcgovern/TR/arc-agi-2025/task_045e512c_transferred_program.parquet, we'll run with openrouter using 2 attempts:
