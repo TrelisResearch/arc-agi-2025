@@ -50,7 +50,113 @@ Plan:
 4. Train our model on data from those tasks.
 5. Try to solve the tasks again.
 
-2. Test out our model performance on those tasks (our qwen 4b model).
+#### Try to solve the tasks again.
+
+First see how good our base model is on the ten tasks:
+```bash
+uv run runpod/create_pod_and_run_tasks.py manual "Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806" --max-attempts 64 --max-workers 64 --subset training
+```
+Dataset: manual
+Subset: training
+Model: Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806
+Total tasks: 10
+Total time: 58.7s
+Successful API calls: 10/10 (100.0%)
+Total tokens used: 2,276,221
+Total cost: $0.434283
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 10.0% (10.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    20.0% (20.0% excl. trans)
+  All Train Correct:        20.0% (10.0% excl. trans)
+  Min 1 Train Correct:      80.0% (80.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 10.3%
+  No Program Responses (of all attempts): 0.0%
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250922_145254_Trelis_Qwen3-4B_ds-arc-agi-2-partial-100-c2806_manual_training.parquet
+
+and then run refinement on that parquet with the same model:
+```bash
+uv run runpod/create_pod_and_run_tasks.py manual "Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806" --max-attempts 64 --max-workers 64 --subset training --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250922_145254_Trelis_Qwen3-4B_ds-arc-agi-2-partial-100-c2806_manual_training.parquet --rex-stats
+```
+Dataset: manual
+Subset: training
+Model: Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806
+Total tasks: 10
+Total time: 87.9s
+Successful API calls: 10/10 (100.0%)
+Total tokens used: 4,134,877
+Total cost: $0.713876
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    20.0% (10.0% excl. trans)
+  All Train Correct:        20.0% (0.0% excl. trans)
+  Min 1 Train Correct:      80.0% (80.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.2%
+  Execution Error Responses (of all attempts): 29.1%
+  No Program Responses (of all attempts): 0.0%
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250922_150216_Trelis_Qwen3-4B_ds-arc-agi-2-partial-100-c2806_manual_training.parquet
+
+Then try the tuned model:
+```bash
+uv run runpod/create_pod_and_run_tasks.py manual "Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806_ds-datasets_rLoRA-32-c4" --max-attempts 64 --max-workers 64 --subset training
+```
+  Pass@2 (Weighted Voting): 10.0% (10.0% excl. trans)
+  Pass@2 (Train Majority):  20.0% (20.0% excl. trans)
+  Oracle (Best Attempt):    30.0% (30.0% excl. trans)
+  All Train Correct:        10.0% (10.0% excl. trans)
+  Min 1 Train Correct:      60.0% (60.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.2%
+  Execution Error Responses (of all attempts): 15.8%
+  No Program Responses (of all attempts): 0.0%
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250922_145507_Trelis_Qwen3-4B_ds-arc-agi-2-partial-100-c2806_ds-datasets_rLoRA-32-c4_manual_training.parquet
+
+
+
+and then try training-hard-unique-5:
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806_ds-datasets_rLoRA-32-c4" --max-attempts 64 --max-workers 64 --subset training_hard_unique_5
+```
+Dataset: arc-prize-2025
+Subset: training_hard_unique_5
+Model: Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806_ds-datasets_rLoRA-32-c4
+Total tasks: 5
+Total time: 52.5s
+Successful API calls: 5/5 (100.0%)
+Total tokens used: 2,470,792
+Total cost: $0.431102
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    0.0% (0.0% excl. trans)
+  All Train Correct:        0.0% (0.0% excl. trans)
+  Min 1 Train Correct:      0.0% (0.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 17.5%
+  No Program Responses (of all attempts): 0.0%
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250922_145720_Trelis_Qwen3-4B_ds-arc-agi-2-partial-100-c2806_ds-datasets_rLoRA-32-c4_arc-prize-2025_training_hard_unique_5.parquet
+
+#### 2. Test out our model performance on those tasks (our qwen 4b model).
 Ok, we'll start a pod and run inference on the trainin_hard_unique_5 subsplit for 64 attempts - Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806:
 ```bash
 uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806" --max-attempts 64 --max-workers 64 --subset training_hard_unique_5
