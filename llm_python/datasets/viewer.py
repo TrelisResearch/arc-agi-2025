@@ -241,6 +241,51 @@ def print_soar_dataset(
             )
             print()
 
+        # Show at most 3 test pairs
+        test_examples = task_data["test"][:3]
+
+        if test_examples:
+            print("TEST EXAMPLES:")
+            print("-" * 50)
+
+            # Collect inputs and outputs for horizontal display
+            test_inputs = [example["input"] for example in test_examples]
+            test_outputs = [example.get("output") for example in test_examples]
+
+            # Create labels with correctness indicators
+            test_input_labels = []
+            test_output_labels = []
+            for i in range(len(test_inputs)):
+                if i < len(correct_test):
+                    status = "✓" if correct_test[i] == 1 else "✗"
+                    test_input_labels.append(f"Test Input #{i + 1} {status}")
+                    test_output_labels.append(f"Test Output #{i + 1} {status}")
+                else:
+                    test_input_labels.append(f"Test Input #{i + 1}")
+                    test_output_labels.append(f"Test Output #{i + 1}")
+
+            # Print test inputs horizontally
+            print("TEST INPUTS:")
+            print(print_grids_horizontally(test_inputs, test_input_labels, use_colors))
+            print()
+
+            # Print test expected outputs horizontally (if available)
+            if any(output is not None for output in test_outputs):
+                print("TEST EXPECTED:")
+                # Replace None with empty grids for display
+                display_outputs = [output if output is not None else [[]] for output in test_outputs]
+                print(print_grids_horizontally(display_outputs, test_output_labels, use_colors))
+                print()
+
+            # Print test predicted outputs horizontally
+            print("TEST PREDICTED:")
+            print(
+                print_grids_horizontally(
+                    row["predicted_test_output"][:3], test_output_labels, use_colors
+                )
+            )
+            print()
+
         print("-" * 50)
         print("GENERATED CODE:")
         print("-" * 50)
