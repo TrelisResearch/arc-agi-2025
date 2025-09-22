@@ -84,6 +84,88 @@ def _get_grid_shape_string(grid: List[List[int]]) -> str:
     return f"{len(grid[0])} by {len(grid)}"
 
 
+def _generate_ascii_diff(expected: List[List[int]], predicted: List[List[int]]) -> str:
+    """
+    Generate ASCII diff between expected and predicted grids.
+
+    Args:
+        expected: Expected output grid
+        predicted: Predicted output grid
+
+    Returns:
+        ASCII diff string showing differences
+    """
+    # Handle numpy arrays
+    if hasattr(expected, 'tolist'):
+        expected = expected.tolist()
+    if hasattr(predicted, 'tolist'):
+        predicted = predicted.tolist()
+
+    # Ensure both grids have the same dimensions for comparison
+    if not expected or not predicted:
+        return "Cannot generate diff: one or both grids are empty"
+
+    max_height = max(len(expected), len(predicted))
+    max_width = max(len(row) for row in expected + predicted) if expected + predicted else 0
+
+    # Pad grids to same size for comparison
+    def pad_grid(grid, height, width):
+        padded = []
+        for i in range(height):
+            if i < len(grid):
+                row = grid[i][:width] + [-1] * max(0, width - len(grid[i]))  # -1 for missing cells
+            else:
+                row = [-1] * width
+            padded.append(row)
+        return padded
+
+    expected_padded = pad_grid(expected, max_height, max_width)
+    predicted_padded = pad_grid(predicted, max_height, max_width)
+
+    # Generate diff notation
+    diff_lines = []
+    diff_lines.append("Difference notation (actual→expected):")
+
+    # Create header with column indices
+    if max_width <= 10:
+        header = "   |" + "".join(f" {i}" for i in range(max_width)) + " |"
+        diff_lines.append(header)
+        diff_lines.append("   +" + "-" * (max_width * 2 + 1) + "+")
+
+    # Show row-by-row differences
+    for i in range(max_height):
+        row_diff = []
+        has_differences = False
+
+        for j in range(max_width):
+            expected_val = expected_padded[i][j] if expected_padded[i][j] != -1 else "·"
+            predicted_val = predicted_padded[i][j] if predicted_padded[i][j] != -1 else "·"
+
+            if expected_val != predicted_val:
+                if max_width <= 10:
+                    row_diff.append(f"{predicted_val}→{expected_val}")
+                else:
+                    row_diff.append(f"{predicted_val}→{expected_val}")
+                has_differences = True
+            else:
+                if max_width <= 10:
+                    row_diff.append(f" {expected_val}")
+                else:
+                    row_diff.append(f"{expected_val}")
+
+        if has_differences or max_width <= 10:  # Always show if small grid, otherwise only show rows with differences
+            if max_width <= 10:
+                row_str = f" {i} |" + " ".join(row_diff) + " |"
+            else:
+                row_str = f"Row {i}: " + " ".join(row_diff)
+            diff_lines.append(row_str)
+
+    if max_width <= 10:
+        diff_lines.append("   +" + "-" * (max_width * 2 + 1) + "+")
+
+    return "\n".join(diff_lines)
+
+
 
 def create_arc_prompt(
     task_data: Dict,
@@ -277,6 +359,12 @@ def generate_refinement_task_content(task_data: Dict, draft_program: Optional[st
 
                 formatted_grid, shape_string = _format_predicted_output_for_display(predicted_output)
                 content += f"The execution gave the following results ({shape_string}):\n{formatted_grid}\n"
+
+                # Add ASCII diff for incorrect outputs
+                if not is_correct:
+                    expected_output = train_examples[display_idx - 1]["output"]
+                    diff_text = _generate_ascii_diff(expected_output, predicted_output)
+                    content += f"\n{diff_text}\n"
 
     # Add test output display if requested (before summary message)
     if show_output_test and predicted_outputs and "test" in predicted_outputs:
