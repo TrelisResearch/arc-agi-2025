@@ -83,8 +83,6 @@ def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="
     print(f"   Executor: UNSAFE (runs directly, no sandboxing)")
     if no_transductive_penalty:
         print(f"   Transductive penalty: DISABLED")
-    if splitter:
-        print(f"   Training data splitter: ENABLED (randomly selecting & shuffling training examples)")
     if refinement_ds:
         print(f"   Refinement mode: ENABLED (using programs from {refinement_ds})")
     if early_stop_threshold:
