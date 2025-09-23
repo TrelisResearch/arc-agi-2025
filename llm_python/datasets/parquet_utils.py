@@ -86,22 +86,82 @@ def load_programs_for_finetuning(parquet_path: Union[str, Path],
             print(f"🔍 After transductive filter: {current_count} programs (removed {initial_count - current_count} transductive)")
 
         if filter_low_quality:
-            # Apply additional quality filters using the program_filters module
-            # For fine-tuning, we can only apply filters that don't require task_data
-            # since we might not have access to the full task loader context
+            # Apply additional quality filters using the existing program_filters infrastructure
+            # Load task data for comprehensive filtering including pass-through detection
 
-            # Convert dataframe to list of dictionaries for filtering
-            programs_list = [row.to_dict() for _, row in df.iterrows()]
+            task_loader = None
+            try:
+                from llm_python.utils.task_loader import get_task_loader
+                task_loader = get_task_loader()
+                print("✅ Task loader available - comprehensive filtering enabled")
+            except Exception as e:
+                print(f"⚠️ Could not load task data: {e} - pass-through filtering will be disabled")
 
-            # Filter with detailed statistics
-            filtered_programs, filter_stats = filter_programs_with_stats(programs_list, task_data=None)
+            # Apply filtering with detailed statistics tracking
+            programs_list = []
+            stats = {
+                'total': len(df),
+                'transductive': 0,
+                'perfect': 0,
+                'pass_through': 0,
+                'single_color_with_multi_color_truth': 0,
+                'kept': 0
+            }
+
+            for _, row in df.iterrows():
+                program_dict = row.to_dict()
+
+                # Get task data for this specific program
+                task_data = None
+                if task_loader and 'task_id' in program_dict:
+                    try:
+                        task_data = task_loader.get_task(program_dict['task_id'])
+                    except Exception:
+                        pass  # Task not found, continue without task_data
+
+                # Categorize the filtering reason
+                from llm_python.utils.program_filters import (
+                    should_filter_program,
+                    is_pass_through_program,
+                    has_single_color_predictions_with_multi_color_truth
+                )
+
+                if should_filter_program(program_dict, task_data):
+                    # Determine the specific reason for filtering
+                    if program_dict.get('is_transductive', False):
+                        stats['transductive'] += 1
+                    else:
+                        # Check if perfect
+                        correct_data = program_dict.get('correct_train_input', [])
+                        if hasattr(correct_data, 'tolist'):
+                            correct_data = correct_data.tolist()
+                        if isinstance(correct_data, bool):
+                            correct_data = [correct_data]
+                        if isinstance(correct_data, list) and correct_data and all(correct_data):
+                            stats['perfect'] += 1
+                        elif task_data and is_pass_through_program(program_dict, task_data):
+                            stats['pass_through'] += 1
+                        elif task_data and has_single_color_predictions_with_multi_color_truth(program_dict, task_data):
+                            stats['single_color_with_multi_color_truth'] += 1
+                        else:
+                            stats['perfect'] += 1  # Default to perfect if no other reason found
+                else:
+                    programs_list.append(program_dict)
+                    stats['kept'] += 1
 
             # Print detailed filtering statistics
-            print_filter_statistics(filter_stats)
+            from llm_python.utils.program_filters import print_filter_statistics
+            print_filter_statistics(stats)
+
+            # Print specific counts for the new filter types
+            if stats['pass_through'] > 0:
+                print(f"🔄 Filtered out {stats['pass_through']} pass-through programs (predicted outputs == inputs)")
+            if stats['single_color_with_multi_color_truth'] > 0:
+                print(f"🎨 Filtered out {stats['single_color_with_multi_color_truth']} single-color predictions with multi-color ground truth")
 
             # Convert back to dataframe
-            if filtered_programs:
-                df = pd.DataFrame(filtered_programs)
+            if programs_list:
+                df = pd.DataFrame(programs_list)
             else:
                 df = pd.DataFrame()  # Empty dataframe if no programs left
 

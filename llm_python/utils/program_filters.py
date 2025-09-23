@@ -110,12 +110,18 @@ def is_pass_through_program(program_data: Dict[str, Any], task_data: Optional[Di
         return False  # Can't check without task data
 
     predicted_train_outputs = program_data.get('predicted_train_output', [])
-    if not predicted_train_outputs:
+
+    # Handle numpy arrays and empty checks properly
+    if predicted_train_outputs is None:
         return False
 
-    # Convert numpy arrays to lists
+    # Convert numpy arrays to lists first to avoid truth value ambiguity
     if hasattr(predicted_train_outputs, 'tolist'):
         predicted_train_outputs = predicted_train_outputs.tolist()
+
+    # Now check if empty
+    if not predicted_train_outputs:
+        return False
 
     train_inputs = [example.get('input', []) for example in task_data['train']]
 
@@ -155,12 +161,18 @@ def has_single_color_predictions_with_multi_color_truth(program_data: Dict[str, 
         return False  # Can't check without task data
 
     predicted_train_outputs = program_data.get('predicted_train_output', [])
-    if not predicted_train_outputs:
+
+    # Handle numpy arrays and empty checks properly
+    if predicted_train_outputs is None:
         return False
 
-    # Convert numpy arrays to lists
+    # Convert numpy arrays to lists first to avoid truth value ambiguity
     if hasattr(predicted_train_outputs, 'tolist'):
         predicted_train_outputs = predicted_train_outputs.tolist()
+
+    # Now check if empty
+    if not predicted_train_outputs:
+        return False
 
     ground_truth_outputs = [example.get('output', []) for example in task_data['train']]
 
