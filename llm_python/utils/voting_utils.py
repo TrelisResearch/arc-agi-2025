@@ -29,12 +29,20 @@ def deserialize_prediction_from_voting(key: str):
     """Convert JSON string key back to prediction for voting results"""
     if key == "None":
         return None
-    
+
     try:
         return json.loads(key)
-    except (json.JSONDecodeError, ValueError):
-        # If we can't deserialize, this was a string representation
-        return None  # Skip invalid entries
+    except (json.JSONDecodeError, ValueError) as e:
+        # If we can't deserialize, try to return the string representation
+        print(f"    Warning: Failed to deserialize key as JSON: {e}")
+        print(f"    Attempting to eval as Python literal...")
+        try:
+            import ast
+            return ast.literal_eval(key)
+        except (ValueError, SyntaxError) as e2:
+            print(f"    Failed to eval as Python literal: {e2}")
+            print(f"    Returning key as-is: {repr(key)}")
+            return key  # Return the string itself rather than None
 
 
 
@@ -42,47 +50,80 @@ def deserialize_prediction_from_voting(key: str):
 
 
 def generic_voting(
-    attempts: List[Dict], 
-    weighting_func: Callable[[Dict], float], 
+    attempts: List[Dict],
+    weighting_func: Callable[[Dict], float],
     top_k: int = 2
 ) -> List:
     """
     Generic voting function that can handle different weighting strategies.
-    
+
     Args:
         attempts: List of attempt dictionaries with 'test_predicted' and other fields
         weighting_func: Function that takes an attempt dict and returns a weight
         top_k: Number of top predictions to return
-    
+
     Returns:
         List of top k predictions
     """
     if not attempts:
         return []
-    
+
+    # print("\n" + "="*50)
+    # print("VOTING DEBUG - Starting new task")
+    # print("="*50)
+
     # Collect votes with weights
     pattern_stats = defaultdict(lambda: {'total_weight': 0.0, 'attempts': []})
-    
-    for att in attempts:
+
+    # Assign a stable index to each key as it is first seen
+    key_to_index = {}
+
+    # print(f"\nProcessing {len(attempts)} attempts:")
+    # print("-" * 30)
+
+    for i, att in enumerate(attempts):
         key = serialize_prediction_for_voting(att.get('test_predicted'))
+        if key not in key_to_index:
+            key_to_index[key] = len(key_to_index)
+
         weight = weighting_func(att)
         pattern_stats[key]['total_weight'] += weight
         pattern_stats[key]['attempts'].append(att)
-    
+
+        # Debug print for each attempt
+        train_acc = att.get('train_accuracy', 0.0)
+        transductive = att.get('is_transductive', False)
+        trans_conf = att.get('transduction_confidence', 'N/A')
+        print(f"Attempt {i+1}: Key #{key_to_index[key]} | Weight: {weight:.4f} | Train acc: {train_acc:.3f} | Transductive: {transductive} | Trans conf: {trans_conf}")
+
     # Sort by total weight (descending)
     weighted_patterns = sorted(
-        pattern_stats.items(), 
-        key=lambda x: x[1]['total_weight'], 
+        pattern_stats.items(),
+        key=lambda x: x[1]['total_weight'],
         reverse=True
     )
-    
+
+    # print(f"\nPattern/Key weights summary:")
+    # print("-" * 30)
+    # for key, stats in weighted_patterns:
+    #     print(f"Key #{key_to_index[key]} | Total Weight: {stats['total_weight']:.4f} | From {len(stats['attempts'])} attempts")
+
     # Return top k predictions
     top_k_predictions = []
-    for key, _ in weighted_patterns[:top_k]:
+    # print(f"\nDeserializing top {top_k} predictions:")
+    # print("-" * 30)
+    for i, (key, stats) in enumerate(weighted_patterns[:top_k]):
+        # print(f"Key #{key_to_index[key]}: '{key[:100]}{'...' if len(key) > 100 else ''}'")
         prediction = deserialize_prediction_from_voting(key)
-        if prediction is not None:  # Skip invalid entries
+        if prediction is not None:
             top_k_predictions.append(prediction)
-    
+            # print(f"  -> Successfully deserialized")
+        # else:
+            # print(f"  -> Failed to deserialize, skipping")
+
+    # print(f"\nReturning top {len(top_k_predictions)} predictions")
+    # print("="*50 + "\n")
+
     return top_k_predictions
 
 
