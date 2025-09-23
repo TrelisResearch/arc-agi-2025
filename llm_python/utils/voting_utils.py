@@ -95,7 +95,7 @@ def generic_voting(
         train_acc = att.get('train_accuracy', 0.0)
         transductive = att.get('is_transductive', False)
         trans_conf = att.get('transduction_confidence', 'N/A')
-        print(f"Attempt {i+1}: Key #{key_to_index[key]} | Weight: {weight:.4f} | Train acc: {train_acc:.3f} | Transductive: {transductive} | Trans conf: {trans_conf}")
+        # print(f"Attempt {i+1}: Key #{key_to_index[key]} | Weight: {weight:.4f} | Train acc: {train_acc:.3f} | Transductive: {transductive} | Trans conf: {trans_conf}")
 
     # Sort by total weight (descending)
     weighted_patterns = sorted(
