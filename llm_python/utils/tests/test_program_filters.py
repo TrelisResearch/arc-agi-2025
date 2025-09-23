@@ -3,9 +3,7 @@
 import pytest
 from llm_python.utils.program_filters import (
     has_multi_color_ground_truth,
-    is_single_color_grid,
     is_pass_through_program,
-    has_single_color_predictions_with_multi_color_truth,
     should_filter_program,
     filter_programs
 )
@@ -40,38 +38,6 @@ class TestHasMultiColorGroundTruth:
         import numpy as np
         grid = np.array([[1, 2], [3, 0]])
         assert has_multi_color_ground_truth(grid)
-
-
-class TestIsSingleColorGrid:
-    """Test the is_single_color_grid function"""
-
-    def test_single_color_grid(self):
-        """Test grid with only one color"""
-        grid = [[1, 1], [1, 1]]
-        assert is_single_color_grid(grid)
-
-    def test_multi_color_grid(self):
-        """Test grid with multiple colors"""
-        grid = [[1, 2], [1, 1]]
-        assert not is_single_color_grid(grid)
-
-    def test_all_black_grid(self):
-        """Test grid with only black/0 colors"""
-        grid = [[0, 0], [0, 0]]
-        assert is_single_color_grid(grid)
-
-    def test_empty_grid(self):
-        """Test empty or invalid grids"""
-        assert is_single_color_grid([])
-        assert is_single_color_grid(None)
-        assert is_single_color_grid("invalid")
-
-    def test_numpy_array_input(self):
-        """Test with numpy array input"""
-        import numpy as np
-        grid = np.array([[1, 1], [1, 1]])
-        assert is_single_color_grid(grid)
-
 
 class TestIsPassThroughProgram:
     """Test the is_pass_through_program function"""
@@ -122,59 +88,6 @@ class TestIsPassThroughProgram:
         task_data = {'train': [{'input': [[1, 2], [3, 4]]}]}
         assert not is_pass_through_program(program, task_data)
 
-
-class TestHasSingleColorPredictionsWithMultiColorTruth:
-    """Test the has_single_color_predictions_with_multi_color_truth function"""
-
-    def test_single_color_predictions_multi_color_truth(self):
-        """Test single-color predictions with multi-colored ground truth"""
-        program = {
-            'predicted_train_output': [
-                [[1, 1], [1, 1]],  # Single color
-                [[2, 2], [2, 2]]   # Single color
-            ]
-        }
-        task_data = {
-            'train': [
-                {'output': [[1, 2], [3, 4]]},  # Multi-color ground truth
-                {'output': [[5, 6], [7, 8]]}   # Multi-color ground truth
-            ]
-        }
-        assert has_single_color_predictions_with_multi_color_truth(program, task_data)
-
-    def test_single_color_predictions_single_color_truth(self):
-        """Test single-color predictions with single-colored ground truth"""
-        program = {
-            'predicted_train_output': [
-                [[1, 1], [1, 1]],  # Single color
-                [[2, 2], [2, 2]]   # Single color
-            ]
-        }
-        task_data = {
-            'train': [
-                {'output': [[1, 1], [1, 1]]},  # Single-color ground truth
-                {'output': [[2, 2], [2, 2]]}   # Single-color ground truth
-            ]
-        }
-        assert not has_single_color_predictions_with_multi_color_truth(program, task_data)
-
-    def test_multi_color_predictions(self):
-        """Test multi-color predictions (should not be filtered)"""
-        program = {
-            'predicted_train_output': [
-                [[1, 2], [3, 4]],  # Multi-color
-                [[5, 6], [7, 8]]   # Multi-color
-            ]
-        }
-        task_data = {
-            'train': [
-                {'output': [[1, 2], [3, 4]]},  # Multi-color ground truth
-                {'output': [[5, 6], [7, 8]]}   # Multi-color ground truth
-            ]
-        }
-        assert not has_single_color_predictions_with_multi_color_truth(program, task_data)
-
-
 class TestShouldFilterProgram:
     """Test the should_filter_program function"""
 
@@ -208,24 +121,6 @@ class TestShouldFilterProgram:
             'train': [
                 {'input': [[1, 2], [3, 4]], 'output': [[0, 1], [2, 3]]},
                 {'input': [[5, 6], [7, 8]], 'output': [[4, 5], [6, 7]]}
-            ]
-        }
-        assert should_filter_program(program, task_data)
-
-    def test_filter_single_color_predictions_with_multi_color_truth(self):
-        """Test that single-color predictions with multi-color truth are filtered"""
-        program = {
-            'is_transductive': False,
-            'correct_train_input': [False, False],
-            'predicted_train_output': [
-                [[1, 1], [1, 1]],  # Single color
-                [[2, 2], [2, 2]]   # Single color
-            ]
-        }
-        task_data = {
-            'train': [
-                {'input': [[0, 1], [2, 3]], 'output': [[1, 2], [3, 4]]},  # Multi-color ground truth
-                {'input': [[0, 0], [0, 0]], 'output': [[5, 6], [7, 8]]}   # Multi-color ground truth
             ]
         }
         assert should_filter_program(program, task_data)

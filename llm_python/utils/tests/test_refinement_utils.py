@@ -297,49 +297,7 @@ class TestIsProgramValidForRefinement:
 
         # Should be included because at least one predicted output != input
         assert is_program_valid_for_refinement(program, task_data)
-
-    def test_exclude_single_color_predictions_with_multi_color_truth(self):
-        """Test excluding single-color predictions when ground truth is multi-colored"""
-        program = {
-            'is_transductive': False,
-            'correct_train_input': [False, False],
-            'predicted_train_output': [
-                [[1, 1], [1, 1]],  # Single color (1)
-                [[2, 2], [2, 2]]   # Single color (2)
-            ]
-        }
-
-        task_data = {
-            'train': [
-                {'input': [[0, 1], [2, 3]], 'output': [[1, 2], [3, 4]]},  # Multi-color ground truth
-                {'input': [[0, 0], [0, 0]], 'output': [[5, 6], [7, 8]]}   # Multi-color ground truth
-            ]
-        }
-
-        # Should be excluded because predictions are single-color but ground truth is multi-colored
-        assert not is_program_valid_for_refinement(program, task_data)
-
-    def test_include_single_color_predictions_with_single_color_truth(self):
-        """Test including single-color predictions when ground truth is also single-colored"""
-        program = {
-            'is_transductive': False,
-            'correct_train_input': [False, False],
-            'predicted_train_output': [
-                [[1, 1], [1, 1]],  # Single color (1)
-                [[2, 2], [2, 2]]   # Single color (2)
-            ]
-        }
-
-        task_data = {
-            'train': [
-                {'input': [[0, 1], [2, 3]], 'output': [[1, 1], [1, 1]]},  # Single-color ground truth
-                {'input': [[0, 0], [0, 0]], 'output': [[2, 2], [2, 2]]}   # Single-color ground truth
-            ]
-        }
-
-        # Should be included because ground truth is also single-colored
-        assert is_program_valid_for_refinement(program, task_data)
-
+        
     def test_include_multi_color_predictions_with_multi_color_truth(self):
         """Test including multi-color predictions regardless of ground truth"""
         program = {

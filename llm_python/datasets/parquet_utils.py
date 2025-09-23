@@ -103,7 +103,6 @@ def load_programs_for_finetuning(parquet_path: Union[str, Path],
                 'transductive': 0,
                 'perfect': 0,
                 'pass_through': 0,
-                'single_color_with_multi_color_truth': 0,
                 'kept': 0
             }
 
@@ -127,7 +126,6 @@ def load_programs_for_finetuning(parquet_path: Union[str, Path],
                 from llm_python.utils.program_filters import (
                     should_filter_program,
                     is_pass_through_program,
-                    has_single_color_predictions_with_multi_color_truth
                 )
 
                 if should_filter_program(program_dict, task_data):
@@ -146,8 +144,6 @@ def load_programs_for_finetuning(parquet_path: Union[str, Path],
                             stats['perfect'] += 1
                         elif task_data and is_pass_through_program(program_dict, task_data):
                             stats['pass_through'] += 1
-                        elif task_data and has_single_color_predictions_with_multi_color_truth(program_dict, task_data):
-                            stats['single_color_with_multi_color_truth'] += 1
                         else:
                             stats['perfect'] += 1  # Default to perfect if no other reason found
                 else:
@@ -161,8 +157,6 @@ def load_programs_for_finetuning(parquet_path: Union[str, Path],
             # Print specific counts for the new filter types
             if stats['pass_through'] > 0:
                 print(f"🔄 Filtered out {stats['pass_through']} pass-through programs (predicted outputs == inputs)")
-            if stats['single_color_with_multi_color_truth'] > 0:
-                print(f"🎨 Filtered out {stats['single_color_with_multi_color_truth']} single-color predictions with multi-color ground truth")
 
             # Convert back to dataframe
             if programs_list:
