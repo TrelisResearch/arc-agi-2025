@@ -329,11 +329,11 @@ def print_filter_statistics(stats: Dict[str, int]) -> None:
     kept = stats['kept']
     filtered = total - kept
 
-    print(f"\n📊 Program Filtering Statistics:")
+    print("\n📊 Program Filtering Statistics:")
     print(f"  Total programs: {total}")
     print(f"  Programs kept: {kept} ({kept/total*100:.1f}%)")
     print(f"  Programs filtered: {filtered} ({filtered/total*100:.1f}%)")
-    print(f"\n🔍 Breakdown of filtered programs:")
+    print("\n🔍 Breakdown of filtered programs:")
     print(f"  Transductive: {stats['transductive']} ({stats['transductive']/total*100:.1f}%)")
     print(f"  Perfect (100% correct): {stats['perfect']} ({stats['perfect']/total*100:.1f}%)")
     print(f"  Pass-through: {stats['pass_through']} ({stats['pass_through']/total*100:.1f}%)")

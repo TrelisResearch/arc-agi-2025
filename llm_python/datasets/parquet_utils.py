@@ -12,7 +12,6 @@ import pandas as pd
 from datasets import Dataset
 
 from llm_python.datasets.io import read_soar_parquet
-from llm_python.utils.program_filters import filter_programs_with_stats, print_filter_statistics
 
 
 def find_latest_parquet_file(parquet_path: Union[str, Path]) -> Path:
