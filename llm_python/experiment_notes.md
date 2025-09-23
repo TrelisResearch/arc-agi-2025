@@ -41,6 +41,41 @@ Commercial:
 - Reach back out to openrouter on sponsorship again.
 
 ---
+## September 23rd 2025
+### Manual Dataset Testing for Fine-tuning
+
+#### Gather programs data by running gpt-5-mini on the manual dataset
+We'll use openrouter. Try now sampling 8 times:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset manual --subset training --max_workers 32 --max_attempts 8 --model gpt-5-mini --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000 --reasoning-effort medium
+```
+Dataset: manual
+Subset: training
+Model: gpt-5-mini
+Total tasks: 10
+Total time: 272.5s
+Successful API calls: 10/10 (100.0%)
+Total tokens used: 606,659
+Total cost: $0.768606
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 20.0% (10.0% excl. trans)
+  Pass@2 (Train Majority):  10.0% (10.0% excl. trans)
+  Oracle (Best Attempt):    30.0% (20.0% excl. trans)
+  All Train Correct:        60.0% (60.0% excl. trans)
+  Min 1 Train Correct:      90.0% (90.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 15.0%
+  No Program Responses (of all attempts): 1.2%
+✅ Checkpointed 67 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250923_091328_gpt-5-mini_manual_training.parquet
+
+#### Determine the performance of our baseline model
+
+
 ## September 22nd 2025
 ### Running our best model with refinement
 Conclusion: Our model (not trained on refinement) doesn't do any useful refinement.
