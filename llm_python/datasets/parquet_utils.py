@@ -111,6 +111,11 @@ def load_programs_for_finetuning(parquet_path: Union[str, Path],
             for _, row in df.iterrows():
                 program_dict = row.to_dict()
 
+                # Convert any numpy arrays to lists to prevent truth value errors
+                for key, value in program_dict.items():
+                    if hasattr(value, 'tolist'):
+                        program_dict[key] = value.tolist()
+
                 # Get task data for this specific program
                 task_data = None
                 if task_loader and 'task_id' in program_dict:
@@ -137,7 +142,8 @@ def load_programs_for_finetuning(parquet_path: Union[str, Path],
                             correct_data = correct_data.tolist()
                         if isinstance(correct_data, bool):
                             correct_data = [correct_data]
-                        if isinstance(correct_data, list) and correct_data and all(correct_data):
+                        # Handle empty list case properly
+                        if isinstance(correct_data, list) and len(correct_data) > 0 and all(correct_data):
                             stats['perfect'] += 1
                         elif task_data and is_pass_through_program(program_dict, task_data):
                             stats['pass_through'] += 1

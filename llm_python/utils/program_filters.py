@@ -139,7 +139,12 @@ def is_pass_through_program(program_data: Dict[str, Any], task_data: Optional[Di
             input_grid = input_grid.tolist()
 
         # Check if predicted output differs from input
-        if predicted != input_grid:
+        try:
+            if predicted != input_grid:
+                all_pass_through = False
+                break
+        except Exception:
+            # If we can't compare (e.g., nested numpy arrays), assume they're different (not pass-through)
             all_pass_through = False
             break
 
@@ -213,12 +218,20 @@ def should_filter_program(program_data: Dict[str, Any], task_data: Optional[Dict
         return True
 
     # Filter pass-through programs
-    if is_pass_through_program(program_data, task_data):
-        return True
+    try:
+        if is_pass_through_program(program_data, task_data):
+            return True
+    except Exception as e:
+        print(f"❌ Error in is_pass_through_program: {e}")
+        raise e
 
     # Filter single-color predictions when ground truth is multi-colored
-    if has_single_color_predictions_with_multi_color_truth(program_data, task_data):
-        return True
+    try:
+        if has_single_color_predictions_with_multi_color_truth(program_data, task_data):
+            return True
+    except Exception as e:
+        print(f"❌ Error in has_single_color_predictions_with_multi_color_truth: {e}")
+        raise e
 
     # Filter perfect programs (100% correct on training)
     correct_data = program_data.get('correct_train_input', [])
@@ -230,7 +243,8 @@ def should_filter_program(program_data: Dict[str, Any], task_data: Optional[Dict
     if isinstance(correct_data, bool):
         correct_data = [correct_data]
 
-    if isinstance(correct_data, list) and correct_data and all(correct_data):
+    # Check for empty list to avoid issues with all() function
+    if isinstance(correct_data, list) and len(correct_data) > 0 and all(correct_data):
         return True  # Filter out 100% correct programs
 
     return False
