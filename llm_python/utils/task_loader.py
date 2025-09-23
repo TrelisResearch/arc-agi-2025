@@ -452,10 +452,17 @@ class TaskLoader:
                     # Filter programs for refinement using new strategy:
                     # 1. Exclude transductive programs
                     # 2. Exclude programs that solve ALL training examples (100% correct - nothing to improve)
-                    # 3. Include ALL other programs (0% correct might have useful partial logic)
+                    # 3. Exclude pass-through programs (predicted outputs == inputs)
+                    # 4. Exclude single-color predictions when ground truth is multi-colored
+                    # 5. Include ALL other programs (0% correct might have useful partial logic)
                     from llm_python.utils.refinement_utils import is_program_valid_for_refinement
 
-                    valid_df = df[df.apply(is_program_valid_for_refinement, axis=1)].copy()
+                    def is_valid_with_task_data(row):
+                        task_id = row['task_id']
+                        task_data = self.tasks.get(task_id)
+                        return is_program_valid_for_refinement(row.to_dict(), task_data)
+
+                    valid_df = df[df.apply(is_valid_with_task_data, axis=1)].copy()
 
                     if len(valid_df) == 0:
                         print(f"⚠️ No valid programs found for refinement in {identifier}")

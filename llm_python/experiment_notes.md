@@ -49,7 +49,29 @@ We'll use openrouter. Try now sampling 8 times:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset manual --subset training --max_workers 32 --max_attempts 8 --model gpt-5-mini --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000 --reasoning-effort medium
 ```
+Dataset: manual
+Subset: training
+Model: gpt-5-mini
+Total tasks: 10
+Total time: 245.8s
+Successful API calls: 10/10 (100.0%)
+Total tokens used: 604,966
+Total cost: $0.765222
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 20.0% (20.0% excl. trans)
+  Pass@2 (Train Majority):  30.0% (30.0% excl. trans)
+  Oracle (Best Attempt):    30.0% (30.0% excl. trans)
+  All Train Correct:        50.0% (50.0% excl. trans)
+  Min 1 Train Correct:      100.0% (100.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 22.5%
+  No Program Responses (of all attempts): 0.0%
+✅ Checkpointed 62 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250923_104154_gpt-5-mini_manual_training.parquet
 
 #### Determine the performance of our baseline model - Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806
 ```bash

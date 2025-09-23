@@ -8,6 +8,11 @@ import uuid
 from collections import defaultdict
 from typing import List, Dict, Any, Optional, Tuple, Literal
 
+from llm_python.utils.program_filters import (
+    _should_skip_pass_through_program,
+    _should_skip_single_color_prediction
+)
+
 # Hardcoded REx parameters - change these values here to adjust behavior
 REX_C = 20  # Beta distribution parameter
 REX_REFINEMENT_BONUS_WEIGHT = 0.5  # Weight for refinement success bonus
@@ -580,21 +585,32 @@ def select_best_program_for_refinement(
     return _uniform_sampling(programs, debug)
 
 
-def is_program_valid_for_refinement(program_data: Dict[str, Any]) -> bool:
+def is_program_valid_for_refinement(program_data: Dict[str, Any], task_data: Optional[Dict] = None) -> bool:
     """
-    Determine if a program is valid for refinement based on new strategy:
+    Determine if a program is valid for refinement based on filtering strategy:
     - Exclude transductive programs
     - Exclude programs that are 100% correct on training (nothing to improve)
+    - Exclude pass-through programs (predicted train outputs == predicted train inputs)
+    - Exclude programs with single-color predictions when ground truth is multi-colored
     - Include all other programs (0% correct might have useful partial logic)
 
     Args:
         program_data: Program data dictionary or pandas row
+        task_data: Optional task data for additional filtering checks
 
     Returns:
         True if program should be included for refinement
     """
     # Skip transductive programs
     if program_data.get('is_transductive', False):
+        return False
+
+    # Skip pass-through programs (predicted outputs == inputs)
+    if _should_skip_pass_through_program(program_data, task_data):
+        return False
+
+    # Skip programs with single-color predictions when ground truth is multi-colored
+    if _should_skip_single_color_prediction(program_data, task_data):
         return False
 
     correct_data = _extract_correctness_data(program_data)

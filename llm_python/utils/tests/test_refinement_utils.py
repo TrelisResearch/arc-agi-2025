@@ -245,16 +245,136 @@ class TestIsProgramValidForRefinement:
             'is_transductive': False
         }
         assert is_program_valid_for_refinement(program_missing)
-        
+
         # Empty dict
         program_empty = {}
         assert is_program_valid_for_refinement(program_empty)
-        
+
         # Only transductive field
         program_only_trans = {
             'is_transductive': True
         }
         assert not is_program_valid_for_refinement(program_only_trans)
+
+    def test_exclude_pass_through_programs(self):
+        """Test that pass-through programs are excluded"""
+        program = {
+            'is_transductive': False,
+            'correct_train_input': [False, False],
+            'predicted_train_output': [
+                [[1, 2], [3, 4]],
+                [[5, 6], [7, 8]]
+            ]
+        }
+
+        task_data = {
+            'train': [
+                {'input': [[1, 2], [3, 4]], 'output': [[0, 1], [2, 3]]},
+                {'input': [[5, 6], [7, 8]], 'output': [[4, 5], [6, 7]]}
+            ]
+        }
+
+        # Should be excluded because predicted outputs == inputs
+        assert not is_program_valid_for_refinement(program, task_data)
+
+    def test_include_non_pass_through_programs(self):
+        """Test that non-pass-through programs are included"""
+        program = {
+            'is_transductive': False,
+            'correct_train_input': [False, False],
+            'predicted_train_output': [
+                [[0, 1], [2, 3]],  # Different from input
+                [[5, 6], [7, 8]]   # Same as input
+            ]
+        }
+
+        task_data = {
+            'train': [
+                {'input': [[1, 2], [3, 4]], 'output': [[0, 1], [2, 3]]},
+                {'input': [[5, 6], [7, 8]], 'output': [[4, 5], [6, 7]]}
+            ]
+        }
+
+        # Should be included because at least one predicted output != input
+        assert is_program_valid_for_refinement(program, task_data)
+
+    def test_exclude_single_color_predictions_with_multi_color_truth(self):
+        """Test excluding single-color predictions when ground truth is multi-colored"""
+        program = {
+            'is_transductive': False,
+            'correct_train_input': [False, False],
+            'predicted_train_output': [
+                [[1, 1], [1, 1]],  # Single color (1)
+                [[2, 2], [2, 2]]   # Single color (2)
+            ]
+        }
+
+        task_data = {
+            'train': [
+                {'input': [[0, 1], [2, 3]], 'output': [[1, 2], [3, 4]]},  # Multi-color ground truth
+                {'input': [[0, 0], [0, 0]], 'output': [[5, 6], [7, 8]]}   # Multi-color ground truth
+            ]
+        }
+
+        # Should be excluded because predictions are single-color but ground truth is multi-colored
+        assert not is_program_valid_for_refinement(program, task_data)
+
+    def test_include_single_color_predictions_with_single_color_truth(self):
+        """Test including single-color predictions when ground truth is also single-colored"""
+        program = {
+            'is_transductive': False,
+            'correct_train_input': [False, False],
+            'predicted_train_output': [
+                [[1, 1], [1, 1]],  # Single color (1)
+                [[2, 2], [2, 2]]   # Single color (2)
+            ]
+        }
+
+        task_data = {
+            'train': [
+                {'input': [[0, 1], [2, 3]], 'output': [[1, 1], [1, 1]]},  # Single-color ground truth
+                {'input': [[0, 0], [0, 0]], 'output': [[2, 2], [2, 2]]}   # Single-color ground truth
+            ]
+        }
+
+        # Should be included because ground truth is also single-colored
+        assert is_program_valid_for_refinement(program, task_data)
+
+    def test_include_multi_color_predictions_with_multi_color_truth(self):
+        """Test including multi-color predictions regardless of ground truth"""
+        program = {
+            'is_transductive': False,
+            'correct_train_input': [False, False],
+            'predicted_train_output': [
+                [[1, 2], [3, 4]],  # Multi-color
+                [[5, 6], [7, 8]]   # Multi-color
+            ]
+        }
+
+        task_data = {
+            'train': [
+                {'input': [[0, 1], [2, 3]], 'output': [[1, 2], [3, 4]]},  # Multi-color ground truth
+                {'input': [[0, 0], [0, 0]], 'output': [[5, 6], [7, 8]]}   # Multi-color ground truth
+            ]
+        }
+
+        # Should be included because predictions are multi-colored
+        assert is_program_valid_for_refinement(program, task_data)
+
+    def test_filtering_without_task_data(self):
+        """Test that filtering works correctly when task_data is not provided"""
+        program = {
+            'is_transductive': False,
+            'correct_train_input': [False, False],
+            'predicted_train_output': [
+                [[1, 1], [1, 1]],  # Single color
+                [[2, 2], [2, 2]]   # Single color
+            ]
+        }
+
+        # Should be included because without task_data, we can't apply pass-through or single-color filtering
+        assert is_program_valid_for_refinement(program, None)
+        assert is_program_valid_for_refinement(program)
 
 
 class TestIntegrationScenarios:

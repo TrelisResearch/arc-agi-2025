@@ -12,6 +12,7 @@ import pandas as pd
 from datasets import Dataset
 
 from llm_python.datasets.io import read_soar_parquet
+from llm_python.utils.program_filters import filter_programs_with_stats, print_filter_statistics
 
 
 def find_latest_parquet_file(parquet_path: Union[str, Path]) -> Path:
@@ -45,17 +46,19 @@ def find_latest_parquet_file(parquet_path: Union[str, Path]) -> Path:
     raise FileNotFoundError(f"Invalid path - not a file or directory: {path}")
 
 
-def load_programs_for_finetuning(parquet_path: Union[str, Path], 
+def load_programs_for_finetuning(parquet_path: Union[str, Path],
                                 max_rows: Optional[int] = None,
-                                filter_transductive: Optional[bool] = True) -> Dataset:
+                                filter_transductive: Optional[bool] = True,
+                                filter_low_quality: Optional[bool] = True) -> Dataset:
     """
     Load program data from parquet file(s) for fine-tuning.
-    
+
     Args:
         parquet_path: Path to parquet file or directory containing parquet files
         max_rows: Maximum number of rows to load (None for all)
         filter_transductive: Whether to filter out transductive programs (None to include all)
-        
+        filter_low_quality: Whether to filter out low-quality programs (pass-through, single-color predictions, etc.)
+
     Returns:
         Dataset containing program data compatible with fine-tuning format
     """
@@ -72,15 +75,38 @@ def load_programs_for_finetuning(parquet_path: Union[str, Path],
         df = df.head(max_rows)
         print(f"📏 Limited to {max_rows} rows")
     
-    # Filter transductive programs if requested
-    if filter_transductive:
-        initial_count = len(df)
-        df = df[~df['is_transductive']].copy()
-        filtered_count = len(df)
-        print(f"🔍 Filtered to {filtered_count} non-transductive programs (removed {initial_count - filtered_count} transductive)")
-        
+    # Apply quality filters if requested
+    initial_count = len(df)
+    current_count = initial_count
+
+    if filter_transductive or filter_low_quality:
+        if filter_transductive:
+            df = df[~df['is_transductive']].copy()
+            current_count = len(df)
+            print(f"🔍 After transductive filter: {current_count} programs (removed {initial_count - current_count} transductive)")
+
+        if filter_low_quality:
+            # Apply additional quality filters using the program_filters module
+            # For fine-tuning, we can only apply filters that don't require task_data
+            # since we might not have access to the full task loader context
+
+            # Convert dataframe to list of dictionaries for filtering
+            programs_list = [row.to_dict() for _, row in df.iterrows()]
+
+            # Filter with detailed statistics
+            filtered_programs, filter_stats = filter_programs_with_stats(programs_list, task_data=None)
+
+            # Print detailed filtering statistics
+            print_filter_statistics(filter_stats)
+
+            # Convert back to dataframe
+            if filtered_programs:
+                df = pd.DataFrame(filtered_programs)
+            else:
+                df = pd.DataFrame()  # Empty dataframe if no programs left
+
         if len(df) == 0:
-            raise ValueError("No non-transductive programs found for fine-tuning")
+            raise ValueError("No valid programs found for fine-tuning after filtering")
     
     print(f"🔍 Selected {len(df)} programs for fine-tuning")
     
@@ -194,11 +220,17 @@ def validate_parquet_for_finetuning(parquet_path: Union[str, Path]) -> bool:
 def parquet_to_dataset(parquet_path: Union[str, Path], max_rows: Optional[int] = None) -> Dataset:
     """
     Simple interface to load parquet data as Dataset for fine-tuning.
-    
+
     This is the main function that the fine-tuning notebook should use
     as a drop-in replacement for the DuckDB function.
+
+    Automatically filters out:
+    - Transductive programs
+    - Perfect programs (100% correct on training)
+    - Pass-through programs (output == input)
+    - Single-color predictions when ground truth is multi-colored (when task data available)
     """
-    return load_programs_for_finetuning(parquet_path, max_rows, filter_transductive=True)
+    return load_programs_for_finetuning(parquet_path, max_rows, filter_transductive=True, filter_low_quality=True)
 
 
 if __name__ == "__main__":
