@@ -73,6 +73,8 @@ Total cost: $0.765222
   No Program Responses (of all attempts): 0.0%
 ✅ Checkpointed 62 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250923_104154_gpt-5-mini_manual_training.parquet
 
+There's quite a unique situation whereby the most frequent all-train-correct program has 4/8 counts, then there are two programs all-train correct with 2/8 counts - that are also test-correct - but they get penalised more by the transductive penalty such that those test outputs score lower on a weighted basis than another set of test outputs with 2/8 test counts, even though one of those programs has less than all correct.
+
 #### Determine the performance of our baseline model - Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806
 ```bash
 uv run runpod/create_pod_and_run_tasks.py manual "Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806" --max-attempts 64 --max-workers 64 --subset training

@@ -214,9 +214,10 @@ class SubmissionGenerator:
                 # Use weighted voting to get top 2 predictions
                 try:
                     top_predictions = compute_weighted_majority_voting(
-                        attempts, 
-                        top_k=2, 
-                        no_transductive_penalty=self.no_transductive_penalty
+                        attempts,
+                        top_k=2,
+                        no_transductive_penalty=self.no_transductive_penalty,
+                        task_id=task_id
                     )
                 except Exception as e:
                     print(f"⚠️ Weighted voting failed for task {task_id}: {e}")

@@ -52,7 +52,8 @@ def deserialize_prediction_from_voting(key: str):
 def generic_voting(
     attempts: List[Dict],
     weighting_func: Callable[[Dict], float],
-    top_k: int = 2
+    top_k: int = 2,
+    task_id: str = None
 ) -> List:
     """
     Generic voting function that can handle different weighting strategies.
@@ -69,7 +70,7 @@ def generic_voting(
         return []
 
     # print("\n" + "="*50)
-    # print("VOTING DEBUG - Starting new task")
+    # print(f"VOTING DEBUG - Starting task: {task_id or 'UNKNOWN'}")
     # print("="*50)
 
     # Collect votes with weights
@@ -127,7 +128,7 @@ def generic_voting(
     return top_k_predictions
 
 
-def compute_weighted_majority_voting(attempts: List[Dict], top_k: int = 2, no_transductive_penalty: bool = False) -> List:
+def compute_weighted_majority_voting(attempts: List[Dict], top_k: int = 2, no_transductive_penalty: bool = False, task_id: str = None) -> List:
     """Compute weighted majority voting based on count + 1000 * train_accuracy, with optional transductive confidence penalty"""
     # Filter out attempts with invalid outputs
     valid_attempts = [att for att in attempts if att.get('outputs_valid', True)]
@@ -148,7 +149,7 @@ def compute_weighted_majority_voting(attempts: List[Dict], top_k: int = 2, no_tr
         
         return base_weight
     
-    return generic_voting(valid_attempts, weight_func, top_k)
+    return generic_voting(valid_attempts, weight_func, top_k, task_id)
 
 
 def compute_train_majority_voting(attempts: List[Dict], top_k: int = 2) -> List:
