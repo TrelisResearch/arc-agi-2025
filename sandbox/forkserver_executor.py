@@ -1,5 +1,5 @@
 """
-High-performance, self-contained subprocess executor for Python code
+High-performance, thread-safe, self-contained subprocess executor for Python code
 using a fork-server architecture to minimize process startup overhead.
 """
 
@@ -9,12 +9,12 @@ import pickle
 import os
 import threading
 import time
-import atexit
 import multiprocessing
 import signal
 import queue
-from multiprocessing.connection import Connection
-from typing import Optional, Any, Tuple
+import uuid
+import atexit
+from typing import Optional, Any, Tuple, Dict
 
 from sandbox.subprocess_executor import ExecutionTimeout
 
@@ -27,13 +27,9 @@ try:
 except ImportError:
     psutil = None
 
-# --- Global state for the fork server process and communication ---
-_server_process: Optional[multiprocessing.Process] = None
-_main_to_server_conn: Optional[Connection] = None
-
 
 class ServerProcessError(Exception):
-    """Raised when the server process dies unexpectedly."""
+    """Raised when a server process dies unexpectedly or fails to start."""
     pass
 
 
@@ -49,13 +45,15 @@ def _monitor_worker(
 
     while True:
         try:
-            # Block until a monitoring task is available
             task = task_queue.get()
             if task is None: # Shutdown signal
                 break
 
             pid, memory_limit_bytes, stop_event = task
-            p = psutil.Process(pid)
+            try:
+                p = psutil.Process(pid)
+            except psutil.NoSuchProcess:
+                continue # Process already finished
 
             while p.is_running() and not stop_event.is_set():
                 try:
@@ -65,19 +63,16 @@ def _monitor_worker(
 
                     if rss > memory_limit_bytes:
                         result_container[pid] = {"oom_killed": True}
-                        # Kill the entire process group
                         for child_proc in p.children(recursive=True):
                             child_proc.kill()
                         p.kill()
-                        break # Stop monitoring this pid
+                        break
                 except psutil.NoSuchProcess:
-                    break # Process finished
+                    break
                 time.sleep(0.02)
         except (psutil.NoSuchProcess, ProcessLookupError):
-            # Process may have finished before monitoring even started
             continue
         except Exception:
-            # Don't let the monitor thread die
             continue
 
 
@@ -88,16 +83,13 @@ def _child_executor(code: str, write_pipe: int):
     """
     result_payload = None
     try:
-        # The user code is wrapped in a function to allow `return` statements.
         indented_code = "\n".join("    " + line for line in code.splitlines())
         full_code = f"def user_function():\n{indented_code}"
-
         exec_globals = {}
         exec(full_code, exec_globals)
         result = exec_globals['user_function']()
         result_payload = pickle.dumps((result, None))
     except Exception as e:
-        # Capture any exception from the user's code
         result_payload = pickle.dumps((None, e))
     finally:
         if result_payload:
@@ -114,19 +106,17 @@ def _handle_timeout_signal(signum, frame):
     raise subprocess.TimeoutExpired(cmd=None, timeout=0)
 
 
-def _fork_server_main_loop(conn: Connection):
+def _fork_server_main_loop(request_queue: multiprocessing.Queue, result_queue: multiprocessing.Queue):
     """
-    The main loop for the long-lived server process.
+    The main loop for a long-lived server process. It pulls tasks from a shared
+    queue and puts results back on another shared queue.
     """
+    # Modules like numpy and scipy are pre-loaded by the fork.
+    # Re-importing them here is not fork-safe and can lead to hangs.
 
-    # Preload these modules.
-    import numpy  # noqa: F401
-    import scipy  # noqa: F401
-
-    print(f"Fork server started with PID: {os.getpid()}", file=sys.stderr)
+    print(f"Fork server worker started with PID: {os.getpid()}", file=sys.stderr)
     signal.signal(signal.SIGALRM, _handle_timeout_signal)
 
-    # --- Start the single, long-lived monitor thread ---
     monitor_task_queue = queue.Queue()
     monitor_results = {}
     monitor_thread = threading.Thread(
@@ -138,43 +128,41 @@ def _fork_server_main_loop(conn: Connection):
 
     while True:
         try:
-            task = conn.recv()
+            task = request_queue.get()
             if task is None:
-                monitor_task_queue.put(None) # Signal monitor thread to shut down
+                monitor_task_queue.put(None)
                 break
 
-            code, timeout, memory_limit_mb = task
+            task_id, code, timeout, memory_limit_mb = task
             read_fd, write_fd = os.pipe()
             child_pid = os.fork()
 
             if child_pid == 0:
-                # --- CHILD PROCESS ---
                 os.close(read_fd)
-                conn.close()
+                request_queue.close()
+                result_queue.close()
                 _child_executor(code, write_fd)
             else:
-                # --- PARENT PROCESS (The Server) ---
                 os.close(write_fd)
                 result_payload = None
                 exception = None
                 stop_monitor_event = threading.Event()
 
                 try:
-                    # Submit task to the monitor thread
                     memory_limit_bytes = memory_limit_mb * 1024 * 1024
                     monitor_task_queue.put((child_pid, memory_limit_bytes, stop_monitor_event))
                     
-                    # Use setitimer for float-based timeouts
                     if timeout is not None and timeout > 0:
                         signal.setitimer(signal.ITIMER_REAL, timeout)
 
-                    os.waitpid(child_pid, 0) # Block efficiently
+                    os.waitpid(child_pid, 0)
 
                     child_result = monitor_results.pop(child_pid, {})
                     if child_result.get("oom_killed"):
                         exception = MemoryError(f"Process killed due to excessive memory usage (Limit: ~{memory_limit_mb}MB).")
                     else:
-                        result_payload = os.read(read_fd, 65536)
+                        # Limit read size to avoid blocking forever on large unexpected output
+                        result_payload = os.read(read_fd, 256 * 1024 * 1024) # 256MB limit
 
                 except subprocess.TimeoutExpired:
                     exception = ExecutionTimeout(timeout)
@@ -189,8 +177,8 @@ def _fork_server_main_loop(conn: Connection):
                 except Exception as e:
                     exception = e
                 finally:
-                    signal.setitimer(signal.ITIMER_REAL, 0) # Cancel alarm
-                    stop_monitor_event.set() # Signal monitor to stop
+                    signal.setitimer(signal.ITIMER_REAL, 0)
+                    stop_monitor_event.set()
                     os.close(read_fd)
                     try:
                         os.waitpid(child_pid, os.WNOHANG)
@@ -198,147 +186,214 @@ def _fork_server_main_loop(conn: Connection):
                         pass
                 
                 if result_payload:
-                    conn.send(pickle.loads(result_payload))
+                    result_queue.put((task_id, *pickle.loads(result_payload)))
                 else:
-                    conn.send((None, exception))
+                    result_queue.put((task_id, None, exception))
 
         except (EOFError, BrokenPipeError):
             break
         except Exception as e:
-            print(f"Fork server encountered a critical error: {e}", file=sys.stderr)
-            try:
-                conn.send((None, e))
-            except (EOFError, BrokenPipeError):
-                pass
+            print(f"Fork server worker encountered a critical error: {e}", file=sys.stderr)
             break
 
     monitor_thread.join(timeout=0.5)
-    print("Fork server shutting down.", file=sys.stderr)
+    print(f"Fork server worker {os.getpid()} shutting down.", file=sys.stderr)
 
 
-def _start_server():
-    """Starts the global fork server process if it's not already running."""
-    global _server_process, _main_to_server_conn
-    if _server_process is None or not _server_process.is_alive():
-        parent_conn, child_conn = multiprocessing.Pipe()
-        _server_process = multiprocessing.Process(
-            target=_fork_server_main_loop,
-            args=(child_conn,),
-            daemon=True
-        )
-        _server_process.start()
-        _main_to_server_conn = parent_conn
-        child_conn.close()
+class ForkServerExecutor:
+    """
+    A thread-safe executor that runs Python code in sandboxed processes using a
+    pool of persistent fork-server workers.
+    """
+    def __init__(self, max_workers: Optional[int] = None):
+        if max_workers is None:
+            max_workers = os.cpu_count() or 1
+        
+        ctx = multiprocessing.get_context('fork')
+        self._request_queue = ctx.Queue()
+        self._result_queue = ctx.Queue()
+        self._workers = []
+        for _ in range(max_workers):
+            worker_process = ctx.Process(
+                target=_fork_server_main_loop,
+                args=(self._request_queue, self._result_queue),
+                daemon=True
+            )
+            worker_process.start()
+            self._workers.append(worker_process)
+
+        self._pending_tasks: Dict[str, Tuple[Any, threading.Event]] = {}
+        self._pending_tasks_lock = threading.Lock()
+
+        self._result_thread = threading.Thread(target=self._result_collector, daemon=True)
+        self._result_thread.start()
+
+    def _result_collector(self):
+        """
+        A dedicated thread that collects results from the result queue and
+        notifies the corresponding waiting thread.
+        """
+        while True:
+            try:
+                task_id, result, exception = self._result_queue.get()
+                with self._pending_tasks_lock:
+                    if task_id in self._pending_tasks:
+                        result_holder, event = self._pending_tasks.pop(task_id)
+                        result_holder['result'] = result
+                        result_holder['exception'] = exception
+                        event.set()
+            except (EOFError, BrokenPipeError):
+                # This can happen during shutdown
+                break
+            except Exception as e:
+                print(f"Result collector thread encountered an error: {e}", file=sys.stderr)
 
 
-def _stop_server():
-    """Stops the global fork server process."""
-    global _server_process, _main_to_server_conn
-    if _server_process and _server_process.is_alive():
-        try:
-            _main_to_server_conn.send(None)
-            _main_to_server_conn.close()
-        except (BrokenPipeError, EOFError):
-            pass
-        _server_process.join(timeout=2)
-        if _server_process.is_alive():
-            _server_process.terminate()
-    _server_process = None
-    _main_to_server_conn = None
+    def execute(
+        self, code: str, timeout: Optional[float] = 5.0, memory_limit_mb: int = 256
+    ) -> Tuple[Any, Optional[Exception]]:
+        """
+        Executes Python code in a sandboxed environment. This method is thread-safe.
+        """
+        task_id = str(uuid.uuid4())
+        event = threading.Event()
+        result_holder: Dict[str, Any] = {}
+
+        with self._pending_tasks_lock:
+            self._pending_tasks[task_id] = (result_holder, event)
+
+        self._request_queue.put((task_id, code, timeout, memory_limit_mb))
+
+        # Wait for the result, with an additional grace period on the timeout
+        # to account for queueing and IPC delays.
+        total_wait_timeout = timeout + 10 if timeout is not None else None
+        event.wait(timeout=total_wait_timeout)
+
+        if not result_holder:
+            # The task was not processed and the event timed out
+            with self._pending_tasks_lock:
+                self._pending_tasks.pop(task_id, None) # Clean up
+            return None, ExecutionTimeout(timeout)
+
+        return result_holder.get('result'), result_holder.get('exception')
+
+    def shutdown(self):
+        """
+        Shuts down all worker processes and cleans up resources.
+        """
+        # Signal all workers to stop
+        for _ in self._workers:
+            try:
+                self._request_queue.put(None)
+            except (EOFError, BrokenPipeError):
+                pass # Queue might already be closed
+
+        # Wait for workers to terminate
+        for worker in self._workers:
+            worker.join(timeout=2)
+            if worker.is_alive():
+                worker.terminate()
+        
+        self._request_queue.close()
+        self._result_queue.close()
+        self._result_thread.join(timeout=1)
+        print("ForkServerExecutor has been shut down.", file=sys.stderr)
 
 
-atexit.register(_stop_server)
+# --- Global Executor Instance ---
+
+# Create a single, process-wide instance of the executor.
+# It's configured with half the available CPU cores, with a minimum of 1.
+_max_workers = max((os.cpu_count() or 1) // 2, 1)
+_global_executor = ForkServerExecutor(max_workers=_max_workers)
+
+# Register a shutdown hook to ensure the executor is cleaned up on exit.
+atexit.register(_global_executor.shutdown)
 
 
 def execute_code(
     code: str, timeout: Optional[float] = 5.0, memory_limit_mb: int = 256
 ) -> Tuple[Any, Optional[Exception]]:
     """
-    Executes Python code in a sandboxed environment using a high-performance
-    fork-server to minimize latency.
+    Executes Python code in a sandboxed environment using a high-performance,
+    thread-safe fork-server pool.
     """
-    _start_server()
-
-    if not _server_process or not _server_process.is_alive():
-        return None, ServerProcessError("Fork server process is not running.")
-
-    try:
-        _main_to_server_conn.send((code, timeout, memory_limit_mb))
-        result, exception = _main_to_server_conn.recv()
-        return result, exception
-    except (EOFError, BrokenPipeError):
-        _stop_server()
-        return None, ServerProcessError("Connection to fork server was lost.")
-    except Exception as e:
-        return None, e
+    if not _global_executor:
+        # This should not happen in normal operation
+        return None, ServerProcessError("Executor is not initialized.")
+    return _global_executor.execute(code, timeout, memory_limit_mb)
 
 
 if __name__ == '__main__':
+    import concurrent.futures
+
     print("--- Running Fork Server Executor Tests ---")
+    
+    # The executor is now managed automatically by the module.
+    # We can directly use the `execute_code` function.
 
-    # 1. Test successful execution
-    print("\n1. Testing successful execution...")
-    code_success = "return [i for i in range(5)]"
-    start_time = time.perf_counter()
-    result, err = execute_code(code_success)
-    end_time = time.perf_counter()
-    print(f"Result: {result}, Error: {err}")
-    print(f"Time taken (first run, includes server start): {end_time - start_time:.4f}s")
-    assert result == [0, 1, 2, 3, 4] and err is None
-
-    # 2. Test subsequent run (should be much faster)
-    print("\n2. Testing second run (should be much faster)...")
-    total_time = 0
-    iterations = 100
-    for _ in range(iterations):
+    try:
+        # 1. Test successful execution
+        print("\n1. Testing successful execution...")
+        code_success = "return [i for i in range(5)]"
         start_time = time.perf_counter()
         result, err = execute_code(code_success)
         end_time = time.perf_counter()
-        total_time += (end_time - start_time)
-    
-    avg_time = (total_time / iterations) * 1000
-    print(f"Result: {result}, Error: {err}")
-    print(f"Average time over {iterations} iterations: {avg_time:.4f}ms")
-    assert result == [0, 1, 2, 3, 4] and err is None
-
-    # 3. Test a standard exception
-    print("\n3. Testing code with an exception...")
-    code_exception = "a = 1\nb = 0\nreturn a / b"
-    result, err = execute_code(code_exception)
-    print(f"Result: {result}, Error: {err}")
-    assert result is None and isinstance(err, ZeroDivisionError)
-
-    # 4. Test a timeout
-    print("\n4. Testing timeout...")
-    code_timeout = "import time\ntime.sleep(2)"
-    result, err = execute_code(code_timeout, timeout=1.0)
-    print(f"Result: {result}, Error: {err}")
-    assert result is None and isinstance(err, ExecutionTimeout)
-
-    # 5. Test memory limit (OOM kill)
-    if psutil:
-        print("\n5. Testing memory limit...")
-        code_oom = "' ' * (100 * 1024 * 1024)"
-        result, err = execute_code(code_oom, memory_limit_mb=50)
         print(f"Result: {result}, Error: {err}")
-        assert result is None and isinstance(err, MemoryError)
-    else:
-        print("\n5. Skipping memory limit test: psutil not installed.")
+        print(f"Time taken (first run): {end_time - start_time:.4f}s")
+        assert result == [0, 1, 2, 3, 4] and err is None
 
-    print("\n--- All tests completed ---")
+        # 2. Test parallel execution
+        print("\n2. Testing parallel execution with multiple threads...")
+        num_parallel_tasks = 20
+        code_parallel = "import time; import os; time.sleep(0.5); return os.getpid()"
+        
+        start_time = time.perf_counter()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=num_parallel_tasks) as pool:
+            futures = [pool.submit(execute_code, code_parallel, timeout=2) for _ in range(num_parallel_tasks)]
+            results = [f.result() for f in futures]
+        end_time = time.perf_counter()
 
-   # 6. Test baseline memory usage of a forked child
-    if psutil:
-        print("\n6. Testing baseline memory usage...")
-        code_mem_check = (
-            "import os, psutil\n"
-            "p = psutil.Process(os.getpid())\n"
-            "return p.memory_info().rss"
-        )
-        result, err = execute_code(code_mem_check)
-        if err is None:
-            print(f"Baseline memory usage of child process: {result / (1024*1024):.2f} MB")
+        print("Results from parallel execution:")
+        for res in results:
+            print(f"Result: {res[0]}, Error: {res[1]}")
+        pids = {res[0] for res in results if res[1] is None}
+        print(f"Executed {num_parallel_tasks} tasks in {end_time - start_time:.4f}s")
+        print(f"Got results from {len(pids)} unique worker PIDs: {pids}")
+        if _max_workers > 1:
+            assert len(pids) > 1, "Should have used multiple worker processes"
         else:
-            print(f"Could not measure memory: {err}")
-    else:
-        print("\n6. Skipping baseline memory test: psutil not installed.")
+            print(f"Skipping multi-worker assertion as max_workers is {_max_workers}")
+        assert len(results) == num_parallel_tasks
+
+        # 3. Test a standard exception
+        print("\n3. Testing code with an exception...")
+        code_exception = "a = 1\nb = 0\nreturn a / b"
+        result, err = execute_code(code_exception)
+        print(f"Result: {result}, Error: {err}")
+        assert result is None and isinstance(err, ZeroDivisionError)
+
+        # 4. Test a timeout
+        print("\n4. Testing timeout...")
+        code_timeout = "import time\ntime.sleep(2)"
+        result, err = execute_code(code_timeout, timeout=1.0)
+        print(f"Result: {result}, Error: {err}")
+        assert result is None and isinstance(err, ExecutionTimeout)
+
+        # 5. Test memory limit (OOM kill)
+        if psutil:
+            print("\n5. Testing memory limit...")
+            # Allocate 150MB of memory as a string
+            code_oom = "a = ' ' * (150 * 1024 * 1024); return len(a)"
+            result, err = execute_code(code_oom, memory_limit_mb=100)
+            print(f"Result: {result}, Error: {err}")
+            assert result is None and isinstance(err, MemoryError)
+        else:
+            print("\n5. Skipping memory limit test: psutil not installed.")
+
+        print("\n--- All tests completed ---")
+
+    finally:
+        # No manual shutdown needed, atexit handles it.
+        print("\nScript finished. Executor will be shut down automatically by atexit.")
+        pass
