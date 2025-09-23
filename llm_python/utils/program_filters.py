@@ -218,20 +218,12 @@ def should_filter_program(program_data: Dict[str, Any], task_data: Optional[Dict
         return True
 
     # Filter pass-through programs
-    try:
-        if is_pass_through_program(program_data, task_data):
-            return True
-    except Exception as e:
-        print(f"❌ Error in is_pass_through_program: {e}")
-        raise e
+    if is_pass_through_program(program_data, task_data):
+        return True
 
     # Filter single-color predictions when ground truth is multi-colored
-    try:
-        if has_single_color_predictions_with_multi_color_truth(program_data, task_data):
-            return True
-    except Exception as e:
-        print(f"❌ Error in has_single_color_predictions_with_multi_color_truth: {e}")
-        raise e
+    if has_single_color_predictions_with_multi_color_truth(program_data, task_data):
+        return True
 
     # Filter perfect programs (100% correct on training)
     correct_data = program_data.get('correct_train_input', [])
