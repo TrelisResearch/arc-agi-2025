@@ -34,8 +34,9 @@ class CodeTransductionClassifier:
         """
         feats = extract_code_features(program)
         X = pd.DataFrame([feats])
-        pred = self.clf_v2.predict(X)[0]
         prob = self.clf_v2.predict_proba(X)[0, 1]
+        # Use custom threshold of 0.75 instead of default 0.5
+        pred = prob > 0.75
         return bool(pred), prob
 
 
