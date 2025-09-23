@@ -65,7 +65,7 @@ def prompt_keep_pod(timeout=10):
     except Exception:
         return False
 
-def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="all_evaluation", max_attempts=64, no_transductive_penalty=False, max_workers=32, splitter=False, max_tokens=2000, reasoning_effort=None, refinement_ds=None, early_stop_threshold=None, rex_stats=False):
+def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="all_evaluation", max_attempts=64, no_transductive_penalty=False, max_workers=32, max_tokens=2000, reasoning_effort=None, refinement_ds=None, early_stop_threshold=None, rex_stats=False):
     """Run ARC tasks - task runner handles its own graceful shutdown"""
     print(f"\n🎯 Running ARC tasks for {dataset} with subset {subset}...")
     print(f"📊 Task Runner Configuration:")
@@ -115,8 +115,6 @@ def run_arc_tasks_with_graceful_handling(dataset, model_path, base_url, subset="
     if no_transductive_penalty:
         cmd.append("--no-transductive-penalty")
     
-    if splitter:
-        cmd.append("--splitter")
     
     if refinement_ds:
         cmd.extend(["--refinement-ds", refinement_ds])
@@ -261,9 +259,6 @@ This script will:
                        type=int,
                        default=32,
                        help='Maximum number of parallel workers (default: 32)')
-    parser.add_argument('--splitter',
-                       action='store_true',
-                       help='Randomly select and shuffle a subset of training input-output pairs')
     parser.add_argument('--max-tokens',
                        type=int,
                        default=2000,
@@ -429,7 +424,7 @@ This script will:
         print(f"\n🎯 Step 2: Running ARC tasks for {args.dataset}")
         
         task_success = run_arc_tasks_with_graceful_handling(
-            args.dataset, args.model_path, base_url, args.subset, args.max_attempts, args.no_transductive_penalty, args.max_workers, args.splitter, args.max_tokens, args.reasoning_effort, args.refinement_ds, args.early_stop_threshold, args.rex_stats
+            args.dataset, args.model_path, base_url, args.subset, args.max_attempts, args.no_transductive_penalty, args.max_workers, args.max_tokens, args.reasoning_effort, args.refinement_ds, args.early_stop_threshold, args.rex_stats
         )
         
         if task_success:
