@@ -61,8 +61,17 @@ def _format_grid_for_prompt(grid: List[List[int]]) -> str:
 
     grid = convert_to_list(grid)
 
-    # Return original format only
-    return str(grid).replace(",", "")
+    # Format as visual rows (much clearer than nested lists)
+    if not grid:
+        return ""
+
+    # Convert each row to a space-separated string
+    rows = []
+    for row in grid:
+        row_str = " ".join(str(cell) for cell in row)
+        rows.append(row_str)
+
+    return "\n".join(rows)
 
 
 def _get_grid_shape_string(grid: List[List[int]]) -> str:
@@ -209,13 +218,19 @@ def create_arc_prompt(
 
     # Use different prompt versions for refinement vs regular mode
     if refinement_mode:
-        # Use soar-refine prompts and generate special task content
-        system_content = prompt_loader.get_system_message("soar-refine")
-        prompt_template = prompt_loader.get_initial_turn_prompt("soar-refine")
+        # Use natural language refinement prompts if using natural language version
+        if prompt_version == "soar-natural-language":
+            system_content = prompt_loader.get_system_message("soar-refine-natural-language")
+            prompt_template = prompt_loader.get_initial_turn_prompt("soar-refine-natural-language")
+        else:
+            # Use traditional soar-refine prompts for code
+            system_content = prompt_loader.get_system_message("soar-refine")
+            prompt_template = prompt_loader.get_initial_turn_prompt("soar-refine")
 
         # Generate refinement-specific task content with statistics
         task_content = generate_refinement_task_content(
-            task_data, draft_program, predicted_outputs, train_examples, correct_train_input, selected_indices
+            task_data, draft_program, predicted_outputs, train_examples, correct_train_input, selected_indices,
+            show_output_test=True, is_natural_language=(prompt_version == "soar-natural-language")
         )
     else:
         # Use regular soar prompts (already loaded above)
@@ -230,7 +245,7 @@ def create_arc_prompt(
     return system_content, user_content, reasoning
 
 
-def generate_refinement_task_content(task_data: Dict, draft_program: Optional[str], predicted_outputs: Optional[Dict], train_examples: list, correct_train_input: Optional[List[bool]] = None, selected_indices: Optional[List[int]] = None, show_output_test: bool = True) -> str:
+def generate_refinement_task_content(task_data: Dict, draft_program: Optional[str], predicted_outputs: Optional[Dict], train_examples: list, correct_train_input: Optional[List[bool]] = None, selected_indices: Optional[List[int]] = None, show_output_test: bool = True, is_natural_language: bool = False) -> str:
     """Generate the new refinement prompt format with correctness statistics
 
     Args:
@@ -267,7 +282,10 @@ def generate_refinement_task_content(task_data: Dict, draft_program: Optional[st
         content += f"## Test Input {i} (grid shape: {input_shape}):\n{input_str}\n"
 
     # Add previous implementation section
-    content += f"\nPrevious implementation:\n```python\n{draft_program or ''}\n```\n"
+    if is_natural_language:
+        content += f"\nPrevious natural language program:\n{draft_program or 'No previous program'}\n"
+    else:
+        content += f"\nPrevious implementation:\n```python\n{draft_program or ''}\n```\n"
 
     # Add correctness statistics
     if correct_train_input is not None:
@@ -276,18 +294,24 @@ def generate_refinement_task_content(task_data: Dict, draft_program: Optional[st
             selected_correct_train_input = [correct_train_input[idx] for idx in selected_indices]
         else:
             # Backward compatibility: use all training examples
-            selected_indices = list(range(len(correct_train_input)))
+            selected_indices = list(range(len(train_examples)))
             selected_correct_train_input = correct_train_input
 
         # Use pre-computed boolean flags for correctness (only for selected examples)
         correct_count = sum(selected_correct_train_input)
         total_selected_count = len(selected_indices)
-        content += f"\nThis implementation of transform function correctly worked on {correct_count}/{total_selected_count} train input-output pairs.\n"
+        if is_natural_language:
+            content += f"\nThis natural language program correctly worked on {correct_count}/{total_selected_count} train input-output pairs.\n"
+        else:
+            content += f"\nThis implementation of transform function correctly worked on {correct_count}/{total_selected_count} train input-output pairs.\n"
         content += "Detailed results:\n"
 
         # Add detailed results for each selected training example using boolean flags
         for display_idx, (original_idx, is_correct) in enumerate(zip(selected_indices, selected_correct_train_input), 1):
-            content += f"## Output {display_idx} computed by `transform` is "
+            if is_natural_language:
+                content += f"## Output {display_idx} computed by the program is "
+            else:
+                content += f"## Output {display_idx} computed by `transform` is "
             if is_correct:
                 content += "correct.\n"
             else:
@@ -305,7 +329,10 @@ def generate_refinement_task_content(task_data: Dict, draft_program: Optional[st
                 predicted_output = convert_numpy_types(predicted_output)
 
                 formatted_grid, shape_string = _format_predicted_output_for_display(predicted_output)
-                content += f"The execution gave the following results ({shape_string}):\n{formatted_grid}\n"
+                if is_natural_language:
+                    content += f"The program application gave the following results ({shape_string}):\n{formatted_grid}\n"
+                else:
+                    content += f"The execution gave the following results ({shape_string}):\n{formatted_grid}\n"
 
                 # Add ASCII diff for incorrect outputs
                 if not is_correct:
@@ -317,7 +344,10 @@ def generate_refinement_task_content(task_data: Dict, draft_program: Optional[st
     if show_output_test and predicted_outputs and "test" in predicted_outputs:
         predicted_test = predicted_outputs["test"]
         for i, predicted_output in enumerate(predicted_test, 1):
-            content += f"\n## Output Test {i} computed by `transform` (we don't know if it is correct or not)\n"
+            if is_natural_language:
+                content += f"\n## Output Test {i} computed by the program (we don't know if it is correct or not)\n"
+            else:
+                content += f"\n## Output Test {i} computed by `transform` (we don't know if it is correct or not)\n"
 
             if predicted_output is not None:
                 # Convert numpy arrays if needed
@@ -326,7 +356,10 @@ def generate_refinement_task_content(task_data: Dict, draft_program: Optional[st
                 predicted_output = convert_numpy_types(predicted_output)
 
                 formatted_grid, shape_string = _format_predicted_output_for_display(predicted_output)
-                content += f"The execution gave the following results ({shape_string}):\n{formatted_grid}\n"
+                if is_natural_language:
+                    content += f"The program application gave the following results ({shape_string}):\n{formatted_grid}\n"
+                else:
+                    content += f"The execution gave the following results ({shape_string}):\n{formatted_grid}\n"
 
     # Add summary message if we have correctness data
     if correct_train_input is not None:
@@ -338,11 +371,18 @@ def generate_refinement_task_content(task_data: Dict, draft_program: Optional[st
 
         # Match their message format
         if len(incorrect_outputs) == 0:
-            content += "The previous code gives correct output grids for all Train input.\n"
-            print("WARNING: The previous code gives correct output grids for all Train input. This is not expected.")
+            if is_natural_language:
+                content += "The previous program gives correct output grids for all Train input.\n"
+                print("WARNING: The previous program gives correct output grids for all Train input. This is not expected.")
+            else:
+                content += "The previous code gives correct output grids for all Train input.\n"
+                print("WARNING: The previous code gives correct output grids for all Train input. This is not expected.")
         else:
             incorrect_list = ', '.join(incorrect_outputs)
-            content += f"\nThe previous code gives incorrect output grids for: {incorrect_list}. Now, you need to fix the code to produce correct output for all inputs."
+            if is_natural_language:
+                content += f"\nThe previous program gives incorrect output grids for: {incorrect_list}. Now, you need to refine the program description to produce correct output for all inputs."
+            else:
+                content += f"\nThe previous code gives incorrect output grids for: {incorrect_list}. Now, you need to fix the code to produce correct output for all inputs."
 
     return content
 

@@ -49,9 +49,9 @@ class SoarDatasetCollector:
         # Add a UUID.
         copy["row_id"] = generate_unique_hex_id()
 
-        # Normalize the code
-        if copy["code"]:
-            copy["code"] = normalize_code(copy["code"])
+        # Normalize the program (natural language, no code normalization needed)
+        if copy["program"]:
+            copy["program"] = copy["program"].strip()
         return copy
 
     def get_data(self) -> list[ProgramSample]:
@@ -84,8 +84,8 @@ class SoarDatasetCollector:
             if not data_copy:
                 logger.info("No data to flush, skipping parquet write")
                 return
-            expected_keys = {"row_id", "task_id", "reasoning", "code", "correct_train_input", 
-                            "correct_test_input", "predicted_train_output", 
+            expected_keys = {"row_id", "task_id", "reasoning", "program", "correct_train_input",
+                            "correct_test_input", "predicted_train_output",
                             "predicted_test_output", "model", "is_transductive", "refined_from_id"}
             
             # Debug: Check for inconsistent samples before normalization
@@ -105,7 +105,7 @@ class SoarDatasetCollector:
                     "row_id": sample.get("row_id"),
                     "task_id": sample.get("task_id"),
                     "reasoning": sample.get("reasoning"),  # Optional field - can be None
-                    "code": sample.get("code"),
+                    "program": sample.get("program"),
                     "correct_train_input": sample.get("correct_train_input"),
                     "correct_test_input": sample.get("correct_test_input"),
                     "predicted_train_output": sample.get("predicted_train_output"),

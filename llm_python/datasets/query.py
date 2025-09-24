@@ -75,7 +75,7 @@ def sample_by_task(
         raise ValueError("sort_keys must be provided")
 
     df = df.copy()
-    df["code_length"] = df["code"].str.len()
+    df["program_length"] = df["program"].str.len()
     return (
         df.sort_values(
             by=sort_keys,

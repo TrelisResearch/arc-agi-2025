@@ -31,7 +31,7 @@ def validate_soar_row(row: dict) -> ValidateRowResult:
     errors = []
     required_fields = [
         "task_id",
-        "code",
+        "program",
         "correct_train_input",
         "correct_test_input",
         "predicted_train_output",
@@ -48,8 +48,8 @@ def validate_soar_row(row: dict) -> ValidateRowResult:
         not isinstance(row["task_id"], str) or not row["task_id"].strip()
     ):
         errors.append("task_id must be a non-empty string")
-    if "code" in row and (not isinstance(row["code"], str) or not row["code"].strip()):
-        errors.append("code must be a non-empty string")
+    if "program" in row and (not isinstance(row["program"], str) or not row["program"].strip()):
+        errors.append("program must be a non-empty string")
     if "model" in row and (
         not isinstance(row["model"], str) or not row["model"].strip()
     ):
@@ -187,7 +187,7 @@ def validate_soar_row_correctness(
     correctness_errors: List[str] = []
     try:
         result = arc_tester.test_program(
-            row["code"], task_loader.get_task(row["task_id"])
+            row["program"], task_loader.get_task(row["task_id"])
         )
         for i, train_output in enumerate(row["predicted_train_output"]):
             if not grids_equal(result.train_outputs[i], train_output):

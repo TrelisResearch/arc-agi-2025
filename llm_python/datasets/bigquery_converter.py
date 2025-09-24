@@ -41,7 +41,7 @@ def convert_bigquery_to_soar(
                 {
                     "row_id": row["row_id"],
                     "task_id": row["task_id"],
-                    "code": row["code"],
+                    "program": row["program"],
                     "model": row["model"],
                     "predicted_train_output": _convert_bq_nested_structure(
                         row["predicted_train_output"]
@@ -76,7 +76,7 @@ def convert_bigquery_to_soar(
         "row_id",
         "task_id",
         "reasoning",
-        "code",
+        "program",
         "correct_train_input",
         "correct_test_input",
         "predicted_train_output",

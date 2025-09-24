@@ -24,7 +24,8 @@ from llm_python.utils.numpy import convert_numpy_types
 from llm_python.utils.shutdown import ensure_system_exit
 from llm_python.utils.task_loader import TaskData, get_task_loader
 from llm_python.utils.arc_tester import ArcTester
-from llm_python.utils.prompt_utils import create_arc_prompt, extract_python_code
+from llm_python.utils.prompt_utils import create_arc_prompt
+from llm_python.utils.nl_program_execution import NaturalLanguageProgramExecutor, extract_program_from_response
 from llm_python.utils.metrics_utils import (
     calculate_task_metrics,
     metrics_to_percentages,
@@ -230,12 +231,11 @@ class ARCTaskRunnerSimple:
 
         # Initialize remaining components
         self.task_loader = get_task_loader()
-        self.executor = ArcTester(
-            timeout=15,
-            executor_type=executor_type,
-            max_output_chars=10_000,
-            max_output_cells=1_800,
-        )
+        # Initialize natural language program executor (replaces old ArcTester)
+        self.nl_executor = NaturalLanguageProgramExecutor(self.api_client, debug=debug)
+        # Keep old executor reference for backwards compatibility in case it's referenced elsewhere
+        self.executor = None
+        self._executor_type = "llm-based"
         self.prompt_loader = PromptLoader()
         self.transduction_classifier = CodeTransductionClassifier()
 
@@ -311,7 +311,7 @@ class ARCTaskRunnerSimple:
     @property
     def executor_type(self):
         """Get executor type from the executor"""
-        return self.executor.executor_type
+        return self._executor_type
 
     @property
     def api_timeout(self):
@@ -945,27 +945,6 @@ class ARCTaskRunnerSimple:
             # Return None response with error info
             return None, result["sampling_params"]
 
-    def extract_program_from_response(self, response) -> str:
-        """Extract natural language program from the Chat Completions API result"""
-        # Get the full text from response
-        full_text = ""
-
-        if hasattr(response, "choices") and len(response.choices) > 0:
-            message = response.choices[0].message
-            if hasattr(message, "content") and message.content:
-                full_text = message.content
-
-        if self.debug and len(full_text) > 0:
-            print(f"🔍 Response content: {len(full_text)} chars")
-
-        # Extract content after "PROGRAM:" marker
-        import re
-        program_match = re.search(r'PROGRAM:\s*(.*?)(?:\n\n|\Z)', full_text, re.DOTALL)
-        if program_match:
-            return program_match.group(1).strip()
-
-        # Fallback: return the full response if no PROGRAM marker found
-        return full_text.strip()
 
     def run_single_attempt(
         self,
@@ -1099,9 +1078,13 @@ class ARCTaskRunnerSimple:
             finish_reason = getattr(response.choices[0], "finish_reason", None)
             hit_max_tokens = finish_reason == "length"
 
+        print(f"Response: {response}")
+        
         # Extract natural language program
-        program = self.extract_program_from_response(response) if response else ""
+        program = extract_program_from_response(response, self.debug) if response else ""
         program_extracted = bool(program and program.strip())
+
+        print(f"Extracted Program: {program_extracted}")
 
         # Evaluate on training examples
         train_results: List[TrainResult] = []
@@ -1113,8 +1096,8 @@ class ARCTaskRunnerSimple:
             if not program_extracted:
                 pred, err, tout = None, "no program", False
             else:
-                # Always execute, even if marked as transductive (for analysis)
-                pred, err, tout = self.executor.execute_program_with_timeout(
+                # Execute using LLM-based execution
+                pred, err, tout = self.nl_executor.execute_program(
                     program, ex["input"]
                 )
 
@@ -1172,9 +1155,9 @@ class ARCTaskRunnerSimple:
             if not program_extracted:
                 test_pred, test_err, test_tout = None, "no program", False
             else:
-                # Always execute, even if marked as transductive (for analysis)
-                test_pred, test_err, test_tout = (
-                    self.executor.execute_program_with_timeout(program, test_input)
+                # Execute using LLM-based execution
+                test_pred, test_err, test_tout = self.nl_executor.execute_program(
+                    program, test_input
                 )
                 if test_tout:  # Check timeout FIRST
                     any_test_exec_timeout = True
@@ -1493,9 +1476,7 @@ class ARCTaskRunnerSimple:
             print("Sampling Parameters: (using model defaults)")
 
         # Display executor type
-        executor_info = f"Executor: {self.executor.executor_type} (timeout: {self.executor.timeout}s)"
-        if self.executor.executor_type == "unrestricted":
-            executor_info += " ⚠️  UNSAFE MODE"
+        executor_info = f"Executor: {self.executor_type} (LLM-based execution)"
         print(executor_info)
 
         print("-" * 50)
@@ -2659,7 +2640,7 @@ def main():
         help="⚠️  UNSAFE: Use unrestricted executor (no Docker sandboxing). Generated code runs directly on your system. SECURITY RISK!",
     )
     parser.add_argument(
-        "--prompt_version", type=str, default="soar", help="Version of prompts to use"
+        "--prompt_version", type=str, default="soar-natural-language", help="Version of prompts to use"
     )
     parser.add_argument(
         "--lora-adapter",

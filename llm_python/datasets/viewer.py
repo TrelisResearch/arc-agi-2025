@@ -189,7 +189,7 @@ def print_soar_dataset(
         print(f"TASK #{idx + 1}")
         print("=" * 80)
 
-        code = row["code"]
+        code = row["program"]
         task_data = task_loader.get_task(row["task_id"])
 
         print(f"Task ID: {row['task_id']}")
