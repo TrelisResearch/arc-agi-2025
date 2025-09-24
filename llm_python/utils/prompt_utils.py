@@ -168,6 +168,7 @@ def create_arc_prompt(
     draft_program: Optional[str] = None,
     predicted_outputs: Optional[Dict] = None,
     correct_train_input: Optional[List[bool]] = None,
+    single_pair_index: Optional[int] = None,
 ) -> Tuple[str, str, Optional[str]]:
     """
     Create a unified prompt for the model to solve an ARC task (both regular and refinement modes).
@@ -179,6 +180,7 @@ def create_arc_prompt(
         draft_program: Existing program code to be refined (enables refinement mode)
         predicted_outputs: Dict containing 'train' predicted outputs from draft program
         correct_train_input: Optional list of boolean flags indicating correctness for each training example
+        single_pair_index: Optional index to select only one training pair (for phase 1 of two-phase sampling)
 
     Returns:
         Tuple of (system_content, user_content, reasoning)
@@ -189,9 +191,13 @@ def create_arc_prompt(
     # Format the task data
     task_content = ""
 
-    # Use all training examples
+    # Select training examples - either single pair or all
     train_examples = task_data["train"]
-    selected_indices = list(range(len(train_examples)))
+    if single_pair_index is not None:
+        selected_indices = [single_pair_index]
+        train_examples = [train_examples[single_pair_index]]
+    else:
+        selected_indices = list(range(len(train_examples)))
 
     # Add training examples
     for i, example in enumerate(train_examples, 1):
@@ -383,6 +389,49 @@ def generate_refinement_task_content(task_data: Dict, draft_program: Optional[st
                 content += f"\nThe previous program gives incorrect output grids for: {incorrect_list}. Now, you need to refine the program description to produce correct output for all inputs."
             else:
                 content += f"\nThe previous code gives incorrect output grids for: {incorrect_list}. Now, you need to fix the code to produce correct output for all inputs."
+
+    return content
+
+
+def generate_unify_task_content(
+    task_data: Dict,
+    individual_programs: List[str]
+) -> str:
+    """Generate content for unifying multiple individual programs from single pairs
+
+    Args:
+        task_data: Dictionary containing 'train' and 'test' examples
+        individual_programs: List of natural language programs, one for each training pair
+
+    Returns:
+        Formatted string with individual programs and all training examples
+    """
+    content = ""
+
+    # Add individual programs section
+    content += "**Individual Programs from Single Pairs:**\n\n"
+    for i, program in enumerate(individual_programs, 1):
+        content += f"## Program for Training Pair {i}:\n{program}\n\n"
+
+    # Add all training examples section
+    content += "**All Training Examples:**\n\n"
+
+    for i, example in enumerate(task_data["train"], 1):
+        input_grid = example["input"]
+        output_grid = example["output"]
+        input_shape = _get_grid_shape_string(input_grid)
+        output_shape = _get_grid_shape_string(output_grid)
+        input_str = _format_grid_for_prompt(input_grid)
+        output_str = _format_grid_for_prompt(output_grid)
+        content += f"## Input {i} (grid shape: {input_shape}):\n{input_str}\n"
+        content += f"## Output {i} (grid shape: {output_shape}):\n{output_str}\n\n"
+
+    # Add test examples
+    for i, example in enumerate(task_data["test"], 1):
+        input_grid = example["input"]
+        input_shape = _get_grid_shape_string(input_grid)
+        input_str = _format_grid_for_prompt(input_grid)
+        content += f"## Test Input {i} (grid shape: {input_shape}):\n{input_str}\n\n"
 
     return content
 

@@ -24,7 +24,7 @@ from llm_python.utils.numpy import convert_numpy_types
 from llm_python.utils.shutdown import ensure_system_exit
 from llm_python.utils.task_loader import TaskData, get_task_loader
 from llm_python.utils.arc_tester import ArcTester
-from llm_python.utils.prompt_utils import create_arc_prompt
+from llm_python.utils.prompt_utils import create_arc_prompt, generate_unify_task_content
 from llm_python.utils.nl_program_execution import NaturalLanguageProgramExecutor, extract_program_from_response
 from llm_python.utils.metrics_utils import (
     calculate_task_metrics,
@@ -969,122 +969,42 @@ class ARCTaskRunnerSimple:
 
         attempt_start_time = datetime.datetime.now()
         exec_start_time = time.time()  # Track execution timing
-        conversation_history = [
-            {"role": "system", "content": system_content},
-            {"role": "user", "content": user_content},
-        ]
 
-        # Make API call with retries
-        response = None
-        api_call_successful = False
+        # Initialize variables for tracking (will be updated by two-phase generation)
+        api_call_successful = True
+        empty_response = False
+        hit_max_tokens = False
         error = None
         timed_out = False
-
-        for retry_attempt in range(3):
-            try:
-                response, api_kwargs = self.call_chat_completions_api(
-                    conversation_history
-                )
-                api_call_successful = True
-                break
-            except Exception as e:
-                error = str(e)
-                # Check if this is actually a timeout error vs other API errors
-                is_timeout_error = (
-                    "timeout" in str(e).lower()
-                    or "TimeoutError" in str(type(e).__name__)
-                    or "concurrent.futures._base.TimeoutError" in str(type(e))
-                )
-                # Don't retry timeout errors - they indicate the request took too long
-                if is_timeout_error:
-                    timed_out = True
-                    break
-                # Only retry non-timeout errors (API errors, network issues, etc.)
-                elif retry_attempt < 2:
-                    time.sleep(2)
-                else:
-                    # Final non-timeout error
-                    timed_out = False
-
-        # Extract sampling parameters for logging
         sampling_params = {}
-        if api_call_successful and "api_kwargs" in locals():
-            # Extract sampling parameters from actual API call
-            for param in [
-                "temperature",
-                "max_tokens",
-                "top_p",
-                "top_k",
-                "min_p",
-                "thinking_budget",
-            ]:
-                if param in api_kwargs:
-                    sampling_params[param] = api_kwargs[param]
-            # Also check extra_body for nested parameters
-            if "extra_body" in api_kwargs:
-                extra_body = api_kwargs["extra_body"]
-                for param in ["top_k", "min_p", "thinking_budget"]:
-                    if param in extra_body:
-                        sampling_params[param] = extra_body[param]
-        else:
-            # Fallback to instance parameters
-            if self.temperature is not None:
-                sampling_params["temperature"] = self.temperature
-            if self.max_tokens is not None:
-                sampling_params["max_tokens"] = self.max_tokens
+        attempt_cost = 0.0
+        total_tokens = 0
 
-        # Track costs
-        usage = getattr(response, "usage", None)
-        input_tokens = usage.prompt_tokens if usage else 0
-        output_tokens = usage.completion_tokens if usage else 0
-        input_rate, output_rate = self.api_client.get_model_pricing()
-        attempt_cost = (input_tokens / 1_000_000) * input_rate + (
-            output_tokens / 1_000_000
-        ) * output_rate
-        total_tokens = usage.total_tokens if usage else 0
+        # Two-phase natural language program generation
+        print("Starting two-phase program generation...")
 
-        # Check for empty response
-        empty_response = False
-        if api_call_successful and response:
-            if hasattr(response, "choices") and len(response.choices) > 0:
-                message = response.choices[0].message
-                content = (
-                    getattr(message, "content", "")
-                    if hasattr(message, "content")
-                    else ""
-                )
+        # Phase 1: Generate individual programs for each training pair
+        print("Phase 1: Generating individual pair programs...")
+        individual_programs = self.run_individual_pair_programs(task_id, task_data)
+        print(f"Generated {len(individual_programs)} individual programs")
 
-                # # TEMPORARY: Save LLM response to file for debugging
-                # self._save_llm_response_to_file(task_id, attempt_num, content, message)
-
-                empty_response = not content or content.strip() == ""
-            else:
-                empty_response = True
-                # # TEMPORARY: Save empty response info for debugging
-                # self._save_llm_response_to_file(task_id, attempt_num, "", None, "No choices in response")
-        elif api_call_successful:
-            empty_response = True
-            # # TEMPORARY: Save empty API response for debugging
-            # self._save_llm_response_to_file(task_id, attempt_num, "", None, "Empty API response")
-
-        # Check for max tokens hit
-        hit_max_tokens = False
-        if (
-            api_call_successful
-            and response
-            and hasattr(response, "choices")
-            and len(response.choices) > 0
-        ):
-            finish_reason = getattr(response.choices[0], "finish_reason", None)
-            hit_max_tokens = finish_reason == "length"
-
-        print(f"Response: {response}")
-        
-        # Extract natural language program
-        program = extract_program_from_response(response, self.debug) if response else ""
+        # Phase 2: Generate unified program from individual programs
+        print("Phase 2: Generating unified program...")
+        program = self.run_unifying_program(task_id, task_data, individual_programs)
         program_extracted = bool(program and program.strip())
 
-        print(f"Extracted Program: {program_extracted}")
+        print(f"Unified Program Extracted: {program_extracted}")
+        print(f"Unified Program: {program[:100]}..." if program else "No program generated")
+
+        # Note: Cost tracking will be handled within individual two-phase methods
+        # Set defaults for now (actual costs tracked in the two-phase methods)
+        input_tokens = 0
+        output_tokens = 0
+        attempt_cost = 0.0
+        total_tokens = 0
+
+        # Update tracking variables based on program extraction success
+        empty_response = not program_extracted
 
         # Evaluate on training examples
         train_results: List[TrainResult] = []
@@ -1270,7 +1190,7 @@ class ARCTaskRunnerSimple:
             # Legacy fields for backwards compatibility (using first test case)
             test_error=test_results[0]["error"] if test_results else "no program",
             test_timed_out=test_results[0]["timed_out"] if test_results else False,
-            raw_response=ResponseSerializer.serialize_response(response),
+            raw_response=None,  # Two-phase generation doesn't have single response
             sampling_params=sampling_params,
             api_success=api_call_successful,
             api_timeout=timed_out,
@@ -1311,6 +1231,102 @@ class ARCTaskRunnerSimple:
             or {"system": system_content, "user": user_content},
         }
         return result
+
+    def run_individual_pair_programs(
+        self,
+        task_id: str,
+        task_data: TaskData
+    ) -> List[str]:
+        """Generate individual programs for each training pair (Phase 1)
+
+        Args:
+            task_id: The task identifier
+            task_data: Task data containing train/test examples
+
+        Returns:
+            List of natural language programs, one for each training pair
+        """
+        individual_programs = []
+
+        for pair_idx in range(len(task_data['train'])):
+            # Create prompt with single training pair - use single pair template
+            system_content = self.prompt_loader.get_system_message("soar-natural-language")
+            user_template = self.prompt_loader.get_initial_turn_prompt("soar-natural-language-single-pair")
+
+            # Generate content for this single pair
+            train_example = task_data["train"][pair_idx]
+            input_grid = train_example["input"]
+            output_grid = train_example["output"]
+            input_shape = f"{len(input_grid[0])} by {len(input_grid)}"
+            output_shape = f"{len(output_grid[0])} by {len(output_grid)}"
+            input_str = "\n".join(" ".join(str(cell) for cell in row) for row in input_grid)
+            output_str = "\n".join(" ".join(str(cell) for cell in row) for row in output_grid)
+
+            task_content = f"## Input (grid shape: {input_shape}):\n{input_str}\n## Output (grid shape: {output_shape}):\n{output_str}\n"
+            user_content = user_template.format(task_content=task_content)
+
+            # Make API call for this single pair
+            conversation_history = [
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": user_content},
+            ]
+
+            # Make API call using the same method as run_single_attempt
+            try:
+                response, sampling_params = self.call_chat_completions_api(conversation_history)
+                if response:
+                    program = extract_program_from_response(response)
+                    individual_programs.append(program)
+                else:
+                    individual_programs.append(f"Failed to generate program for training pair {pair_idx}")
+            except Exception as e:
+                individual_programs.append(f"Error generating program for pair {pair_idx}: {str(e)}")
+
+        return individual_programs
+
+    def run_unifying_program(
+        self,
+        task_id: str,
+        task_data: TaskData,
+        individual_programs: List[str]
+    ) -> str:
+        """Generate unified program from individual programs (Phase 2)
+
+        Args:
+            task_id: The task identifier
+            task_data: Task data containing train/test examples
+            individual_programs: List of programs from individual pairs
+
+        Returns:
+            Unified natural language program
+        """
+        # Generate unifying prompt content
+        task_content = generate_unify_task_content(task_data, individual_programs)
+
+        # Get system and user prompts for unify template
+        system_content = self.prompt_loader.get_system_message("soar-natural-language")
+        user_template = self.prompt_loader.get_initial_turn_prompt("soar-natural-language-unify")
+        user_content = user_template.format(task_content=task_content)
+
+        # Make API call for unified program
+        conversation_history = [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": user_content},
+        ]
+
+        print(f"\nUser content for unified program: {user_content}\n")
+
+        # Make API call using the same method as run_single_attempt
+        try:
+            response, sampling_params = self.call_chat_completions_api(conversation_history)
+            if response:
+                unified_program = extract_program_from_response(response)
+            else:
+                unified_program = "Failed to generate unified program"
+        except Exception as e:
+            unified_program = f"Error generating unified program: {str(e)}"
+
+        return unified_program
 
     def run_subset(
         self,
