@@ -582,7 +582,7 @@ def select_best_program_for_refinement(
 def is_program_valid_for_refinement(program_data: Dict[str, Any], task_data: Optional[Dict] = None) -> bool:
     """
     Determine if a program is valid for refinement based on filtering strategy:
-    - Exclude programs that are 100% correct on training (nothing to improve)
+    - Include programs even if 100% correct on training (may fail on test cases)
     - Exclude pass-through programs (predicted train outputs == predicted train inputs)
     - Include all other programs (0% correct might have useful partial logic)
 
@@ -599,9 +599,6 @@ def is_program_valid_for_refinement(program_data: Dict[str, Any], task_data: Opt
     if is_pass_through_program(program_data, task_data):
         return False
 
-    correct_data = _extract_correctness_data(program_data)
-    if not correct_data:
-        return True  # Include programs with no correctness data
-
-    # Include ALL programs that are NOT perfect (< 100% correct)
-    return not all(correct_data)  # Exclude only 100% correct programs
+    # Include ALL programs regardless of training accuracy
+    # (100% train-correct programs may still fail on test cases and benefit from refinement)
+    return True

@@ -548,9 +548,8 @@ class ARCTaskRunnerSimple:
             rex_pool.track_refinement_attempt(refined_from_id, refined_correctness, original_correctness)
 
         # Check if attempt meets criteria for adding to pool
-        # Keep any program that was successfully extracted, even if it fails execution
-        if (attempt_detail.get("program_extracted", False) and
-            attempt_detail.get("train_accuracy", 0.0) < 1.0):  # Not 100% correct
+        # Keep any program that was successfully extracted, including 100% train-correct programs
+        if attempt_detail.get("program_extracted", False):
 
             # Create refined program entry
             from llm_python.utils.refinement_utils import create_refined_program_entry

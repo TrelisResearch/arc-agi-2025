@@ -46,9 +46,64 @@ Improvements to make:
 - [x] Check extraction logic, perhaps make more robust, as programs are not consistently extracted.
 - [x] Don't throw out failed grids [should also allow for more saved programs]. THIS HELPED WITH SCORING TOO, AS IT ALLOWS FOR SOME TRAINING GRIDS TO BE INCORRECT.
 - [x] Try refinements in the pipeline.
+- [ ] Potentially add a detection note so that the model is prompted to focus on the test input if the train examples were all correct on the current program, i.e. tweak the prompt a little for this case.
 - [ ] Provide grid inputs to other training examples when executing. Try later. Can also revert to solving one example-pair at a time instead of all examples. Although this adds a lot of compute.
 
 ### Nat Lan Simple
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --max_attempts 4 --max_workers 64
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: openai/gpt-oss-120b
+Total tasks: 120
+Total time: 4941.7s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 5,443,380
+Total cost: $2.197355
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0%
+  Pass@2 (Train Majority):  0.0%
+  Oracle (Best Attempt):    0.0%
+  All Train Correct:        0.8%
+  Min 1 Train Correct:      4.2%
+  Min 1 Code Success:       59.2%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 44.2%
+  No Program Responses (of all attempts): 35.6%
+✅ Checkpointed 80 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250924_194242_openai_gpt-oss-120b_arc-prize-2025_evaluation.parquet
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --model openai/gpt-oss-20b --base-url https://openrouter.ai/api/v1 --max_attempts 4 --max_workers 64
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: openai/gpt-oss-20b
+Total tasks: 120
+Total time: 4195.0s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 2,631,673
+Total cost: $0.285591
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0%
+  Pass@2 (Train Majority):  0.0%
+  Oracle (Best Attempt):    0.0%
+  All Train Correct:        0.0%
+  Min 1 Train Correct:      0.8%
+  Min 1 Code Success:       21.7%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 10.8%
+  No Program Responses (of all attempts): 82.9%
+✅ Checkpointed 24 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250924_194443_openai_gpt-oss-20b_arc-prize-2025_evaluation.parquet
+
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset shortest_evaluation_10 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1 --limit 3 --max_attempts 2 --max_workers 6
 ```
@@ -108,7 +163,84 @@ Total cost: $0.244315
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset shortest_evaluation_10 --model google/gemini-2.5-pro --base-url https://openrouter.ai/api/v1 --limit 10 --max_attempts 2 --max_workers 20 --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250924_184734_google_gemini-2.5-pro_arc-prize-2025_shortest_evaluation_10.parquet --rex-stats
 ```
+Dataset: arc-prize-2025
+Subset: shortest_evaluation_10
+Model: google/gemini-2.5-pro
+Total tasks: 10
+Total time: 828.1s
+Successful API calls: 10/10 (100.0%)
+Total tokens used: 530,911
+Total cost: $0.284216
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0%
+  Pass@2 (Train Majority):  0.0%
+  Oracle (Best Attempt):    0.0%
+  All Train Correct:        30.0%
+  Min 1 Train Correct:      60.0%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 5.0%
+  No Program Responses (of all attempts): 5.0%
+✅ Checkpointed 17 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250924_191531_google_gemini-2.5-pro_arc-prize-2025_shortest_evaluation_10.parquet
+
+After allowing refinement of an all-correct program, try just that task id (actually both 78332cb0 and 7b5033c1 had a program all train correct but with all test wrong):
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset shortest_evaluation_10 --model google/gemini-2.5-pro --base-url https://openrouter.ai/api/v1 --limit 10 --max_attempts 2 --max_workers 20 --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250924_184734_google_gemini-2.5-pro_arc-prize-2025_shortest_evaluation_10.parquet --rex-stats --task-id 78332cb0
+```
+Dataset: arc-prize-2025
+Subset: shortest_evaluation_10
+Model: google/gemini-2.5-pro
+Total tasks: 1
+Total time: 294.3s
+Successful API calls: 1/1 (100.0%)
+Total tokens used: 35,797
+Total cost: $0.018366
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0%
+  Pass@2 (Train Majority):  0.0%
+  Oracle (Best Attempt):    0.0%
+  All Train Correct:        100.0%
+  Min 1 Train Correct:      100.0%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 0.0%
+  No Program Responses (of all attempts): 0.0%
+✅ Checkpointed 2 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250924_192228_google_gemini-2.5-pro_arc-prize-2025_shortest_evaluation_10.parquet
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset shortest_evaluation_10 --model google/gemini-2.5-pro --base-url https://openrouter.ai/api/v1 --limit 10 --max_attempts 2 --max_workers 20 --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250924_184734_google_gemini-2.5-pro_arc-prize-2025_shortest_evaluation_10.parquet --rex-stats --task-id 7b5033c1
+```
+Dataset: arc-prize-2025
+Subset: shortest_evaluation_10
+Model: google/gemini-2.5-pro
+Total tasks: 1
+Total time: 253.8s
+Successful API calls: 1/1 (100.0%)
+Total tokens used: 34,308
+Total cost: $0.018374
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0%
+  Pass@2 (Train Majority):  0.0%
+  Oracle (Best Attempt):    0.0%
+  All Train Correct:        0.0%
+  Min 1 Train Correct:      100.0%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 0.0%
+  No Program Responses (of all attempts): 0.0%
+✅ Checkpointed 2 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250924_193128_google_gemini-2.5-pro_arc-prize-2025_shortest_evaluation_10.parquet
 
 ### Don't throw out failed grids during execution and improve program extraction
 ```bash
