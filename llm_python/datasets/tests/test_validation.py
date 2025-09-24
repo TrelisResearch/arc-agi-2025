@@ -105,7 +105,7 @@ class TestValidateSoarRow:
             "is_transductive": False,
         }
         errors = validate_soar_row(row).errors
-        assert any("code must be a non-empty string" in e for e in errors)
+        assert any("program must be a non-empty string" in e for e in errors)
 
     """Test the ValidationResult dataclass and its methods."""
 
@@ -266,7 +266,7 @@ class TestValidateSoarDataframe:
         format_result = validate_soar_dataframe(df)
         assert format_result.business_logic_valid is False
         assert any(
-            "code must be a non-empty string" in issue
+            "program must be a non-empty string" in issue
             for issue in format_result.business_logic_issues
         )
 
