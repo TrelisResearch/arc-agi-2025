@@ -77,7 +77,36 @@ Total cost: $0.350690
 ✅ Checkpointed 4 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250924_180630_google_gemini-2.5-flash_arc-prize-2025_shortest_evaluation_10.parquet
 
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset shortest_evaluation_10 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1 --limit 3 --max_attempts 2 --max_workers 6 --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250924_180630_google_gemini-2.5-flash_arc-prize-2025_shortest_evaluation_10.parquet --rex-stats
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset shortest_evaluation_10 --model google/gemini-2.5-pro --base-url https://openrouter.ai/api/v1 --limit 10 --max_attempts 2 --max_workers 20
+```
+I did 10 workers instead of 20 by mistake.
+
+Dataset: arc-prize-2025
+Subset: shortest_evaluation_10
+Model: google/gemini-2.5-pro
+Total tasks: 10
+Total time: 1631.0s
+Successful API calls: 10/10 (100.0%)
+Total tokens used: 435,631
+Total cost: $0.244315
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 10.0%
+  Pass@2 (Train Majority):  10.0%
+  Oracle (Best Attempt):    10.0%
+  All Train Correct:        20.0%
+  Min 1 Train Correct:      50.0%
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 0.0%
+  No Program Responses (of all attempts): 10.0%
+✅ Checkpointed 18 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250924_184734_google_gemini-2.5-pro_arc-prize-2025_shortest_evaluation_10.parquet
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset shortest_evaluation_10 --model google/gemini-2.5-pro --base-url https://openrouter.ai/api/v1 --limit 10 --max_attempts 2 --max_workers 20 --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250924_184734_google_gemini-2.5-pro_arc-prize-2025_shortest_evaluation_10.parquet --rex-stats
 ```
 
 

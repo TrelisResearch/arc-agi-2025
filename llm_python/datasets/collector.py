@@ -86,7 +86,7 @@ class SoarDatasetCollector:
                 return
             expected_keys = {"row_id", "task_id", "reasoning", "program", "correct_train_input",
                             "correct_test_input", "predicted_train_output",
-                            "predicted_test_output", "model", "is_transductive", "refined_from_id"}
+                            "predicted_test_output", "model", "refined_from_id"}
             
             # Debug: Check for inconsistent samples before normalization
             for i, sample in enumerate(data_copy):
@@ -111,7 +111,6 @@ class SoarDatasetCollector:
                     "predicted_train_output": sample.get("predicted_train_output"),
                     "predicted_test_output": sample.get("predicted_test_output"),
                     "model": sample.get("model"),
-                    "is_transductive": sample.get("is_transductive"),
                     "refined_from_id": sample.get("refined_from_id"),  # Optional field - can be None
                 }
                 for sample in data_copy
