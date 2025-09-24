@@ -50,8 +50,8 @@ def print_grids_horizontally(
     use_colors: bool = True,
 ) -> str:
     """Print multiple grids side by side horizontally"""
-    # if not grids:
-    #     return ""
+    if len(grids) == 0:
+        return ""
 
     # Convert each grid to lines
     grid_lines = []
@@ -73,10 +73,17 @@ def print_grids_horizontally(
                 lines.append("")
 
     # Calculate column widths based on visual content (without ANSI codes)
+    # Also consider label width to prevent overlap
     col_widths = []
-    for lines in grid_lines:
-        width = max(len(strip_ansi_codes(line)) for line in lines) if lines else 0
+    for i, lines in enumerate(grid_lines):
+        content_width = max(len(strip_ansi_codes(line)) for line in lines) if lines else 0
+        label_width = len(labels[i]) if labels and i < len(labels) else 0
+        # Use the maximum of content width and label width
+        width = max(content_width, label_width)
         col_widths.append(width)
+
+    # Use larger separator between columns for better spacing
+    separator = "    "  # 4 spaces instead of "  |  "
 
     # Add labels if provided
     result_lines = []
@@ -86,7 +93,7 @@ def print_grids_horizontally(
             padded_label = label.ljust(width)
             label_line += padded_label
             if i < len(labels) - 1:
-                label_line += "  |  "
+                label_line += separator
         result_lines.append(label_line)
 
         # Add separator line
@@ -94,20 +101,20 @@ def print_grids_horizontally(
         for i, width in enumerate(col_widths):
             sep_line += "-" * width
             if i < len(col_widths) - 1:
-                sep_line += "  |  "
+                sep_line += separator
         result_lines.append(sep_line)
 
     # Combine grid lines horizontally
     for row_idx in range(max_height):
         line = ""
         for col_idx, (lines, width) in enumerate(zip(grid_lines, col_widths)):
-            current_line = lines[row_idx]
+            current_line = lines[row_idx] if row_idx < len(lines) else ""
             visual_width = len(strip_ansi_codes(current_line))
-            padding_needed = width - visual_width
+            padding_needed = max(0, width - visual_width)
             padded_line = current_line + (" " * padding_needed)
             line += padded_line
             if col_idx < len(grid_lines) - 1:
-                line += "  |  "
+                line += separator
         result_lines.append(line)
 
     return "\n".join(result_lines)
