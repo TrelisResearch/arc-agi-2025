@@ -20,11 +20,9 @@ class TestPromptUtils(unittest.TestCase):
         grid = [[1, 2], [3, 4]]
         result = format_grid_for_prompt(grid)
 
-        # Check that the original format is present
-        self.assertIn("[[1 2] [3 4]]", result)  # Original format only
-
-        # Should be a simple string representation
-        self.assertEqual(result, "[[1 2] [3 4]]")
+        # Should be formatted as visual rows
+        expected = "1 2\n3 4"
+        self.assertEqual(result, expected)
     
     def test_get_grid_shape_string(self):
         """Test grid shape string generation"""
@@ -101,8 +99,8 @@ This should work."""
         self.assertIn("Input 1 (grid shape: 2 by 2)", user_content)
         self.assertIn("Output 1 (grid shape: 2 by 2)", user_content)
         self.assertIn("Test Input 1 (grid shape: 2 by 2)", user_content)
-        self.assertIn("[[1 0] [0 1]]", user_content)  # Input grid formatted
-        self.assertIn("[[0 1] [1 0]]", user_content)  # Output grid formatted
+        self.assertIn("1 0\n0 1", user_content)  # Input grid formatted as visual rows
+        self.assertIn("0 1\n1 0", user_content)  # Output grid formatted as visual rows
         self.assertIsNone(reasoning)  # No reasoning field in basic task data
 
         # Verify prompt loader was called with correct version

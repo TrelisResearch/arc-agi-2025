@@ -20,18 +20,13 @@ def extract_program_from_response(response, debug: bool = False) -> str:
     if debug and len(full_text) > 0:
         print(f"🔍 Response content: {len(full_text)} chars")
 
-    # Try to find PROGRAM: marker (case insensitive)
-    program_match = re.search(r'PROGRAM:\s*(.*?)(?:\n\s*\n|\Z)', full_text, re.DOTALL | re.IGNORECASE)
-    if program_match:
-        return program_match.group(1).strip()
+    # Extract content between <PROGRAM> tags
+    tag_match = re.search(r'<PROGRAM>\s*(.*?)\s*</PROGRAM>', full_text, re.DOTALL | re.IGNORECASE)
+    if tag_match:
+        return tag_match.group(1).strip()
 
-    # Try alternative patterns like "Program:" or just the content itself
-    alt_match = re.search(r'(?:Program|TRANSFORMATION|Rule):\s*(.*?)(?:\n\s*\n|\Z)', full_text, re.DOTALL | re.IGNORECASE)
-    if alt_match:
-        return alt_match.group(1).strip()
-
-    # Fallback: return the full response if no marker found
-    return full_text.strip()
+    # If no tags found, return empty string (strict format enforcement)
+    return ""
 
 
 def extract_grid_from_response(response) -> Optional[List[List[int]]]:
@@ -48,28 +43,15 @@ def extract_grid_from_response(response) -> Optional[List[List[int]]]:
     if not full_text:
         return None
 
-    # Look for OUTPUT: pattern
-    output_match = re.search(r'OUTPUT:\s*(\[.*?\])', full_text, re.DOTALL)
-    if output_match:
+    # Extract grid from <OUTPUT> tags
+    tag_match = re.search(r'<OUTPUT>\s*(\[.*?\])\s*</OUTPUT>', full_text, re.DOTALL)
+    if tag_match:
         try:
-            grid_str = output_match.group(1).strip()
+            grid_str = tag_match.group(1).strip()
             # Use ast.literal_eval for safe evaluation
             grid = ast.literal_eval(grid_str)
 
             # Validate it's a proper 2D list of integers
-            if isinstance(grid, list) and all(isinstance(row, list) for row in grid):
-                if all(isinstance(cell, int) and 0 <= cell <= 9 for row in grid for cell in row):
-                    return grid
-        except (ValueError, SyntaxError):
-            pass
-
-    # Fallback: try to find any list-like structure
-    bracket_match = re.search(r'(\[\[.*?\]\])', full_text, re.DOTALL)
-    if bracket_match:
-        try:
-            grid_str = bracket_match.group(1).strip()
-            grid = ast.literal_eval(grid_str)
-
             if isinstance(grid, list) and all(isinstance(row, list) for row in grid):
                 if all(isinstance(cell, int) and 0 <= cell <= 9 for row in grid for cell in row):
                     return grid
