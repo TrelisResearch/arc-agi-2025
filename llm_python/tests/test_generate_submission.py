@@ -54,7 +54,6 @@ class TestSubmissionGenerator(unittest.TestCase):
                     "predicted_train_output": [[[1, 1]], [[2, 2]], [[3, 3]]],
                     "predicted_test_output": predicted_test,
                     "model": "test-model",
-                    "is_transductive": i == 0,  # First attempt is transductive
                 })
         
         return pd.DataFrame(data)

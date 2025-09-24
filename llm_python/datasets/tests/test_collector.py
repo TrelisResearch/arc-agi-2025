@@ -23,7 +23,6 @@ def minimal_sample():
         "predicted_train_output": [[[1]]],
         "predicted_test_output": [[[1]]],
         "model": "test_model",
-        "is_transductive": False,
     }
 
 

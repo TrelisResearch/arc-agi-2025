@@ -25,7 +25,6 @@ PARQUET_SCHEMA = pa.schema(
             nullable=False,
         ),  # Required
         pa.field("model", pa.string(), nullable=False),  # Required
-        pa.field("is_transductive", pa.bool_(), nullable=False),  # Required
         pa.field("refined_from_id", pa.string(), nullable=True),  # Optional
         pa.field("compound_inspiration_id", pa.string(), nullable=True),  # Optional
     )
@@ -69,7 +68,6 @@ class ProgramSample(TypedDict):
         List[List[int]]
     ]  # Program's predicted outputs for test inputs
     model: str  # What model generated this example
-    is_transductive: bool  # Whether program hardcodes outputs (transductive)
     refined_from_id: Optional[
         str
     ]  # Row ID of the example this was refined from (if applicable)

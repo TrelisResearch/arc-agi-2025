@@ -82,7 +82,6 @@ class TestValidateSoarRow:
             "predicted_train_output": [[[1]]],
             "predicted_test_output": [[[1]]],
             "model": "test_model",
-            "is_transductive": False,
         }
         errors = validate_soar_row(row).errors
         assert errors == []
@@ -102,7 +101,6 @@ class TestValidateSoarRow:
             "predicted_train_output": [[[1]]],
             "predicted_test_output": [[[1]]],
             "model": "test_model",
-            "is_transductive": False,
         }
         errors = validate_soar_row(row).errors
         assert any("program must be a non-empty string" in e for e in errors)
@@ -152,7 +150,6 @@ class TestValidateSoarRow:
             "predicted_train_output": [[[True, False], [False, True]]],
             "predicted_test_output": [[[True, False], [False, True]]],
             "model": "test_model",
-            "is_transductive": False,
         }
         result = validate_soar_row(row)
         assert not result.is_valid

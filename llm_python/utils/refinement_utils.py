@@ -509,7 +509,6 @@ def create_refined_program_entry(
         'code': refined_code,
         'model': model,
         'reasoning': f"Refined from {original_program.get('row_id', 'unknown')}",
-        'is_transductive': False,  # Assume refined programs are not transductive
         'parent_program_id': original_program.get('row_id'),  # Track lineage
     }
 
@@ -583,7 +582,6 @@ def select_best_program_for_refinement(
 def is_program_valid_for_refinement(program_data: Dict[str, Any], task_data: Optional[Dict] = None) -> bool:
     """
     Determine if a program is valid for refinement based on filtering strategy:
-    - Exclude transductive programs
     - Exclude programs that are 100% correct on training (nothing to improve)
     - Exclude pass-through programs (predicted train outputs == predicted train inputs)
     - Include all other programs (0% correct might have useful partial logic)
@@ -595,9 +593,6 @@ def is_program_valid_for_refinement(program_data: Dict[str, Any], task_data: Opt
     Returns:
         True if program should be included for refinement
     """
-    # Skip transductive programs
-    if program_data.get('is_transductive', False):
-        return False
 
     # Skip pass-through programs (predicted outputs == inputs)
     from llm_python.utils.program_filters import is_pass_through_program
@@ -608,5 +603,5 @@ def is_program_valid_for_refinement(program_data: Dict[str, Any], task_data: Opt
     if not correct_data:
         return True  # Include programs with no correctness data
 
-    # Include ALL non-transductive programs that are NOT perfect (< 100% correct)
+    # Include ALL programs that are NOT perfect (< 100% correct)
     return not all(correct_data)  # Exclude only 100% correct programs

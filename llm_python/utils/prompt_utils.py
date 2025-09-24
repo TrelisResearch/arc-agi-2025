@@ -31,13 +31,13 @@ def _format_predicted_output_for_display(output_grid: List[List[int]]) -> Tuple[
         height, width = arr.shape
         shape_string = f"grid shape: {width} by {height}"
 
-        # Format grid with clean display (no commas)
-        formatted_grid = str(output_grid).replace(",", "")
+        # Format grid using the same visual format as other grids
+        formatted_grid = _format_grid_for_prompt(output_grid)
 
         return formatted_grid, shape_string
     except (ValueError, TypeError, AttributeError):
-        # Fallback to simple string representation
-        return str(output_grid), ""
+        # Fallback to visual grid format
+        return _format_grid_for_prompt(output_grid), ""
 
 
 def _format_grid_for_prompt(grid: List[List[int]]) -> str:
@@ -330,15 +330,17 @@ def generate_refinement_task_content(task_data: Dict, draft_program: Optional[st
 
                 formatted_grid, shape_string = _format_predicted_output_for_display(predicted_output)
                 if is_natural_language:
-                    content += f"The program application gave the following results ({shape_string}):\n{formatted_grid}\n"
+                    content += f"The program application gave the following results ({shape_string}):\n{formatted_grid}"
                 else:
-                    content += f"The execution gave the following results ({shape_string}):\n{formatted_grid}\n"
+                    content += f"The execution gave the following results ({shape_string}):\n{formatted_grid}"
 
-                # Add ASCII diff for incorrect outputs
+                # Add ASCII diff for incorrect outputs (directly after the grid, no extra spacing)
                 if not is_correct:
                     expected_output = train_examples[display_idx - 1]["output"]
                     diff_text = _generate_ascii_diff(expected_output, predicted_output)
-                    content += f"\n{diff_text}\n"
+                    content += f"\n{diff_text}"
+
+                content += "\n"  # Single newline after each output section
 
     # Add test output display if requested (before summary message)
     if show_output_test and predicted_outputs and "test" in predicted_outputs:

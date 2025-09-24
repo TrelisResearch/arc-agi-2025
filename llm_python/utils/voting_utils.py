@@ -93,9 +93,7 @@ def generic_voting(
 
         # Debug print for each attempt
         train_acc = att.get('train_accuracy', 0.0)
-        transductive = att.get('is_transductive', False)
-        trans_conf = att.get('transduction_confidence', 'N/A')
-        # print(f"Attempt {i+1}: Key #{key_to_index[key]} | Weight: {weight:.4f} | Train acc: {train_acc:.3f} | Transductive: {transductive} | Trans conf: {trans_conf}")
+        # print(f"Attempt {i+1}: Key #{key_to_index[key]} | Weight: {weight:.4f} | Train acc: {train_acc:.3f}")
 
     # Sort by total weight (descending)
     weighted_patterns = sorted(
@@ -128,61 +126,40 @@ def generic_voting(
     return top_k_predictions
 
 
-def compute_weighted_majority_voting(attempts: List[Dict], top_k: int = 2, no_transductive_penalty: bool = False, task_id: str = None) -> List:
-    """Compute weighted majority voting based on count + 1000 * train_accuracy, with optional transductive confidence penalty"""
+def compute_weighted_majority_voting(attempts: List[Dict], top_k: int = 2, task_id: str = None) -> List:
+    """Compute weighted majority voting based on count + 1000 * train_accuracy"""
     # Filter out attempts with invalid outputs
     valid_attempts = [att for att in attempts if att.get('outputs_valid', True)]
-    
+
     def weight_func(att: Dict) -> float:
         train_acc = att.get('train_accuracy', 0.0)
-        base_weight = 1.0 + 1000.0 * train_acc
-        
-        # Apply transductive penalty using (1 - confidence)² unless disabled
-        if not no_transductive_penalty:
-            confidence = att.get("transduction_confidence")
-            if confidence is None:
-                # Log missing confidence and default to no penalty
-                print(f"⚠️ Missing transduction_confidence, defaulting to 0.0 (no penalty)")
-                confidence = 0.0
-            penalty = (1 - confidence) ** 2
-            return base_weight * penalty
-        
-        return base_weight
-    
+        return 1.0 + 1000.0 * train_acc
+
     return generic_voting(valid_attempts, weight_func, top_k, task_id)
 
 
 def compute_train_majority_voting(attempts: List[Dict], top_k: int = 2) -> List:
-    """Compute train-majority voting for test outputs with transductive confidence penalty"""
+    """Compute train-majority voting for test outputs"""
     # Filter out attempts with invalid outputs
     valid_attempts = [att for att in attempts if att.get('outputs_valid', True)]
-    
+
     if not valid_attempts:
         return []
-    
-    # Calculate effective train score with transductive penalty
-    def effective_train_score(att: Dict) -> float:
-        train_correct = sum(tr.get('correct', False) for tr in att.get('train_results', []))
-        if att.get("is_transductive", False):
-            confidence = att.get("transduction_confidence", 1.0)
-            penalty = (1 - confidence) ** 2
-            return train_correct * penalty
-        return train_correct
-    
-    # Find best effective score
-    best_train_score = max(effective_train_score(att) for att in valid_attempts)
-    
+
+    # Calculate train score
+    def train_score(att: Dict) -> float:
+        return sum(tr.get('correct', False) for tr in att.get('train_results', []))
+
+    # Find best score
+    best_train_score = max(train_score(att) for att in valid_attempts)
+
     # Filter to best group
     best_group = [
-        att for att in valid_attempts 
-        if abs(effective_train_score(att) - best_train_score) < 0.001  # Small epsilon for float comparison
+        att for att in valid_attempts
+        if abs(train_score(att) - best_train_score) < 0.001  # Small epsilon for float comparison
     ]
     
     def weight_func(att: Dict) -> float:
-        # Apply same transductive penalty in final weighting
-        if att.get("is_transductive", False):
-            confidence = att.get("transduction_confidence", 1.0)
-            return (1 - confidence) ** 2
         return 1.0
-    
+
     return generic_voting(best_group, weight_func, top_k) 

@@ -159,18 +159,9 @@ class TestSelectBestProgramForRefinement:
 class TestIsProgramValidForRefinement:
     """Test the is_program_valid_for_refinement function"""
     
-    def test_exclude_transductive_programs(self):
-        """Test that transductive programs are excluded"""
-        program = {
-            'is_transductive': True,
-            'correct_train_input': [True, False]
-        }
-        assert not is_program_valid_for_refinement(program)
-    
     def test_exclude_perfect_programs(self):
         """Test that 100% correct programs are excluded"""
         program = {
-            'is_transductive': False,
             'correct_train_input': [True, True, True]
         }
         assert not is_program_valid_for_refinement(program)
@@ -178,7 +169,6 @@ class TestIsProgramValidForRefinement:
     def test_include_partial_programs(self):
         """Test that partially correct programs are included"""
         program = {
-            'is_transductive': False,
             'correct_train_input': [True, False, True]
         }
         assert is_program_valid_for_refinement(program)
@@ -186,7 +176,6 @@ class TestIsProgramValidForRefinement:
     def test_include_zero_percent_programs(self):
         """Test that 0% correct programs are included (new behavior)"""
         program = {
-            'is_transductive': False,
             'correct_train_input': [False, False, False]
         }
         assert is_program_valid_for_refinement(program)
@@ -202,14 +191,12 @@ class TestIsProgramValidForRefinement:
         """Test numpy array input for correctness"""
         import numpy as np
         program = {
-            'is_transductive': False,
             'correct_train_input': np.array([True, False, True])
         }
         assert is_program_valid_for_refinement(program)
         
         # Test 100% correct numpy array
         program_perfect = {
-            'is_transductive': False,
             'correct_train_input': np.array([True, True, True])
         }
         assert not is_program_valid_for_refinement(program_perfect)
@@ -583,7 +570,6 @@ class TestCreateRefinedProgramEntry:
 
         assert entry['code'] == 'refined code'
         assert entry['model'] == 'unknown'
-        assert entry['is_transductive'] == False
         assert entry['parent_program_id'] == 'orig123'
         assert entry['row_id'].startswith('refined_')
         assert len(entry['row_id']) == 16  # 'refined_' + 8 hex chars
@@ -886,29 +872,6 @@ class TestREXEnhancedFunctionality:
         # Quality score should equal correctness (no bonus)
         expected_quality = 0.5  # Just the correctness percentage
         assert abs(result['_rex_quality_score'] - expected_quality) < 0.001
-
-    def test_transductive_penalty_behavior(self):
-        """Test that transductive programs are treated as 0% correct for learning"""
-        programs = [
-            {'row_id': 'prog1', 'code': 'code1', 'correct_train_input': [True, False]}  # 50%
-        ]
-        pool = REXProgramPool(programs)
-
-        # Simulate a transductive refinement that appears to be 100% correct
-        # but should be treated as 0% for learning purposes
-        pool.track_refinement_attempt('prog1', 0.0, 0.50)  # Transductive = 0% in tracking
-
-        stats = pool.refinement_success_stats['prog1']
-        assert stats['attempts'] == 1
-        assert stats['improvements'] == 0  # No improvement since 0% < 50%
-        assert stats['total_improvement'] == -0.50  # Treated as degradation
-        assert stats['avg_improvement'] == -0.50  # This program gets penalized
-
-        # After this "bad" refinement history, quality score should be penalized
-        result = pool.sample_program("rex")
-        expected_quality = 0.5 + (-0.50 * 0.5)  # correctness + penalty (using REX_REFINEMENT_BONUS_WEIGHT=0.5)
-        assert abs(result['_rex_quality_score'] - expected_quality) < 0.001
-        assert result['_rex_quality_score'] == 0.25  # Penalized (0.5 + (-0.50 * 0.5) = 0.25)
 
     def test_pixel_match_calculation_with_numpy_arrays(self):
         """Test that pixel match functions handle numpy arrays without truth value errors"""

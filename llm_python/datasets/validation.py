@@ -37,7 +37,6 @@ def validate_soar_row(row: dict) -> ValidateRowResult:
         "predicted_train_output",
         "predicted_test_output",
         "model",
-        "is_transductive",
     ]
     missing_fields = [field for field in required_fields if field not in row]
     if missing_fields:

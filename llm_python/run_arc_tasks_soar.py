@@ -31,7 +31,6 @@ from llm_python.utils.metrics_utils import (
     metrics_to_percentages,
 )
 from llm_python.utils.refinement_utils import REXProgramPool
-from llm_python.transduction.code_classifier import CodeTransductionClassifier
 from llm_python.utils.prompt_loader import PromptLoader
 from llm_python.utils.serialization import ResponseSerializer
 from llm_python.utils.api_client import ARCAPIClient
@@ -82,10 +81,6 @@ class AttemptDetail(TypedDict):
     has_valid_outputs: bool  # Whether at least one output passes ARC validation
     valid_prediction_count: int  # Number of valid predictions
 
-    # Transduction detection
-    is_transductive: bool  # Whether program hardcodes outputs
-    transduction_confidence: float  # Confidence score for transduction classification
-    transduction_reason: str  # Why it's considered transductive
 
     # Training results
     train_results: List[TrainResult]  # Results for each training example
@@ -168,7 +163,6 @@ class ARCTaskRunnerSimple:
         unsafe_executor: bool = False,
         lora_adapter: Optional[str] = None,
         sample_name: Optional[str] = None,
-        no_transductive_penalty: bool = False,
         parquet_output_dir: Optional[str] = None,
         refinement_dataset: Optional[str] = None,
         early_stop_threshold: int = 7,
@@ -198,7 +192,6 @@ class ARCTaskRunnerSimple:
         # Use custom output directory if provided, otherwise use default
         output_dir = Path(parquet_output_dir) if parquet_output_dir else None
         self.dataset_collector = SoarDatasetCollector(sample_name, output_dir=output_dir)
-        self.no_transductive_penalty = no_transductive_penalty
 
         # Signal handling for graceful shutdown
         self._shutdown_requested = False
@@ -239,7 +232,6 @@ class ARCTaskRunnerSimple:
         self.executor = None
         self._executor_type = "llm-based"
         self.prompt_loader = PromptLoader()
-        self.transduction_classifier = CodeTransductionClassifier()
 
         # Thread-safe cost tracking
         self._cost_lock = threading.Lock()
@@ -386,7 +378,7 @@ class ARCTaskRunnerSimple:
 
     def _count_all_train_correct_programs(self, task_id: str, current_results: dict, refinement_programs: dict, early_stop_counts: dict = None) -> int:
         """
-        Count non-transductive all-train-correct programs for a task from:
+        Count all-train-correct programs for a task from:
         1. Refinement dataset programs (using pre-computed counts)
         2. Current execution results
         """
@@ -398,15 +390,13 @@ class ARCTaskRunnerSimple:
         elif task_id in refinement_programs:
             # Fallback to old method if pre-computed counts not available
             for program in refinement_programs[task_id]['programs']:
-                if (not program.get('is_transductive', False) and 
-                    self._is_all_train_correct(program.get('correct_train_input', []))):
+                if self._is_all_train_correct(program.get('correct_train_input', [])):
                     count += 1
         
         # Count from current execution attempts
         if task_id in current_results and 'attempts' in current_results[task_id]:
             for attempt in current_results[task_id]['attempts']:
-                if (attempt.get('train_accuracy', 0.0) == 1.0 and 
-                    not attempt.get('is_transductive', False)):
+                if attempt.get('train_accuracy', 0.0) == 1.0:
                     count += 1
                     
         return count
@@ -414,7 +404,7 @@ class ARCTaskRunnerSimple:
     def _should_skip_task_attempts(self, task_id: str, current_results: dict, refinement_programs: dict, early_stop_counts: dict = None) -> bool:
         """
         Check if we should skip dispatching attempts for a task because it has
-        reached the early stopping threshold of non-transductive all-train-correct programs.
+        reached the early stopping threshold of all-train-correct programs.
         """
         if self.early_stop_threshold <= 0:
             return False  # Early stopping disabled
@@ -535,7 +525,6 @@ class ARCTaskRunnerSimple:
 
         Criteria for adding:
         - Program was successfully extracted (program_extracted=True)
-        - Is non-transductive
         - Is NOT 100% correct on training (to avoid perfect programs)
         """
         rex_pool = task_result.get("rex_pool")
@@ -546,10 +535,6 @@ class ARCTaskRunnerSimple:
         if refined_from_id:
             refined_correctness = attempt_detail.get("train_accuracy", 0.0)
 
-            # Treat transductive programs as 0% correct for learning purposes
-            # (they don't represent genuine pattern learning)
-            if attempt_detail.get("is_transductive", False):
-                refined_correctness = 0.0
 
             # Find original program correctness
             original_correctness = 0.0
@@ -565,7 +550,6 @@ class ARCTaskRunnerSimple:
         # Check if attempt meets criteria for adding to pool
         # Keep any program that was successfully extracted, even if it fails execution
         if (attempt_detail.get("program_extracted", False) and
-            not attempt_detail.get("is_transductive", False) and
             attempt_detail.get("train_accuracy", 0.0) < 1.0):  # Not 100% correct
 
             # Create refined program entry
@@ -925,7 +909,6 @@ class ARCTaskRunnerSimple:
                 predicted_train_output=predicted_train_output,
                 predicted_test_output=predicted_test_output,
                 model=self.model,
-                is_transductive=attempt_detail.get("is_transductive", False),
                 refined_from_id=refined_from_id,
             )
 
@@ -1226,28 +1209,6 @@ class ARCTaskRunnerSimple:
         has_valid_outputs, valid_prediction_count, validation_errors = \
             ARCTaskValidator.validate_prediction_list_partial(all_predictions, "outputs") if program_extracted and all_predictions else (False, 0, [])
 
-        # Run transduction detection ONLY if outputs are valid
-        is_transductive = False
-        transduction_confidence = 0.0
-        transduction_reason = ""
-        if program_extracted and outputs_valid:
-            try:
-                is_transductive, transduction_confidence = (
-                    self.transduction_classifier.is_transductive(program, task_data)
-                )
-                if is_transductive:
-                    transduction_reason = f"Code-based transduction detected (confidence: {transduction_confidence:.3f})"
-                else:
-                    transduction_reason = f"Not transductive (confidence: {1 - transduction_confidence:.3f})"
-            except Exception as e:
-                transduction_reason = f"Transduction detection failed: {e}"
-                transduction_confidence = 0.5  # Default to uncertain if detection fails
-        elif not program_extracted:
-            transduction_reason = "No program extracted"
-            transduction_confidence = 0.0
-        else:
-            transduction_reason = "Invalid outputs - skipping transduction detection"
-            transduction_confidence = 0.0
 
         # Store attempt details
         # Note: This dictionary structure matches the AttemptDetail TypedDict defined above
@@ -1262,9 +1223,6 @@ class ARCTaskRunnerSimple:
             outputs_valid=outputs_valid,
             has_valid_outputs=has_valid_outputs,
             valid_prediction_count=valid_prediction_count,
-            is_transductive=is_transductive,
-            transduction_confidence=transduction_confidence,
-            transduction_reason=transduction_reason,
             train_results=train_results,
             train_accuracy=train_accuracy,
             train_exec_errors=train_exec_errors,
@@ -1669,9 +1627,6 @@ class ARCTaskRunnerSimple:
                             "outputs_valid": False,
                             "has_valid_outputs": False,
                             "valid_prediction_count": 0,
-                            "is_transductive": False,
-                            "transduction_confidence": 0.0,
-                            "transduction_reason": "skipped_early_stop",
                             "train_results": [],
                             "test_results": [],
                             "all_test_correct": False,
@@ -2069,54 +2024,40 @@ class ARCTaskRunnerSimple:
                 invalid_outputs += 1
         
         # 2. TEST CATEGORIES (if not submit mode)
-        test_perfect_total = test_perfect_trans = 0
-        test_partial_total = test_partial_trans = 0  
-        test_incorrect_total = test_incorrect_trans = 0
-        
+        test_perfect_total = 0
+        test_partial_total = 0
+        test_incorrect_total = 0
+
         if not submit_mode:
             for att in attempts:
                 if not att.get("outputs_valid", False):
                     continue
-                is_trans = att.get("is_transductive", False)
                 test_correct_count = att.get("test_correct_count", 0)
                 total_test = len(task_result["task_data"]["test"]) if "task_data" in task_result else 0
-                
+
                 if test_correct_count == total_test and total_test > 0:
                     test_perfect_total += 1
-                    if is_trans:
-                        test_perfect_trans += 1
                 elif test_correct_count > 0:
                     test_partial_total += 1
-                    if is_trans:
-                        test_partial_trans += 1
                 else:
                     test_incorrect_total += 1
-                    if is_trans:
-                        test_incorrect_trans += 1
 
-        # 3. TRAIN CATEGORIES (includes transductive)
-        train_perfect_total = train_perfect_trans = 0
-        train_partial_total = train_partial_trans = 0
-        train_incorrect_total = train_incorrect_trans = 0
-        
+        # 3. TRAIN CATEGORIES
+        train_perfect_total = 0
+        train_partial_total = 0
+        train_incorrect_total = 0
+
         for att in attempts:
             if not att.get("outputs_valid", False):
                 continue
-            is_trans = att.get("is_transductive", False)
             train_acc = att.get("train_accuracy", 0.0)
-            
+
             if train_acc == 1.0:
                 train_perfect_total += 1
-                if is_trans:
-                    train_perfect_trans += 1
             elif train_acc > 0:
                 train_partial_total += 1
-                if is_trans:
-                    train_partial_trans += 1
             else:
                 train_incorrect_total += 1
-                if is_trans:
-                    train_incorrect_trans += 1
 
         # Find best attempt for additional context
         best_attempt = max(
@@ -2126,14 +2067,11 @@ class ARCTaskRunnerSimple:
 
         # Build the summary line with new structure
         
-        # Helper function to format category with transductive breakdown
-        def format_with_trans(total, trans, category_name):
+        # Helper function to format category
+        def format_category(total, category_name):
             if total == 0:
                 return ""
-            if trans > 0:
-                return f"{total} {category_name} (of which {trans} trans)"
-            else:
-                return f"{total} {category_name}"
+            return f"{total} {category_name}"
         
         # 1. OUTPUT VALIDITY section
         validity_parts = []
@@ -2160,26 +2098,26 @@ class ARCTaskRunnerSimple:
         test_section = ""
         if not submit_mode:
             test_parts = []
-            test_perf = format_with_trans(test_perfect_total, test_perfect_trans, "test-perfect")
+            test_perf = format_category(test_perfect_total, "test-perfect")
             if test_perf:
                 test_parts.append(test_perf)
-            test_part = format_with_trans(test_partial_total, test_partial_trans, "test-partial")
+            test_part = format_category(test_partial_total, "test-partial")
             if test_part:
                 test_parts.append(test_part)
-            test_incorr = format_with_trans(test_incorrect_total, test_incorrect_trans, "test-incorrect")
+            test_incorr = format_category(test_incorrect_total, "test-incorrect")
             if test_incorr:
                 test_parts.append(test_incorr)
             test_section = ", ".join(test_parts)
         
         # 3. TRAIN section
         train_parts = []
-        train_perf = format_with_trans(train_perfect_total, train_perfect_trans, "train-perfect")
+        train_perf = format_category(train_perfect_total, "train-perfect")
         if train_perf:
             train_parts.append(train_perf)
-        train_part = format_with_trans(train_partial_total, train_partial_trans, "train-partial")
+        train_part = format_category(train_partial_total, "train-partial")
         if train_part:
             train_parts.append(train_part)
-        train_incorr = format_with_trans(train_incorrect_total, train_incorrect_trans, "train-incorrect")
+        train_incorr = format_category(train_incorrect_total, "train-incorrect")
         if train_incorr:
             train_parts.append(train_incorr)
         train_section = ", ".join(train_parts)
@@ -2263,9 +2201,6 @@ class ARCTaskRunnerSimple:
             outputs_valid=attempt.get("outputs_valid", False),
             has_valid_outputs=attempt.get("has_valid_outputs", False),
             valid_prediction_count=attempt.get("valid_prediction_count", 0),
-            is_transductive=attempt.get("is_transductive", False),
-            transduction_confidence=attempt.get("transduction_confidence", 0.0),
-            transduction_reason=attempt.get("transduction_reason", ""),
             train_results=[],  # Always empty for trimmed
             train_accuracy=attempt.get("train_accuracy", 0.0),
             train_exec_errors=attempt.get("train_exec_errors", 0),
@@ -2354,19 +2289,19 @@ class ARCTaskRunnerSimple:
         if results:
             print(f"\n📊 CORE METRICS:")
             print(
-                f"  Pass@2 (Weighted Voting): {percentage_metrics['weighted_voting_pass2']:.1%} ({percentage_metrics['weighted_voting_pass2_excl']:.1%} excl. trans)"
+                f"  Pass@2 (Weighted Voting): {percentage_metrics['weighted_voting_pass2']:.1%}"
             )
             print(
-                f"  Pass@2 (Train Majority):  {percentage_metrics['train_majority_pass2']:.1%} ({percentage_metrics['train_majority_pass2_excl']:.1%} excl. trans)"
+                f"  Pass@2 (Train Majority):  {percentage_metrics['train_majority_pass2']:.1%}"
             )
             print(
-                f"  Oracle (Best Attempt):    {percentage_metrics['all_test_correct']:.1%} ({percentage_metrics['all_test_correct_excl']:.1%} excl. trans)"
+                f"  Oracle (Best Attempt):    {percentage_metrics['all_test_correct']:.1%}"
             )
             print(
-                f"  All Train Correct:        {percentage_metrics['all_train_correct_incl']:.1%} ({percentage_metrics['all_train_correct']:.1%} excl. trans)"
+                f"  All Train Correct:        {percentage_metrics['all_train_correct_incl']:.1%}"
             )
             print(
-                f"  Min 1 Train Correct:      {percentage_metrics['min1_train_correct_incl']:.1%} ({percentage_metrics['min1_train_correct']:.1%} excl. trans)"
+                f"  Min 1 Train Correct:      {percentage_metrics['min1_train_correct_incl']:.1%}"
             )
             print(
                 f"  Min 1 Code Success:       {percentage_metrics['min1_code_success']:.1%}"
@@ -2644,11 +2579,6 @@ def main():
         help="Disable thinking for Qwen models (Note: Not supported by DashScope commercial models)",
     )
     parser.add_argument(
-        "--no-transductive-penalty",
-        action="store_true",
-        help="Disable transductive penalty in voting (default: apply penalty)",
-    )
-    parser.add_argument(
         "--unsafe-executor",
         action="store_true",
         help="⚠️  UNSAFE: Use unrestricted executor (no Docker sandboxing). Generated code runs directly on your system. SECURITY RISK!",
@@ -2705,7 +2635,7 @@ def main():
         "--early-stop-threshold",
         type=int,
         default=7,
-        help="Stop dispatching new attempts for a task when it has this many non-transductive all-train-correct programs (default: 7)",
+        help="Stop dispatching new attempts for a task when it has this many all-train-correct programs (default: 7)",
     )
     parser.add_argument(
         "--task-id",
@@ -2744,7 +2674,6 @@ def main():
         max_tokens=args.max_tokens,
         temperature=args.temperature,
         reasoning_effort=args.reasoning_effort,
-        no_transductive_penalty=args.no_transductive_penalty,
         qwen_no_think=args.qwen_no_think,
         prompt_version=args.prompt_version,
         unsafe_executor=args.unsafe_executor,

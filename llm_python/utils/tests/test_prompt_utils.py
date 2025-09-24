@@ -215,7 +215,7 @@ This should work."""
 
         self.assertEqual(system_content, "You are an AI assistant specialized in refinement.")
         self.assertIn("Previous implementation:", user_content)
-        self.assertIn("[[1 0] [0 1]]", user_content)  # Predicted output
+        self.assertIn("1 0\n0 1", user_content)  # Predicted output in visual format
         self.assertIn("incorrect", user_content)  # Should show incorrect result
 
     def test_create_arc_prompt_with_reasoning(self):

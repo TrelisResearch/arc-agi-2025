@@ -35,7 +35,6 @@ def create_valid_sample_data() -> pd.DataFrame:
             [[[2, 2]]]
         ],
         'model': ['gpt-4o-mini', 'claude-3-5-sonnet'],
-        'is_transductive': [False, True]  # Test both values
     })
 
 
@@ -275,7 +274,6 @@ class TestEdgeCases:
             'predicted_train_output': [large_output],
             'predicted_test_output': [large_output[:2]],
             'model': ['gpt-4o-mini'],
-            'is_transductive': [False]
         })
         
         # Should validate successfully
@@ -310,7 +308,6 @@ class TestEdgeCases:
                 [[[3, 4]]]
             ],
             'model': ['claude-3-5-sonnet'],
-            'is_transductive': [False]
         })
         
         # Should validate and roundtrip successfully
@@ -341,7 +338,6 @@ class TestEdgeCases:
             'predicted_train_output': [[]],  # Empty list
             'predicted_test_output': [[]],   # Empty list
             'model': ['gpt-4o-mini'],
-            'is_transductive': [False]
         })
         
         # Should validate successfully (empty lists are valid)
