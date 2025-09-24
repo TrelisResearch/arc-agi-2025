@@ -3,7 +3,6 @@ Simple, self-contained subprocess executor for Python code.
 No dependencies on base classes or complex imports.
 """
 
-import subprocess
 import sys
 import pickle
 import base64
@@ -11,6 +10,8 @@ import os
 import threading
 import time
 from typing import Optional, Any, Tuple
+
+from sandbox.ipc_sync_fork_server_client import IPCForkServerClient
 
 try:
     import psutil
@@ -22,6 +23,7 @@ from sandbox.concurrency import ConcurrencyGate
 
 class ExecutionTimeout(Exception):
     """Exception raised when code execution exceeds the time limit."""
+
     def __init__(self, timeout_seconds: float):
         self.timeout_seconds = timeout_seconds
         super().__init__(f"Code execution timed out after {timeout_seconds} seconds.")
@@ -33,35 +35,127 @@ MAX_CONCURRENT_PROCESSES = max(1, CPU_COUNT // 4)
 sandbox_process_gate = ConcurrencyGate(MAX_CONCURRENT_PROCESSES)
 
 
-def _monitor_memory(
-    process: subprocess.Popen, memory_limit_bytes: int, result_container: dict
-):
+class ProcessMonitor:
     """
-    A thread target function that polls a process's memory usage and kills it
-    if it exceeds the limit.
+    A singleton class that runs a single background thread to monitor all
+    subprocess memory and execution time.
     """
-    if not psutil:
-        return  # psutil not installed, monitoring is disabled.
 
-    try:
-        p = psutil.Process(process.pid)
-        while process.poll() is None:
-            try:
-                rss = p.memory_info().rss
-                if rss > memory_limit_bytes:
-                    result_container["oom_killed"] = True
-                    # Kill the entire process group to be safe
-                    for child in p.children(recursive=True):
-                        child.kill()
-                    p.kill()
-                    return
-            except psutil.NoSuchProcess:
-                # Process finished between poll() and memory_info()
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls):
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = super().__new__(cls)
+                cls._instance._initialized = False
+        return cls._instance
+
+    def __init__(self):
+        if self._initialized:
+            return
+        with self._lock:
+            if self._initialized:
                 return
+            self.processes_to_monitor = {}
+            self.monitor_lock = threading.Lock()
+            self.monitor_thread = threading.Thread(target=self._run, daemon=True)
+            self.monitor_thread.start()
+            self._initialized = True
+
+    def add_process(
+        self,
+        pid: int,
+        memory_limit_bytes: int,
+        timeout: Optional[float],
+    ):
+        """Adds a process to be monitored."""
+        with self.monitor_lock:
+            self.processes_to_monitor[pid] = {
+                "pid": pid,
+                "memory_limit_bytes": memory_limit_bytes,
+                "timeout": timeout,
+                "start_time": time.time(),
+                "oom_killed": False,
+                "timeout_killed": False,
+            }
+
+    def get_process_info(self, pid: int) -> Optional[dict]:
+        """Gets monitoring info for a specific process."""
+        with self.monitor_lock:
+            return self.processes_to_monitor.get(pid)
+
+    def remove_process(self, pid: int):
+        """Removes a process from monitoring."""
+        with self.monitor_lock:
+            if pid in self.processes_to_monitor:
+                del self.processes_to_monitor[pid]
+
+    def _run(self):
+        """The main monitoring loop that runs in a background thread."""
+        if not psutil:
+            return  # psutil not installed, monitoring is disabled.
+
+        while True:
+            with self.monitor_lock:
+                pids = list(self.processes_to_monitor.keys())
+
+            for pid in pids:
+                with self.monitor_lock:
+                    info = self.processes_to_monitor.get(pid)
+                    if not info:
+                        continue
+
+                    try:
+                        p = psutil.Process(pid)
+                        # If process is done, no need to monitor
+                        if not p.is_running():
+                            continue
+
+                        # 1. Check for timeout
+                        if info["timeout"] is not None:
+                            elapsed = time.time() - info["start_time"]
+                            if elapsed > info["timeout"]:
+                                info["timeout_killed"] = True
+                                for child in p.children(recursive=True):
+                                    child.kill()
+                                p.kill()
+                                continue  # Move to next process
+
+                        # 2. Check for memory usage
+                        rss = p.memory_info().rss
+                        if rss > info["memory_limit_bytes"]:
+                            info["oom_killed"] = True
+                            for child in p.children(recursive=True):
+                                child.kill()
+                            p.kill()
+
+                    except psutil.NoSuchProcess:
+                        # Process finished and was removed between getting keys and processing
+                        continue
+
             time.sleep(0.05)
-    except psutil.NoSuchProcess:
-        # Process already finished before the thread started
-        return
+
+
+# Global instance of the process monitor
+# Ensure these are true singletons, even if this file is imported multiple times (e.g., with pytest reloads)
+_singleton_init_lock = threading.Lock()
+
+process_monitor = getattr(sys.modules[__name__], "_process_monitor", None)
+if process_monitor is None:
+    with _singleton_init_lock:
+        process_monitor = getattr(sys.modules[__name__], "_process_monitor", None)
+        if process_monitor is None:
+            process_monitor = ProcessMonitor()
+            setattr(sys.modules[__name__], "_process_monitor", process_monitor)
+
+fork_server = getattr(sys.modules[__name__], "_fork_server", None)
+if fork_server is None:
+    with _singleton_init_lock:
+        fork_server = getattr(sys.modules[__name__], "_fork_server", None)
+        if fork_server is None:
+            fork_server = IPCForkServerClient()
+            setattr(sys.modules[__name__], "_fork_server", fork_server)
 
 
 def execute_code_in_subprocess(
@@ -70,8 +164,8 @@ def execute_code_in_subprocess(
     """
     Executes a Python code string in a memory and time-constrained subprocess.
 
-    This version uses a monitor thread in the parent process to poll the child's
-    memory usage. If the child exceeds the memory limit, it is killed. This
+    This version uses a central monitor thread to poll the child's memory usage
+    and execution time. If the child exceeds the limits, it is killed. This
     approach works reliably across different environments (Linux, macOS, Docker)
     without relying on `systemd` or the unreliable `ulimit`.
 
@@ -80,93 +174,117 @@ def execute_code_in_subprocess(
     Args:
         code (str): Python code to execute (should contain a return statement).
         timeout (float, optional): Timeout in seconds.
+        memory_limit_mb (int): Memory limit in megabytes.
 
     Returns:
         A tuple containing the result or an exception.
     """
     with sandbox_process_gate:
-        runner_script = """
-import pickle, base64, sys
+        pid = None
+        result_path = None
+        try:
+            # Determine the directory for the temporary file.
+            # Use /dev/shm on Linux if available for memory-backed storage.
+            temp_dir = None
+            if sys.platform == "linux" and os.path.isdir("/dev/shm"):
+                temp_dir = "/dev/shm"
+
+            # Create a temporary file to store the result
+            import tempfile
+
+            with tempfile.NamedTemporaryFile(delete=False, dir=temp_dir) as tmp_file:
+                result_path = tmp_file.name
+
+                indented_code = "\n".join("    " + line for line in code.splitlines())
+                encoded_user_code = base64.b64encode(
+                    indented_code.encode("utf-8")
+                ).decode("utf-8")
+
+                runner_script = f"""
+import pickle, base64, sys, os
 try:
-    encoded_code = sys.argv[1]
+    # This code runs in a forked process.
+    encoded_code = {encoded_user_code!r}
+    result_path = {result_path!r}
     user_code = base64.b64decode(encoded_code).decode('utf-8')
-    exec_globals = {}
+    exec_globals = {{}}
     full_code = "def user_function():\\n" + user_code
     exec(full_code, exec_globals)
     result = exec_globals['user_function']()
-    serialized = base64.b64encode(pickle.dumps(result)).decode('utf-8')
-    print(f"RESULT_START{serialized}RESULT_END")
+    with open(result_path, 'wb') as f:
+        f.write(pickle.dumps({{'result': result }}))
 except Exception as e:
-    serialized_error = base64.b64encode(pickle.dumps(e)).decode('utf-8')
-    print(f"ERROR_START{serialized_error}ERROR_END", file=sys.stderr)
+    with open(result_path, 'wb') as f:
+        f.write(pickle.dumps({{'error': e }}))
+finally:
     sys.exit(1)
-    """
-        monitor_thread = None
-        process = None
-        try:
-            indented_code = "\n".join("    " + line for line in code.splitlines())
-            encoded_user_code = base64.b64encode(indented_code.encode("utf-8")).decode(
-                "utf-8"
-            )
+"""
 
-            # Use a simple command that works across Linux and macOS
-            command = [sys.executable, "-c", runner_script, encoded_user_code]
+                try:
+                    pid = fork_server.execute(runner_script)
 
-            # Use Popen to start the process in the background
-            process = subprocess.Popen(
-                command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-            )
+                    # Register the process with the central monitor
+                    memory_limit_bytes = memory_limit_mb * 1024 * 1024
+                    process_monitor.add_process(pid, memory_limit_bytes, timeout)
 
-            # Start the memory monitor thread
-            memory_limit_bytes = memory_limit_mb * 1024 * 1024
-            result_container = {"oom_killed": False}  # Use a dict to pass mutable state
-            monitor_thread = threading.Thread(
-                target=_monitor_memory,
-                args=(process, memory_limit_bytes, result_container),
-                daemon=True,
-            )
-            monitor_thread.start()
+                    # Wait for the process to complete. The monitor will kill it if needed.
+                    if psutil:
+                        try:
+                            p = psutil.Process(pid)
+                            start_wait = time.time()
+                            while p.is_running():
+                                if timeout is not None and (
+                                    time.time() - start_wait > timeout
+                                ):
+                                    # Main thread timeout as a fallback
+                                    break
+                                time.sleep(0.01)
+                        except psutil.NoSuchProcess:
+                            # Process already finished
+                            pass
 
-            # Wait for the process to complete or timeout
-            stdout, stderr = process.communicate(timeout=timeout)
+                    # Check if the monitor thread killed the process
+                    info = process_monitor.get_process_info(pid)
+                    if info:
+                        if info["oom_killed"]:
+                            return None, MemoryError(
+                                f"Process killed due to excessive memory usage (Limit: ~{memory_limit_mb}MB)."
+                            )
+                        if info["timeout_killed"]:
+                            return None, ExecutionTimeout(
+                                timeout if timeout is not None else -1.0
+                            )
 
-            # Wait for the monitor thread to finish, just in case
-            monitor_thread.join(timeout=1)
+                    # Read result from temporary file
+                    if (
+                        not os.path.exists(result_path)
+                        or os.path.getsize(result_path) == 0
+                    ):
+                        # This can happen if the process was killed for other reasons
+                        # before it could write the result.
+                        return None, Exception(
+                            "Result file is empty or missing. Subprocess may have crashed or been killed."
+                        )
 
-            # Check if the monitor thread killed the process
-            if result_container["oom_killed"]:
-                return None, MemoryError(
-                    f"Process killed due to excessive memory usage (Limit: ~{memory_limit_mb}MB)."
-                )
+                    with open(result_path, "rb") as f:
+                        try:
+                            data = pickle.load(f)
+                        except Exception as e:
+                            return None, Exception(f"Failed to unpickle result: {e}")
+                    if "error" in data:
+                        return None, data["error"]
+                    elif "result" in data:
+                        return data["result"], None
+                    else:
+                        return None, Exception("Unknown result format in result file.")
 
-            if "ERROR_START" in stderr:
-                start_marker, end_marker = "ERROR_START", "ERROR_END"
-                start_idx = stderr.find(start_marker) + len(start_marker)
-                end_idx = stderr.find(end_marker)
-                serialized_error = stderr[start_idx:end_idx]
-                return None, pickle.loads(base64.b64decode(serialized_error))
-            elif "RESULT_START" in stdout:
-                start_marker, end_marker = (
-                    "RESULT_START",
-                    "RESULT_END",
-                )  # Small typo in original, fixed
-                start_idx = stdout.find(start_marker) + len(start_marker)
-                end_idx = stdout.find("RESULT_END")
-                serialized_result = stdout[start_idx:end_idx]
-                return pickle.loads(base64.b64decode(serialized_result)), None
-            else:
-                return None, Exception(f"An unknown error occurred. Stderr: {stderr}")
+                except Exception as e:
+                    # This catches errors in the parent process, not the subprocess
+                    return None, Exception(f"Subprocess execution failed: {e}")
 
-        except subprocess.TimeoutExpired:
-            if process:
-                # Be thorough in cleanup
-                p = psutil.Process(process.pid)
-                for child in p.children(recursive=True):
-                    child.kill()
-                p.kill()
-            return None, ExecutionTimeout(timeout)
-        except Exception as e:
-            return None, Exception(f"Subprocess execution failed: {e}")
         finally:
-            if monitor_thread and monitor_thread.is_alive():
-                monitor_thread.join(timeout=1)
+            # Clean up monitoring and temporary files
+            if pid:
+                process_monitor.remove_process(pid)
+            if result_path and os.path.exists(result_path):
+                os.remove(result_path)

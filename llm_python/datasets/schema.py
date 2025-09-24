@@ -6,7 +6,9 @@ PARQUET_SCHEMA = pa.schema(
     (
         pa.field("row_id", pa.string(), nullable=False),  # Required
         pa.field("task_id", pa.string(), nullable=False),  # Required
-        pa.field("reasoning", pa.large_string(), nullable=True),  # Optional - can be null
+        pa.field(
+            "reasoning", pa.large_string(), nullable=True
+        ),  # Optional - can be null
         pa.field("code", pa.large_string(), nullable=False),  # Required
         pa.field(
             "correct_train_input", pa.list_(pa.bool_()), nullable=False
@@ -47,6 +49,47 @@ REFINEMENT_PARQUET_SCHEMA = pa.schema(
                 nullable=True,
             ),  # Required
         ]
+    )
+)
+
+PARQUET_SCHEMA_V2 = pa.schema(
+    (
+        pa.field("row_id", pa.string(), nullable=False),  # Required
+        pa.field("task_id", pa.string(), nullable=False),  # Required
+        pa.field(
+            "reasoning", pa.large_string(), nullable=True
+        ),  # Optional - can be null
+        pa.field("code", pa.large_string(), nullable=False),  # Required
+        pa.field(
+            "correct_train_input", pa.list_(pa.bool_()), nullable=False
+        ),  # Required
+        pa.field(
+            "correct_test_input", pa.list_(pa.bool_()), nullable=False
+        ),  # Required
+        pa.field(
+            "predicted_train_output",
+            pa.list_(pa.list_(pa.list_(pa.int64()))),
+            nullable=False,
+        ),  # Required
+        pa.field(
+            "predicted_test_output",
+            pa.list_(pa.list_(pa.list_(pa.int64()))),
+            nullable=False,
+        ),  # Required
+        pa.field("model", pa.string(), nullable=False),  # Required
+        pa.field("transduction_score", pa.float64(), nullable=True),  # Optional
+        # The following are set if this was a refinement example.
+        pa.field("code_original", pa.string(), nullable=True),
+        pa.field(
+            "predicted_train_output_original",
+            pa.list_(pa.list_(pa.list_(pa.int64()))),
+            nullable=True,
+        ),  # Required
+        pa.field(
+            "predicted_test_output_original",
+            pa.list_(pa.list_(pa.list_(pa.int64()))),
+            nullable=True,
+        ),  # Required
     )
 )
 

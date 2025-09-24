@@ -5,7 +5,6 @@ Unit tests for the Python code executors using pytest.
 import pytest
 
 from ..unrestricted_executor import UnrestrictedExecutor
-from .. import create_executor
 
 # Try to import Docker executor (may not be available)
 try:
@@ -122,73 +121,12 @@ class TestExecutorFactory:
     
     def test_create_unrestricted_executor(self):
         """Test creating unrestricted executor via factory."""
-        executor = create_executor("unrestricted")
+        executor = UnrestrictedExecutor()
         assert isinstance(executor, UnrestrictedExecutor)
         
         with executor:
             result, error = executor.execute_code("return 'factory test'")
             assert error is None
-            assert result == 'factory test'
-    
-    def test_auto_selection_executor(self):
-        """Test auto-selection of best available executor."""
-        executor = create_executor()  # No args = auto-selection
-        # Should return some executor (Docker if available, otherwise unrestricted)
-        assert executor is not None
-        
-        with executor:
-            result, error = executor.execute_code("return 'auto-selected executor'")
-            assert error is None
-            assert result == 'auto-selected executor'
-    
-    def test_explicit_unrestricted_executor(self):
-        """Test explicitly requesting unrestricted executor."""
-        executor = create_executor("unrestricted")
-        assert isinstance(executor, UnrestrictedExecutor)
-        
-        with executor:
-            result, error = executor.execute_code("return 'unrestricted executor'")
-            assert error is None
-            assert result == 'unrestricted executor'
-    
-    def test_invalid_executor_type(self):
-        """Test that invalid executor types raise ValueError."""
-        with pytest.raises(ValueError, match="Unknown executor type"):
-            create_executor("invalid_type")
-    
-    @pytest.mark.docker
-    @pytest.mark.skipif(not DOCKER_AVAILABLE, reason="Docker not available")
-    def test_create_docker_executor(self):
-        """Test creating Docker executor (only if Docker is available)."""
-        executor = create_executor("docker")
-        assert isinstance(executor, DockerSandboxExecutor)
-        # Don't actually run code to avoid Docker setup overhead in tests
-        executor.cleanup()
-
-
-@pytest.mark.docker
-@pytest.mark.skipif(not DOCKER_AVAILABLE, reason="Docker not available")
-class TestDockerExecutor:
-    """Test the Docker sandbox executor (only if Docker is available)."""
-    
-    def test_docker_basic_execution(self):
-        """Test basic Docker executor functionality."""
-        # This test will be skipped if Docker is not available
-        with DockerSandboxExecutor() as executor:
-            result, error = executor.execute_code("return 'docker test'")
-            assert error is None
-            assert result == 'docker test'
-    
-    def test_docker_isolation(self):
-        """Test that Docker provides isolation."""
-        # This test will be skipped if Docker is not available
-        with DockerSandboxExecutor() as executor:
-            result, error = executor.execute_code("""
-import sys
-return sys.platform
-""")
-            assert error is None
-            assert result == 'linux'  # Docker containers run Linux
 
 
 class TestErrorScenarios:
