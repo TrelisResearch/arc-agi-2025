@@ -43,10 +43,10 @@ Commercial:
 ---
 ## September 24th 2025
 Improvements to make:
+- [] Check extraction logic, perhaps make more robust, as programs are not consistently extracted.
+- [] Don't throw out failed grids [should also allow for more saved programs].
 - [] Provide grid inputs to other training examples when executing.
-- [] Don't throw out failed grids.
-- [] Check extraction logic.
-
+- [] Try refinements in the pipeline.
 
 ### Two phase natural language approach
 ```bash
@@ -86,12 +86,44 @@ Failed to apply the program, but the program was correct.
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1 --max_attempts 1 --limit 10 --max_workers 120
 ```
-...
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: google/gemini-2.5-flash
+Total tasks: 10
+Total time: 751.8s
+Successful API calls: 10/10 (100.0%)
+Total tokens used: 0
+Total cost: $0.000000
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    0.0% (0.0% excl. trans)
+  All Train Correct:        0.0% (0.0% excl. trans)
+  Min 1 Train Correct:      10.0% (10.0% excl. trans)
+  Min 1 Code Success:       40.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 60.0%
+  No Program Responses (of all attempts): 0.0%
+✅ Checkpointed 4 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250924_133434_google_gemini-2.5-flash_arc-prize-2025_evaluation.parquet
 
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --model gpt-5-mini --base-url https://openrouter.ai/api/v1 --limit 1 --max_attempts 1 --max_workers 1
 ```
+API call failed...
 
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: gpt-5-mini
+Total tasks: 0
+Total time: 1500.3s
+Successful API calls: 0/0 (0.0%)
+Total tokens used: 0
+Total cost: $0.000000
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250924_131538_gpt-5-mini_arc-prize-2025_evaluation.parquet
 
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --model gpt-oss-120b --base-url https://openrouter.ai/api/v1 --limit 1 --max_attempts 1 --max_workers 1
