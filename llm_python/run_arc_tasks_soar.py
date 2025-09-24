@@ -161,7 +161,7 @@ class ARCTaskRunnerSimple:
         temperature: Optional[float] = None,
         reasoning_effort: str = "low",
         qwen_no_think: bool = False,
-        prompt_version: str = "soar",
+        prompt_version: str = "soar-natural-language",
         unsafe_executor: bool = False,
         lora_adapter: Optional[str] = None,
         sample_name: Optional[str] = None,
@@ -916,7 +916,7 @@ class ARCTaskRunnerSimple:
             program_sample = ProgramSample(
                 task_id=task_id,
                 reasoning=reasoning,
-                code=program,
+                program=program,
                 correct_train_input=correct_train_input,
                 correct_test_input=correct_test_input,
                 predicted_train_output=predicted_train_output,
@@ -945,8 +945,8 @@ class ARCTaskRunnerSimple:
             # Return None response with error info
             return None, result["sampling_params"]
 
-    def extract_code_from_response(self, response) -> str:
-        """Extract Python code from the Chat Completions API result"""
+    def extract_program_from_response(self, response) -> str:
+        """Extract natural language program from the Chat Completions API result"""
         # Get the full text from response
         full_text = ""
 
@@ -958,7 +958,14 @@ class ARCTaskRunnerSimple:
         if self.debug and len(full_text) > 0:
             print(f"🔍 Response content: {len(full_text)} chars")
 
-        return extract_python_code(full_text, self.debug)
+        # Extract content after "PROGRAM:" marker
+        import re
+        program_match = re.search(r'PROGRAM:\s*(.*?)(?:\n\n|\Z)', full_text, re.DOTALL)
+        if program_match:
+            return program_match.group(1).strip()
+
+        # Fallback: return the full response if no PROGRAM marker found
+        return full_text.strip()
 
     def run_single_attempt(
         self,
@@ -1092,8 +1099,8 @@ class ARCTaskRunnerSimple:
             finish_reason = getattr(response.choices[0], "finish_reason", None)
             hit_max_tokens = finish_reason == "length"
 
-        # Extract and evaluate program
-        program = self.extract_code_from_response(response) if response else ""
+        # Extract natural language program
+        program = self.extract_program_from_response(response) if response else ""
         program_extracted = bool(program and program.strip())
 
         # Evaluate on training examples

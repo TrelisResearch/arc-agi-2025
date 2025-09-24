@@ -7,7 +7,7 @@ PARQUET_SCHEMA = pa.schema(
         pa.field("row_id", pa.string(), nullable=False),  # Required
         pa.field("task_id", pa.string(), nullable=False),  # Required
         pa.field("reasoning", pa.large_string(), nullable=True),  # Optional - can be null
-        pa.field("code", pa.large_string(), nullable=False),  # Required
+        pa.field("program", pa.large_string(), nullable=False),  # Required
         pa.field(
             "correct_train_input", pa.list_(pa.bool_()), nullable=False
         ),  # Required
@@ -35,7 +35,7 @@ REFINEMENT_PARQUET_SCHEMA = pa.schema(
     (
         [field for field in PARQUET_SCHEMA]
         + [
-            pa.field("code_original", pa.string(), nullable=True),
+            pa.field("program_original", pa.string(), nullable=True),
             pa.field(
                 "predicted_train_output_original",
                 pa.list_(pa.list_(pa.list_(pa.int64()))),
@@ -57,7 +57,7 @@ class ProgramSample(TypedDict):
     row_id: str  # Unique row ID for this example
     task_id: str  # Task ID from ARC
     reasoning: Optional[str]  # Reasoning trace if provided (optional)
-    code: str  # Program code that should define a `generate` function
+    program: str  # Natural language program description
     correct_train_input: List[
         bool
     ]  # Training inputs where program produced correct output
