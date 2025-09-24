@@ -41,6 +41,78 @@ Commercial:
 - Reach back out to openrouter on sponsorship again.
 
 ---
+## September 24th 2025
+### OSS Reasoning Fine-tuning Results
+
+Sampling phase:
+```bash
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/gpt-oss-20b_ds-arc-agi-2-reasoning-5-c178
+Total tasks: 120
+Total time: 3661.4s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 11,993,998
+Total cost: $4.904736
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 1.7% (1.7% excl. trans)
+  Pass@2 (Train Majority):  1.7% (1.7% excl. trans)
+  Oracle (Best Attempt):    1.7% (1.7% excl. trans)
+  All Train Correct:        1.7% (1.7% excl. trans)
+  Min 1 Train Correct:      11.7% (11.7% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.8%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.2%
+  Execution Error Responses (of all attempts): 7.4%
+  No Program Responses (of all attempts): 20.2%
+```
+
+Refinement phase:
+```bash
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/gpt-oss-20b_ds-arc-agi-2-reasoning-5-c178
+Total tasks: 119
+Total time: 3672.5s
+Successful API calls: 119/119 (100.0%)
+Total tokens used: 13,065,312
+Total cost: $4.083817
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.8% (0.8% excl. trans)
+  Pass@2 (Train Majority):  0.8% (0.8% excl. trans)
+  Oracle (Best Attempt):    0.8% (0.8% excl. trans)
+  All Train Correct:        0.8% (0.8% excl. trans)
+  Min 1 Train Correct:      11.8% (11.8% excl. trans)
+  Min 1 Code Success:       94.1%
+  Max Length Responses:     1.3%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.2%
+  Execution Error Responses (of all attempts): 4.8%
+  No Program Responses (of all attempts): 30.9%
+```
+Final results:
+============================================================
+SUBMISSION SCORING RESULTS
+============================================================
+Dataset: arc-prize-2025
+Subset: evaluation
+Reference tasks: 120
+Tasks scored: 120
+Total predictions: 344
+
+📊 PREDICTION-LEVEL METRICS:
+  Pass@1 (first attempt): 2/344 (0.6%)
+  Pass@2 (either attempt): 3/344 (0.9%)
+
+📊 TASK-LEVEL METRICS:
+  Tasks Pass@1 (all outputs correct on first attempt): 1/120 (0.8%)
+  Tasks Pass@2 (all outputs correct on either attempt): 2/120 (1.7%)
+
 ## September 23rd 2025
 ### Manual Dataset Testing for Fine-tuning
 
