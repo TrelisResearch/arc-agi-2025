@@ -17,7 +17,7 @@ def minimal_sample():
         "row_id": "abcdef",
         "task_id": "task_001",
         "reasoning": None,
-        "code": "def generate(): return [[1]]",
+        "program": "def generate(): return [[1]]",
         "correct_train_input": [True],
         "correct_test_input": [True],
         "predicted_train_output": [[[1]]],

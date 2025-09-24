@@ -77,8 +77,10 @@ class AttemptDetail(TypedDict):
 
     # Program extraction and validation
     program_extracted: bool  # Whether code was extracted from response
-    program: str  # Extracted Python code
+    program: Optional[str]  # Extracted Python code (None if extraction failed)
     outputs_valid: bool  # Whether all outputs pass ARC validation (30x30, proper format)
+    has_valid_outputs: bool  # Whether at least one output passes ARC validation
+    valid_prediction_count: int  # Number of valid predictions
 
     # Transduction detection
     is_transductive: bool  # Whether program hardcodes outputs
@@ -532,8 +534,7 @@ class ARCTaskRunnerSimple:
         Add successful refinements back to the REX pool.
 
         Criteria for adding:
-        - Program executes successfully (no errors/timeouts)
-        - Produces valid grids (outputs_valid=True)
+        - Program was successfully extracted (program_extracted=True)
         - Is non-transductive
         - Is NOT 100% correct on training (to avoid perfect programs)
         """
@@ -562,8 +563,8 @@ class ARCTaskRunnerSimple:
             rex_pool.track_refinement_attempt(refined_from_id, refined_correctness, original_correctness)
 
         # Check if attempt meets criteria for adding to pool
+        # Keep any program that was successfully extracted, even if it fails execution
         if (attempt_detail.get("program_extracted", False) and
-            attempt_detail.get("outputs_valid", False) and
             not attempt_detail.get("is_transductive", False) and
             attempt_detail.get("train_accuracy", 0.0) < 1.0):  # Not 100% correct
 
@@ -582,9 +583,14 @@ class ARCTaskRunnerSimple:
                 "predicted_test_output": [attempt_detail.get("test_predicted")]
             }
 
+            # Safety check: program should exist if program_extracted=True
+            program_code = attempt_detail.get("program")
+            if not program_code:
+                return  # Skip if no program code (shouldn't happen if program_extracted=True)
+
             refined_program = create_refined_program_entry(
                 original_program=original_program,
-                refined_code=attempt_detail.get("program", ""),
+                refined_code=program_code,
                 task_results=task_results,
                 model="refined"
             )
@@ -871,15 +877,12 @@ class ARCTaskRunnerSimple:
         """Log successful programs to the local database"""
 
         try:
-            # Only log programs that extracted successfully and have valid outputs. Possibly this first check is redundant?
+            # Only log programs that extracted successfully
             if not attempt_detail.get("program_extracted", False):
                 return  # No program to log
             
-            if not attempt_detail.get("outputs_valid", False):
-                return  # Don't log programs with invalid outputs
-            
-            program = attempt_detail.get("program", "").strip()
-            if not program:
+            program = attempt_detail.get("program")
+            if not program or not program.strip():
                 return
 
             # Skip logging for random programs
@@ -1081,7 +1084,7 @@ class ARCTaskRunnerSimple:
         print(f"Response: {response}")
         
         # Extract natural language program
-        program = extract_program_from_response(response, self.debug) if response else ""
+        program = extract_program_from_response(response, self.debug) if response else None
         program_extracted = bool(program and program.strip())
 
         print(f"Extracted Program: {program_extracted}")
@@ -1219,6 +1222,10 @@ class ARCTaskRunnerSimple:
         outputs_valid = program_extracted and all_predictions and \
             ARCTaskValidator.validate_prediction_list(all_predictions, "outputs")[0]
 
+        # Add partial validation for programs with some successful executions
+        has_valid_outputs, valid_prediction_count, validation_errors = \
+            ARCTaskValidator.validate_prediction_list_partial(all_predictions, "outputs") if program_extracted and all_predictions else (False, 0, [])
+
         # Run transduction detection ONLY if outputs are valid
         is_transductive = False
         transduction_confidence = 0.0
@@ -1251,8 +1258,10 @@ class ARCTaskRunnerSimple:
             output_tokens=output_tokens,
             attempt_cost=attempt_cost,
             program_extracted=program_extracted,
-            program=program,
+            program=program,  # Keep None for failed extraction
             outputs_valid=outputs_valid,
+            has_valid_outputs=has_valid_outputs,
+            valid_prediction_count=valid_prediction_count,
             is_transductive=is_transductive,
             transduction_confidence=transduction_confidence,
             transduction_reason=transduction_reason,
@@ -1648,7 +1657,7 @@ class ARCTaskRunnerSimple:
                             
                             # Required fields for reporting (with safe defaults)
                             "program_extracted": False,
-                            "program": "",
+                            "program": None,
                             "train_accuracy": 0.0,
                             "train_exec_errors": 0,
                             "train_exec_timeouts": 0,
@@ -1658,6 +1667,8 @@ class ARCTaskRunnerSimple:
                             "empty_response": False,
                             "hit_max_tokens": False,
                             "outputs_valid": False,
+                            "has_valid_outputs": False,
+                            "valid_prediction_count": 0,
                             "is_transductive": False,
                             "transduction_confidence": 0.0,
                             "transduction_reason": "skipped_early_stop",
@@ -2248,7 +2259,10 @@ class ARCTaskRunnerSimple:
             output_tokens=attempt.get("output_tokens", 0),
             attempt_cost=attempt.get("attempt_cost", 0.0),
             program_extracted=attempt.get("program_extracted", False),
-            program="",  # Always empty for trimmed
+            program=None,  # Always None for trimmed
+            outputs_valid=attempt.get("outputs_valid", False),
+            has_valid_outputs=attempt.get("has_valid_outputs", False),
+            valid_prediction_count=attempt.get("valid_prediction_count", 0),
             is_transductive=attempt.get("is_transductive", False),
             transduction_confidence=attempt.get("transduction_confidence", 0.0),
             transduction_reason=attempt.get("transduction_reason", ""),

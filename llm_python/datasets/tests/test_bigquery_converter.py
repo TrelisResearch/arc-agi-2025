@@ -58,7 +58,7 @@ def test_convert_bigquery_to_soar():
             {
                 "row_id": "abcdef",
                 "task_id": "test_task_1",
-                "code": "def generate(input): return input",
+                "program": "def generate(input): return input",
                 "model": "test_model",
                 "predicted_train_output": {
                     "list": [

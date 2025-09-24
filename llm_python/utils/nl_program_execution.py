@@ -8,7 +8,7 @@ from typing import List, Optional, Tuple, Dict, Any
 from llm_python.utils.prompt_loader import PromptLoader
 
 
-def extract_program_from_response(response, debug: bool = False) -> str:
+def extract_program_from_response(response, debug: bool = False) -> Optional[str]:
     """Extract natural language program from LLM response"""
     full_text = ""
 
@@ -25,8 +25,8 @@ def extract_program_from_response(response, debug: bool = False) -> str:
     if tag_match:
         return tag_match.group(1).strip()
 
-    # If no tags found, return empty string (strict format enforcement)
-    return ""
+    # If no tags found, return None (no program extracted)
+    return None
 
 
 def extract_grid_from_response(response) -> Optional[List[List[int]]]:

@@ -23,7 +23,7 @@ def create_valid_sample_data() -> pd.DataFrame:
         'row_id': ["abcdef", "123456"],
         'task_id': ['task_001', 'task_002'],
         'reasoning': ['Some reasoning', None],  # Test nullable field
-        'code': ['def generate():\n    pass', 'def generate():\n    return []'],
+        'program': ['def generate():\n    pass', 'def generate():\n    return []'],
         'correct_train_input': [[True, False], [True, True]],
         'correct_test_input': [[False], [True]],
         'predicted_train_output': [
@@ -45,7 +45,7 @@ def create_invalid_schema_data() -> pd.DataFrame:
         'row_id': ["abcdef"],
         'task_id': ['task_001'],
         'reasoning': ['Some reasoning'],
-        'code': ['def generate(): pass'],
+        'program': ['def generate(): pass'],
         # Missing required columns - this should definitely fail
         'extra_column': ['should not be here'],  # Extra column
     })
@@ -56,7 +56,7 @@ def create_missing_columns_data() -> pd.DataFrame:
     return pd.DataFrame({
         'task_id': ['task_001'],
         'reasoning': ['Some reasoning'],
-        'code': ['def generate(): pass'],
+        'program': ['def generate(): pass'],
         # Missing other required columns
     })
 
@@ -67,7 +67,7 @@ def create_null_required_field_data() -> pd.DataFrame:
         'row_id': ["abcdef"],
         'task_id': [None],  # Null in required field
         'reasoning': ['Some reasoning'],
-        'code': ['def generate(): pass'],
+        'program': ['def generate(): pass'],
         'correct_train_input': [[True, False]],
         'correct_test_input': [[False]],
         'predicted_train_output': [
@@ -86,7 +86,7 @@ def create_wrong_type_data() -> pd.DataFrame:
         'row_id': ["abcdef"],
         'task_id': ['task_001'],
         'reasoning': ['Some reasoning'],
-        'code': ['def generate(): pass'],
+        'program': ['def generate(): pass'],
         'correct_train_input': ['not_a_list'],  # Wrong type - should be list[bool]
         'correct_test_input': [[False]],
         'predicted_train_output': [
@@ -220,7 +220,7 @@ class TestSchemaValidation:
             'row_id': pd.Series([], dtype='string'),
             'task_id': pd.Series([], dtype='string'),
             'reasoning': pd.Series([], dtype='string'),
-            'code': pd.Series([], dtype='string'),
+            'program': pd.Series([], dtype='string'),
             'correct_train_input': pd.Series([], dtype='object'),
             'correct_test_input': pd.Series([], dtype='object'),
             'predicted_train_output': pd.Series([], dtype='object'),
@@ -238,7 +238,7 @@ class TestSchemaValidation:
             'row_id': ["abcdef", "123456"],
             'task_id': ['task_001', None],  # Null in second row
             'reasoning': ['Some reasoning', 'More reasoning'],
-            'code': ['def generate(): pass', 'def generate(): return []'],
+            'program': ['def generate(): pass', 'def generate(): return []'],
             'correct_train_input': [[True, False], [True]],
             'correct_test_input': [[False], [True]],
             'predicted_train_output': [
@@ -269,7 +269,7 @@ class TestEdgeCases:
             'row_id': ["abcdef"],
             'task_id': ['large_task'],
             'reasoning': ['Large structure test'],
-            'code': ['def generate(): pass'],
+            'program': ['def generate(): pass'],
             'correct_train_input': [[True] * 20],
             'correct_test_input': [[False] * 15],
             'predicted_train_output': [large_output],
@@ -300,7 +300,7 @@ class TestEdgeCases:
             'row_id': ["abcdef"],
             'task_id': ['测试_task_🔥'],
             'reasoning': ['Unicode reasoning: 数学 🧮 πŸ"'],
-            'code': ['def generate():\n    # Comment with émojis 🐍\n    return []'],
+            'program': ['def generate():\n    # Comment with émojis 🐍\n    return []'],
             'correct_train_input': [[True]],
             'correct_test_input': [[False]],
             'predicted_train_output': [
@@ -335,7 +335,7 @@ class TestEdgeCases:
             'row_id': ["abcdef"],
             'task_id': ['empty_lists_task'],
             'reasoning': [None],
-            'code': ['def generate(): return []'],
+            'program': ['def generate(): return []'],
             'correct_train_input': [[]],  # Empty list
             'correct_test_input': [[]],   # Empty list
             'predicted_train_output': [[]],  # Empty list

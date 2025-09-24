@@ -48,7 +48,7 @@ class TestSubmissionGenerator(unittest.TestCase):
                     "row_id": "abcdef",
                     "task_id": task_id,
                     "reasoning": f"Test reasoning for {task_id} attempt {i}",
-                    "code": f"# Test code for {task_id}\nprint('hello')",
+                    "program": f"# Test code for {task_id}\nprint('hello')",
                     "correct_train_input": correct_train,
                     "correct_test_input": [True, False],  # 2 test cases
                     "predicted_train_output": [[[1, 1]], [[2, 2]], [[3, 3]]],

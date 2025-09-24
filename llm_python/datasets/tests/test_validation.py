@@ -76,7 +76,7 @@ class TestValidateSoarRow:
             "row_id": "abcdef",
             "task_id": "task_001",
             "reasoning": None,
-            "code": "def generate(): return [[1]]",
+            "program": "def generate(): return [[1]]",
             "correct_train_input": [True],
             "correct_test_input": [True],
             "predicted_train_output": [[[1]]],
@@ -88,7 +88,7 @@ class TestValidateSoarRow:
         assert errors == []
 
     def test_row_missing_fields(self):
-        row = {"task_id": "task_001", "code": "def generate(): pass"}
+        row = {"task_id": "task_001", "program": "def generate(): pass"}
         errors = validate_soar_row(row).errors
         assert any("Missing required fields" in e for e in errors)
 
@@ -96,7 +96,7 @@ class TestValidateSoarRow:
         row = {
             "task_id": "task_001",
             "reasoning": None,
-            "code": "   ",
+            "program": "   ",
             "correct_train_input": [True],
             "correct_test_input": [True],
             "predicted_train_output": [[[1]]],
@@ -146,7 +146,7 @@ class TestValidateSoarRow:
         row = {
             "task_id": "task_bool",
             "reasoning": None,
-            "code": "def generate(): return [[True, False], [False, True]]",
+            "program": "def generate(): return [[True, False], [False, True]]",
             "correct_train_input": [True],
             "correct_test_input": [True],
             "predicted_train_output": [[[True, False], [False, True]]],
@@ -204,7 +204,7 @@ class TestValidateSoarDataframe:
         df = pd.DataFrame(
             {
                 "task_id": ["task_001"],
-                "code": ["def generate(): pass"],
+                "program": ["def generate(): pass"],
                 # Missing other required columns
             }
         )
@@ -226,7 +226,7 @@ class TestValidateSoarDataframe:
                 "row_id": ["abcdef"],
                 "task_id": ["task_001"],
                 "reasoning": [None],
-                "code": ["def generate(): return []"],
+                "program": ["def generate(): return []"],
                 "correct_train_input": [[]],  # Empty list
                 "correct_test_input": [[True]],
                 "predicted_train_output": [[]],  # Empty list
@@ -255,7 +255,7 @@ class TestValidateSoarDataframe:
             {
                 "task_id": ["task_001"],
                 "reasoning": [None],
-                "code": ["   "],  # Whitespace only
+                "program": ["   "],  # Whitespace only
                 "correct_train_input": [[True]],
                 "correct_test_input": [[True]],
                 "predicted_train_output": [[[]]],
@@ -324,7 +324,7 @@ def generate(input_grid):
                 "row_id": ["abcdef"],
                 "task_id": ["fake_task_123"],  # Non-existent task ID
                 "reasoning": ["Adds 1 to all values"],
-                "code": [program_code],
+                "program": [program_code],
                 "correct_train_input": [[True]],  # Assume the program works on training
                 "correct_test_input": [[True]],  # Assume the program works on test
                 "predicted_train_output": [

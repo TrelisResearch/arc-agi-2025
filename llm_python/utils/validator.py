@@ -183,6 +183,37 @@ class ARCTaskValidator:
                 
         return len(errors) == 0, errors
 
+    @staticmethod
+    def validate_prediction_list_partial(predictions: List[Any], description: str = "predictions") -> Tuple[bool, int, List[str]]:
+        """
+        Validate a list of predictions allowing partial success.
+
+        Args:
+            predictions: List of predicted grids (may contain None for execution errors)
+            description: Description for error messages
+
+        Returns:
+            (has_any_valid, valid_count, errors): Tuple of whether any predictions are valid,
+            count of valid predictions, and list of error messages
+        """
+        errors = []
+        valid_count = 0
+
+        if not predictions:
+            errors.append(f"{description}: No predictions provided")
+            return False, 0, errors
+
+        for i, pred in enumerate(predictions):
+            if pred is None:
+                errors.append(f"{description}[{i}]: Execution error (None prediction)")
+            elif not ARCTaskValidator.validate_prediction(pred, f"{description}[{i}]"):
+                errors.append(f"{description}[{i}]: Invalid ARC grid format")
+            else:
+                valid_count += 1
+
+        has_any_valid = valid_count > 0
+        return has_any_valid, valid_count, errors
+
 
 def replace_invalid_grid(grid: Union[List, None], task_id: str = "", attempt_name: str = "") -> List[List[int]]:
     """
