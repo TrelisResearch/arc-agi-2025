@@ -55,6 +55,63 @@ Commercial:
 ```bash
 uv run python experimental/manual_task_augmentation/run_augmentation.py --parquet-path /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250925_155730_gpt-5-mini_manual_training.parquet --num-augmentations 10 --augmentation-type geometric
 ```
+This expanded the dataset from 84 up to 137 programs.
+
+So now we can test on 
+```bash
+uv run runpod/create_pod_and_run_tasks.py manual "Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806_ds-datasets-c8" --max-attempts 64 --max-workers 64 --subset training
+```
+Dataset: manual
+Subset: training
+Model: Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806_ds-datasets-c8
+Total tasks: 11
+Total time: 185.6s
+Successful API calls: 11/11 (100.0%)
+Total tokens used: 2,714,626
+Total cost: $0.612193
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 18.2% (18.2% excl. trans)
+  Pass@2 (Train Majority):  18.2% (18.2% excl. trans)
+  Oracle (Best Attempt):    36.4% (27.3% excl. trans)
+  All Train Correct:        18.2% (18.2% excl. trans)
+  Min 1 Train Correct:      54.5% (54.5% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     1.1%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.3%
+  Execution Error Responses (of all attempts): 36.2%
+  No Program Responses (of all attempts): 1.1%
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250925_183252_Trelis_Qwen3-4B_ds-arc-agi-2-partial-100-c2806_ds-datasets-c8_manual_training.parquet
+
+and then test on the training_hard_unique_5
+```bash
+uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806_ds-datasets-c8" --max-attempts 64 --max-workers 64 --subset training_hard_unique_5
+```
+Dataset: arc-prize-2025
+Subset: training_hard_unique_5
+Model: Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806_ds-datasets-c8
+Total tasks: 5
+Total time: 108.9s
+Successful API calls: 5/5 (100.0%)
+Total tokens used: 2,544,904
+Total cost: $0.475570
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    0.0% (0.0% excl. trans)
+  All Train Correct:        0.0% (0.0% excl. trans)
+  Min 1 Train Correct:      0.0% (0.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     2.2%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.3%
+  Execution Error Responses (of all attempts): 36.9%
+  No Program Responses (of all attempts): 2.2%
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250925_184005_Trelis_Qwen3-4B_ds-arc-agi-2-partial-100-c2806_ds-datasets-c8_arc-prize-2025_training_hard_unique_5.parquet
 
 #### Generate augmentations
 ```bash
