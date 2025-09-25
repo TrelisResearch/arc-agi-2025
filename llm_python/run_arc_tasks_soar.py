@@ -35,6 +35,8 @@ from llm_python.utils.prompt_loader import PromptLoader
 from llm_python.utils.serialization import ResponseSerializer
 from llm_python.utils.api_client import ARCAPIClient
 from llm_python.utils.validator import ARCTaskValidator
+from llm_python.utils.token_utils import calculate_max_tokens_for_model, calculate_prompt_tokens
+from transformers import AutoTokenizer
 from llm_python.datasets.schema import ProgramSample
 
 load_dotenv()
@@ -181,6 +183,8 @@ class ARCTaskRunnerSimple:
         self.run_number = run_number
         self.debug = debug
         self.prompt_version = prompt_version
+        self.explicit_max_tokens = max_tokens  # Store original value to check if user provided it
+        self._tokenizer = None  # Cache tokenizer to avoid reloading for each attempt
         self.refinement_dataset = refinement_dataset
         self.refine_mode = bool(refinement_dataset)  # Enable refinement mode if dataset provided
         self.include_outputs = bool(refinement_dataset)  # Enable output inclusion by default when using refinement dataset
@@ -272,6 +276,40 @@ class ARCTaskRunnerSimple:
             print(f"📊 vLLM metrics monitoring enabled ({self.metrics_url})", flush=True)
         else:
             print(f"📊 vLLM metrics monitoring disabled (base_url: {self.base_url})", flush=True)
+
+    def _get_cached_tokenizer(self):
+        """Get or load cached tokenizer for the model"""
+        if self._tokenizer is None:
+            try:
+                # Strategy 1: Try model name as HuggingFace slug
+                if self.debug:
+                    print(f"🔄 Loading tokenizer for '{self.model}' (one-time setup)...")
+                self._tokenizer = AutoTokenizer.from_pretrained(
+                    self.model,
+                    trust_remote_code=True,
+                    use_fast=True
+                )
+                if self.debug:
+                    print(f"✅ Tokenizer cached successfully")
+            except Exception as e:
+                # Strategy 2: Try as local path
+                try:
+                    import os
+                    if '/' in self.model or os.path.exists(self.model):
+                        if self.debug:
+                            print(f"🔄 Trying local path for tokenizer...")
+                        self._tokenizer = AutoTokenizer.from_pretrained(
+                            self.model,
+                            trust_remote_code=True,
+                            use_fast=True
+                        )
+                        if self.debug:
+                            print(f"✅ Tokenizer loaded from local path")
+                except Exception as e2:
+                    if self.debug:
+                        print(f"⚠️ Could not load tokenizer: {e2}. Will use fallback estimation.")
+                    self._tokenizer = False  # Mark as failed to avoid retrying
+        return self._tokenizer if self._tokenizer is not False else None
 
     @property
     def model(self):
@@ -987,6 +1025,28 @@ class ARCTaskRunnerSimple:
             {"role": "system", "content": system_content},
             {"role": "user", "content": user_content},
         ]
+
+        # Calculate actual prompt tokens and determine appropriate max_tokens
+        cached_tokenizer = self._get_cached_tokenizer()
+        actual_prompt_tokens = calculate_prompt_tokens(
+            system_content, user_content, self.model, debug=self.debug, cached_tokenizer=cached_tokenizer
+        )
+        dynamic_max_tokens = calculate_max_tokens_for_model(
+            self.model, estimated_prompt_tokens=actual_prompt_tokens, debug=self.debug
+        )
+
+        # Choose final max_tokens: respect explicit value but cap at dynamic limit
+        if self.explicit_max_tokens is not None:
+            final_max_tokens = min(self.explicit_max_tokens, dynamic_max_tokens)
+            if self.debug:
+                print(f"🎯 Task {task_id} attempt {attempt_num}: {actual_prompt_tokens} prompt tokens, explicit={self.explicit_max_tokens}, dynamic={dynamic_max_tokens} → final={final_max_tokens}")
+        else:
+            final_max_tokens = dynamic_max_tokens
+            if self.debug:
+                print(f"🎯 Task {task_id} attempt {attempt_num}: {actual_prompt_tokens} prompt tokens → {final_max_tokens} max_tokens")
+
+        # Update the API client with the final max_tokens for this request
+        self.api_client.set_max_tokens_for_request(final_max_tokens)
 
         # Make API call with retries
         response = None

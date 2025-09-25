@@ -116,6 +116,10 @@ class ARCAPIClient:
         else:
             return (0.15, 0.60)
 
+    def set_max_tokens_for_request(self, max_tokens: int) -> None:
+        """Temporarily set max_tokens for the next API request"""
+        self.max_tokens = max_tokens
+
     def get_sampling_parameters(self) -> Dict:
         """Get the sampling parameters that will be used for API calls"""
         kwargs = {}
