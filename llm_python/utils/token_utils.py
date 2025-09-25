@@ -17,15 +17,17 @@ def get_model_context_length(model: str) -> int:
     return 40960
 
 
-def calculate_prompt_tokens(system_content: str, user_content: str, model: str, debug: bool = False, cached_tokenizer=None) -> int:
+def calculate_prompt_tokens(system_content: str, user_content: str, model: str, debug: bool = False, cached_tokenizer=None, skip_loading: bool = False, tokenizer_path: str = None) -> int:
     """Calculate the number of tokens in the prompt (excluding assistant response)
 
     Args:
         system_content: System message content
         user_content: User message content
-        model: Model name/path
+        model: Model name (used for HuggingFace Hub lookup)
         debug: Enable debug output
         cached_tokenizer: Optional pre-loaded tokenizer to avoid reloading
+        skip_loading: If True, skip tokenizer loading and go straight to character estimation
+        tokenizer_path: Optional explicit path to tokenizer (tried first as HF slug, then as local path)
     """
 
     def try_load_tokenizer(model_path_or_slug):
@@ -36,41 +38,78 @@ def calculate_prompt_tokens(system_content: str, user_content: str, model: str, 
             use_fast=True
         )
 
-    # Use cached tokenizer if provided
+    # Strategy selection based on inputs
     if cached_tokenizer is not None:
+        # Use the cached tokenizer
         tokenizer = cached_tokenizer
         if debug:
             print(f"✅ Using cached tokenizer")
-    else:
+    elif skip_loading:
+        # Skip loading, go straight to fallback
         tokenizer = None
+        if debug:
+            print(f"⚠️ Skipping tokenizer loading (using character estimation)")
+    else:
+        # Try to load tokenizer
+        tokenizer = None
+        if debug:
+            print(f"🔍 Attempting to load tokenizer for '{model}'...")
 
-        # Strategy 1: Try model name as HuggingFace slug (works if online)
-        try:
-            if debug:
-                print(f"🔍 Trying to load tokenizer for '{model}' from HuggingFace Hub...")
-            tokenizer = try_load_tokenizer(model)
-            if debug:
-                print(f"✅ Successfully loaded tokenizer from HuggingFace Hub")
-        except Exception as e:
-            if debug:
-                print(f"❌ HuggingFace Hub failed: {e}")
+        # Strategy 1: Try explicit tokenizer_path if provided (as HF slug first, then local path)
+        if tokenizer_path:
+            # Try as HuggingFace slug first
+            try:
+                if debug:
+                    print(f"🔍 Strategy 1a: Attempting to load tokenizer from HuggingFace Hub using explicit tokenizer_path '{tokenizer_path}'")
+                tokenizer = try_load_tokenizer(tokenizer_path)
+                if debug:
+                    print(f"✅ Successfully loaded tokenizer from HuggingFace Hub using tokenizer_path")
+            except Exception as e:
+                if debug:
+                    print(f"❌ Strategy 1a (HuggingFace Hub with tokenizer_path) failed: {e}")
 
-        # Strategy 2: If that fails, try model as local path (model might be a path to local model)
+                # Try as local path
+                try:
+                    if debug:
+                        print(f"🔍 Strategy 1b: Attempting to load tokenizer from local path using tokenizer_path '{tokenizer_path}'")
+                    tokenizer = try_load_tokenizer(tokenizer_path)
+                    if debug:
+                        print(f"✅ Successfully loaded tokenizer from local path using tokenizer_path")
+                except Exception as e2:
+                    if debug:
+                        print(f"❌ Strategy 1b (Local path with tokenizer_path) failed: {e2}")
+
+        # Strategy 2: Try model name as HuggingFace slug (works if online)
+        if tokenizer is None:
+            try:
+                if debug:
+                    print(f"🔍 Strategy 2: Attempting to load tokenizer from HuggingFace Hub using model name '{model}'")
+                tokenizer = try_load_tokenizer(model)
+                if debug:
+                    print(f"✅ Successfully loaded tokenizer from HuggingFace Hub using model name")
+            except Exception as e:
+                if debug:
+                    print(f"❌ Strategy 2 (HuggingFace Hub with model name) failed: {e}")
+
+        # Strategy 3: If that fails, try model as local path (model might be a path to local model)
         if tokenizer is None:
             try:
                 # Check if model looks like a path (contains '/' and possibly exists)
                 import os
                 if '/' in model or os.path.exists(model):
                     if debug:
-                        print(f"🔍 Trying to load tokenizer from local path '{model}'...")
+                        print(f"🔍 Strategy 3: Model contains '/' or exists as path, attempting to load tokenizer from local path '{model}'")
                     tokenizer = try_load_tokenizer(model)
                     if debug:
-                        print(f"✅ Successfully loaded tokenizer from local path")
+                        print(f"✅ Successfully loaded tokenizer from local path using model name")
+                else:
+                    if debug:
+                        print(f"🔍 Strategy 3: Model '{model}' doesn't look like a local path (no '/' and doesn't exist), skipping local path attempt")
             except Exception as e:
                 if debug:
-                    print(f"❌ Local path failed: {e}")
+                    print(f"❌ Strategy 3 (Local path with model name) failed: {e}")
 
-    # Strategy 3: If we have a tokenizer, use it
+    # Strategy 4: If we have a tokenizer, use it
     if tokenizer is not None:
         try:
             # Create messages for prompt only (no assistant response)
@@ -96,7 +135,7 @@ def calculate_prompt_tokens(system_content: str, user_content: str, model: str, 
             if debug:
                 print(f"❌ Tokenization failed: {e}")
 
-    # Strategy 4: Fallback to character-based estimation
+    # Strategy 5: Fallback to character-based estimation
     total_chars = len(system_content) + len(user_content)
     estimated_tokens = total_chars // 4
     if debug:

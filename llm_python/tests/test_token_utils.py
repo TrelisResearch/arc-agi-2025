@@ -157,6 +157,56 @@ class TestTokenUtils:
         assert captured.out == ""
 
     @mock.patch('llm_python.utils.token_utils.AutoTokenizer')
+    def test_calculate_prompt_tokens_with_tokenizer_path_success(self, mock_tokenizer_class):
+        """Test that tokenizer_path takes precedence over model name"""
+        # Mock tokenizer
+        mock_tokenizer = mock.MagicMock()
+        mock_tokenizer.apply_chat_template.return_value = [1, 2, 3, 4, 5]  # 5 tokens
+        mock_tokenizer_class.from_pretrained.return_value = mock_tokenizer
+
+        system_content = "You are a helpful assistant."
+        user_content = "Hello, how are you?"
+        model_name = "gpt-4o"
+        tokenizer_path = "custom/tokenizer-path"
+
+        result = calculate_prompt_tokens(
+            system_content, user_content, model_name,
+            debug=True, tokenizer_path=tokenizer_path
+        )
+
+        assert result == 5
+        # Should use tokenizer_path, not model name
+        mock_tokenizer_class.from_pretrained.assert_called_once_with(
+            tokenizer_path, trust_remote_code=True, use_fast=True
+        )
+
+    @mock.patch('llm_python.utils.token_utils.AutoTokenizer')
+    def test_calculate_prompt_tokens_tokenizer_path_fallback_to_model(self, mock_tokenizer_class):
+        """Test fallback to model name when tokenizer_path fails"""
+        mock_tokenizer = mock.MagicMock()
+        mock_tokenizer.apply_chat_template.return_value = [1, 2, 3]  # 3 tokens
+
+        # First call (tokenizer_path HF hub) fails, second call (tokenizer_path local) fails,
+        # third call (model name HF hub) succeeds
+        mock_tokenizer_class.from_pretrained.side_effect = [
+            Exception("HF hub failed"),
+            Exception("Local path failed"),
+            mock_tokenizer
+        ]
+
+        result = calculate_prompt_tokens(
+            "sys", "user", "gpt-4o", debug=True, tokenizer_path="nonexistent/tokenizer"
+        )
+
+        assert result == 3
+        # Should have been called 3 times: tokenizer_path (HF), tokenizer_path (local), model name (HF)
+        assert mock_tokenizer_class.from_pretrained.call_count == 3
+        calls = mock_tokenizer_class.from_pretrained.call_args_list
+        assert calls[0][0][0] == "nonexistent/tokenizer"  # First attempt with tokenizer_path
+        assert calls[1][0][0] == "nonexistent/tokenizer"  # Second attempt with tokenizer_path
+        assert calls[2][0][0] == "gpt-4o"  # Third attempt with model name
+
+    @mock.patch('llm_python.utils.token_utils.AutoTokenizer')
     def test_calculate_prompt_tokens_debug_fallback(self, mock_tokenizer_class, capsys):
         """Test debug output during fallback"""
         mock_tokenizer_class.from_pretrained.side_effect = Exception("Test error")
@@ -164,7 +214,7 @@ class TestTokenUtils:
         calculate_prompt_tokens("test", "test", "bad-model", debug=True)
 
         captured = capsys.readouterr()
-        assert "HuggingFace Hub failed: Test error" in captured.out
+        assert "Strategy 2 (HuggingFace Hub with model name) failed: Test error" in captured.out
         assert "Using character-based fallback estimate" in captured.out
 
 

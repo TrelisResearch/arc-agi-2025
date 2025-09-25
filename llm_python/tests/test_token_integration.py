@@ -128,9 +128,9 @@ class TestTokenIntegration:
             full_prompt=full_prompt
         )
 
-        # Verify dynamic token calculation was called
+        # Verify dynamic token calculation was called (with skip_loading since tokenizer loading fails in test)
         mock_calc_prompt_tokens.assert_called_once_with(
-            "You are a test assistant.", "Solve this puzzle.", "qwen-14b", debug=True, cached_tokenizer=None
+            "You are a test assistant.", "Solve this puzzle.", "qwen-14b", debug=True, skip_loading=True, tokenizer_path=None
         )
         mock_calc_max_tokens.assert_called_once_with(
             "qwen-14b", estimated_prompt_tokens=5000, debug=True

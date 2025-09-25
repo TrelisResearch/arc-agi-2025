@@ -175,6 +175,7 @@ class ARCTaskRunnerSimple:
         rex_stats: bool = False,
         rex_c: float = 20.0,
         rex_bonus_weight: float = 0.5,
+        tokenizer_path: Optional[str] = None,
     ):
         # Core configuration
         self.max_workers = max_workers
@@ -184,7 +185,9 @@ class ARCTaskRunnerSimple:
         self.debug = debug
         self.prompt_version = prompt_version
         self.explicit_max_tokens = max_tokens  # Store original value to check if user provided it
+        self.tokenizer_path = tokenizer_path  # Optional explicit tokenizer path
         self._tokenizer = None  # Cache tokenizer to avoid reloading for each attempt
+        self._tokenizer_failed = False  # Remember if tokenizer loading failed
         self.refinement_dataset = refinement_dataset
         self.refine_mode = bool(refinement_dataset)  # Enable refinement mode if dataset provided
         self.include_outputs = bool(refinement_dataset)  # Enable output inclusion by default when using refinement dataset
@@ -279,36 +282,76 @@ class ARCTaskRunnerSimple:
 
     def _get_cached_tokenizer(self):
         """Get or load cached tokenizer for the model"""
+        # Only try loading once - if already attempted, return the result
         if self._tokenizer is None:
             try:
-                # Strategy 1: Try model name as HuggingFace slug
-                if self.debug:
-                    print(f"🔄 Loading tokenizer for '{self.model}' (one-time setup)...")
-                self._tokenizer = AutoTokenizer.from_pretrained(
-                    self.model,
-                    trust_remote_code=True,
-                    use_fast=True
-                )
-                if self.debug:
-                    print(f"✅ Tokenizer cached successfully")
+                # Strategy 1: Try explicit tokenizer_path if provided (as HF slug first, then local path)
+                if self.tokenizer_path:
+                    # Try as HuggingFace slug first
+                    try:
+                        if self.debug:
+                            print(f"🔄 Loading tokenizer from HuggingFace Hub using tokenizer_path '{self.tokenizer_path}' (one-time attempt)...")
+                        self._tokenizer = AutoTokenizer.from_pretrained(
+                            self.tokenizer_path,
+                            trust_remote_code=True,
+                            use_fast=True
+                        )
+                        if self.debug:
+                            print(f"✅ Tokenizer cached successfully from HuggingFace Hub using tokenizer_path")
+                    except Exception as e:
+                        if self.debug:
+                            print(f"❌ HuggingFace Hub with tokenizer_path failed: {e}")
+                        # Try as local path
+                        try:
+                            if self.debug:
+                                print(f"🔄 Trying local path with tokenizer_path '{self.tokenizer_path}'...")
+                            self._tokenizer = AutoTokenizer.from_pretrained(
+                                self.tokenizer_path,
+                                trust_remote_code=True,
+                                use_fast=True
+                            )
+                            if self.debug:
+                                print(f"✅ Tokenizer cached successfully from local path using tokenizer_path")
+                        except Exception as e2:
+                            if self.debug:
+                                print(f"❌ Local path with tokenizer_path failed: {e2}")
+                            # Fall through to try model name strategies
+                            raise e  # Re-raise original error to try model name
+
+                # Strategy 2: Try model name as HuggingFace slug
+                if self._tokenizer is None:
+                    if self.debug:
+                        print(f"🔄 Loading tokenizer for model name '{self.model}' (one-time attempt)...")
+                    self._tokenizer = AutoTokenizer.from_pretrained(
+                        self.model,
+                        trust_remote_code=True,
+                        use_fast=True
+                    )
+                    if self.debug:
+                        print(f"✅ Tokenizer cached successfully from HuggingFace Hub using model name")
             except Exception as e:
-                # Strategy 2: Try as local path
+                # Strategy 3: Try model name as local path
                 try:
                     import os
                     if '/' in self.model or os.path.exists(self.model):
                         if self.debug:
-                            print(f"🔄 Trying local path for tokenizer...")
+                            print(f"🔄 Trying local path for model name '{self.model}'...")
                         self._tokenizer = AutoTokenizer.from_pretrained(
                             self.model,
                             trust_remote_code=True,
                             use_fast=True
                         )
                         if self.debug:
-                            print(f"✅ Tokenizer loaded from local path")
+                            print(f"✅ Tokenizer loaded from local path using model name")
+                    else:
+                        raise e  # Re-raise original error if not a path
                 except Exception as e2:
                     if self.debug:
-                        print(f"⚠️ Could not load tokenizer: {e2}. Will use fallback estimation.")
-                    self._tokenizer = False  # Mark as failed to avoid retrying
+                        print(f"⚠️ Tokenizer loading failed for '{self.model}'. Will use character-based fallback for all attempts.")
+                    self._tokenizer = False  # Mark as permanently failed
+                    self._tokenizer_failed = True  # Remember the failure
+
+        # Return the tokenizer if we have one, None if failed
         return self._tokenizer if self._tokenizer is not False else None
 
     @property
@@ -1028,9 +1071,21 @@ class ARCTaskRunnerSimple:
 
         # Calculate actual prompt tokens and determine appropriate max_tokens
         cached_tokenizer = self._get_cached_tokenizer()
-        actual_prompt_tokens = calculate_prompt_tokens(
-            system_content, user_content, self.model, debug=self.debug, cached_tokenizer=cached_tokenizer
-        )
+        if cached_tokenizer is not None:
+            # Use the successfully cached tokenizer
+            actual_prompt_tokens = calculate_prompt_tokens(
+                system_content, user_content, self.model, debug=self.debug, cached_tokenizer=cached_tokenizer, tokenizer_path=self.tokenizer_path
+            )
+        elif self._tokenizer_failed:
+            # We already tried and failed, skip loading attempt
+            actual_prompt_tokens = calculate_prompt_tokens(
+                system_content, user_content, self.model, debug=self.debug, skip_loading=True, tokenizer_path=self.tokenizer_path
+            )
+        else:
+            # First attempt - try loading
+            actual_prompt_tokens = calculate_prompt_tokens(
+                system_content, user_content, self.model, debug=self.debug, tokenizer_path=self.tokenizer_path
+            )
         dynamic_max_tokens = calculate_max_tokens_for_model(
             self.model, estimated_prompt_tokens=actual_prompt_tokens, debug=self.debug
         )
@@ -2691,6 +2746,9 @@ def main():
         "--temperature", type=float, help="Temperature for model responses"
     )
     parser.add_argument(
+        "--tokenizer-path", type=str, help="Path or identifier for the tokenizer (tried first as HF slug, then as local path)"
+    )
+    parser.add_argument(
         "--reasoning_effort",
         type=str,
         default="low",
@@ -2807,6 +2865,7 @@ def main():
         prompt_version=args.prompt_version,
         unsafe_executor=args.unsafe_executor,
         lora_adapter=args.lora_adapter,
+        tokenizer_path=getattr(args, 'tokenizer_path', None),
         sample_name=f"{args.model.replace('/', '_').replace(':', '_')}_{dataset}_{subset}",
         parquet_output_dir=args.parquet_output_dir,
         refinement_dataset=args.refinement_ds,

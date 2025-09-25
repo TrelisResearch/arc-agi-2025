@@ -38,7 +38,7 @@ Commercial:
 ### Dynamically control max tokens
 
 ```bash
-uv run python -m llm_python.run_arc_tasks_soar --dataset manual --subset training --max_workers 32 --max_attempts 1 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000 --reasoning-effort medium --debug --limit 1
+uv run python -m llm_python.run_arc_tasks_soar --dataset manual --subset training --max_workers 1 --max_attempts 2 --model openai/gpt-oss-120b --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000 --reasoning-effort medium --debug --limit 1
 ```
 
 ## September 24th 2025
