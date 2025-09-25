@@ -26,7 +26,7 @@ class TaskLoader:
     """Loads ARC-AGI tasks from competition format data sources into memory.
 
     On initialization, loads all tasks from:
-    - Competition format: arc-prize-2024, arc-prize-2025 (training/evaluation/test)
+    - Competition format: arc-prize-2024, arc-prize-2025, manual (training/evaluation/test/augmented)
     - All existing subset definitions from data/subsets/
 
     When duplicate task IDs are found with conflicting outputs, the canonical_dataset
@@ -37,7 +37,7 @@ class TaskLoader:
         canonical_dataset: Dataset to prefer when resolving conflicts (default: "arc-prize-2025")
 
     Subset naming:
-    - Competition: "arc-prize-2024/training", "arc-prize-2025/evaluation", "arc-prize-2024/test"
+    - Competition: "arc-prize-2024/training", "arc-prize-2025/evaluation", "manual/augmented", etc.
     - Legacy subsets: "arc-agi-1/shortest_training_1", "arc-agi-2/all_evaluation", etc.
     """
 
@@ -169,6 +169,12 @@ class TaskLoader:
             if test_tasks:
                 self._add_tasks_safely(test_tasks, dataset)
                 self.subsets[f"{dataset}/test"] = list(test_tasks.keys())
+
+            # Load augmented split (for noise-augmented tasks)
+            augmented_tasks = self._load_competition_split(dataset, "augmented")
+            if augmented_tasks:
+                self._add_tasks_safely(augmented_tasks, dataset)
+                self.subsets[f"{dataset}/augmented"] = list(augmented_tasks.keys())
 
     def _load_competition_split(self, dataset: str, split: str) -> Dict[str, TaskData]:
         """Load a specific split (training/evaluation) from competition format"""

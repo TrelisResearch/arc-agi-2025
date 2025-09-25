@@ -43,13 +43,55 @@ Commercial:
 ---
 ## September 24th 2025
 ### Rerunning the manual dataset
-[ ] Generate solutions with gpt-5-mini.
-  [ ] Inspect the data
+[x] Generate solutions with gpt-5-mini.
+  [x] Do refinement, did it solve any new tasks? Nope, it didn't.
+  [x] Inspect the data. Need to go back around and make some tasks easier.
 [ ] Add noise to programs and create new tasks with noise. Will need a script for this.
 [ ] Re-run gpt-5-mini on the tasks.
 - Run a base model.
 - Fine-tune the model to see if it improves on these tasks OR on training hard unique 5.
 
+#### Scaling Augmentations
+```bash
+uv run python experimental/manual_task_augmentation/run_augmentation.py --parquet-path /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250925_155730_gpt-5-mini_manual_training.parquet --num-augmentations 10 --augmentation-type geometric
+```
+
+#### Generate augmentations
+```bash
+uv run python experimental/manual_task_augmentation/run_augmentation.py --parquet-path gpt-5-mini-manual.parquet --num-augmentations 10 --noise-percentage 0.01
+```
+
+This tends to break all programs except for grids with noise.
+
+So, try getting programs for noisy grids:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset manual --subset augmented --max_workers 128 --max_attempts 2 --model gpt-5-mini --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000 --reasoning-effort medium
+```
+Dataset: manual
+Subset: augmented
+Model: gpt-5-mini
+Total tasks: 10
+Total time: 137.4s
+Successful API calls: 10/10 (100.0%)
+Total tokens used: 144,855
+Total cost: $0.084120
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 10.0% (10.0% excl. trans)
+  Pass@2 (Train Majority):  10.0% (10.0% excl. trans)
+  Oracle (Best Attempt):    10.0% (10.0% excl. trans)
+  All Train Correct:        100.0% (100.0% excl. trans)
+  Min 1 Train Correct:      100.0% (100.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 5.0%
+  No Program Responses (of all attempts): 0.0%
+✅ Checkpointed 19 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250925_173235_gpt-5-mini_manual_augmented.parquet
+
+#### Get baselines
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset manual --subset training --max_workers 128 --max_attempts 8 --model gpt-5-mini --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000 --reasoning-effort medium
 ```
@@ -81,7 +123,57 @@ Run a refinement to see if that helps:
 ```bash
 uv run python -m llm_python.run_arc_tasks_soar --dataset manual --subset training --max_workers 32 --max_attempts 2 --model gpt-5-mini --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000 --reasoning-effort medium --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250925_155730_gpt-5-mini_manual_training.parquet --rex-stats
 ```
+Dataset: manual
+Subset: training
+Model: gpt-5-mini
+Total tasks: 9
+Total time: 358.5s
+Successful API calls: 9/9 (100.0%)
+Total tokens used: 203,043
+Total cost: $0.224049
 
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 22.2% (22.2% excl. trans)
+  Pass@2 (Train Majority):  11.1% (11.1% excl. trans)
+  Oracle (Best Attempt):    22.2% (22.2% excl. trans)
+  All Train Correct:        22.2% (22.2% excl. trans)
+  Min 1 Train Correct:      77.8% (66.7% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 0.0%
+  No Program Responses (of all attempts): 0.0%
+✅ Checkpointed 18 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250925_160919_gpt-5-mini_manual_training.parquet
+
+#### Run a baseline on our Qwen model
+```bash
+uv run runpod/create_pod_and_run_tasks.py manual "Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806" --max-attempts 64 --max-workers 64 --subset training
+```
+Dataset: manual
+Subset: training
+Model: Trelis/Qwen3-4B_ds-arc-agi-2-partial-100-c2806
+Total tasks: 11
+Total time: 78.3s
+Successful API calls: 11/11 (100.0%)
+Total tokens used: 2,479,871
+Total cost: $0.471340
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    27.3% (27.3% excl. trans)
+  All Train Correct:        36.4% (36.4% excl. trans)
+  Min 1 Train Correct:      81.8% (72.7% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 9.5%
+  No Program Responses (of all attempts): 0.0%
+All sampled programs saved to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250925_164213_Trelis_Qwen3-4B_ds-arc-agi-2-partial-100-c2806_manual_training.parquet
 
 ### OSS Reasoning Fine-tuning Results
 

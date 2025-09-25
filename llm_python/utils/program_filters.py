@@ -123,7 +123,6 @@ def should_filter_program(program_data: Dict[str, Any], task_data: Optional[Dict
 
     This function combines all filtering checks:
     - Transductive programs
-    - Perfect programs (100% correct on training)
     - Pass-through programs
 
     Args:
@@ -140,20 +139,6 @@ def should_filter_program(program_data: Dict[str, Any], task_data: Optional[Dict
     # Filter pass-through programs
     if is_pass_through_program(program_data, task_data):
         return True
-
-    # Filter perfect programs (100% correct on training)
-    correct_data = program_data.get('correct_train_input', [])
-
-    # Handle various data formats
-    if hasattr(correct_data, 'tolist'):
-        correct_data = correct_data.tolist()
-
-    if isinstance(correct_data, bool):
-        correct_data = [correct_data]
-
-    # Check for empty list to avoid issues with all() function
-    if isinstance(correct_data, list) and len(correct_data) > 0 and all(correct_data):
-        return True  # Filter out 100% correct programs
 
     return False
 
@@ -173,7 +158,6 @@ def filter_programs_with_stats(programs: List[Dict[str, Any]], task_data: Option
     stats = {
         'total': len(programs),
         'transductive': 0,
-        'perfect': 0,
         'pass_through': 0,
         'kept': 0
     }
@@ -183,27 +167,15 @@ def filter_programs_with_stats(programs: List[Dict[str, Any]], task_data: Option
     for program in programs:
         # Check each filter individually for statistics
         is_transductive = program.get('is_transductive', False)
-        is_perfect = False
         is_pass_through = False
 
-        # Check if perfect
-        correct_data = program.get('correct_train_input', [])
-        if hasattr(correct_data, 'tolist'):
-            correct_data = correct_data.tolist()
-        if isinstance(correct_data, bool):
-            correct_data = [correct_data]
-        if isinstance(correct_data, list) and correct_data and all(correct_data):
-            is_perfect = True
-
-        # Check pass-through and single color (require task_data)
+        # Check pass-through (requires task_data)
         if task_data:
             is_pass_through = is_pass_through_program(program, task_data)
 
         # Update statistics (check in priority order, matching should_filter_program logic)
         if is_transductive:
             stats['transductive'] += 1
-        elif is_perfect:
-            stats['perfect'] += 1
         elif is_pass_through:
             stats['pass_through'] += 1
         else:
@@ -246,6 +218,5 @@ def print_filter_statistics(stats: Dict[str, int]) -> None:
     print(f"  Programs filtered: {filtered} ({filtered/total*100:.1f}%)")
     print("\n🔍 Breakdown of filtered programs:")
     print(f"  Transductive: {stats['transductive']} ({stats['transductive']/total*100:.1f}%)")
-    print(f"  Perfect (100% correct): {stats['perfect']} ({stats['perfect']/total*100:.1f}%)")
     print(f"  Pass-through: {stats['pass_through']} ({stats['pass_through']/total*100:.1f}%)")
     print("─" * 50)
