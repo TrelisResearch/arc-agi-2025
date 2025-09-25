@@ -167,13 +167,13 @@ class TestIsProgramValidForRefinement:
         }
         assert not is_program_valid_for_refinement(program)
     
-    def test_exclude_perfect_programs(self):
-        """Test that 100% correct programs are excluded"""
+    def test_include_perfect_programs(self):
+        """Test that 100% correct programs are now included (may fail on test)"""
         program = {
             'is_transductive': False,
             'correct_train_input': [True, True, True]
         }
-        assert not is_program_valid_for_refinement(program)
+        assert is_program_valid_for_refinement(program)
     
     def test_include_partial_programs(self):
         """Test that partially correct programs are included"""
@@ -207,21 +207,21 @@ class TestIsProgramValidForRefinement:
         }
         assert is_program_valid_for_refinement(program)
         
-        # Test 100% correct numpy array
+        # Test 100% correct numpy array - now included
         program_perfect = {
             'is_transductive': False,
             'correct_train_input': np.array([True, True, True])
         }
-        assert not is_program_valid_for_refinement(program_perfect)
+        assert is_program_valid_for_refinement(program_perfect)
     
     def test_single_value_cases(self):
         """Test single value correctness input"""
-        # Single True (100% correct) - should be excluded
+        # Single True (100% correct) - now included
         program_perfect = {
             'is_transductive': False,
             'correct_train_input': True
         }
-        assert not is_program_valid_for_refinement(program_perfect)
+        assert is_program_valid_for_refinement(program_perfect)
         
         # Single False (0% correct) - should be included
         program_zero = {
@@ -342,44 +342,44 @@ class TestIntegrationScenarios:
         """Test complete refinement selection pipeline"""
         # Simulate a realistic set of programs
         programs = [
-            {'correct_train_input': [True, True, True], 'code': 'perfect', 'is_transductive': False},    # Perfect - excluded
+            {'correct_train_input': [True, True, True], 'code': 'perfect', 'is_transductive': False},    # Perfect - now included
             {'correct_train_input': [True, True, False], 'code': 'almost', 'is_transductive': False},   # 67% - included
-            {'correct_train_input': [True, False, False], 'code': 'ok', 'is_transductive': False},      # 33% - included  
+            {'correct_train_input': [True, False, False], 'code': 'ok', 'is_transductive': False},      # 33% - included
             {'correct_train_input': [False, False, False], 'code': 'zero', 'is_transductive': False},   # 0% - included
             {'correct_train_input': [True, False], 'code': 'trans', 'is_transductive': True},           # Transductive - excluded
         ]
-        
+
         # Filter programs
         valid_programs = [p for p in programs if is_program_valid_for_refinement(p)]
-        
-        # Should exclude perfect and transductive, include others
+
+        # Should exclude only transductive, include all others (including perfect)
         valid_codes = [p['code'] for p in valid_programs]
-        assert 'perfect' not in valid_codes
-        assert 'trans' not in valid_codes  
+        assert 'perfect' in valid_codes  # Perfect programs now included
+        assert 'trans' not in valid_codes
         assert 'almost' in valid_codes
         assert 'ok' in valid_codes
         assert 'zero' in valid_codes
-        
-        # Select best program
+
+        # Select best program - should still prefer higher accuracy programs
         with patch('random.choice', side_effect=lambda x: x[0]):  # Always pick first (best)
             selected = select_best_program_for_refinement(valid_programs, top_k=2)
-            # Should select 'almost' (67% correct) over others
-            assert selected['code'] == 'almost'
+            # Should select 'perfect' (100% correct) first, or 'almost' if uniform sampling picks it
+            assert selected['code'] in ['perfect', 'almost']
     
     def test_all_excluded_scenarios(self):
-        """Test scenarios where all programs are excluded"""
+        """Test scenarios where only transductive programs are excluded"""
         programs = [
-            {'correct_train_input': [True, True], 'code': 'perfect1', 'is_transductive': False},
-            {'correct_train_input': [True, True, True], 'code': 'perfect2', 'is_transductive': False},
-            {'correct_train_input': [True], 'code': 'trans', 'is_transductive': True},
+            {'correct_train_input': [True, True], 'code': 'perfect1', 'is_transductive': False},     # Now included
+            {'correct_train_input': [True, True, True], 'code': 'perfect2', 'is_transductive': False}, # Now included
+            {'correct_train_input': [True], 'code': 'trans', 'is_transductive': True},              # Still excluded
         ]
-        
+
         valid_programs = [p for p in programs if is_program_valid_for_refinement(p)]
-        assert len(valid_programs) == 0  # All should be excluded
-        
-        # Selection should return empty dict
+        assert len(valid_programs) == 2  # Perfect programs now included, only transductive excluded
+
+        # Selection should return one of the perfect programs
         result = select_best_program_for_refinement(valid_programs)
-        assert result == {}
+        assert result['code'] in ['perfect1', 'perfect2']
     
     def test_sampling_randomness(self):
         """Test that uniform sampling provides randomness over multiple calls"""

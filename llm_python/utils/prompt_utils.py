@@ -339,7 +339,7 @@ def generate_refinement_task_content(task_data: Dict, draft_program: Optional[st
         # Match their message format
         if len(incorrect_outputs) == 0:
             content += "The previous code gives correct output grids for all Train input.\n"
-            print("WARNING: The previous code gives correct output grids for all Train input. This is not expected.")
+            content += "However, since this program will be evaluated on the Test input(s), you should carefully review the code to ensure it generalizes properly and doesn't just work by coincidence on the training examples. The goal is to make sure the program will also produce correct results for the transformation of Test input(s) to output(s). Consider if there are any edge cases, overfitting to specific patterns, or logical gaps that might cause the program to fail on the test cases."
         else:
             incorrect_list = ', '.join(incorrect_outputs)
             content += f"\nThe previous code gives incorrect output grids for: {incorrect_list}. Now, you need to fix the code to produce correct output for all inputs."

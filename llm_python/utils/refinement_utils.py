@@ -584,9 +584,8 @@ def is_program_valid_for_refinement(program_data: Dict[str, Any], task_data: Opt
     """
     Determine if a program is valid for refinement based on filtering strategy:
     - Exclude transductive programs
-    - Exclude programs that are 100% correct on training (nothing to improve)
     - Exclude pass-through programs (predicted train outputs == predicted train inputs)
-    - Include all other programs (0% correct might have useful partial logic)
+    - Include ALL other programs (including 100% train correct - they may still fail on test)
 
     Args:
         program_data: Program data dictionary or pandas row
@@ -604,9 +603,6 @@ def is_program_valid_for_refinement(program_data: Dict[str, Any], task_data: Opt
     if is_pass_through_program(program_data, task_data):
         return False
 
-    correct_data = _extract_correctness_data(program_data)
-    if not correct_data:
-        return True  # Include programs with no correctness data
-
-    # Include ALL non-transductive programs that are NOT perfect (< 100% correct)
-    return not all(correct_data)  # Exclude only 100% correct programs
+    # Include ALL non-transductive, non-pass-through programs
+    # Even 100% train-correct programs may fail on test examples
+    return True

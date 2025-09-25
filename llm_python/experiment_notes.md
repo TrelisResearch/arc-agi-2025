@@ -42,6 +42,47 @@ Commercial:
 
 ---
 ## September 24th 2025
+### Rerunning the manual dataset
+[ ] Generate solutions with gpt-5-mini.
+  [ ] Inspect the data
+[ ] Add noise to programs and create new tasks with noise. Will need a script for this.
+[ ] Re-run gpt-5-mini on the tasks.
+- Run a base model.
+- Fine-tune the model to see if it improves on these tasks OR on training hard unique 5.
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset manual --subset training --max_workers 128 --max_attempts 8 --model gpt-5-mini --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000 --reasoning-effort medium
+```
+Dataset: manual
+Subset: training
+Model: gpt-5-mini
+Total tasks: 11
+Total time: 609.2s
+Successful API calls: 11/11 (100.0%)
+Total tokens used: 719,955
+Total cost: $0.946172
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 45.5% (45.5% excl. trans)
+  Pass@2 (Train Majority):  36.4% (45.5% excl. trans)
+  Oracle (Best Attempt):    45.5% (45.5% excl. trans)
+  All Train Correct:        54.5% (45.5% excl. trans)
+  Min 1 Train Correct:      90.9% (81.8% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 3.4%
+  No Program Responses (of all attempts): 1.1%
+✅ Checkpointed 84 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250925_155730_gpt-5-mini_manual_training.parquet
+
+Run a refinement to see if that helps:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset manual --subset training --max_workers 32 --max_attempts 2 --model gpt-5-mini --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000 --reasoning-effort medium --refinement-ds /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250925_155730_gpt-5-mini_manual_training.parquet --rex-stats
+```
+
+
 ### OSS Reasoning Fine-tuning Results
 
 Sampling phase:
