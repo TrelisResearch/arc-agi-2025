@@ -99,13 +99,13 @@ class TestShouldFilterProgram:
         }
         assert should_filter_program(program)
 
-    def test_filter_perfect_program(self):
-        """Test that 100% correct programs are filtered"""
+    def test_keep_perfect_program(self):
+        """Test that 100% correct programs are NOT filtered (kept for training)"""
         program = {
             'is_transductive': False,
             'correct_train_input': [True, True, True]
         }
-        assert should_filter_program(program)
+        assert not should_filter_program(program)
 
     def test_filter_pass_through_program(self):
         """Test that pass-through programs are filtered"""
@@ -154,12 +154,12 @@ class TestShouldFilterProgram:
 
     def test_single_boolean_correctness(self):
         """Test with single boolean correctness value"""
-        # Perfect program (single True)
+        # Perfect program (single True) - should be kept
         program_perfect = {
             'is_transductive': False,
             'correct_train_input': True
         }
-        assert should_filter_program(program_perfect)
+        assert not should_filter_program(program_perfect)
 
         # Imperfect program (single False)
         program_imperfect = {
@@ -183,7 +183,7 @@ class TestFilterPrograms:
                 'is_transductive': True,
                 'correct_train_input': [True, False]
             },
-            {  # Should be filtered (perfect)
+            {  # Should be kept (perfect - no longer filtered)
                 'is_transductive': False,
                 'correct_train_input': [True, True]
             },
@@ -194,11 +194,13 @@ class TestFilterPrograms:
         ]
 
         filtered = filter_programs(programs)
-        assert len(filtered) == 2
+        assert len(filtered) == 3
         assert not filtered[0]['is_transductive']
         assert filtered[0]['correct_train_input'] == [True, False]
         assert not filtered[1]['is_transductive']
-        assert filtered[1]['correct_train_input'] == [False, False]
+        assert filtered[1]['correct_train_input'] == [True, True]
+        assert not filtered[2]['is_transductive']
+        assert filtered[2]['correct_train_input'] == [False, False]
 
     def test_filter_empty_list(self):
         """Test filtering an empty list"""
@@ -260,7 +262,7 @@ class TestParquetFilteringIntegration:
                 'predicted_train_output': [[[1, 2], [3, 4]], [[5, 6], [7, 8]]],
                 'code': 'def transform(grid): return grid'
             },
-            {  # Should be filtered (perfect)
+            {  # Should be kept (perfect - no longer filtered)
                 'task_id': 'task3',
                 'is_transductive': False,
                 'correct_train_input': [True, True],
@@ -270,5 +272,6 @@ class TestParquetFilteringIntegration:
         ]
 
         filtered = filter_programs(programs)
-        assert len(filtered) == 1
+        assert len(filtered) == 2
         assert filtered[0]['task_id'] == 'task1'
+        assert filtered[1]['task_id'] == 'task3'

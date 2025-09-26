@@ -42,6 +42,174 @@ Commercial:
 
 ---
 ## September 24th 2025
+### Run Grok 4 Fast on aa2 eval
+x-ai/grok-4-fast
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset manual --subset training --max_workers 128 --max_attempts 2 --model x-ai/grok-4-fast --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 32000 --reasoning_effort medium
+```
+Dataset: manual
+Subset: training
+Model: x-ai/grok-4-fast
+Total tasks: 11
+Total time: 221.0s
+Successful API calls: 11/11 (100.0%)
+Total tokens used: 136,756
+Total cost: $0.066028
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 36.4% (36.4% excl. trans)
+  Pass@2 (Train Majority):  36.4% (36.4% excl. trans)
+  Oracle (Best Attempt):    36.4% (36.4% excl. trans)
+  All Train Correct:        45.5% (45.5% excl. trans)
+  Min 1 Train Correct:      54.5% (54.5% excl. trans)
+  Min 1 Code Success:       54.5%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 0.0%
+  No Program Responses (of all attempts): 54.5%
+✅ Checkpointed 10 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250925_191742_x-ai_grok-4-fast_manual_training.parquet
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 128 --max_attempts 8 --model x-ai/grok-4-fast --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 128000 --reasoning_effort medium
+```
+Only ran 48 tasks:
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: x-ai/grok-4-fast
+Total tasks: 48
+Total time: 542.1s
+Successful API calls: 48/48 (100.0%)
+Total tokens used: 256,530
+Total cost: $0.130134
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 2.1% (2.1% excl. trans)
+  Pass@2 (Train Majority):  2.1% (2.1% excl. trans)
+  Oracle (Best Attempt):    2.1% (2.1% excl. trans)
+  All Train Correct:        8.3% (8.3% excl. trans)
+  Min 1 Train Correct:      8.3% (8.3% excl. trans)
+  Min 1 Code Success:       10.4%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 0.0%
+  No Program Responses (of all attempts): 94.0%
+✅ Checkpointed 19 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250925_192013_x-ai_grok-4-fast_arc-prize-2025_evaluation.parquet
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 128 --max_attempts 8 --model x-ai/grok-4-fast --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 128000 --reasoning_effort medium
+```
+Only ran 32 tasks:
+Dataset: arc-prize-2025
+Subset: training-hard
+Model: x-ai/grok-4-fast
+Total tasks: 32
+Total time: 417.2s
+Successful API calls: 32/32 (100.0%)
+Total tokens used: 322,918
+Total cost: $0.174090
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 25.0% (21.9% excl. trans)
+  Pass@2 (Train Majority):  25.0% (21.9% excl. trans)
+  Oracle (Best Attempt):    25.0% (21.9% excl. trans)
+  All Train Correct:        28.1% (21.9% excl. trans)
+  Min 1 Train Correct:      28.1% (21.9% excl. trans)
+  Min 1 Code Success:       28.1%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 0.5%
+  No Program Responses (of all attempts): 90.7%
+✅ Checkpointed 19 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250925_192208_x-ai_grok-4-fast_arc-prize-2025_training-hard.parquet
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset evaluation --max_workers 128 --max_attempts 8 --model x-ai/grok-4-fast --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 128000 --reasoning_effort medium --limit 10
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: x-ai/grok-4-fast
+Total tasks: 10
+Total time: 242.0s
+Successful API calls: 10/10 (100.0%)
+Total tokens used: 99,360
+Total cost: $0.049818
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 10.0% (10.0% excl. trans)
+  Pass@2 (Train Majority):  10.0% (10.0% excl. trans)
+  Oracle (Best Attempt):    10.0% (10.0% excl. trans)
+  All Train Correct:        10.0% (10.0% excl. trans)
+  Min 1 Train Correct:      10.0% (10.0% excl. trans)
+  Min 1 Code Success:       10.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 0.0%
+  No Program Responses (of all attempts): 92.5%
+✅ Checkpointed 6 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250925_192544_x-ai_grok-4-fast_arc-prize-2025_evaluation.parquet
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 128 --max_attempts 8 --model x-ai/grok-4-fast --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 128000 --reasoning_effort medium --limit 10
+```
+Dataset: arc-prize-2025
+Subset: training-hard
+Model: x-ai/grok-4-fast
+Total tasks: 10
+Total time: 268.0s
+Successful API calls: 10/10 (100.0%)
+Total tokens used: 28,387
+Total cost: $0.013004
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 10.0% (10.0% excl. trans)
+  Pass@2 (Train Majority):  10.0% (10.0% excl. trans)
+  Oracle (Best Attempt):    10.0% (10.0% excl. trans)
+  All Train Correct:        10.0% (10.0% excl. trans)
+  Min 1 Train Correct:      10.0% (10.0% excl. trans)
+  Min 1 Code Success:       10.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 0.0%
+  No Program Responses (of all attempts): 98.8%
+✅ Checkpointed 1 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250925_192548_x-ai_grok-4-fast_arc-prize-2025_training-hard.parquet
+
+And run Grok-4:
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset arc-prize-2025 --subset training-hard --max_workers 128 --max_attempts 8 --model x-ai/grok-4 --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 128000 --reasoning_effort high --limit 10
+```
+Dataset: arc-prize-2025
+Subset: training-hard
+Model: x-ai/grok-4
+Total tasks: 10
+Total time: 534.1s
+Successful API calls: 10/10 (100.0%)
+Total tokens used: 54,769
+Total cost: $0.029478
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 10.0% (10.0% excl. trans)
+  Pass@2 (Train Majority):  10.0% (10.0% excl. trans)
+  Oracle (Best Attempt):    10.0% (10.0% excl. trans)
+  All Train Correct:        10.0% (10.0% excl. trans)
+  Min 1 Train Correct:      10.0% (10.0% excl. trans)
+  Min 1 Code Success:       10.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 0.0%
+  No Program Responses (of all attempts): 96.2%
+✅ Checkpointed 3 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250925_193411_x-ai_grok-4_arc-prize-2025_training-hard.parquet
+
 ### Rerunning the manual dataset
 [x] Generate solutions with gpt-5-mini.
   [x] Do refinement, did it solve any new tasks? Nope, it didn't.
