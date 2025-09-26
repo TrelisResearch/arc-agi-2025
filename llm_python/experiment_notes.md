@@ -41,7 +41,132 @@ Commercial:
 - Reach back out to openrouter on sponsorship again.
 
 ---
-## September 24th 2025
+## September 26th 2025
+### Creating more ARC Tasks
+- First, make the 11 training hard manual tasks pass with gpt-5-mini.
+- Then, make 12 new tasks for aa2 evaluation tasks.
+
+Task creator:
+```bash
+open /Users/ronanmcgovern/TR/arc-agi-2025/experimental/arc_task_creator_standalone.html
+```
+
+Inspecting parquet files:
+```bash
+open /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/web-viewer.html
+```
+
+  🟢 Tasks with ALL-CORRECT programs (ALL train AND ALL test) - 2 tasks:
+
+  - acqa3svi - Has 2 programs that are perfect on both train and test
+  - wxpaa7nb - Has 5 programs that are perfect on both train and test
+
+  🟡 Tasks with PARTIAL-CORRECT programs only - 8 tasks:
+
+  - 136euavv - Some correct predictions but not all train AND all test. 
+  - 54468uwx - Some correct predictions but not all train AND all test.
+  - 5lrmovc6 - Some correct predictions but not all train AND all test.
+  - 6khsastk - Some correct predictions but not all train AND all test.
+  - 9dbiy9ly - Some correct predictions but not all train AND all test.
+  - g4eujgzo - Some correct predictions but not all train AND all test.
+  - s7rge3ka - Some correct predictions but not all train AND all test.
+  - v9ybxgev - Some correct predictions but not all train AND all test
+
+  🔴 Tasks with NO correct programs - 0 tasks:
+
+  (None - all tasks have at least some correct predictions)
+
+Now re-run on those tasks.
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset manual --subset training --max_workers 128 --max_attempts 8 --model google/gemini-2.5-flash --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000 --reasoning-effort medium
+```
+Dataset: manual
+Subset: training
+Model: google/gemini-2.5-flash
+Total tasks: 11
+Total time: 202.2s
+Successful API calls: 11/11 (100.0%)
+Total tokens used: 1,757,894
+Total cost: $3.636454
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 18.2% (18.2% excl. trans)
+  Pass@2 (Train Majority):  27.3% (27.3% excl. trans)
+  Oracle (Best Attempt):    36.4% (36.4% excl. trans)
+  All Train Correct:        81.8% (54.5% excl. trans)
+  Min 1 Train Correct:      100.0% (72.7% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 3.4%
+  No Program Responses (of all attempts): 1.1%
+✅ Checkpointed 84 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250926_091627_google_gemini-2.5-flash_manual_training.parquet
+
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset manual --subset training --max_workers 128 --max_attempts 8 --model gpt-5-mini --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000 --reasoning-effort medium
+```
+Dataset: manual
+Subset: training
+Model: gpt-5-mini
+Total tasks: 11
+Total time: 260.3s
+Successful API calls: 11/11 (100.0%)
+Total tokens used: 753,793
+Total cost: $0.912985
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 36.4% (36.4% excl. trans)
+  Pass@2 (Train Majority):  36.4% (36.4% excl. trans)
+  Oracle (Best Attempt):    45.5% (36.4% excl. trans)
+  All Train Correct:        72.7% (63.6% excl. trans)
+  Min 1 Train Correct:      100.0% (100.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 13.6%
+  No Program Responses (of all attempts): 2.3%
+✅ Checkpointed 74 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250926_092034_gpt-5-mini_manual_training.parquet
+
+## Make some manual tasks for AA2.
+e8686506 -> kmpi991v
+20270e3b -> vxdfxvxp
+28a6681f -> kl40vkhr
+7b5033c1 -> 7qyjcy7q
+dbff022c -> a9h4pk85
+
+Run on those tasks and the older ones.
+```bash
+uv run python -m llm_python.run_arc_tasks_soar --dataset manual --subset training --max_workers 128 --max_attempts 8 --model gpt-5-mini --base-url https://openrouter.ai/api/v1 --unsafe-executor --max-tokens 64000 --reasoning-effort medium
+```
+Dataset: manual
+Subset: training
+Model: gpt-5-mini
+Total tasks: 16
+Total time: 268.2s
+Successful API calls: 16/16 (100.0%)
+Total tokens used: 1,084,360
+Total cost: $1.382254
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 37.5% (31.2% excl. trans)
+  Pass@2 (Train Majority):  31.2% (31.2% excl. trans)
+  Oracle (Best Attempt):    43.8% (31.2% excl. trans)
+  All Train Correct:        68.8% (62.5% excl. trans)
+  Min 1 Train Correct:      100.0% (100.0% excl. trans)
+  Min 1 Code Success:       100.0%
+  Max Length Responses:     0.0%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 21.1%
+  No Program Responses (of all attempts): 1.6%
+✅ Checkpointed 98 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250926_100224_gpt-5-mini_manual_training.parquet
+
+## September 25th 2025
 ### Run Grok 4 Fast on aa2 eval
 x-ai/grok-4-fast
 
