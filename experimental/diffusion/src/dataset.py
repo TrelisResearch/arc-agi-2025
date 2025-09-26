@@ -9,7 +9,7 @@ from typing import Dict, List, Tuple, Optional, Any
 import random
 from pathlib import Path
 
-from ..utils.grid_utils import grid_to_tokens, tokens_to_grid, GridAugmentation
+from ..utils.grid_utils import grid_to_tokens, tokens_to_grid, GridAugmentation, TaskAugmentation
 
 
 class ARCDataset(Dataset):
@@ -23,30 +23,34 @@ class ARCDataset(Dataset):
         data_paths: List[str],
         max_size: int = 30,
         augment: bool = True,
-        use_test_examples_as_train: bool = True,
+        n_augment: int = 3,
+        include_training_test_examples: bool = True,
     ):
         """
         Args:
             data_paths: List of paths to JSON files containing ARC data
             max_size: Maximum grid size (grids will be padded to this size)
-            augment: Whether to apply data augmentation
-            use_test_examples_as_train: Whether to use test examples as training data
+            augment: Whether to apply task-level data augmentation
+            n_augment: Number of augmented versions per task (if augment=True)
+            include_training_test_examples: Whether to include test examples from training_challenges.json as training data
         """
         self.max_size = max_size
         self.augment = augment
-        self.use_test_examples_as_train = use_test_examples_as_train
+        self.n_augment = n_augment
+        self.include_training_test_examples = include_training_test_examples
 
         # Load all data
         self.examples = []
         self.task_id_to_idx = {}  # Map task IDs to integer indices
 
         self._load_data(data_paths)
-        self.augmenter = GridAugmentation()
 
         print(f"Loaded {len(self.examples)} examples from {len(self.task_id_to_idx)} tasks")
 
     def _load_data(self, data_paths: List[str]):
-        """Load data from JSON files."""
+        """Load data from JSON files and apply task-level augmentation."""
+        # First collect all tasks
+        all_tasks = {}
         task_counter = 0
 
         # Load training solutions to get outputs for training test examples
@@ -61,27 +65,21 @@ class ARCDataset(Dataset):
             is_evaluation_challenges = "evaluation" in data_path
 
             for task_id, task_data in data.items():
-                # Map task_id to integer index
-                if task_id not in self.task_id_to_idx:
-                    self.task_id_to_idx[task_id] = task_counter
-                    task_counter += 1
-
-                task_idx = self.task_id_to_idx[task_id]
+                # Create task structure for augmentation
+                task_examples = {
+                    'train': [],
+                    'test': []
+                }
 
                 # Process training examples (always include these)
                 for example in task_data.get('train', []):
-                    input_grid = np.array(example['input'])
-                    output_grid = np.array(example['output'])
-                    self.examples.append({
-                        'task_id': task_id,
-                        'task_idx': task_idx,
-                        'input_grid': input_grid,
-                        'output_grid': output_grid,
-                        'split': 'train'
+                    task_examples['train'].append({
+                        'input': np.array(example['input']),
+                        'output': np.array(example['output'])
                     })
 
                 # Process test examples as training data
-                if self.use_test_examples_as_train and not is_evaluation_challenges:
+                if self.include_training_test_examples and not is_evaluation_challenges:
                     # For training_challenges.json, use training_solutions.json for test outputs
                     for i, example in enumerate(task_data.get('test', [])):
                         input_grid = np.array(example['input'])
@@ -89,24 +87,71 @@ class ARCDataset(Dataset):
                         # Get output from training_solutions.json
                         if task_id in training_solutions and i < len(training_solutions[task_id]):
                             output_grid = np.array(training_solutions[task_id][i])
-                            self.examples.append({
-                                'task_id': task_id,
-                                'task_idx': task_idx,
-                                'input_grid': input_grid,
-                                'output_grid': output_grid,
-                                'split': 'test_as_train'
+                            task_examples['test'].append({
+                                'input': input_grid,
+                                'output': output_grid
                             })
                         elif 'output' in example:
                             # Fallback if output is directly in the test example
                             output_grid = np.array(example['output'])
-                            self.examples.append({
-                                'task_id': task_id,
-                                'task_idx': task_idx,
-                                'input_grid': input_grid,
-                                'output_grid': output_grid,
-                                'split': 'test_as_train'
+                            task_examples['test'].append({
+                                'input': input_grid,
+                                'output': output_grid
                             })
-                # For evaluation_challenges.json, skip test examples (they're for final evaluation only)
+
+                all_tasks[task_id] = task_examples
+
+        # Now apply task-level augmentation and convert to examples
+        print(f"Loaded {len(all_tasks)} tasks")
+
+        if self.augment:
+            print(f"Applying task-level augmentation with {self.n_augment} augmentations per task")
+            augmented_tasks = self._apply_task_augmentation(all_tasks)
+            all_tasks.update(augmented_tasks)
+            print(f"Total tasks after augmentation: {len(all_tasks)}")
+
+        # Convert tasks to examples
+        for task_id, task_data in all_tasks.items():
+            # Map task_id to integer index
+            if task_id not in self.task_id_to_idx:
+                self.task_id_to_idx[task_id] = task_counter
+                task_counter += 1
+
+            task_idx = self.task_id_to_idx[task_id]
+
+            # Convert all examples in this task
+            for split in ['train', 'test']:
+                for example in task_data[split]:
+                    self.examples.append({
+                        'task_id': task_id,
+                        'task_idx': task_idx,
+                        'input_grid': example['input'],
+                        'output_grid': example['output'],
+                        'split': split
+                    })
+
+    def _apply_task_augmentation(self, tasks: Dict[str, Dict]) -> Dict[str, Dict]:
+        """Apply task-level augmentation to create new tasks."""
+        augmented_tasks = {}
+
+        for task_id, task_data in tasks.items():
+            for aug_idx in range(self.n_augment):
+                # Generate random augmentation parameters
+                flip_type = random.choice(['none', 'none', 'horizontal', 'vertical'])  # 'none' has 2x weight
+                rotation = random.choice([0, 90, 180, 270])
+                color_cycle = random.choice(range(9))  # 0-8
+
+                # Create augmented task
+                aug_suffix = f"_aug{aug_idx}_f{flip_type[0]}_r{rotation}_c{color_cycle}"
+                aug_task_id = f"{task_id}{aug_suffix}"
+
+                augmented_task = TaskAugmentation.augment_task(
+                    task_data, flip_type, rotation, color_cycle, aug_suffix
+                )
+
+                augmented_tasks[aug_task_id] = augmented_task
+
+        return augmented_tasks
 
     def _load_solutions(self, solutions_path: str) -> Dict[str, List[List[List[int]]]]:
         """Load solutions from JSON file."""
@@ -128,12 +173,6 @@ class ARCDataset(Dataset):
         input_tokens, input_h, input_w = grid_to_tokens(example['input_grid'], self.max_size)
         output_tokens, output_h, output_w = grid_to_tokens(example['output_grid'], self.max_size)
 
-        # Apply augmentation if enabled
-        if self.augment and random.random() < 0.5:
-            input_tokens, output_tokens = self._augment_pair(input_tokens, output_tokens)
-            # Note: after augmentation, the height/width might be swapped for rotations
-            # For simplicity, we'll keep the original h/w since the model learns to predict size
-
         return {
             'input_grid': input_tokens,
             'output_grid': output_tokens,
@@ -143,23 +182,6 @@ class ARCDataset(Dataset):
             'task_id': example['task_id']  # Keep string ID for debugging
         }
 
-    def _augment_pair(
-        self,
-        input_grid: torch.Tensor,
-        output_grid: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Apply random augmentation to input-output pair."""
-        # Randomly choose augmentation
-        aug_choice = random.choice(['rotate_90', 'flip_h', 'flip_v', 'none'])
-
-        if aug_choice == 'rotate_90':
-            return self.augmenter.rotate_90(input_grid, output_grid)
-        elif aug_choice == 'flip_h':
-            return self.augmenter.flip_horizontal(input_grid, output_grid)
-        elif aug_choice == 'flip_v':
-            return self.augmenter.flip_vertical(input_grid, output_grid)
-        else:
-            return input_grid, output_grid
 
     def get_task_info(self) -> Dict[str, int]:
         """Get information about tasks in the dataset."""
@@ -211,7 +233,7 @@ class ARCDataLoader:
             data_paths=[eval_data_path],
             max_size=max_size,
             augment=False,  # No augmentation for evaluation
-            use_test_examples_as_train=False  # Only use actual train examples
+            include_training_test_examples=False  # Only use actual train examples
         )
 
         return DataLoader(
@@ -223,31 +245,40 @@ class ARCDataLoader:
         )
 
 
-def load_arc_data_paths(data_dir: str = "data/arc-prize-2024") -> Dict[str, List[str]]:
+def load_arc_data_paths(data_dir: str = "data/arc-prize-2024", datasets: List[str] = None) -> Dict[str, List[str]]:
     """
-    Get the standard ARC data paths for training and evaluation.
+    Get ARC data paths for training.
 
     Args:
         data_dir: Path to ARC data directory
+        datasets: List of dataset names to include. Options: ['training_challenges', 'evaluation_challenges']
+                 If None, defaults to both datasets.
 
     Returns:
-        Dictionary with 'train' and 'eval' paths
+        Dictionary with 'train' key containing list of dataset paths
     """
     data_dir = Path(data_dir)
 
-    train_paths = [
-        str(data_dir / "arc-agi_training_challenges.json"),
-        str(data_dir / "arc-agi_evaluation_challenges.json"),  # Use evaluation train examples for training
-    ]
+    # Default to including both datasets
+    if datasets is None:
+        datasets = ['training_challenges', 'evaluation_challenges']
 
-    # For evaluation, we only use the evaluation challenges
-    eval_paths = [
-        str(data_dir / "arc-agi_evaluation_challenges.json")
-    ]
+    train_paths = []
+
+    # Map dataset names to file names
+    dataset_files = {
+        'training_challenges': 'arc-agi_training_challenges.json',
+        'evaluation_challenges': 'arc-agi_evaluation_challenges.json'
+    }
+
+    for dataset in datasets:
+        if dataset in dataset_files:
+            train_paths.append(str(data_dir / dataset_files[dataset]))
+        else:
+            raise ValueError(f"Unknown dataset: {dataset}. Available: {list(dataset_files.keys())}")
 
     return {
-        'train': train_paths,
-        'eval': eval_paths
+        'train': train_paths
     }
 
 

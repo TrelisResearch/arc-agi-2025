@@ -182,7 +182,11 @@ class SizePredictionHead(nn.Module):
     def __init__(self, d_model: int, max_size: int):
         super().__init__()
         self.max_size = max_size
+        # Larger, deeper size head for better size prediction
         self.head = nn.Sequential(
+            nn.Linear(d_model, d_model),
+            nn.ReLU(),
+            nn.Dropout(0.1),
             nn.Linear(d_model, d_model // 2),
             nn.ReLU(),
             nn.Dropout(0.1),
@@ -220,6 +224,10 @@ class ARCDiffusionModel(nn.Module):
         super().__init__()
         self.vocab_size = vocab_size
         self.max_size = max_size
+
+        # Precomputed class weights for size prediction (based on ARC training data)
+        # These are inverse frequency weights to handle class imbalance
+        self.register_buffer('size_class_weights', self._compute_size_class_weights())
 
         self.denoiser = TransformerDenoiser(
             vocab_size=vocab_size,
@@ -279,8 +287,8 @@ class ARCDiffusionModel(nn.Module):
         size_targets_h = heights - 1
         size_targets_w = widths - 1
 
-        size_loss_h = F.cross_entropy(size_logits_h, size_targets_h)
-        size_loss_w = F.cross_entropy(size_logits_w, size_targets_w)
+        size_loss_h = F.cross_entropy(size_logits_h, size_targets_h, weight=self.size_class_weights)
+        size_loss_w = F.cross_entropy(size_logits_w, size_targets_w, weight=self.size_class_weights)
         size_loss = (size_loss_h + size_loss_w) / 2
 
         # Total loss
@@ -323,3 +331,53 @@ class ARCDiffusionModel(nn.Module):
             widths = torch.argmax(size_logits_w, dim=-1) + 1
 
             return heights, widths
+
+    def _compute_size_class_weights(self) -> torch.Tensor:
+        """
+        Placeholder for size class weights.
+        Will be computed dynamically from training data during training setup.
+        """
+        # Initialize with uniform weights - will be overridden during training
+        return torch.ones(self.max_size, dtype=torch.float32)
+
+    def compute_size_class_weights_from_data(self, dataset) -> torch.Tensor:
+        """
+        Compute class weights for size prediction from actual training data.
+        Uses inverse frequency weighting to handle class imbalance.
+        """
+        # Count size frequencies
+        height_counts = torch.zeros(self.max_size, dtype=torch.float32)
+        width_counts = torch.zeros(self.max_size, dtype=torch.float32)
+
+        for i in range(len(dataset)):
+            example = dataset[i]
+            height = example['height'].item()
+            width = example['width'].item()
+
+            # Convert to 0-indexed (1-30 -> 0-29)
+            height_idx = height - 1
+            width_idx = width - 1
+
+            if 0 <= height_idx < self.max_size:
+                height_counts[height_idx] += 1
+            if 0 <= width_idx < self.max_size:
+                width_counts[width_idx] += 1
+
+        # Combine height and width counts
+        total_counts = height_counts + width_counts
+
+        # Add small epsilon to avoid division by zero
+        total_counts = total_counts + 1e-6
+
+        # Compute inverse frequency weights
+        weights = 1.0 / total_counts
+
+        # Normalize weights so the average weight is 1.0
+        weights = weights / weights.mean()
+
+        # Cap maximum weight to prevent extreme values
+        weights = torch.clamp(weights, max=10.0)
+
+        print(f"Computed size class weights (min: {weights.min():.3f}, max: {weights.max():.3f}, mean: {weights.mean():.3f})")
+
+        return weights

@@ -106,14 +106,18 @@ class ARCDiffusionTrainer:
         self.optimizer.zero_grad()
         total_loss.backward()
 
+        # Compute gradient norm before clipping
+        grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=float('inf'))
+
         # Gradient clipping
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
 
         self.optimizer.step()
         self.scheduler.step()
 
-        # Return losses as Python floats
-        return {key: value.item() for key, value in losses.items()}
+        # Return losses and grad norm as Python floats
+        losses['grad_norm'] = grad_norm.item()
+        return {key: value.item() if hasattr(value, 'item') else value for key, value in losses.items()}
 
     def validate(self, val_loader: torch.utils.data.DataLoader, num_batches: int = 10) -> Dict[str, float]:
         """Run validation."""
@@ -293,14 +297,18 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         )
 
     # Load data paths
-    data_paths = load_arc_data_paths(config.get('data_dir', 'data/arc-prize-2024'))
+    data_paths = load_arc_data_paths(
+        data_dir=config.get('data_dir', 'data/arc-prize-2024'),
+        datasets=config.get('datasets', None)
+    )
 
     # Create full dataset first
     full_dataset = ARCDataset(
         data_paths=data_paths['train'],
         max_size=config['max_size'],
         augment=config['augment'],
-        use_test_examples_as_train=True
+        n_augment=config.get('n_augment', 3),
+        include_training_test_examples=config.get('include_training_test_examples', True)
     )
 
     # Split into train and validation
@@ -377,6 +385,11 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
 
     print(f"Model has {sum(p.numel() for p in model.parameters()):,} parameters")
 
+    # Compute and set size class weights from training data
+    print("Computing size class weights from training data...")
+    size_class_weights = model.compute_size_class_weights_from_data(full_dataset)
+    model.size_class_weights = size_class_weights.to(device)
+
     # Training loop
     step = 0
     best_val_loss = float('inf')
@@ -388,7 +401,8 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         epoch_losses = {
             'total_loss': 0.0,
             'grid_loss': 0.0,
-            'size_loss': 0.0
+            'size_loss': 0.0,
+            'grad_norm': 0.0
         }
         num_train_batches = 0
 
@@ -407,7 +421,8 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             progress_bar.set_postfix({
                 'loss': f"{losses['total_loss']:.4f}",
                 'grid': f"{losses['grid_loss']:.4f}",
-                'size': f"{losses['size_loss']:.4f}"
+                'size': f"{losses['size_loss']:.4f}",
+                'grad': f"{losses['grad_norm']:.2f}"
             })
 
             # Log to wandb
@@ -452,7 +467,7 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
                 print(f"Saved best model with val loss: {best_val_loss:.4f}")
 
         # Print epoch summary
-        print(f"Epoch {epoch + 1} - Train Loss: {avg_train_losses['total_loss']:.4f}")
+        print(f"Epoch {epoch + 1} - Train Loss: {avg_train_losses['total_loss']:.4f}, Grad Norm: {avg_train_losses['grad_norm']:.3f}")
 
         # Early stopping for CPU testing
         if config.get('early_stop_epochs') and epoch >= config['early_stop_epochs']:

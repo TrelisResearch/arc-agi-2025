@@ -142,6 +142,113 @@ def tokens_to_grid(tokens: torch.Tensor, height: int, width: int) -> np.ndarray:
     return valid_tokens.cpu().numpy().astype(np.int32)
 
 
+class TaskAugmentation:
+    """Task-level augmentation utilities for ARC data."""
+
+    @staticmethod
+    def apply_flip_augmentation(grid: np.ndarray, flip_type: str) -> np.ndarray:
+        """Apply flip augmentation to a grid.
+
+        Args:
+            grid: Input grid [H, W]
+            flip_type: 'horizontal', 'vertical', or 'none'
+
+        Returns:
+            Augmented grid [H, W]
+        """
+        if flip_type == 'horizontal':
+            return np.fliplr(grid)
+        elif flip_type == 'vertical':
+            return np.flipud(grid)
+        else:  # 'none'
+            return grid.copy()
+
+    @staticmethod
+    def apply_rotation_augmentation(grid: np.ndarray, rotation: int) -> np.ndarray:
+        """Apply rotation augmentation to a grid.
+
+        Args:
+            grid: Input grid [H, W]
+            rotation: 0, 90, 180, or 270 degrees
+
+        Returns:
+            Rotated grid
+        """
+        if rotation == 90:
+            return np.rot90(grid, k=-1)  # 90 clockwise
+        elif rotation == 180:
+            return np.rot90(grid, k=2)
+        elif rotation == 270:
+            return np.rot90(grid, k=1)   # 270 clockwise = 90 counter-clockwise
+        else:  # 0
+            return grid.copy()
+
+    @staticmethod
+    def apply_color_cycle_augmentation(grid: np.ndarray, cycle_offset: int) -> np.ndarray:
+        """Apply color cycling augmentation to a grid.
+
+        Args:
+            grid: Input grid [H, W] with values 0-9
+            cycle_offset: Number of positions to cycle colors (0-8)
+
+        Returns:
+            Color-cycled grid [H, W]
+        """
+        if cycle_offset == 0:
+            return grid.copy()
+
+        # Create color mapping (keep black/0 unchanged, cycle 1-9)
+        color_map = np.arange(10, dtype=np.int64)
+
+        # Cycle colors 1-9 by offset
+        for i in range(1, 10):
+            color_map[i] = ((i - 1 + cycle_offset) % 9) + 1
+
+        # Apply mapping
+        return color_map[grid]
+
+    @staticmethod
+    def augment_task(task_data: dict, flip_type: str, rotation: int, color_cycle: int, task_suffix: str) -> dict:
+        """Apply consistent augmentation to an entire task.
+
+        Args:
+            task_data: Original task with 'train' and 'test' lists
+            flip_type: 'horizontal', 'vertical', or 'none'
+            rotation: 0, 90, 180, or 270 degrees
+            color_cycle: 0-8 color cycle offset
+            task_suffix: Suffix to add to task ID
+
+        Returns:
+            Augmented task data
+        """
+        augmented_task = {
+            'train': [],
+            'test': []
+        }
+
+        # Apply same augmentation to all examples
+        for split in ['train', 'test']:
+            for example in task_data[split]:
+                # Augment input grid
+                input_grid = example['input']
+                input_grid = TaskAugmentation.apply_flip_augmentation(input_grid, flip_type)
+                input_grid = TaskAugmentation.apply_rotation_augmentation(input_grid, rotation)
+                input_grid = TaskAugmentation.apply_color_cycle_augmentation(input_grid, color_cycle)
+
+                # Augment output grid
+                output_grid = example['output']
+                output_grid = TaskAugmentation.apply_flip_augmentation(output_grid, flip_type)
+                output_grid = TaskAugmentation.apply_rotation_augmentation(output_grid, rotation)
+                output_grid = TaskAugmentation.apply_color_cycle_augmentation(output_grid, color_cycle)
+
+                augmented_task[split].append({
+                    'input': input_grid,
+                    'output': output_grid
+                })
+
+        return augmented_task
+
+
 class GridAugmentation:
     """Simple augmentation for ARC grids: rotations and reflections."""
 
