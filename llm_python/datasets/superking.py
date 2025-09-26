@@ -10,7 +10,7 @@ from llm_python.datasets.io import read_soar_parquet, write_soar_parquet
 def sync_superking() -> List[str]:
     # GCS bucket and path
     gcs_bucket = "trelis-arc"
-    gcs_prefix = "datasets/superking/"
+    gcs_prefix = "datasets/superkingplus/"
     local_download_dir = "/tmp/superking_data"
 
     print("Downloading superking dataset from Google Cloud Storage...")
