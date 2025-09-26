@@ -70,7 +70,15 @@ class DiffusionInference:
         debug: bool = False
     ):
         self.model_path = model_path
-        self.device = torch.device(device or ('cuda' if torch.cuda.is_available() else 'cpu'))
+        # Set up device (prioritize CUDA > MPS > CPU)
+        if device:
+            self.device = torch.device(device)
+        elif torch.cuda.is_available():
+            self.device = torch.device('cuda')
+        elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            self.device = torch.device('mps')
+        else:
+            self.device = torch.device('cpu')
         self.guidance_scale = guidance_scale
         self.num_inference_steps = num_inference_steps
         self.debug = debug
@@ -85,6 +93,7 @@ class DiffusionInference:
             vocab_size=self.config['vocab_size'],
             schedule_type=self.config['schedule_type']
         )
+        self.noise_scheduler.to(self.device)
         self.sampler = ARCDiffusionSampler(self.model, self.noise_scheduler, self.device)
 
         if self.num_inference_steps is None:
@@ -150,10 +159,10 @@ class DiffusionInference:
         try:
             # Convert to tokens and add batch dimension
             input_tokens, _, _ = grid_to_tokens(input_grid, max_size=self.config['max_size'])
-            input_batch = input_tokens.unsqueeze(0)  # [1, max_size, max_size]
+            input_batch = input_tokens.unsqueeze(0).to(self.device)  # [1, max_size, max_size]
 
             # Use task ID (limited to what model was trained on)
-            task_ids = torch.tensor([task_idx % self.config.get('max_tasks', 400)])
+            task_ids = torch.tensor([task_idx % self.config.get('max_tasks', 400)]).to(self.device)
 
             # Sample output
             with torch.no_grad():

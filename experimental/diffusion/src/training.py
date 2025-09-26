@@ -269,8 +269,15 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
     Returns:
         Trained model
     """
-    # Set up device
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    # Set up device (prioritize CUDA > MPS > CPU)
+    if torch.cuda.is_available():
+        device = torch.device('cuda')
+    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        device = torch.device('mps')
+        # MPS memory optimization
+        torch.mps.set_per_process_memory_fraction(0.7)  # Use max 70% of memory
+    else:
+        device = torch.device('cpu')
     print(f"Using device: {device}")
 
     # Create output directory
@@ -311,12 +318,15 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
     )
 
     # Create data loaders
+    # Disable pin_memory for MPS to avoid warnings and reduce memory usage
+    use_pin_memory = device.type == 'cuda'
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=config['batch_size'],
         shuffle=True,
         num_workers=0,
-        pin_memory=True,
+        pin_memory=use_pin_memory,
         drop_last=True,
         collate_fn=collate_fn
     )
@@ -326,7 +336,7 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         batch_size=config['batch_size'] // 2,
         shuffle=False,
         num_workers=0,
-        pin_memory=True,
+        pin_memory=use_pin_memory,
         collate_fn=collate_fn
     )
 
@@ -353,6 +363,7 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         vocab_size=config['vocab_size'],
         schedule_type=config['schedule_type']
     )
+    noise_scheduler.to(device)
 
     # Create trainer
     trainer = ARCDiffusionTrainer(
