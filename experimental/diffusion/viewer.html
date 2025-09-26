@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ARC Diffusion Results Viewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+        }
+
+        .header {
+            background: #2c3e50;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .upload-section {
+            background: white;
+            margin: 20px;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        .file-input {
+            margin: 20px 0;
+        }
+
+        .file-input input[type="file"] {
+            padding: 10px;
+            border: 2px dashed #3498db;
+            border-radius: 5px;
+            background: #ecf0f1;
+            cursor: pointer;
+        }
+
+        .metrics-summary {
+            background: white;
+            margin: 20px;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: none;
+        }
+
+        .metric-item {
+            display: inline-block;
+            margin: 10px 20px;
+            padding: 10px 20px;
+            background: #3498db;
+            color: white;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+
+        .results-container {
+            margin: 20px;
+            display: none;
+        }
+
+        .task-card {
+            background: white;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .task-header {
+            background: #34495e;
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .task-id {
+            font-family: monospace;
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .task-status {
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .status-pass { background: #27ae60; }
+        .status-fail { background: #e74c3c; }
+
+        .grid-section {
+            padding: 20px;
+            border-bottom: 1px solid #ecf0f1;
+        }
+
+        .grid-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #2c3e50;
+        }
+
+        .grids-row {
+            display: flex;
+            gap: 30px;
+            align-items: flex-start;
+            flex-wrap: wrap;
+        }
+
+        .grid-container {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .grid {
+            display: inline-block;
+            border: 2px solid #34495e;
+            margin: 5px 0;
+        }
+
+        .grid-cell {
+            width: 20px;
+            height: 20px;
+            border: 1px solid #bdc3c7;
+            display: inline-block;
+            vertical-align: top;
+        }
+
+        .attempts-section {
+            padding: 20px;
+            background: #f8f9fa;
+        }
+
+        .attempt {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: white;
+            border-radius: 5px;
+            border-left: 4px solid #3498db;
+        }
+
+        .attempt-header {
+            font-weight: bold;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .correct { color: #27ae60; }
+        .incorrect { color: #e74c3c; }
+
+        .error-message {
+            background: #fff5f5;
+            color: #e74c3c;
+            padding: 10px;
+            border-radius: 3px;
+            margin-top: 10px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        /* ARC color scheme */
+        .color-0 { background-color: #000000; } /* black */
+        .color-1 { background-color: #0074D9; } /* blue */
+        .color-2 { background-color: #FF4136; } /* red */
+        .color-3 { background-color: #2ECC40; } /* green */
+        .color-4 { background-color: #FFDC00; } /* yellow */
+        .color-5 { background-color: #AAAAAA; } /* grey */
+        .color-6 { background-color: #F012BE; } /* magenta */
+        .color-7 { background-color: #FF851B; } /* orange */
+        .color-8 { background-color: #7FDBFF; } /* sky */
+        .color-9 { background-color: #870C25; } /* brown */
+        .color-10 { background-color: #FFFFFF; border-color: #ccc !important; } /* white/pad */
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎯 ARC Diffusion Results Viewer</h1>
+        <p>Upload inference results JSON to visualize predictions</p>
+    </div>
+
+    <div class="upload-section">
+        <h2>Upload Results</h2>
+        <div class="file-input">
+            <input type="file" id="fileInput" accept=".json" />
+        </div>
+        <p>Select a JSON file from diffusion inference results</p>
+    </div>
+
+    <div class="metrics-summary" id="metricsSummary">
+        <h2>📊 Summary</h2>
+        <div id="metricsContent"></div>
+    </div>
+
+    <div class="results-container" id="resultsContainer">
+        <h2>🔍 Task Results</h2>
+        <div id="tasksContent"></div>
+    </div>
+
+    <script>
+        // ARC color mapping
+        const ARC_COLORS = {
+            0: '#000000', 1: '#0074D9', 2: '#FF4136', 3: '#2ECC40', 4: '#FFDC00',
+            5: '#AAAAAA', 6: '#F012BE', 7: '#FF851B', 8: '#7FDBFF', 9: '#870C25', 10: '#FFFFFF'
+        };
+
+        document.getElementById('fileInput').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    displayResults(data);
+                } catch (error) {
+                    alert('Error parsing JSON file: ' + error.message);
+                }
+            };
+            reader.readAsText(file);
+        });
+
+        function displayResults(data) {
+            displayMetrics(data.metrics, data.metadata);
+            displayTasks(data.results);
+
+            document.getElementById('metricsSummary').style.display = 'block';
+            document.getElementById('resultsContainer').style.display = 'block';
+        }
+
+        function displayMetrics(metrics, metadata) {
+            const content = document.getElementById('metricsContent');
+            content.innerHTML = `
+                <div style="margin-bottom: 20px;">
+                    <strong>Dataset:</strong> ${metadata.dataset}/${metadata.subset} |
+                    <strong>Model:</strong> ${metadata.model_path.split('/').pop()} |
+                    <strong>Tasks:</strong> ${metadata.completed_tasks}/${metadata.total_tasks}
+                </div>
+                <div class="metric-item">Pass@2: ${metrics.pass_at_2}/${metrics.total_tasks} (${(metrics.pass_at_2_rate * 100).toFixed(1)}%)</div>
+                <div class="metric-item">Both Correct: ${metrics.both_correct}/${metrics.total_tasks} (${(metrics.both_correct_rate * 100).toFixed(1)}%)</div>
+                <div class="metric-item">Attempt 1: ${metrics.attempt_1_correct}/${metrics.total_tasks} (${(metrics.attempt_1_accuracy * 100).toFixed(1)}%)</div>
+                <div class="metric-item">Attempt 2: ${metrics.attempt_2_correct}/${metrics.total_tasks} (${(metrics.attempt_2_accuracy * 100).toFixed(1)}%)</div>
+            `;
+        }
+
+        function displayTasks(results) {
+            const content = document.getElementById('tasksContent');
+            content.innerHTML = '';
+
+            results.forEach(result => {
+                const taskDiv = createTaskCard(result);
+                content.appendChild(taskDiv);
+            });
+        }
+
+        function createTaskCard(result) {
+            const div = document.createElement('div');
+            div.className = 'task-card';
+
+            const statusClass = result.pass_at_2 ? 'status-pass' : 'status-fail';
+            const statusText = result.pass_at_2 ? '✅ PASS@2' : '❌ FAIL';
+
+            div.innerHTML = `
+                <div class="task-header">
+                    <div class="task-id">${result.task_id}</div>
+                    <div class="task-status ${statusClass}">${statusText}</div>
+                </div>
+
+                <div class="grid-section">
+                    <div class="grids-row">
+                        <div class="grid-container">
+                            <div class="grid-title">📥 Input</div>
+                            ${renderGrid(getInputGrid(result))}
+                        </div>
+                        <div class="grid-container">
+                            <div class="grid-title">🎯 Expected Output</div>
+                            ${renderGrid(result.attempt_1.expected)}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="attempts-section">
+                    <div class="attempt">
+                        <div class="attempt-header">
+                            <span>🥇 Attempt 1</span>
+                            <span class="${result.attempt_1.correct ? 'correct' : 'incorrect'}">
+                                ${result.attempt_1.correct ? '✅ Correct' : '❌ Wrong'}
+                            </span>
+                        </div>
+                        <div class="grids-row">
+                            <div class="grid-container">
+                                <div class="grid-title">Predicted Output (${result.attempt_1.pred_height}×${result.attempt_1.pred_width})</div>
+                                ${renderGrid(result.attempt_1.predicted)}
+                            </div>
+                        </div>
+                        ${result.attempt_1.error ? `<div class="error-message">${result.attempt_1.error}</div>` : ''}
+                    </div>
+
+                    <div class="attempt">
+                        <div class="attempt-header">
+                            <span>🥈 Attempt 2</span>
+                            <span class="${result.attempt_2.correct ? 'correct' : 'incorrect'}">
+                                ${result.attempt_2.correct ? '✅ Correct' : '❌ Wrong'}
+                            </span>
+                        </div>
+                        <div class="grids-row">
+                            <div class="grid-container">
+                                <div class="grid-title">Predicted Output (${result.attempt_2.pred_height}×${result.attempt_2.pred_width})</div>
+                                ${renderGrid(result.attempt_2.predicted)}
+                            </div>
+                        </div>
+                        ${result.attempt_2.error ? `<div class="error-message">${result.attempt_2.error}</div>` : ''}
+                    </div>
+                </div>
+            `;
+
+            return div;
+        }
+
+        function getInputGrid(result) {
+            // Input grids are now included in inference JSON
+            return result.attempt_1.input_grid;
+        }
+
+        function renderGrid(grid) {
+            if (!grid || grid.length === 0) {
+                return '<div style="color: #999; font-style: italic;">No grid data</div>';
+            }
+
+            let html = '<div class="grid">';
+            for (let row of grid) {
+                html += '<div>';
+                for (let cell of row) {
+                    html += `<div class="grid-cell color-${cell}"></div>`;
+                }
+                html += '</div>';
+            }
+            html += '</div>';
+            return html;
+        }
+    </script>
+</body>
+</html>
