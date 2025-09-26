@@ -34,6 +34,13 @@ class DiscreteNoiseScheduler:
         self.alphas = 1.0 - self.betas
         self.alpha_bars = torch.cumprod(self.alphas, dim=0)
 
+    def to(self, device: torch.device):
+        """Move scheduler tensors to device."""
+        self.betas = self.betas.to(device)
+        self.alphas = self.alphas.to(device)
+        self.alpha_bars = self.alpha_bars.to(device)
+        return self
+
     def _create_schedule(self) -> torch.Tensor:
         """Create beta schedule (noise levels over time)."""
         if self.schedule_type == "cosine":
