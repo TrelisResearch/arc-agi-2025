@@ -63,7 +63,6 @@ class DiffusionInference:
         self,
         model_path: str,
         device: Optional[str] = None,
-        guidance_scale: float = 2.0,
         num_inference_steps: Optional[int] = None,
         debug: bool = False
     ):
@@ -77,7 +76,6 @@ class DiffusionInference:
             self.device = torch.device('mps')
         else:
             self.device = torch.device('cpu')
-        self.guidance_scale = guidance_scale
         self.num_inference_steps = num_inference_steps
         self.debug = debug
 
@@ -99,7 +97,6 @@ class DiffusionInference:
 
         print(f"✨ Model loaded: {self.model.__class__.__name__}")
         print(f"📊 Parameters: {sum(p.numel() for p in self.model.parameters()):,}")
-        print(f"🎯 Guidance scale: {self.guidance_scale}")
         print(f"⚡ Inference steps: {self.num_inference_steps}")
 
     def _load_model(self) -> Tuple[ARCDiffusionModel, Dict]:
@@ -179,7 +176,6 @@ class DiffusionInference:
                 predicted_grids = self.sampler.sample(
                     input_grids=input_batch,
                     task_indices=task_ids,
-                    guidance_scale=self.guidance_scale,
                     num_inference_steps=self.num_inference_steps
                 )
 
@@ -350,7 +346,6 @@ def main():
     # Model and inference settings
     parser.add_argument("--model-path", required=True, help="Path to trained model checkpoint")
     parser.add_argument("--device", choices=["cpu", "cuda", "auto"], default="auto", help="Device to use")
-    parser.add_argument("--guidance-scale", type=float, default=2.0, help="CFG guidance scale")
     parser.add_argument("--num-steps", type=int, help="Number of inference steps (default: use training steps)")
 
     # Data settings (following soar pattern)
@@ -382,7 +377,6 @@ def main():
         inference = DiffusionInference(
             model_path=args.model_path,
             device=args.device if args.device != "auto" else None,
-            guidance_scale=args.guidance_scale,
             num_inference_steps=args.num_steps,
             debug=args.debug
         )
@@ -434,7 +428,6 @@ def main():
                     "dataset": args.dataset,
                     "subset": args.subset,
                     "model_path": args.model_path,
-                    "guidance_scale": args.guidance_scale,
                     "num_inference_steps": args.num_steps or inference.config['num_timesteps'],
                     "device": str(inference.device),
                     "total_tasks": len(tasks),

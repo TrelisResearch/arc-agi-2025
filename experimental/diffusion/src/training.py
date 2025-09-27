@@ -27,12 +27,10 @@ class ARCDiffusionTrainer:
         noise_scheduler: DiscreteNoiseScheduler,
         device: torch.device,
         learning_rate: float = 3e-4,
-        cfg_drop_prob: float = 0.15,
     ):
         self.model = model
         self.noise_scheduler = noise_scheduler
         self.device = device
-        self.cfg_drop_prob = cfg_drop_prob
 
         # Move model to device
         self.model.to(device)
@@ -68,28 +66,11 @@ class ARCDiffusionTrainer:
         # Add noise to clean output grids
         noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps)
 
-        # Apply classifier-free guidance training: randomly drop conditioning
-        if self.cfg_drop_prob > 0:
-            # Create masks for dropping conditioning
-            drop_task_mask = torch.rand(batch_size, device=self.device) < self.cfg_drop_prob
-            drop_input_mask = torch.rand(batch_size, device=self.device) < self.cfg_drop_prob
-
-            # Replace with "null" conditioning
-            task_indices_cond = torch.where(drop_task_mask, 0, task_indices)  # Use task 0 as null
-            input_grids_cond = torch.where(
-                drop_input_mask.unsqueeze(-1).unsqueeze(-1),
-                torch.zeros_like(input_grids),
-                input_grids
-            )
-        else:
-            task_indices_cond = task_indices
-            input_grids_cond = input_grids
-
         # Forward pass
         losses = self.model.compute_loss(
             x0=output_grids,
-            input_grid=input_grids_cond,
-            task_ids=task_indices_cond,
+            input_grid=input_grids,
+            task_ids=task_indices,
             xt=noisy_grids,
             timesteps=timesteps
         )
@@ -179,7 +160,6 @@ class ARCDiffusionSampler:
         self,
         input_grids: torch.Tensor,
         task_indices: torch.Tensor,
-        guidance_scale: float = 2.0,
         num_inference_steps: Optional[int] = None
     ) -> torch.Tensor:
         """
@@ -188,7 +168,6 @@ class ARCDiffusionSampler:
         Args:
             input_grids: [batch_size, max_size, max_size]
             task_indices: [batch_size]
-            guidance_scale: CFG guidance scale
             num_inference_steps: Number of denoising steps (default: use scheduler's num_timesteps)
 
         Returns:
@@ -215,20 +194,8 @@ class ARCDiffusionSampler:
         for i, t in enumerate(tqdm(timesteps, desc="Sampling", disable=(not self.debug))):
             t_batch = t.repeat(batch_size)
 
-            if guidance_scale > 1.0:
-                # Classifier-free guidance
-                # Conditional prediction
-                logits_cond = self.model(x_t, input_grids, task_indices, t_batch)
-
-                # Unconditional prediction (using null conditioning)
-                null_task_indices = torch.zeros_like(task_indices)
-                null_input_grids = torch.zeros_like(input_grids)
-                logits_uncond = self.model(x_t, null_input_grids, null_task_indices, t_batch)
-
-                # Apply CFG
-                logits = logits_uncond + guidance_scale * (logits_cond - logits_uncond)
-            else:
-                logits = self.model(x_t, input_grids, task_indices, t_batch)
+            # Forward pass
+            logits = self.model(x_t, input_grids, task_indices, t_batch)
 
             # Sample next step (greedy for now)
             x_t = torch.argmax(logits, dim=-1)
@@ -362,8 +329,7 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         model=model,
         noise_scheduler=noise_scheduler,
         device=device,
-        learning_rate=config['learning_rate'],
-        cfg_drop_prob=config['cfg_drop_prob']
+        learning_rate=config['learning_rate']
     )
 
     print(f"Model has {sum(p.numel() for p in model.parameters()):,} parameters")

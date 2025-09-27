@@ -14,7 +14,7 @@ sys.path.insert(0, str(project_root))
 from experimental.diffusion.src.model import ARCDiffusionModel
 from experimental.diffusion.src.dataset import ARCDataset, load_arc_data_paths
 from experimental.diffusion.utils.noise_scheduler import DiscreteNoiseScheduler
-from experimental.diffusion.utils.grid_utils import pad_grid_to_size, create_mask, grid_to_tokens
+from experimental.diffusion.utils.grid_utils import pad_grid_to_size, create_mask, grid_to_tokens, detect_valid_region, grid_to_display_string
 
 
 def test_noise_scheduler():
@@ -65,6 +65,24 @@ def test_grid_utils():
     assert tokens[0, 0] == 1
     assert tokens[3, 3] == 10  # PAD token
 
+    # Test PAD token detection
+    padded_grid = np.array([
+        [1, 2, 10, 10, 10],
+        [3, 4, 10, 10, 10],
+        [10, 10, 10, 10, 10],
+        [10, 10, 10, 10, 10],
+        [10, 10, 10, 10, 10]
+    ])
+    valid_region, error = detect_valid_region(padded_grid)
+    assert error is None
+    assert valid_region.shape == (2, 2)
+    assert np.array_equal(valid_region, [[1, 2], [3, 4]])
+
+    # Test grid display with PAD tokens
+    display_str = grid_to_display_string(padded_grid[:3, :3], pad_symbol='*')
+    expected = "12*\n34*\n***"
+    assert display_str == expected
+
     print("✓ Grid utilities test passed")
 
 
@@ -92,11 +110,10 @@ def test_model_forward():
     timesteps = torch.tensor([1, 2])
 
     # Forward pass
-    logits, size_logits = model(xt, input_grid, task_ids, timesteps)
+    logits = model(xt, input_grid, task_ids, timesteps)
 
     # Check shapes
     assert logits.shape == (batch_size, max_size, max_size, 11)
-    assert size_logits.shape == (batch_size, max_size * 2)
 
     print("✓ Model forward pass test passed")
 
@@ -127,20 +144,19 @@ def test_loss_computation():
     timesteps = torch.tensor([1, 2])
 
     # Compute losses
-    losses = model.compute_loss(x0, input_grid, task_ids, heights, widths, xt, timesteps)
+    losses = model.compute_loss(x0, input_grid, task_ids, xt, timesteps)
 
     # Check that we get expected loss components
     assert 'total_loss' in losses
     assert 'grid_loss' in losses
-    assert 'size_loss' in losses
     assert isinstance(losses['total_loss'].item(), float)
 
     print("✓ Loss computation test passed")
 
 
-def test_size_prediction():
-    """Test size prediction."""
-    print("Testing size prediction...")
+def test_pad_token_prediction():
+    """Test that model can predict PAD tokens."""
+    print("Testing PAD token prediction...")
 
     model = ARCDiffusionModel(
         vocab_size=11,
@@ -151,21 +167,26 @@ def test_size_prediction():
         max_tasks=10
     )
 
-    batch_size = 3
+    batch_size = 2
     max_size = 10
 
+    # Create test inputs with some PAD tokens
+    xt = torch.randint(0, 11, (batch_size, max_size, max_size))
     input_grid = torch.randint(0, 10, (batch_size, max_size, max_size))
-    task_ids = torch.tensor([0, 1, 2])
+    task_ids = torch.tensor([0, 1])
+    timesteps = torch.tensor([1, 2])
 
-    heights, widths = model.predict_size(input_grid, task_ids)
+    # Forward pass
+    logits = model(xt, input_grid, task_ids, timesteps)
 
-    # Check shapes and ranges
-    assert heights.shape == (batch_size,)
-    assert widths.shape == (batch_size,)
-    assert torch.all(heights >= 1) and torch.all(heights <= max_size)
-    assert torch.all(widths >= 1) and torch.all(widths <= max_size)
+    # Check that model can predict all 11 classes including PAD (10)
+    assert logits.shape == (batch_size, max_size, max_size, 11)
 
-    print("✓ Size prediction test passed")
+    # Sample from logits and check that PAD tokens can be generated
+    predictions = torch.argmax(logits, dim=-1)
+    assert predictions.min() >= 0 and predictions.max() <= 10
+
+    print("✓ PAD token prediction test passed")
 
 
 def test_data_loading():
@@ -187,7 +208,7 @@ def test_data_loading():
             data_paths=[str(train_path)],
             max_size=10,
             augment=False,
-            use_test_examples_as_train=False
+            include_training_test_examples=False
         )
 
         if len(dataset) == 0:
@@ -221,7 +242,7 @@ def run_all_tests():
         test_grid_utils()
         test_model_forward()
         test_loss_computation()
-        test_size_prediction()
+        test_pad_token_prediction()
         test_data_loading()
 
         print("\n" + "=" * 50)
