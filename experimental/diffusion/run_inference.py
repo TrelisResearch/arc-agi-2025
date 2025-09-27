@@ -209,20 +209,16 @@ class DiffusionInference:
         """
         timestamp = datetime.datetime.now().isoformat()
 
-        # For simplicity, use the first test example
-        # In practice, you might want to handle multiple test examples
-        if not task_data["test"]:
-            raise ValueError(f"Task {task_id} has no test examples")
+        # TEMPORARY: Use the first training example instead of test example
+        # This is for debugging - normally we'd use test examples
+        if not task_data["train"]:
+            raise ValueError(f"Task {task_id} has no training examples")
 
-        test_example = task_data["test"][0]
-        input_grid = np.array(test_example["input"])
+        train_example = task_data["train"][0]
+        input_grid = np.array(train_example["input"])
 
-        # Load expected output from solutions file for consistency
-        solutions = self._load_solutions(dataset)
-        if task_id in solutions and len(solutions[task_id]) > 0:
-            expected_output = np.array(solutions[task_id][0])  # First test example solution
-        else:
-            expected_output = np.array([])  # No ground truth available
+        # Use the training example's output as expected (we have ground truth)
+        expected_output = np.array(train_example["output"])
 
         # Get correct task index
         task_idx = self.get_task_idx(task_id)
