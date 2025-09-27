@@ -166,7 +166,7 @@ Total cost: $1.382254
   No Program Responses (of all attempts): 1.6%
 ✅ Checkpointed 98 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250926_100224_gpt-5-mini_manual_training.parquet
 
- uv run experimental/diffusion/train_with_config.py --config experimental/diffusion/configs/gpu_config.json
+ nohup uv run python -u experimental/diffusion/train_with_config.py --config experimental/diffusion/configs/gpu_config.json > training.log 2>&1 &
 
 ## September 25th 2025
 ### Run Grok 4 Fast on aa2 eval
@@ -600,6 +600,8 @@ Total predictions: 344
 
 ## September 23rd 2025
 ### Manual Dataset Testing for Fine-tuning
+
+uv run experimental/diffusion/run_inference.py --dataset arc-prize-2024 --subset training --limit 1 --output experimental/diffusion/outputs/gpu/train-1-cfg-3.json --debug --model-path experimental/diffusion/outputs/gpu/best_model.pt --guidance-scale 3.0
 
 #### Gather programs data by running gpt-5-mini on the manual dataset
 We'll use openrouter. Try now sampling 8 times:

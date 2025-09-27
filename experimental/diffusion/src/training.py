@@ -181,11 +181,13 @@ class ARCDiffusionSampler:
         self,
         model: ARCDiffusionModel,
         noise_scheduler: DiscreteNoiseScheduler,
-        device: torch.device
+        device: torch.device,
+        debug: bool = False
     ):
         self.model = model
         self.noise_scheduler = noise_scheduler
         self.device = device
+        self.debug = debug
 
     @torch.no_grad()
     def sample(
@@ -217,48 +219,70 @@ class ARCDiffusionSampler:
         if num_inference_steps is None:
             num_inference_steps = self.noise_scheduler.num_timesteps
 
-        # Predict sizes first
-        pred_heights, pred_widths = self.model.predict_size(input_grids, task_indices)
-
-        # Initialize with random noise
+        # Initialize with random noise (no masking - consistent with training)
         x_t = torch.randint(
             0, self.noise_scheduler.vocab_size,
             (batch_size, max_size, max_size),
             device=self.device
         )
 
-        # Create masks based on predicted sizes
-        masks = batch_create_masks(pred_heights, pred_widths, max_size).to(self.device)
-
-        # Clamp initial noise outside predicted regions
-        x_t = clamp_outside_mask(x_t, masks, pad_value=10)
+        # Track size predictions throughout diffusion
+        pred_heights = None
+        pred_widths = None
 
         # Denoising loop (0-indexed timesteps)
         timesteps = torch.linspace(num_inference_steps - 1, 0, num_inference_steps, dtype=torch.long, device=self.device)
 
-        for t in tqdm(timesteps, desc="Sampling"):
+        for i, t in enumerate(tqdm(timesteps, desc="Sampling", disable=(not self.debug))):
             t_batch = t.repeat(batch_size)
 
             if guidance_scale > 1.0:
                 # Classifier-free guidance
                 # Conditional prediction
-                logits_cond, _ = self.model(x_t, input_grids, task_indices, t_batch)
+                logits_cond, size_logits_cond = self.model(x_t, input_grids, task_indices, t_batch)
 
                 # Unconditional prediction (using null conditioning)
                 null_task_indices = torch.zeros_like(task_indices)
                 null_input_grids = torch.zeros_like(input_grids)
-                logits_uncond, _ = self.model(x_t, null_input_grids, null_task_indices, t_batch)
+                logits_uncond, size_logits_uncond = self.model(x_t, null_input_grids, null_task_indices, t_batch)
 
-                # Apply CFG
+                # Apply CFG to both grid and size predictions
                 logits = logits_uncond + guidance_scale * (logits_cond - logits_uncond)
+                size_logits = size_logits_uncond + guidance_scale * (size_logits_cond - size_logits_uncond)
             else:
-                logits, _ = self.model(x_t, input_grids, task_indices, t_batch)
+                logits, size_logits = self.model(x_t, input_grids, task_indices, t_batch)
 
-            # Sample next step (greedy for now)
+            # Update size predictions progressively
+            size_logits_h = size_logits[:, :max_size]  # [batch_size, max_size]
+            size_logits_w = size_logits[:, max_size:]  # [batch_size, max_size]
+
+            current_pred_heights = torch.argmax(size_logits_h, dim=-1) + 1  # Convert back to 1-30
+            current_pred_widths = torch.argmax(size_logits_w, dim=-1) + 1
+
+            # Store final predictions
+            pred_heights = current_pred_heights
+            pred_widths = current_pred_widths
+
+            # Sample next step (greedy for now) - no masking to be consistent with training
             x_t = torch.argmax(logits, dim=-1)
 
-            # Clamp outside valid region
-            x_t = clamp_outside_mask(x_t, masks, pad_value=10)
+            # Debug printing
+            if self.debug:
+                print(f"\n=== Timestep {t.item()} (step {i+1}/{len(timesteps)}) ===")
+                print(f"Predicted size: {current_pred_heights[0].item()}x{current_pred_widths[0].item()}")
+
+                # Debug size logits
+                print(f"Height logits (top 5): {torch.topk(size_logits_h[0], 5)}")
+                print(f"Width logits (top 5): {torch.topk(size_logits_w[0], 5)}")
+
+                # Extract and print the valid region (limit to reasonable size for display)
+                h, w = current_pred_heights[0].item(), current_pred_widths[0].item()
+                display_h, display_w = min(h, 10), min(w, 10)  # Limit display size
+                valid_grid = x_t[0, :display_h, :display_w].cpu().numpy()
+                print(f"Grid content (showing {display_h}x{display_w} of {h}x{w}):")
+                for row in valid_grid:
+                    print(''.join(str(int(cell)) for cell in row))
+                print("---")
 
         return x_t, pred_heights, pred_widths
 

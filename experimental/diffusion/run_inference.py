@@ -94,7 +94,7 @@ class DiffusionInference:
             schedule_type=self.config['schedule_type']
         )
         self.noise_scheduler.to(self.device)
-        self.sampler = ARCDiffusionSampler(self.model, self.noise_scheduler, self.device)
+        self.sampler = ARCDiffusionSampler(self.model, self.noise_scheduler, self.device, debug=self.debug)
 
         if self.num_inference_steps is None:
             self.num_inference_steps = self.config['num_timesteps']
