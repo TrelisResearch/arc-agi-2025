@@ -503,7 +503,7 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             if val_losses['total_loss'] < best_val_loss:
                 best_val_loss = val_losses['total_loss']
                 torch.save({
-                    'model_state_dict': model.state_dict(),
+                    'model_state_dict': model.half().state_dict(),
                     'optimizer_state_dict': trainer.optimizer.state_dict(),
                     'scheduler_state_dict': trainer.scheduler.state_dict(),
                     'epoch': epoch,
@@ -524,7 +524,7 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
 
     # Save final model
     torch.save({
-        'model_state_dict': model.state_dict(),
+        'model_state_dict': model.half().state_dict(),
         'optimizer_state_dict': trainer.optimizer.state_dict(),
         'scheduler_state_dict': trainer.scheduler.state_dict(),
         'epoch': epoch,
