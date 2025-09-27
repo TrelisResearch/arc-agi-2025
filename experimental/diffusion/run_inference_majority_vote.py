@@ -462,11 +462,19 @@ def main():
                     "errors": total_errors
                 },
                 "metrics": {
-                    "pass_at_2": total_pass_at_2 / total_tasks if total_tasks > 0 else 0,
-                    "both_correct": total_both_correct / total_tasks if total_tasks > 0 else 0,
-                    "attempt_1_correct": total_attempt_1 / total_tasks if total_tasks > 0 else 0,
-                    "attempt_2_correct": total_attempt_2 / total_tasks if total_tasks > 0 else 0,
-                    "error_rate": total_errors / total_tasks if total_tasks > 0 else 0
+                    "total_tasks": total_tasks,
+                    "pass_at_2": total_pass_at_2,
+                    "both_correct": total_both_correct,
+                    "attempt_1_correct": total_attempt_1,
+                    "attempt_2_correct": total_attempt_2,
+                    "attempt_1_errors": total_errors,
+                    "attempt_2_errors": total_errors,
+                    "pass_at_2_rate": total_pass_at_2 / total_tasks if total_tasks > 0 else 0.0,
+                    "both_correct_rate": total_both_correct / total_tasks if total_tasks > 0 else 0.0,
+                    "attempt_1_accuracy": total_attempt_1 / total_tasks if total_tasks > 0 else 0.0,
+                    "attempt_2_accuracy": total_attempt_2 / total_tasks if total_tasks > 0 else 0.0,
+                    "attempt_1_error_rate": total_errors / total_tasks if total_tasks > 0 else 0.0,
+                    "attempt_2_error_rate": total_errors / total_tasks if total_tasks > 0 else 0.0
                 },
                 "results": results
             }
