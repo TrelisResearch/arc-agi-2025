@@ -166,6 +166,8 @@ Total cost: $1.382254
   No Program Responses (of all attempts): 1.6%
 ✅ Checkpointed 98 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250926_100224_gpt-5-mini_manual_training.parquet
 
+ uv run experimental/diffusion/train_with_config.py --config experimental/diffusion/configs/gpu_config.json
+
 ## September 25th 2025
 ### Run Grok 4 Fast on aa2 eval
 x-ai/grok-4-fast

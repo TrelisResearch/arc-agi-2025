@@ -113,6 +113,10 @@ class DiffusionInference:
         config = checkpoint['config']
         dataset_info = checkpoint['dataset_info']
 
+        # Store task mapping for inference
+        self.task_id_to_idx = dataset_info.get('task_id_to_idx', {})
+        self.max_tasks = dataset_info['num_tasks']
+
         # Recreate model
         model = ARCDiffusionModel(
             vocab_size=config['vocab_size'],
@@ -130,6 +134,16 @@ class DiffusionInference:
 
         return model, config
 
+    def get_task_idx(self, task_id: str) -> int:
+        """Get task index for a given task ID, handling unknown tasks."""
+        if task_id in self.task_id_to_idx:
+            return self.task_id_to_idx[task_id]
+        else:
+            # For unknown tasks, use a default task index (0)
+            # Could also raise an error or use a special "unknown" token
+            print(f"Warning: Unknown task {task_id}, using default task index 0")
+            return 0
+
     def _load_solutions(self, dataset: str) -> Dict[str, List[List[List[int]]]]:
         """Load solutions from appropriate solutions file."""
         if 'training' in dataset:
@@ -146,7 +160,7 @@ class DiffusionInference:
             print(f"Warning: Solutions file not found: {solutions_path}")
             return {}
 
-    def predict_single(self, input_grid: np.ndarray, task_idx: int = 0) -> Tuple[np.ndarray, int, int, Optional[str]]:
+    def predict_single(self, input_grid: np.ndarray, task_idx: int) -> Tuple[np.ndarray, int, int, Optional[str]]:
         """
         Run single prediction on input grid.
 
@@ -161,8 +175,8 @@ class DiffusionInference:
             input_tokens, _, _ = grid_to_tokens(input_grid, max_size=self.config['max_size'])
             input_batch = input_tokens.unsqueeze(0).to(self.device)  # [1, max_size, max_size]
 
-            # Use task ID (limited to what model was trained on)
-            task_ids = torch.tensor([task_idx % self.config.get('max_tasks', 400)]).to(self.device)
+            # Use task ID (ensure it's within trained range)
+            task_ids = torch.tensor([task_idx]).to(self.device)
 
             # Sample output
             with torch.no_grad():
@@ -215,9 +229,12 @@ class DiffusionInference:
         else:
             expected_output = np.array([])  # No ground truth available
 
+        # Get correct task index
+        task_idx = self.get_task_idx(task_id)
+
         # Run two attempts for pass@2
-        attempt_1 = self._run_attempt(input_grid, expected_output, test_idx=0)
-        attempt_2 = self._run_attempt(input_grid, expected_output, test_idx=0)
+        attempt_1 = self._run_attempt(input_grid, expected_output, test_idx=0, task_idx=task_idx)
+        attempt_2 = self._run_attempt(input_grid, expected_output, test_idx=0, task_idx=task_idx)
 
         # Calculate pass@2 metrics
         pass_at_2 = attempt_1["correct"] or attempt_2["correct"]
@@ -234,9 +251,9 @@ class DiffusionInference:
             num_test_examples=len(task_data["test"])
         )
 
-    def _run_attempt(self, input_grid: np.ndarray, expected_output: np.ndarray, test_idx: int) -> DiffusionResult:
+    def _run_attempt(self, input_grid: np.ndarray, expected_output: np.ndarray, test_idx: int, task_idx: int) -> DiffusionResult:
         """Run a single diffusion attempt"""
-        predicted_grid, pred_height, pred_width, error = self.predict_single(input_grid)
+        predicted_grid, pred_height, pred_width, error = self.predict_single(input_grid, task_idx)
 
         # Check correctness
         correct = False
