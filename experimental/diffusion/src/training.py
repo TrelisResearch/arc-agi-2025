@@ -27,10 +27,27 @@ class ARCDiffusionTrainer:
         noise_scheduler: DiscreteNoiseScheduler,
         device: torch.device,
         learning_rate: float = 3e-4,
+        use_mixed_precision: bool = True,
     ):
         self.model = model
         self.noise_scheduler = noise_scheduler
         self.device = device
+        self.use_mixed_precision = use_mixed_precision
+
+        # Set up mixed precision
+        if use_mixed_precision and device.type in ['cuda', 'mps']:
+            # Use bfloat16 for modern hardware
+            if device.type == 'cuda' and torch.cuda.is_bf16_supported():
+                self.amp_dtype = torch.bfloat16
+                print("Using bfloat16 mixed precision")
+            else:
+                self.amp_dtype = torch.float16
+                print("Using float16 mixed precision")
+            self.scaler = torch.cuda.amp.GradScaler() if device.type == 'cuda' else None
+        else:
+            self.amp_dtype = torch.float32
+            self.scaler = None
+            print("Using float32 precision")
 
         # Move model to device
         self.model.to(device)
@@ -66,27 +83,54 @@ class ARCDiffusionTrainer:
         # Add noise to clean output grids
         noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps)
 
-        # Forward pass
-        losses = self.model.compute_loss(
-            x0=output_grids,
-            input_grid=input_grids,
-            task_ids=task_indices,
-            xt=noisy_grids,
-            timesteps=timesteps
-        )
+        # Forward pass with mixed precision
+        if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
+            with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
+                losses = self.model.compute_loss(
+                    x0=output_grids,
+                    input_grid=input_grids,
+                    task_ids=task_indices,
+                    xt=noisy_grids,
+                    timesteps=timesteps
+                )
+        else:
+            losses = self.model.compute_loss(
+                x0=output_grids,
+                input_grid=input_grids,
+                task_ids=task_indices,
+                xt=noisy_grids,
+                timesteps=timesteps
+            )
 
-        # Backward pass
+        # Backward pass with mixed precision
         total_loss = losses['total_loss']
         self.optimizer.zero_grad()
-        total_loss.backward()
 
-        # Compute gradient norm before clipping
-        grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=float('inf'))
+        if self.scaler is not None:
+            # CUDA with gradient scaling
+            self.scaler.scale(total_loss).backward()
 
-        # Gradient clipping
-        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+            # Compute gradient norm before clipping
+            self.scaler.unscale_(self.optimizer)
+            grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=float('inf'))
 
-        self.optimizer.step()
+            # Gradient clipping
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+        else:
+            # MPS or CPU without gradient scaling
+            total_loss.backward()
+
+            # Compute gradient norm before clipping
+            grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=float('inf'))
+
+            # Gradient clipping
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+
+            self.optimizer.step()
+
         self.scheduler.step()
 
         # Return losses and grad norm as Python floats
@@ -120,14 +164,24 @@ class ARCDiffusionTrainer:
                 # Add noise
                 noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps)
 
-                # Forward pass (no CFG during validation)
-                losses = self.model.compute_loss(
-                    x0=output_grids,
-                    input_grid=input_grids,
-                    task_ids=task_indices,
-                    xt=noisy_grids,
-                    timesteps=timesteps
-                )
+                # Forward pass (no CFG during validation) with mixed precision
+                if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
+                    with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
+                        losses = self.model.compute_loss(
+                            x0=output_grids,
+                            input_grid=input_grids,
+                            task_ids=task_indices,
+                            xt=noisy_grids,
+                            timesteps=timesteps
+                        )
+                else:
+                    losses = self.model.compute_loss(
+                        x0=output_grids,
+                        input_grid=input_grids,
+                        task_ids=task_indices,
+                        xt=noisy_grids,
+                        timesteps=timesteps
+                    )
 
                 # Accumulate losses
                 for key, value in losses.items():
@@ -329,7 +383,8 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         model=model,
         noise_scheduler=noise_scheduler,
         device=device,
-        learning_rate=config['learning_rate']
+        learning_rate=config['learning_rate'],
+        use_mixed_precision=config.get('use_mixed_precision', True)
     )
 
     print(f"Model has {sum(p.numel() for p in model.parameters()):,} parameters")

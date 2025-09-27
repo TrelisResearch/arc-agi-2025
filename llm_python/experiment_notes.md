@@ -605,7 +605,7 @@ uv run experimental/diffusion/run_inference.py --dataset arc-prize-2024 --subset
 
 uv run experimental/diffusion/run_inference.py --dataset arc-prize-2024 --subset training --limit 1 --output experimental/diffusion/outputs/mps/train-1-cfg-3.json --debug --model-path experimental/diffusion/outputs/mps/best_model.pt --guidance-scale 2.0 --debug --num-steps 25
 
-uv run experimental/diffusion/run_inference.py --dataset arc-prize-2024 --subset training --limit 5 --output experimental/diffusion/outputs/mps/train-5.json --debug --model-path experimental/diffusion/outputs/mps/best_model.pt
+uv run experimental/diffusion/run_inference.py --dataset arc-prize-2024 --subset training --limit 5 --output experimental/diffusion/outputs/mps/train-5.json --model-path experimental/diffusion/outputs/mps/best_model.pt --num-steps 8
 
 #### Gather programs data by running gpt-5-mini on the manual dataset
 We'll use openrouter. Try now sampling 8 times:
