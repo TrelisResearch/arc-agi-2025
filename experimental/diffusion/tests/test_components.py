@@ -97,7 +97,8 @@ def test_model_forward():
         nhead=2,
         num_layers=2,
         max_size=10,
-        max_tasks=10
+        max_tasks=10,
+        embedding_dropout=0.0  # Disable dropout for testing
     )
 
     batch_size = 2
@@ -128,7 +129,8 @@ def test_loss_computation():
         nhead=2,
         num_layers=2,
         max_size=10,
-        max_tasks=10
+        max_tasks=10,
+        embedding_dropout=0.0  # Disable dropout for testing
     )
 
     batch_size = 2
@@ -164,7 +166,8 @@ def test_pad_token_prediction():
         nhead=2,
         num_layers=2,
         max_size=10,
-        max_tasks=10
+        max_tasks=10,
+        embedding_dropout=0.0  # Disable dropout for testing
     )
 
     batch_size = 2

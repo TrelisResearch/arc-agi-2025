@@ -62,6 +62,7 @@ class TransformerDenoiser(nn.Module):
         num_layers: int = 8,
         max_size: int = 30,
         max_tasks: int = 1000,  # Maximum number of task IDs
+        embedding_dropout: float = 0.1,
     ):
         super().__init__()
         self.d_model = d_model
@@ -83,6 +84,9 @@ class TransformerDenoiser(nn.Module):
             nn.SiLU(),
             nn.Linear(d_model, d_model)
         )
+
+        # Embedding dropout for regularization
+        self.embedding_dropout = nn.Dropout(embedding_dropout)
 
         # Input grid encoder (separate from the main grid being denoised)
         self.input_encoder = nn.TransformerEncoder(
@@ -140,6 +144,10 @@ class TransformerDenoiser(nn.Module):
         xt_emb = xt_emb + pos_emb
         input_emb = input_emb + pos_emb
 
+        # Apply embedding dropout for regularization
+        xt_emb = self.embedding_dropout(xt_emb)
+        input_emb = self.embedding_dropout(input_emb)
+
         # Encode input grid
         input_encoded = self.input_encoder(input_emb)  # [batch_size, max_size^2, d_model]
 
@@ -182,6 +190,7 @@ class ARCDiffusionModel(nn.Module):
         num_layers: int = 8,
         max_size: int = 30,
         max_tasks: int = 1000,
+        embedding_dropout: float = 0.1,
     ):
         super().__init__()
         self.vocab_size = vocab_size
@@ -193,7 +202,8 @@ class ARCDiffusionModel(nn.Module):
             nhead=nhead,
             num_layers=num_layers,
             max_size=max_size,
-            max_tasks=max_tasks
+            max_tasks=max_tasks,
+            embedding_dropout=embedding_dropout
         )
 
     def forward(

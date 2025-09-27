@@ -367,7 +367,8 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         nhead=config['nhead'],
         num_layers=config['num_layers'],
         max_size=config['max_size'],
-        max_tasks=dataset_info['num_tasks']
+        max_tasks=dataset_info['num_tasks'],
+        embedding_dropout=config.get('embedding_dropout', 0.1)
     )
 
     # Create noise scheduler
