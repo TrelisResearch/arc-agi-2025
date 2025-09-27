@@ -274,11 +274,13 @@ class ARCDiffusionSampler:
         model: ARCDiffusionModel,
         noise_scheduler: DiscreteNoiseScheduler,
         device: torch.device,
+        dataset=None,  # Need dataset to get task distributions
         debug: bool = False
     ):
         self.model = model
         self.noise_scheduler = noise_scheduler
         self.device = device
+        self.dataset = dataset
         self.debug = debug
 
     @torch.no_grad()
@@ -286,6 +288,7 @@ class ARCDiffusionSampler:
         self,
         input_grids: torch.Tensor,
         task_indices: torch.Tensor,
+        task_ids: List[str] = None,
         num_inference_steps: Optional[int] = None
     ) -> torch.Tensor:
         """
@@ -294,6 +297,7 @@ class ARCDiffusionSampler:
         Args:
             input_grids: [batch_size, max_size, max_size]
             task_indices: [batch_size]
+            task_ids: List of task ID strings for getting task-specific noise distributions
             num_inference_steps: Number of denoising steps (default: use scheduler's num_timesteps)
 
         Returns:
@@ -307,12 +311,28 @@ class ARCDiffusionSampler:
         if num_inference_steps is None:
             num_inference_steps = self.noise_scheduler.num_timesteps
 
-        # Initialize with random noise
-        x_t = torch.randint(
-            0, self.noise_scheduler.vocab_size,
-            (batch_size, max_size, max_size),
-            device=self.device
-        )
+        # Initialize with task-aware random noise
+        if self.dataset is not None and task_ids is not None:
+            # Get task-specific token distributions for initial noise
+            task_distributions = []
+            for task_id in task_ids:
+                dist = self.dataset.get_task_distribution(task_id)
+                task_distributions.append(dist)
+            task_distributions = torch.stack(task_distributions).to(self.device)
+
+            # Sample initial noise using task-specific distributions
+            x_t = torch.zeros(batch_size, max_size, max_size, dtype=torch.long, device=self.device)
+            for i in range(batch_size):
+                dist = task_distributions[i]
+                pixels = torch.multinomial(dist, num_samples=max_size * max_size, replacement=True)
+                x_t[i] = pixels.view(max_size, max_size)
+        else:
+            # Fallback to uniform noise if no task distributions available
+            x_t = torch.randint(
+                0, self.noise_scheduler.vocab_size,
+                (batch_size, max_size, max_size),
+                device=self.device
+            )
 
         # Denoising loop (0-indexed timesteps)
         timesteps = torch.linspace(num_inference_steps - 1, 0, num_inference_steps, dtype=torch.long, device=self.device)

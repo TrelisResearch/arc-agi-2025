@@ -23,6 +23,7 @@ sys.path.insert(0, str(project_root))
 
 from experimental.diffusion.src.model import ARCDiffusionModel
 from experimental.diffusion.src.training import ARCDiffusionSampler
+from experimental.diffusion.src.dataset import ARCDataset, load_arc_data_paths
 from experimental.diffusion.utils.noise_scheduler import DiscreteNoiseScheduler
 from experimental.diffusion.utils.grid_utils import grid_to_tokens, tokens_to_grid, detect_valid_region
 from llm_python.utils.task_loader import TaskData, get_task_loader
@@ -92,7 +93,21 @@ class DiffusionInference:
             schedule_type=self.config['schedule_type']
         )
         self.noise_scheduler.to(self.device)
-        self.sampler = ARCDiffusionSampler(self.model, self.noise_scheduler, self.device, debug=self.debug)
+
+        # Create dataset for task-specific distributions
+        data_paths = load_arc_data_paths(
+            data_dir="data/arc-prize-2024",
+            datasets=["training_challenges", "evaluation_challenges"]
+        )
+        self.dataset = ARCDataset(
+            data_paths=data_paths['train'],
+            max_size=self.config['max_size'],
+            augment=False,  # No augmentation for inference
+            include_training_test_examples=True
+        )
+        print(f"📊 Loaded dataset with {len(self.dataset.task_id_to_idx)} tasks for task-specific noise distributions")
+
+        self.sampler = ARCDiffusionSampler(self.model, self.noise_scheduler, self.device, dataset=self.dataset, debug=self.debug)
 
         if self.num_inference_steps is None:
             self.num_inference_steps = self.config['num_timesteps']
@@ -157,7 +172,7 @@ class DiffusionInference:
             print(f"Warning: Solutions file not found: {solutions_path}")
             return {}
 
-    def predict_single(self, input_grid: np.ndarray, task_idx: int) -> Tuple[np.ndarray, Optional[str]]:
+    def predict_single(self, input_grid: np.ndarray, task_idx: int, task_id: str = None) -> Tuple[np.ndarray, Optional[str]]:
         """
         Run single prediction on input grid.
 
@@ -178,6 +193,7 @@ class DiffusionInference:
                 predicted_grids = self.sampler.sample(
                     input_grids=input_batch,
                     task_indices=task_ids,
+                    task_ids=[task_id] if task_id is not None else None,
                     num_inference_steps=self.num_inference_steps
                 )
 
@@ -224,8 +240,8 @@ class DiffusionInference:
         task_idx = self.get_task_idx(task_id)
 
         # Run two attempts for pass@2
-        attempt_1 = self._run_attempt(input_grid, expected_output, test_idx=0, task_idx=task_idx)
-        attempt_2 = self._run_attempt(input_grid, expected_output, test_idx=0, task_idx=task_idx)
+        attempt_1 = self._run_attempt(input_grid, expected_output, test_idx=0, task_idx=task_idx, task_id=task_id)
+        attempt_2 = self._run_attempt(input_grid, expected_output, test_idx=0, task_idx=task_idx, task_id=task_id)
 
         # Calculate pass@2 metrics
         pass_at_2 = attempt_1["correct"] or attempt_2["correct"]
@@ -242,9 +258,9 @@ class DiffusionInference:
             num_test_examples=len(task_data["test"])
         )
 
-    def _run_attempt(self, input_grid: np.ndarray, expected_output: np.ndarray, test_idx: int, task_idx: int) -> DiffusionResult:
+    def _run_attempt(self, input_grid: np.ndarray, expected_output: np.ndarray, test_idx: int, task_idx: int, task_id: str = None) -> DiffusionResult:
         """Run a single diffusion attempt"""
-        predicted_grid, error = self.predict_single(input_grid, task_idx)
+        predicted_grid, error = self.predict_single(input_grid, task_idx, task_id)
 
         # Check correctness
         correct = False
