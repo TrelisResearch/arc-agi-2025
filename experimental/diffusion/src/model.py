@@ -158,18 +158,24 @@ class TransformerDenoiser(nn.Module):
         time_emb = create_timestep_embedding(timesteps, self.d_model).to(device)
         time_emb = self.time_projection(time_emb)  # [batch_size, d_model]
 
-        # Add task and time conditioning to each token
+        # Combine task and time conditioning into a single token
         conditioning = task_emb + time_emb  # [batch_size, d_model]
-        xt_emb = xt_emb + conditioning.unsqueeze(1)  # Broadcast to all positions
+        conditioning_token = conditioning.unsqueeze(1)  # [batch_size, 1, d_model]
 
         # Cross-attention: add input encoding as conditioning
         xt_emb = xt_emb + input_encoded
 
-        # Apply transformer
-        output = self.transformer(xt_emb)  # [batch_size, max_size^2, d_model]
+        # Include task/time conditioning in self-attention sequence
+        combined_sequence = torch.cat([conditioning_token, xt_emb], dim=1)  # [batch_size, 1 + max_size^2, d_model]
+
+        # Apply transformer (now includes task token in self-attention)
+        output = self.transformer(combined_sequence)  # [batch_size, 1 + max_size^2, d_model]
+
+        # Extract spatial tokens (skip the conditioning token)
+        spatial_output = output[:, 1:, :]  # [batch_size, max_size^2, d_model]
 
         # Predict logits for each cell
-        logits = self.output_head(output)  # [batch_size, max_size^2, vocab_size]
+        logits = self.output_head(spatial_output)  # [batch_size, max_size^2, vocab_size]
         logits = logits.view(batch_size, self.max_size, self.max_size, self.vocab_size)
 
         return logits
