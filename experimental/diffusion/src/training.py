@@ -14,7 +14,7 @@ from pathlib import Path
 from .model import ARCDiffusionModel
 from .dataset import ARCDataset, ARCDataLoader, load_arc_data_paths, collate_fn
 from ..utils.noise_scheduler import DiscreteNoiseScheduler
-from ..utils.grid_utils import clamp_outside_mask, batch_create_masks, extract_valid_region
+from ..utils.grid_utils import clamp_outside_mask, batch_create_masks, extract_valid_region, grid_to_display_string
 from torch.utils.data import DataLoader
 
 
@@ -237,12 +237,11 @@ class ARCDiffusionSampler:
             if self.debug:
                 print(f"\n=== Timestep {t.item()} (step {i+1}/{len(timesteps)}) ===")
 
-                # Show first 10x10 of the grid
+                # Show first 10x10 of the grid with PAD tokens as *
                 display_size = min(10, max_size)
                 valid_grid = x_t[0, :display_size, :display_size].cpu().numpy()
                 print(f"Grid content (showing {display_size}x{display_size}):")
-                for row in valid_grid:
-                    print(''.join(str(int(cell)) for cell in row))
+                print(grid_to_display_string(valid_grid, pad_symbol='*'))
                 print("---")
 
         return x_t

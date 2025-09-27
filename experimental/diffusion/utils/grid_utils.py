@@ -142,6 +142,74 @@ def tokens_to_grid(tokens: torch.Tensor, height: int, width: int) -> np.ndarray:
     return valid_tokens.cpu().numpy().astype(np.int32)
 
 
+def detect_valid_region(grid: np.ndarray, pad_value: int = 10) -> Tuple[np.ndarray, Optional[str]]:
+    """
+    Detect and extract the valid region from a grid by finding PAD token boundaries.
+
+    Args:
+        grid: Predicted grid [max_size, max_size] with PAD tokens at boundaries
+        pad_value: Value used for PAD tokens (default: 10)
+
+    Returns:
+        valid_grid: Extracted valid region, or empty array if detection fails
+        error: Error message if detection fails, None otherwise
+    """
+    try:
+        if grid.size == 0:
+            return np.array([]), "Empty grid"
+
+        # Find the rightmost non-PAD column
+        valid_cols = []
+        for col in range(grid.shape[1]):
+            if not np.all(grid[:, col] == pad_value):
+                valid_cols.append(col)
+
+        # Find the bottommost non-PAD row
+        valid_rows = []
+        for row in range(grid.shape[0]):
+            if not np.all(grid[row, :] == pad_value):
+                valid_rows.append(row)
+
+        if not valid_rows or not valid_cols:
+            return np.array([]), "No valid region found - all PAD tokens"
+
+        # Extract rectangular region
+        min_row, max_row = 0, max(valid_rows) + 1
+        min_col, max_col = 0, max(valid_cols) + 1
+
+        valid_region = grid[min_row:max_row, min_col:max_col]
+
+        # Verify the extracted region doesn't contain PAD tokens
+        if np.any(valid_region == pad_value):
+            return np.array([]), "Invalid region contains PAD tokens"
+
+        return valid_region, None
+
+    except Exception as e:
+        return np.array([]), f"Region detection failed: {str(e)}"
+
+
+def grid_to_display_string(grid: np.ndarray, pad_symbol: str = '*') -> str:
+    """
+    Convert grid to display string, replacing PAD tokens with symbols.
+
+    Args:
+        grid: Grid to display
+        pad_symbol: Symbol to use for PAD tokens (value 10)
+
+    Returns:
+        String representation of grid
+    """
+    if grid.size == 0:
+        return "(empty grid)"
+
+    lines = []
+    for row in grid:
+        line = ''.join(pad_symbol if cell == 10 else str(int(cell)) for cell in row)
+        lines.append(line)
+    return '\n'.join(lines)
+
+
 class TaskAugmentation:
     """Task-level augmentation utilities for ARC data."""
 

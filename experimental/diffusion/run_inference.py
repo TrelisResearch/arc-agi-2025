@@ -24,7 +24,7 @@ sys.path.insert(0, str(project_root))
 from experimental.diffusion.src.model import ARCDiffusionModel
 from experimental.diffusion.src.training import ARCDiffusionSampler
 from experimental.diffusion.utils.noise_scheduler import DiscreteNoiseScheduler
-from experimental.diffusion.utils.grid_utils import grid_to_tokens, tokens_to_grid, extract_valid_region
+from experimental.diffusion.utils.grid_utils import grid_to_tokens, tokens_to_grid, detect_valid_region
 from llm_python.utils.task_loader import TaskData, get_task_loader
 
 
@@ -184,7 +184,10 @@ class DiffusionInference:
                 )
 
             # Extract valid region from predicted grid (find non-PAD tokens)
-            predicted_grid = extract_valid_region(predicted_grids[0].cpu().numpy())
+            predicted_grid, region_error = detect_valid_region(predicted_grids[0].cpu().numpy())
+
+            if region_error:
+                return np.array([]), f"Region detection failed: {region_error}"
 
             return predicted_grid, None
 
@@ -251,11 +254,17 @@ class DiffusionInference:
 
         # Check correctness
         correct = False
-        if error is None and len(expected_output) > 0:
+        if error is None and len(expected_output) > 0 and len(predicted_grid) > 0:
             try:
-                correct = np.array_equal(predicted_grid, expected_output)
+                # Ensure both arrays have the same shape for comparison
+                if predicted_grid.shape == expected_output.shape:
+                    correct = np.array_equal(predicted_grid, expected_output)
+                else:
+                    error = f"Shape mismatch: predicted {predicted_grid.shape} vs expected {expected_output.shape}"
             except Exception as e:
                 error = f"Comparison failed: {str(e)}"
+        elif error is None and len(predicted_grid) == 0:
+            error = "No valid region extracted from prediction"
 
         return DiffusionResult(
             test_idx=test_idx,
