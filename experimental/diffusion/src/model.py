@@ -237,15 +237,50 @@ class ARCDiffusionModel(nn.Module):
         # Forward pass
         logits = self.forward(xt, input_grid, task_ids, timesteps)
 
-        # Grid loss: cross-entropy on all positions
-        grid_loss = F.cross_entropy(
-            logits.view(-1, self.vocab_size),  # [batch_size * max_size^2, vocab_size]
-            x0.view(-1),  # [batch_size * max_size^2]
-            reduction='mean'
-        )
+        # Grid loss: example-specific weighted cross-entropy
+        grid_loss = self._compute_weighted_loss(logits, x0)
 
         return {
             'total_loss': grid_loss,
             'grid_loss': grid_loss,
         }
+
+    def _compute_weighted_loss(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        """
+        Compute example-specific weighted cross-entropy loss.
+        Balances content and PAD token contributions per example.
+
+        Args:
+            logits: [batch_size, max_size, max_size, vocab_size]
+            targets: [batch_size, max_size, max_size]
+
+        Returns:
+            Weighted loss scalar
+        """
+        batch_size = targets.size(0)
+        total_loss = 0.0
+
+        for i in range(batch_size):
+            target = targets[i].view(-1)  # [max_size^2]
+            logit = logits[i].view(-1, self.vocab_size)  # [max_size^2, vocab_size]
+
+            # Count content and PAD tokens
+            n_content = (target != 10).sum().float()
+            n_pad = (target == 10).sum().float()
+
+            # Compute weights to balance content and PAD contributions
+            if n_pad == 0:
+                # No PAD tokens - use uniform weighting
+                weights = torch.ones_like(target, dtype=torch.float)
+            else:
+                # Weight PAD tokens to balance with content tokens
+                pad_weight = n_content / n_pad
+                weights = torch.where(target == 10, pad_weight, 1.0)
+
+            # Compute weighted loss for this example
+            loss = F.cross_entropy(logit, target, reduction='none')
+            weighted_loss = (loss * weights).mean()
+            total_loss += weighted_loss
+
+        return total_loss / batch_size
 
