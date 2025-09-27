@@ -42,9 +42,9 @@ dbff022c -> a9h4pk85
 Today:
 78332cb0 -> uyze2hm9
 3dc255db -> ayznmbv2
-f931b4a8 -> hard to solve for now
+f931b4a8 -> hard to solve for now.
 136b0064 -> yua0n8qr
-eee78d87 -> 
+eee78d87 -> have not solved yet.
 b0039139
 97d7923e
 d35bdbdc

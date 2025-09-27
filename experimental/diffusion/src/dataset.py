@@ -144,6 +144,11 @@ class ARCDataset(Dataset):
                 rotation = random.choice([0, 90, 180, 270])
                 color_cycle = random.choice(range(9))  # 0-8
 
+                # Skip no-op augmentations (identical to original)
+                is_no_op = (flip_type == 'none' and rotation == 0 and color_cycle == 0)
+                if is_no_op:
+                    continue
+
                 # Create augmented task
                 aug_suffix = f"_aug{aug_idx}_f{flip_type[0]}_r{rotation}_c{color_cycle}"
                 aug_task_id = f"{task_id}{aug_suffix}"
