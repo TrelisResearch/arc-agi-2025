@@ -28,11 +28,15 @@ class ARCDiffusionTrainer:
         device: torch.device,
         learning_rate: float = 3e-4,
         use_mixed_precision: bool = True,
+        pixel_noise_prob: float = 0.15,
+        pixel_noise_rate: float = 0.02,
     ):
         self.model = model
         self.noise_scheduler = noise_scheduler
         self.device = device
         self.use_mixed_precision = use_mixed_precision
+        self.pixel_noise_prob = pixel_noise_prob
+        self.pixel_noise_rate = pixel_noise_rate
 
         # Set up mixed precision
         if use_mixed_precision and device.type in ['cuda', 'mps']:
@@ -43,7 +47,7 @@ class ARCDiffusionTrainer:
             else:
                 self.amp_dtype = torch.float16
                 print("Using float16 mixed precision")
-            self.scaler = torch.cuda.amp.GradScaler() if device.type == 'cuda' else None
+            self.scaler = torch.amp.GradScaler(device.type) if device.type == 'cuda' else None
         else:
             self.amp_dtype = torch.float32
             self.scaler = None
@@ -66,6 +70,47 @@ class ARCDiffusionTrainer:
             eta_min=learning_rate * 0.1
         )
 
+    def apply_pixel_noise(self, grids: torch.Tensor) -> torch.Tensor:
+        """
+        Apply pixel noise to input grids: randomly swap black pixels (0) with colors (1-9).
+
+        Args:
+            grids: Input grids [batch_size, height, width]
+
+        Returns:
+            Grids with noise applied
+        """
+        if self.pixel_noise_prob <= 0 or self.pixel_noise_rate <= 0:
+            return grids
+
+        batch_size = grids.shape[0]
+        grids_noisy = grids.clone()
+
+        for i in range(batch_size):
+            # Apply noise to this example with probability pixel_noise_prob
+            if torch.rand(1).item() < self.pixel_noise_prob:
+                grid = grids_noisy[i]
+
+                # Find all black pixels (value 0)
+                black_mask = (grid == 0)
+                black_indices = torch.where(black_mask)
+
+                if len(black_indices[0]) > 0:
+                    # Determine how many black pixels to flip
+                    num_black = len(black_indices[0])
+                    num_to_flip = max(1, int(num_black * self.pixel_noise_rate))
+
+                    # Randomly select which black pixels to flip
+                    perm = torch.randperm(num_black)[:num_to_flip]
+                    flip_row_idx = black_indices[0][perm]
+                    flip_col_idx = black_indices[1][perm]
+
+                    # Replace with random colors 1-9 (avoid 0 and 10/PAD)
+                    random_colors = torch.randint(1, 10, (num_to_flip,), device=grids.device)
+                    grids_noisy[i, flip_row_idx, flip_col_idx] = random_colors
+
+        return grids_noisy
+
     def train_step(self, batch: Dict[str, torch.Tensor]) -> Dict[str, float]:
         """Execute one training step."""
         self.model.train()
@@ -76,6 +121,9 @@ class ARCDiffusionTrainer:
         task_indices = batch['task_idx'].to(self.device)  # [batch_size]
 
         batch_size = input_grids.shape[0]
+
+        # Apply pixel noise to input grids only (not outputs)
+        input_grids = self.apply_pixel_noise(input_grids)
 
         # Sample random timesteps (0-indexed for array access)
         timesteps = torch.randint(0, self.noise_scheduler.num_timesteps, (batch_size,), device=self.device)
@@ -385,7 +433,9 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         noise_scheduler=noise_scheduler,
         device=device,
         learning_rate=config['learning_rate'],
-        use_mixed_precision=config.get('use_mixed_precision', True)
+        use_mixed_precision=config.get('use_mixed_precision', True),
+        pixel_noise_prob=config.get('pixel_noise_prob', 0.15),
+        pixel_noise_rate=config.get('pixel_noise_rate', 0.02)
     )
 
     print(f"Model has {sum(p.numel() for p in model.parameters()):,} parameters")
