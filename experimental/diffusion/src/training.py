@@ -27,13 +27,11 @@ class ARCDiffusionTrainer:
         noise_scheduler: DiscreteNoiseScheduler,
         device: torch.device,
         learning_rate: float = 3e-4,
-        size_weight: float = 0.2,
         cfg_drop_prob: float = 0.15,
     ):
         self.model = model
         self.noise_scheduler = noise_scheduler
         self.device = device
-        self.size_weight = size_weight
         self.cfg_drop_prob = cfg_drop_prob
 
         # Move model to device
@@ -61,8 +59,6 @@ class ARCDiffusionTrainer:
         input_grids = batch['input_grid'].to(self.device)  # [batch_size, max_size, max_size]
         output_grids = batch['output_grid'].to(self.device)  # [batch_size, max_size, max_size]
         task_indices = batch['task_idx'].to(self.device)  # [batch_size]
-        heights = batch['height'].to(self.device)  # [batch_size]
-        widths = batch['width'].to(self.device)  # [batch_size]
 
         batch_size = input_grids.shape[0]
 
@@ -94,11 +90,8 @@ class ARCDiffusionTrainer:
             x0=output_grids,
             input_grid=input_grids_cond,
             task_ids=task_indices_cond,
-            heights=heights,
-            widths=widths,
             xt=noisy_grids,
-            timesteps=timesteps,
-            size_weight=self.size_weight
+            timesteps=timesteps
         )
 
         # Backward pass
@@ -124,10 +117,7 @@ class ARCDiffusionTrainer:
         self.model.eval()
         total_losses = {
             'total_loss': 0.0,
-            'grid_loss': 0.0,
-            'size_loss': 0.0,
-            'size_loss_h': 0.0,
-            'size_loss_w': 0.0
+            'grid_loss': 0.0
         }
         num_samples = 0
 
@@ -140,8 +130,6 @@ class ARCDiffusionTrainer:
                 input_grids = batch['input_grid'].to(self.device)
                 output_grids = batch['output_grid'].to(self.device)
                 task_indices = batch['task_idx'].to(self.device)
-                heights = batch['height'].to(self.device)
-                widths = batch['width'].to(self.device)
 
                 batch_size = input_grids.shape[0]
 
@@ -156,11 +144,8 @@ class ARCDiffusionTrainer:
                     x0=output_grids,
                     input_grid=input_grids,
                     task_ids=task_indices,
-                    heights=heights,
-                    widths=widths,
                     xt=noisy_grids,
-                    timesteps=timesteps,
-                    size_weight=self.size_weight
+                    timesteps=timesteps
                 )
 
                 # Accumulate losses
@@ -196,7 +181,7 @@ class ARCDiffusionSampler:
         task_indices: torch.Tensor,
         guidance_scale: float = 2.0,
         num_inference_steps: Optional[int] = None
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> torch.Tensor:
         """
         Sample outputs for given inputs using DDPM sampling.
 
@@ -208,8 +193,6 @@ class ARCDiffusionSampler:
 
         Returns:
             predictions: [batch_size, max_size, max_size] - predicted output grids
-            pred_heights: [batch_size] - predicted heights
-            pred_widths: [batch_size] - predicted widths
         """
         self.model.eval()
 
@@ -219,16 +202,12 @@ class ARCDiffusionSampler:
         if num_inference_steps is None:
             num_inference_steps = self.noise_scheduler.num_timesteps
 
-        # Initialize with random noise (no masking - consistent with training)
+        # Initialize with random noise
         x_t = torch.randint(
             0, self.noise_scheduler.vocab_size,
             (batch_size, max_size, max_size),
             device=self.device
         )
-
-        # Track size predictions throughout diffusion
-        pred_heights = None
-        pred_widths = None
 
         # Denoising loop (0-indexed timesteps)
         timesteps = torch.linspace(num_inference_steps - 1, 0, num_inference_steps, dtype=torch.long, device=self.device)
@@ -239,52 +218,34 @@ class ARCDiffusionSampler:
             if guidance_scale > 1.0:
                 # Classifier-free guidance
                 # Conditional prediction
-                logits_cond, size_logits_cond = self.model(x_t, input_grids, task_indices, t_batch)
+                logits_cond = self.model(x_t, input_grids, task_indices, t_batch)
 
                 # Unconditional prediction (using null conditioning)
                 null_task_indices = torch.zeros_like(task_indices)
                 null_input_grids = torch.zeros_like(input_grids)
-                logits_uncond, size_logits_uncond = self.model(x_t, null_input_grids, null_task_indices, t_batch)
+                logits_uncond = self.model(x_t, null_input_grids, null_task_indices, t_batch)
 
-                # Apply CFG to both grid and size predictions
+                # Apply CFG
                 logits = logits_uncond + guidance_scale * (logits_cond - logits_uncond)
-                size_logits = size_logits_uncond + guidance_scale * (size_logits_cond - size_logits_uncond)
             else:
-                logits, size_logits = self.model(x_t, input_grids, task_indices, t_batch)
+                logits = self.model(x_t, input_grids, task_indices, t_batch)
 
-            # Update size predictions progressively
-            size_logits_h = size_logits[:, :max_size]  # [batch_size, max_size]
-            size_logits_w = size_logits[:, max_size:]  # [batch_size, max_size]
-
-            current_pred_heights = torch.argmax(size_logits_h, dim=-1) + 1  # Convert back to 1-30
-            current_pred_widths = torch.argmax(size_logits_w, dim=-1) + 1
-
-            # Store final predictions
-            pred_heights = current_pred_heights
-            pred_widths = current_pred_widths
-
-            # Sample next step (greedy for now) - no masking to be consistent with training
+            # Sample next step (greedy for now)
             x_t = torch.argmax(logits, dim=-1)
 
             # Debug printing
             if self.debug:
                 print(f"\n=== Timestep {t.item()} (step {i+1}/{len(timesteps)}) ===")
-                print(f"Predicted size: {current_pred_heights[0].item()}x{current_pred_widths[0].item()}")
 
-                # Debug size logits
-                print(f"Height logits (top 5): {torch.topk(size_logits_h[0], 5)}")
-                print(f"Width logits (top 5): {torch.topk(size_logits_w[0], 5)}")
-
-                # Extract and print the valid region (limit to reasonable size for display)
-                h, w = current_pred_heights[0].item(), current_pred_widths[0].item()
-                display_h, display_w = min(h, 10), min(w, 10)  # Limit display size
-                valid_grid = x_t[0, :display_h, :display_w].cpu().numpy()
-                print(f"Grid content (showing {display_h}x{display_w} of {h}x{w}):")
+                # Show first 10x10 of the grid
+                display_size = min(10, max_size)
+                valid_grid = x_t[0, :display_size, :display_size].cpu().numpy()
+                print(f"Grid content (showing {display_size}x{display_size}):")
                 for row in valid_grid:
                     print(''.join(str(int(cell)) for cell in row))
                 print("---")
 
-        return x_t, pred_heights, pred_widths
+        return x_t
 
 
 def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
@@ -403,16 +364,10 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         noise_scheduler=noise_scheduler,
         device=device,
         learning_rate=config['learning_rate'],
-        size_weight=config['size_weight'],
         cfg_drop_prob=config['cfg_drop_prob']
     )
 
     print(f"Model has {sum(p.numel() for p in model.parameters()):,} parameters")
-
-    # Compute and set size class weights from training data
-    print("Computing size class weights from training data...")
-    size_class_weights = model.compute_size_class_weights_from_data(full_dataset)
-    model.size_class_weights = size_class_weights.to(device)
 
     # Training loop
     step = 0
@@ -425,7 +380,6 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         epoch_losses = {
             'total_loss': 0.0,
             'grid_loss': 0.0,
-            'size_loss': 0.0,
             'grad_norm': 0.0
         }
         num_train_batches = 0
@@ -445,7 +399,6 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             progress_bar.set_postfix({
                 'loss': f"{losses['total_loss']:.4f}",
                 'grid': f"{losses['grid_loss']:.4f}",
-                'size': f"{losses['size_loss']:.4f}",
                 'grad': f"{losses['grad_norm']:.2f}"
             })
 

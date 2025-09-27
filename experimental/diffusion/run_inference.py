@@ -24,7 +24,7 @@ sys.path.insert(0, str(project_root))
 from experimental.diffusion.src.model import ARCDiffusionModel
 from experimental.diffusion.src.training import ARCDiffusionSampler
 from experimental.diffusion.utils.noise_scheduler import DiscreteNoiseScheduler
-from experimental.diffusion.utils.grid_utils import grid_to_tokens, tokens_to_grid
+from experimental.diffusion.utils.grid_utils import grid_to_tokens, tokens_to_grid, extract_valid_region
 from llm_python.utils.task_loader import TaskData, get_task_loader
 
 
@@ -35,8 +35,6 @@ class DiffusionResult(TypedDict):
     predicted: Optional[List[List[int]]]  # Predicted grid or None if error
     expected: List[List[int]]  # Expected output grid
     correct: bool  # Whether prediction matches expected
-    pred_height: int  # Predicted height
-    pred_width: int  # Predicted width
     error: Optional[str]  # Error message if execution failed
 
 
@@ -160,14 +158,12 @@ class DiffusionInference:
             print(f"Warning: Solutions file not found: {solutions_path}")
             return {}
 
-    def predict_single(self, input_grid: np.ndarray, task_idx: int) -> Tuple[np.ndarray, int, int, Optional[str]]:
+    def predict_single(self, input_grid: np.ndarray, task_idx: int) -> Tuple[np.ndarray, Optional[str]]:
         """
         Run single prediction on input grid.
 
         Returns:
-            predicted_grid: Predicted output grid
-            pred_height: Predicted height
-            pred_width: Predicted width
+            predicted_grid: Predicted output grid (extracted from PAD tokens)
             error: Error message if any
         """
         try:
@@ -180,25 +176,23 @@ class DiffusionInference:
 
             # Sample output
             with torch.no_grad():
-                predicted_grids, pred_heights, pred_widths = self.sampler.sample(
+                predicted_grids = self.sampler.sample(
                     input_grids=input_batch,
                     task_indices=task_ids,
                     guidance_scale=self.guidance_scale,
                     num_inference_steps=self.num_inference_steps
                 )
 
-            # Convert back to numpy
-            pred_height = pred_heights[0].item()
-            pred_width = pred_widths[0].item()
-            predicted_grid = tokens_to_grid(predicted_grids[0], pred_height, pred_width)
+            # Extract valid region from predicted grid (find non-PAD tokens)
+            predicted_grid = extract_valid_region(predicted_grids[0].cpu().numpy())
 
-            return predicted_grid, pred_height, pred_width, None
+            return predicted_grid, None
 
         except Exception as e:
             error_msg = f"Prediction failed: {str(e)}"
             if self.debug:
                 error_msg += f"\n{traceback.format_exc()}"
-            return np.array([]), 0, 0, error_msg
+            return np.array([]), error_msg
 
     def run_task(self, task_id: str, task_data: TaskData, dataset: str) -> TaskResult:
         """
@@ -253,7 +247,7 @@ class DiffusionInference:
 
     def _run_attempt(self, input_grid: np.ndarray, expected_output: np.ndarray, test_idx: int, task_idx: int) -> DiffusionResult:
         """Run a single diffusion attempt"""
-        predicted_grid, pred_height, pred_width, error = self.predict_single(input_grid, task_idx)
+        predicted_grid, error = self.predict_single(input_grid, task_idx)
 
         # Check correctness
         correct = False
@@ -269,8 +263,6 @@ class DiffusionInference:
             predicted=predicted_grid.tolist() if len(predicted_grid) > 0 else None,
             expected=expected_output.tolist() if len(expected_output) > 0 else [],
             correct=correct,
-            pred_height=pred_height,
-            pred_width=pred_width,
             error=error
         )
 

@@ -111,9 +111,6 @@ class TransformerDenoiser(nn.Module):
         # Output head (predicts logits for each cell)
         self.output_head = nn.Linear(d_model, vocab_size)
 
-        # Size prediction head
-        self.size_head = SizePredictionHead(d_model, max_size)
-
     def forward(
         self,
         xt: torch.Tensor,  # [batch_size, max_size, max_size] - noisy output tokens
@@ -121,13 +118,12 @@ class TransformerDenoiser(nn.Module):
         task_ids: torch.Tensor,  # [batch_size] - task IDs
         timesteps: torch.Tensor,  # [batch_size] - timesteps
         masks: Optional[torch.Tensor] = None,  # [batch_size, max_size, max_size]
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> torch.Tensor:
         """
         Forward pass of the denoiser.
 
         Returns:
             logits: [batch_size, max_size, max_size, vocab_size] - predicted logits
-            size_logits: [batch_size, max_size * 2] - predicted height and width logits
         """
         batch_size = xt.shape[0]
         device = xt.device
@@ -168,42 +164,8 @@ class TransformerDenoiser(nn.Module):
         logits = self.output_head(output)  # [batch_size, max_size^2, vocab_size]
         logits = logits.view(batch_size, self.max_size, self.max_size, self.vocab_size)
 
-        # Predict sizes using pooled representation
-        pooled_features = output.mean(dim=1)  # Global average pooling
-        size_features = pooled_features + conditioning  # Add conditioning
-        size_logits = self.size_head(size_features)  # [batch_size, max_size * 2]
+        return logits
 
-        return logits, size_logits
-
-
-class SizePredictionHead(nn.Module):
-    """Head for predicting grid dimensions (H, W)."""
-
-    def __init__(self, d_model: int, max_size: int):
-        super().__init__()
-        self.max_size = max_size
-        # Larger, deeper size head for better size prediction
-        self.head = nn.Sequential(
-            nn.Linear(d_model, d_model),
-            nn.ReLU(),
-            nn.Dropout(0.1),
-            nn.Linear(d_model, d_model // 2),
-            nn.ReLU(),
-            nn.Dropout(0.1),
-            nn.Linear(d_model // 2, max_size * 2)  # max_size logits for H, max_size logits for W
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Predict size logits.
-
-        Args:
-            x: Features [batch_size, d_model]
-
-        Returns:
-            Size logits [batch_size, max_size * 2] - first max_size for H, next max_size for W
-        """
-        return self.head(x)
 
 
 class ARCDiffusionModel(nn.Module):
@@ -225,10 +187,6 @@ class ARCDiffusionModel(nn.Module):
         self.vocab_size = vocab_size
         self.max_size = max_size
 
-        # Precomputed class weights for size prediction (based on ARC training data)
-        # These are inverse frequency weights to handle class imbalance
-        self.register_buffer('size_class_weights', self._compute_size_class_weights())
-
         self.denoiser = TransformerDenoiser(
             vocab_size=vocab_size,
             d_model=d_model,
@@ -245,7 +203,7 @@ class ARCDiffusionModel(nn.Module):
         task_ids: torch.Tensor,
         timesteps: torch.Tensor,
         masks: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> torch.Tensor:
         """Forward pass - predict x0 given xt."""
         return self.denoiser(xt, input_grid, task_ids, timesteps, masks)
 
@@ -254,130 +212,24 @@ class ARCDiffusionModel(nn.Module):
         x0: torch.Tensor,  # [batch_size, max_size, max_size] - clean output
         input_grid: torch.Tensor,  # [batch_size, max_size, max_size] - input
         task_ids: torch.Tensor,  # [batch_size] - task IDs
-        heights: torch.Tensor,  # [batch_size] - true heights
-        widths: torch.Tensor,  # [batch_size] - true widths
         xt: torch.Tensor,  # [batch_size, max_size, max_size] - noisy tokens
         timesteps: torch.Tensor,  # [batch_size] - timesteps
-        size_weight: float = 0.2,
     ) -> Dict[str, torch.Tensor]:
         """Compute training losses."""
         batch_size = x0.shape[0]
-        device = x0.device
-
-        # Create masks
-        masks = batch_create_masks(heights, widths, self.max_size).to(device)
 
         # Forward pass
-        logits, size_logits = self.forward(xt, input_grid, task_ids, timesteps, masks)
+        logits = self.forward(xt, input_grid, task_ids, timesteps)
 
-        # Grid loss: cross-entropy masked to valid regions
+        # Grid loss: cross-entropy on all positions
         grid_loss = F.cross_entropy(
             logits.view(-1, self.vocab_size),  # [batch_size * max_size^2, vocab_size]
             x0.view(-1),  # [batch_size * max_size^2]
-            reduction='none'
+            reduction='mean'
         )
-        grid_loss = grid_loss.view(batch_size, self.max_size, self.max_size)
-        grid_loss = (grid_loss * masks).sum() / masks.sum()  # Masked average
-
-        # Size loss: cross-entropy for height and width
-        size_logits_h = size_logits[:, :self.max_size]  # [batch_size, max_size]
-        size_logits_w = size_logits[:, self.max_size:]  # [batch_size, max_size]
-
-        # Convert sizes to 0-indexed (1-30 -> 0-29)
-        size_targets_h = heights - 1
-        size_targets_w = widths - 1
-
-        size_loss_h = F.cross_entropy(size_logits_h, size_targets_h, weight=self.size_class_weights)
-        size_loss_w = F.cross_entropy(size_logits_w, size_targets_w, weight=self.size_class_weights)
-        size_loss = (size_loss_h + size_loss_w) / 2
-
-        # Total loss
-        total_loss = grid_loss + size_weight * size_loss
 
         return {
-            'total_loss': total_loss,
+            'total_loss': grid_loss,
             'grid_loss': grid_loss,
-            'size_loss': size_loss,
-            'size_loss_h': size_loss_h,
-            'size_loss_w': size_loss_w
         }
 
-    def predict_size(
-        self,
-        input_grid: torch.Tensor,
-        task_ids: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Predict output grid size from input grid and task.
-
-        Returns:
-            heights: [batch_size] - predicted heights (1-30)
-            widths: [batch_size] - predicted widths (1-30)
-        """
-        with torch.no_grad():
-            batch_size = input_grid.shape[0]
-            device = input_grid.device
-
-            # Use dummy values for xt and timesteps (won't affect size prediction)
-            xt_dummy = torch.zeros_like(input_grid)
-            timesteps_dummy = torch.zeros(batch_size, device=device, dtype=torch.long)
-
-            _, size_logits = self.forward(xt_dummy, input_grid, task_ids, timesteps_dummy)
-
-            size_logits_h = size_logits[:, :self.max_size]  # [batch_size, max_size]
-            size_logits_w = size_logits[:, self.max_size:]  # [batch_size, max_size]
-
-            heights = torch.argmax(size_logits_h, dim=-1) + 1  # Convert back to 1-30
-            widths = torch.argmax(size_logits_w, dim=-1) + 1
-
-            return heights, widths
-
-    def _compute_size_class_weights(self) -> torch.Tensor:
-        """
-        Placeholder for size class weights.
-        Will be computed dynamically from training data during training setup.
-        """
-        # Initialize with uniform weights - will be overridden during training
-        return torch.ones(self.max_size, dtype=torch.float32)
-
-    def compute_size_class_weights_from_data(self, dataset) -> torch.Tensor:
-        """
-        Compute class weights for size prediction from actual training data.
-        Uses inverse frequency weighting to handle class imbalance.
-        """
-        # Count size frequencies
-        height_counts = torch.zeros(self.max_size, dtype=torch.float32)
-        width_counts = torch.zeros(self.max_size, dtype=torch.float32)
-
-        for i in range(len(dataset)):
-            example = dataset[i]
-            height = example['height'].item()
-            width = example['width'].item()
-
-            # Convert to 0-indexed (1-30 -> 0-29)
-            height_idx = height - 1
-            width_idx = width - 1
-
-            if 0 <= height_idx < self.max_size:
-                height_counts[height_idx] += 1
-            if 0 <= width_idx < self.max_size:
-                width_counts[width_idx] += 1
-
-        # Combine height and width counts
-        total_counts = height_counts + width_counts
-
-        # Add small epsilon to avoid division by zero
-        total_counts = total_counts + 1e-6
-
-        # Compute inverse frequency weights
-        weights = 1.0 / total_counts
-
-        # Normalize weights so the average weight is 1.0
-        weights = weights / weights.mean()
-
-        # Cap maximum weight to prevent extreme values
-        weights = torch.clamp(weights, max=10.0)
-
-        print(f"Computed size class weights (min: {weights.min():.3f}, max: {weights.max():.3f}, mean: {weights.mean():.3f})")
-
-        return weights
