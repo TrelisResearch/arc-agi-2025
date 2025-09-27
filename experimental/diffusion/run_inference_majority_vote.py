@@ -448,25 +448,31 @@ def main():
             output_path = Path(args.output)
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
+            output_data = {
+                "metadata": {
+                    "timestamp": datetime.datetime.now().isoformat(),
+                    "dataset": args.dataset,
+                    "subset": args.subset,
+                    "model_path": args.model_path,
+                    "num_samples": args.num_samples,
+                    "num_inference_steps": args.num_steps or inference.config['num_timesteps'],
+                    "device": str(inference.device),
+                    "total_tasks": len(tasks),
+                    "completed_tasks": total_tasks,
+                    "errors": total_errors
+                },
+                "metrics": {
+                    "pass_at_2": total_pass_at_2 / total_tasks if total_tasks > 0 else 0,
+                    "both_correct": total_both_correct / total_tasks if total_tasks > 0 else 0,
+                    "attempt_1_correct": total_attempt_1 / total_tasks if total_tasks > 0 else 0,
+                    "attempt_2_correct": total_attempt_2 / total_tasks if total_tasks > 0 else 0,
+                    "error_rate": total_errors / total_tasks if total_tasks > 0 else 0
+                },
+                "results": results
+            }
+
             with open(output_path, 'w') as f:
-                json.dump({
-                    'metadata': {
-                        'timestamp': datetime.datetime.now().isoformat(),
-                        'model_path': args.model_path,
-                        'dataset': args.dataset,
-                        'subset': args.subset,
-                        'num_samples': args.num_samples,
-                        'total_tasks': total_tasks,
-                        'metrics': {
-                            'pass_at_2': total_pass_at_2 / total_tasks if total_tasks > 0 else 0,
-                            'both_correct': total_both_correct / total_tasks if total_tasks > 0 else 0,
-                            'attempt_1_correct': total_attempt_1 / total_tasks if total_tasks > 0 else 0,
-                            'attempt_2_correct': total_attempt_2 / total_tasks if total_tasks > 0 else 0,
-                            'error_rate': total_errors / total_tasks if total_tasks > 0 else 0
-                        }
-                    },
-                    'results': results
-                }, f, indent=2)
+                json.dump(output_data, f, indent=2)
 
             print(f"💾 Results saved to: {output_path}")
 
