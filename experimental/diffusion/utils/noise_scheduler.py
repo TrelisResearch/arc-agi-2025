@@ -61,13 +61,14 @@ class DiscreteNoiseScheduler:
 
         return betas
 
-    def add_noise(self, x0: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+    def add_noise(self, x0: torch.Tensor, t: torch.Tensor, token_distributions: torch.Tensor = None) -> torch.Tensor:
         """
-        Add noise to clean tokens x0 at timestep t using uniform mixing kernel.
+        Add noise to clean tokens x0 at timestep t using task-aware mixing kernel.
 
         Args:
             x0: Clean tokens [batch_size, height, width]
             t: Timestep tensor [batch_size]
+            token_distributions: Task-specific token probabilities [batch_size, vocab_size] or None for uniform
 
         Returns:
             xt: Noisy tokens [batch_size, height, width]
@@ -81,8 +82,20 @@ class DiscreteNoiseScheduler:
         # Create random mask: keep original token with prob alpha_bar_t
         keep_mask = torch.rand(batch_size, height, width, device=device) < alpha_bars_t.unsqueeze(-1).unsqueeze(-1)
 
-        # Create random tokens for replacement
-        random_tokens = torch.randint(0, self.vocab_size, (batch_size, height, width), device=device)
+        # Create random tokens for replacement using task-specific distributions
+        if token_distributions is not None:
+            # Sample from task-specific distributions
+            total_pixels = batch_size * height * width
+            random_tokens = torch.zeros(batch_size, height, width, dtype=torch.long, device=device)
+
+            for i in range(batch_size):
+                # Sample pixels for this example using its task distribution
+                dist = token_distributions[i].to(device)
+                pixels = torch.multinomial(dist, num_samples=height * width, replacement=True)
+                random_tokens[i] = pixels.view(height, width)
+        else:
+            # Fallback to uniform sampling
+            random_tokens = torch.randint(0, self.vocab_size, (batch_size, height, width), device=device)
 
         # Apply noise: keep original where mask is True, replace with random elsewhere
         xt = torch.where(keep_mask, x0, random_tokens)

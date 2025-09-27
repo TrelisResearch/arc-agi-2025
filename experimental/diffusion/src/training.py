@@ -26,6 +26,7 @@ class ARCDiffusionTrainer:
         model: ARCDiffusionModel,
         noise_scheduler: DiscreteNoiseScheduler,
         device: torch.device,
+        dataset,  # Need dataset reference to get task distributions
         learning_rate: float = 3e-4,
         use_mixed_precision: bool = True,
         pixel_noise_prob: float = 0.15,
@@ -34,6 +35,7 @@ class ARCDiffusionTrainer:
         self.model = model
         self.noise_scheduler = noise_scheduler
         self.device = device
+        self.dataset = dataset
         self.use_mixed_precision = use_mixed_precision
         self.pixel_noise_prob = pixel_noise_prob
         self.pixel_noise_rate = pixel_noise_rate
@@ -136,8 +138,15 @@ class ARCDiffusionTrainer:
         # Sample random timesteps (0-indexed for array access)
         timesteps = torch.randint(0, self.noise_scheduler.num_timesteps, (batch_size,), device=self.device)
 
-        # Add noise to clean output grids
-        noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps)
+        # Get task-specific token distributions for this batch
+        task_distributions = []
+        for task_id in batch['task_ids']:
+            dist = self.dataset.get_task_distribution(task_id)
+            task_distributions.append(dist)
+        task_distributions = torch.stack(task_distributions)  # [batch_size, vocab_size]
+
+        # Add noise to clean output grids using task-specific distributions
+        noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps, task_distributions)
 
         # Forward pass with mixed precision
         if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
@@ -217,8 +226,15 @@ class ARCDiffusionTrainer:
                 # Sample random timesteps (0-indexed for array access)
                 timesteps = torch.randint(0, self.noise_scheduler.num_timesteps, (batch_size,), device=self.device)
 
-                # Add noise
-                noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps)
+                # Get task-specific token distributions for this batch
+                task_distributions = []
+                for task_id in batch['task_ids']:
+                    dist = self.dataset.get_task_distribution(task_id)
+                    task_distributions.append(dist)
+                task_distributions = torch.stack(task_distributions)  # [batch_size, vocab_size]
+
+                # Add noise using task-specific distributions
+                noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps, task_distributions)
 
                 # Forward pass (no CFG during validation) with mixed precision
                 if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
@@ -440,6 +456,7 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         model=model,
         noise_scheduler=noise_scheduler,
         device=device,
+        dataset=full_dataset,  # Pass dataset for task-specific distributions
         learning_rate=config['learning_rate'],
         use_mixed_precision=config.get('use_mixed_precision', True),
         pixel_noise_prob=config.get('pixel_noise_prob', 0.15),
