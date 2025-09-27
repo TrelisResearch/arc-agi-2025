@@ -197,10 +197,12 @@ class ARCDiffusionModel(nn.Module):
         max_size: int = 30,
         max_tasks: int = 1000,
         embedding_dropout: float = 0.1,
+        use_weighted_loss: bool = False,
     ):
         super().__init__()
         self.vocab_size = vocab_size
         self.max_size = max_size
+        self.use_weighted_loss = use_weighted_loss
 
         self.denoiser = TransformerDenoiser(
             vocab_size=vocab_size,
@@ -237,8 +239,16 @@ class ARCDiffusionModel(nn.Module):
         # Forward pass
         logits = self.forward(xt, input_grid, task_ids, timesteps)
 
-        # Grid loss: example-specific weighted cross-entropy
-        grid_loss = self._compute_weighted_loss(logits, x0)
+        # Grid loss: weighted or uniform based on parameter
+        if self.use_weighted_loss:
+            grid_loss = self._compute_weighted_loss(logits, x0)
+        else:
+            # Simple uniform cross-entropy (original approach)
+            grid_loss = F.cross_entropy(
+                logits.view(-1, self.vocab_size),
+                x0.view(-1),
+                reduction='mean'
+            )
 
         return {
             'total_loss': grid_loss,
