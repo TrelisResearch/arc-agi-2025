@@ -6,7 +6,7 @@ import numpy as np
 
 from llm_python.utils.task_loader import get_task_loader
 
-# ANSI color codes for numbers 0-9
+# ANSI color codes for numbers 0-9 and PAD token (10)
 COLOR_CODES = {
     0: "\033[90m",  # Dark gray (background/empty)
     1: "\033[94m",  # Blue
@@ -18,20 +18,23 @@ COLOR_CODES = {
     7: "\033[97m",  # White
     8: "\033[35m",  # Purple
     9: "\033[33m",  # Orange-ish
+    10: "\033[100m\033[37m",  # PAD token: White text on black background (*)
 }
 RESET_CODE = "\033[0m"
 
 
 def grid_to_text(grid: List[List[int]], use_colors: bool = True) -> str:
     if not use_colors:
-        return "\n".join(" ".join(str(cell) for cell in row) for row in grid)
+        return "\n".join(" ".join("*" if cell == 10 else str(cell) for cell in row) for row in grid)
 
     lines = []
     for row in grid:
         colored_cells = []
         for cell in row:
+            # Display PAD tokens (10) as '*' for better readability
+            display_char = "*" if cell == 10 else str(cell)
             color_code = COLOR_CODES.get(cell, "")
-            colored_cells.append(f"{color_code}{cell}{RESET_CODE}")
+            colored_cells.append(f"{color_code}{display_char}{RESET_CODE}")
         lines.append(" ".join(colored_cells))
     return "\n".join(lines)
 

@@ -203,12 +203,11 @@ def test_data_loading():
             print("⚠ Training data not found, skipping data loading test")
             return
 
-        # Create a small dataset
+        # Create a small dataset (using defaults: include_training_test_examples=True)
         dataset = ARCDataset(
             data_paths=[str(train_path)],
             max_size=10,
-            augment=False,
-            include_training_test_examples=False
+            augment=False
         )
 
         if len(dataset) == 0:
