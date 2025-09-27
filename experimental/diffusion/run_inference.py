@@ -36,6 +36,8 @@ class DiffusionResult(TypedDict):
     expected: List[List[int]]  # Expected output grid
     correct: bool  # Whether prediction matches expected
     error: Optional[str]  # Error message if execution failed
+    pred_height: int  # Height of predicted grid
+    pred_width: int  # Width of predicted grid
 
 
 class TaskResult(TypedDict):
@@ -262,13 +264,19 @@ class DiffusionInference:
         elif error is None and len(predicted_grid) == 0:
             error = "No valid region extracted from prediction"
 
+        # Get predicted grid dimensions (default to 30x30 if extraction failed)
+        pred_height = predicted_grid.shape[0] if len(predicted_grid) > 0 else 30
+        pred_width = predicted_grid.shape[1] if len(predicted_grid) > 0 else 30
+
         return DiffusionResult(
             test_idx=test_idx,
             input_grid=input_grid.tolist(),
             predicted=predicted_grid.tolist() if len(predicted_grid) > 0 else None,
             expected=expected_output.tolist() if len(expected_output) > 0 else [],
             correct=correct,
-            error=error
+            error=error,
+            pred_height=pred_height,
+            pred_width=pred_width
         )
 
 

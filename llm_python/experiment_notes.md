@@ -1,5 +1,7 @@
 # Experiment Notes
 
+PYTHONUNBUFFERED=1 nohup uv run experimental/diffusion/train_with_config.py --config experimental/diffusion/configs/mps_config.json > training.log &
+
 
 ---
 Big Picture Status:
@@ -600,6 +602,8 @@ Total predictions: 344
 
 ## September 23rd 2025
 ### Manual Dataset Testing for Fine-tuning
+
+
 
 uv run experimental/diffusion/run_inference.py --dataset arc-prize-2024 --subset training --limit 1 --output experimental/diffusion/outputs/gpu/train-1-cfg-3.json --debug --model-path experimental/diffusion/outputs/gpu/best_model.pt --guidance-scale 3.0
 
