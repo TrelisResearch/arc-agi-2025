@@ -40,21 +40,29 @@ class ARCDiffusionTrainer:
 
         # Set up mixed precision
         if use_mixed_precision and device.type in ['cuda', 'mps']:
+            self.use_mixed_precision = True
             # Use bfloat16 for modern hardware
             if device.type == 'cuda' and torch.cuda.is_bf16_supported():
                 self.amp_dtype = torch.bfloat16
                 print("Using bfloat16 mixed precision")
+                self.scaler = None  # bfloat16 doesn't need scaling
             else:
                 self.amp_dtype = torch.float16
                 print("Using float16 mixed precision")
-            self.scaler = torch.amp.GradScaler(device.type) if device.type == 'cuda' else None
+                # Only use scaler for CUDA float16
+                if device.type == 'cuda':
+                    self.scaler = torch.amp.GradScaler(device.type)
+                else:
+                    self.scaler = None
         else:
+            self.use_mixed_precision = False
             self.amp_dtype = torch.float32
             self.scaler = None
             print("Using float32 precision")
 
-        # Move model to device
+        # Move model to device and ensure parameters stay in float32
         self.model.to(device)
+        self.model.float()  # Always keep parameters in fp32
 
         # Optimizer
         self.optimizer = torch.optim.AdamW(
@@ -155,7 +163,7 @@ class ARCDiffusionTrainer:
         self.optimizer.zero_grad()
 
         if self.scaler is not None:
-            # CUDA with gradient scaling
+            # CUDA with float16 and gradient scaling
             self.scaler.scale(total_loss).backward()
 
             # Compute gradient norm before clipping
@@ -168,7 +176,7 @@ class ARCDiffusionTrainer:
             self.scaler.step(self.optimizer)
             self.scaler.update()
         else:
-            # MPS or CPU without gradient scaling
+            # MPS, CPU, or bfloat16 without gradient scaling
             total_loss.backward()
 
             # Compute gradient norm before clipping
@@ -502,8 +510,10 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             # Save best model
             if val_losses['total_loss'] < best_val_loss:
                 best_val_loss = val_losses['total_loss']
+                # Save model in bfloat16 without modifying the original
+                model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
                 torch.save({
-                    'model_state_dict': model.half().state_dict(),
+                    'model_state_dict': model_state_dict_bf16,
                     'optimizer_state_dict': trainer.optimizer.state_dict(),
                     'scheduler_state_dict': trainer.scheduler.state_dict(),
                     'epoch': epoch,
@@ -523,8 +533,10 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             break
 
     # Save final model
+    # Save final model in bfloat16 without modifying the original
+    model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
     torch.save({
-        'model_state_dict': model.half().state_dict(),
+        'model_state_dict': model_state_dict_bf16,
         'optimizer_state_dict': trainer.optimizer.state_dict(),
         'scheduler_state_dict': trainer.scheduler.state_dict(),
         'epoch': epoch,
