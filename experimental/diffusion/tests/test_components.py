@@ -14,7 +14,7 @@ sys.path.insert(0, str(project_root))
 from experimental.diffusion.src.model import ARCDiffusionModel
 from experimental.diffusion.src.dataset import ARCDataset, load_arc_data_paths
 from experimental.diffusion.utils.noise_scheduler import DiscreteNoiseScheduler
-from experimental.diffusion.utils.grid_utils import pad_grid_to_size, create_mask, grid_to_tokens, detect_valid_region, grid_to_display_string
+from experimental.diffusion.utils.grid_utils import pad_grid_to_size, create_mask, grid_to_tokens, grid_to_display_string
 
 
 def test_noise_scheduler():
@@ -65,7 +65,7 @@ def test_grid_utils():
     assert tokens[0, 0] == 1
     assert tokens[3, 3] == 10  # PAD token
 
-    # Test PAD token detection
+    # Test grid with PAD tokens (for display testing)
     padded_grid = np.array([
         [1, 2, 10, 10, 10],
         [3, 4, 10, 10, 10],
@@ -73,10 +73,6 @@ def test_grid_utils():
         [10, 10, 10, 10, 10],
         [10, 10, 10, 10, 10]
     ])
-    valid_region, error = detect_valid_region(padded_grid)
-    assert error is None
-    assert valid_region.shape == (2, 2)
-    assert np.array_equal(valid_region, [[1, 2], [3, 4]])
 
     # Test grid display with PAD tokens
     display_str = grid_to_display_string(padded_grid[:3, :3], pad_symbol='*')

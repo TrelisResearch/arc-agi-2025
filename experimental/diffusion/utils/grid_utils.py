@@ -142,59 +142,6 @@ def tokens_to_grid(tokens: torch.Tensor, height: int, width: int) -> np.ndarray:
     return valid_tokens.cpu().numpy().astype(np.int32)
 
 
-def detect_valid_region(grid: np.ndarray, pad_value: int = 10) -> Tuple[np.ndarray, Optional[str]]:
-    """
-    Detect and extract the valid region from a grid by finding PAD token boundaries.
-
-    Args:
-        grid: Predicted grid [max_size, max_size] with PAD tokens at boundaries
-        pad_value: Value used for PAD tokens (default: 10)
-
-    Returns:
-        valid_grid: Extracted valid region, or empty array if detection fails
-        error: Error message if detection fails, None otherwise
-    """
-    try:
-        if grid.size == 0:
-            return np.array([]), "Empty grid"
-
-        # If grid is all PAD tokens, return minimum 1x1 grid with first cell
-        if np.all(grid == pad_value):
-            return grid[:1, :1], None
-
-        # Find the rightmost non-PAD column
-        valid_cols = []
-        for col in range(grid.shape[1]):
-            if not np.all(grid[:, col] == pad_value):
-                valid_cols.append(col)
-
-        # Find the bottommost non-PAD row
-        valid_rows = []
-        for row in range(grid.shape[0]):
-            if not np.all(grid[row, :] == pad_value):
-                valid_rows.append(row)
-
-        # If no valid content found (shouldn't happen after all-PAD check above)
-        if not valid_rows or not valid_cols:
-            return grid[:1, :1], None
-
-        # Extract rectangular region from (0,0) to the furthest non-PAD token
-        min_row, max_row = 0, max(valid_rows) + 1
-        min_col, max_col = 0, max(valid_cols) + 1
-
-        valid_region = grid[min_row:max_row, min_col:max_col]
-
-        # Always return the extracted region, regardless of PAD tokens inside
-        # The model might predict PAD tokens incorrectly, but we want to see the result
-        return valid_region, None
-
-    except Exception as e:
-        # If anything fails, return at least a 1x1 grid to avoid crashes
-        try:
-            return grid[:1, :1], None
-        except:
-            return np.array([[0]]), f"Fallback after error: {str(e)}"
-
 
 def grid_to_display_string(grid: np.ndarray, pad_symbol: str = '*') -> str:
     """

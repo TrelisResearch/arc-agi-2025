@@ -24,7 +24,7 @@ from experimental.diffusion.src.model import ARCDiffusionModel, GridSizePredicti
 from experimental.diffusion.src.training import ARCDiffusionSampler
 from experimental.diffusion.src.dataset import ARCDataset, load_arc_data_paths
 from experimental.diffusion.utils.noise_scheduler import DiscreteNoiseScheduler
-from experimental.diffusion.utils.grid_utils import grid_to_tokens, tokens_to_grid, detect_valid_region
+from experimental.diffusion.utils.grid_utils import grid_to_tokens, tokens_to_grid
 from llm_python.utils.task_loader import TaskData, get_task_loader
 
 
@@ -58,12 +58,16 @@ class DiffusionVisualizer:
         size_head_path: Optional[str] = None,
         device: Optional[str] = None,
         num_visualization_steps: int = 8,
-        use_ground_truth_size: bool = False
+        use_ground_truth_size: bool = False,
+        dataset: str = "arc-prize-2024",
+        subset: str = "evaluation"
     ):
         self.model_path = model_path
         self.size_head_path = size_head_path
         self.num_viz_steps = num_visualization_steps
         self.use_ground_truth_size = use_ground_truth_size
+        self.dataset_name = dataset
+        self.subset_name = subset
 
         # Set up device
         if device:
@@ -160,15 +164,12 @@ class DiffusionVisualizer:
             task_id: Task ID to visualize (if None, uses first task)
             test_idx: Test example index within the task
         """
-        # Load tasks
+        # Load tasks using same approach as inference script
         task_loader = get_task_loader()
-        tasks = task_loader.get_dataset_subset("arc-prize-2024/evaluation", max_rows=1)
+        tasks = task_loader.get_dataset_subset(f"{self.dataset_name}/{self.subset_name}", max_rows=10)
 
         if not tasks:
-            tasks = task_loader.get_dataset_subset("arc-prize-2024/training", max_rows=1)
-
-        if not tasks:
-            raise ValueError("No tasks found")
+            raise ValueError(f"No tasks found for dataset: {self.dataset_name}/{self.subset_name}")
 
         # Use first task if none specified
         if task_id is None:
@@ -410,9 +411,8 @@ class VisualizationSampler(ARCDiffusionSampler):
             h, w = predicted_heights[0].item(), predicted_widths[0].item()
             valid_grid = grid_np[:h, :w]
         else:
-            valid_grid, _ = detect_valid_region(grid_np)
-            if len(valid_grid) == 0:
-                valid_grid = grid_np  # Fallback to full grid
+            # Use full grid when no size predictions available
+            valid_grid = grid_np
         progression.append(valid_grid)
         progression_timesteps.append(total_timesteps)  # Initial noise is "before" timestep 0
 
@@ -439,9 +439,8 @@ class VisualizationSampler(ARCDiffusionSampler):
                     h, w = predicted_heights[0].item(), predicted_widths[0].item()
                     valid_grid = grid_np[:h, :w]
                 else:
-                    valid_grid, _ = detect_valid_region(grid_np)
-                    if len(valid_grid) == 0:
-                        valid_grid = grid_np  # Fallback to full grid
+                    # Use full grid when no size predictions available
+                    valid_grid = grid_np
 
                 progression.append(valid_grid)
                 progression_timesteps.append(t.item())
@@ -455,6 +454,8 @@ def main():
     parser.add_argument("--model-path", required=True, help="Path to trained diffusion model")
     parser.add_argument("--size-head-path", help="Path to trained size prediction head (optional)")
     parser.add_argument("--device", choices=["cpu", "cuda", "mps", "auto"], default="auto", help="Device to use")
+    parser.add_argument("--dataset", default="arc-prize-2024", help="Dataset to use (default: arc-prize-2024)")
+    parser.add_argument("--subset", default="evaluation", help="Subset to use (default: evaluation)")
     parser.add_argument("--task-id", help="Specific task ID to visualize (default: first task)")
     parser.add_argument("--test-idx", type=int, default=0, help="Test example index (default: 0)")
     parser.add_argument("--steps", type=int, default=8, help="Number of visualization steps (default: 8)")
@@ -488,7 +489,9 @@ def main():
         size_head_path=args.size_head_path,
         device=args.device if args.device != "auto" else None,
         num_visualization_steps=args.steps,
-        use_ground_truth_size=args.use_ground_truth_size
+        use_ground_truth_size=args.use_ground_truth_size,
+        dataset=args.dataset,
+        subset=args.subset
     )
 
     # Run visualization
