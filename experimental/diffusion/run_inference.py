@@ -193,7 +193,6 @@ class DiffusionInference:
                 predicted_grids = self.sampler.sample(
                     input_grids=input_batch,
                     task_indices=task_ids,
-                    task_ids=[task_id] if task_id is not None else None,
                     num_inference_steps=self.num_inference_steps
                 )
 

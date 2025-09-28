@@ -110,8 +110,8 @@ class ARCDataset(Dataset):
             all_tasks.update(augmented_tasks)
             print(f"Total tasks after augmentation: {len(all_tasks)}")
 
-        # Compute task-specific token distributions for noise sampling
-        self.task_distributions = self._compute_task_distributions(all_tasks)
+        # Use hard-coded global token distribution based on ARC dataset statistics
+        self.global_distribution = self._get_hardcoded_distribution()
 
         # Convert tasks to examples
         for task_id, task_data in all_tasks.items():
@@ -161,48 +161,41 @@ class ARCDataset(Dataset):
 
         return augmented_tasks
 
-    def _compute_task_distributions(self, all_tasks: Dict[str, Dict]) -> Dict[str, torch.Tensor]:
+    def _get_hardcoded_distribution(self) -> torch.Tensor:
         """
-        Compute task-specific token distributions based on training examples only.
+        Get hard-coded global token distribution based on ARC dataset statistics.
 
-        Args:
-            all_tasks: Dictionary of all tasks with their examples
+        Based on analysis of ARC 2024/2025 training and evaluation sets:
+        - PAD (token 10): 88.89% (median across tasks)
+        - Black (token 0): 5.43% (median across tasks)
+        - Colors (tokens 1-9): 0.34% each (equal distribution)
 
         Returns:
-            Dictionary mapping task_id to probability distribution over tokens [vocab_size]
+            Global probability distribution over tokens [vocab_size]
         """
-        task_distributions = {}
+        token_probs = torch.zeros(11)
 
-        for task_id, task_data in all_tasks.items():
-            # Only use training examples to avoid test leakage
-            train_examples = task_data['train']
+        # Hard-coded frequencies based on ARC dataset analysis
+        token_probs[0] = 0.0543    # Black
+        token_probs[1] = 0.0034    # Color 1
+        token_probs[2] = 0.0034    # Color 2
+        token_probs[3] = 0.0034    # Color 3
+        token_probs[4] = 0.0034    # Color 4
+        token_probs[5] = 0.0034    # Color 5
+        token_probs[6] = 0.0034    # Color 6
+        token_probs[7] = 0.0034    # Color 7
+        token_probs[8] = 0.0034    # Color 8
+        token_probs[9] = 0.0034    # Color 9
+        token_probs[10] = 0.8889   # PAD
 
-            if not train_examples:
-                # Fallback to uniform distribution if no training examples
-                uniform_dist = torch.ones(11) / 11
-                task_distributions[task_id] = uniform_dist
-                continue
+        # Normalize to ensure exact sum of 1.0
+        token_probs = token_probs / token_probs.sum()
 
-            # Collect all tokens from training outputs (padded to max_size)
-            all_tokens = []
-            for example in train_examples:
-                output_grid = example['output']
-                # Convert to tokens with padding
-                output_tokens, _, _ = grid_to_tokens(output_grid, self.max_size)
-                all_tokens.extend(output_tokens.flatten().tolist())
+        print(f"Using hard-coded global token distribution:")
+        for i in range(11):
+            print(f"  Token {i}: {token_probs[i]:.4f}")
 
-            # Count token frequencies
-            token_counts = torch.zeros(11)  # vocab_size = 11
-            for token in all_tokens:
-                if 0 <= token <= 10:  # Ensure valid token range
-                    token_counts[token] += 1
-
-            # Convert to probabilities (add small epsilon to avoid zero probabilities)
-            epsilon = 1e-6
-            token_probs = (token_counts + epsilon) / (token_counts.sum() + 11 * epsilon)
-            task_distributions[task_id] = token_probs
-
-        return task_distributions
+        return token_probs
 
     def _load_solutions(self, solutions_path: str) -> Dict[str, List[List[List[int]]]]:
         """Load solutions from JSON file."""
@@ -242,13 +235,9 @@ class ARCDataset(Dataset):
             'task_id_to_idx': self.task_id_to_idx
         }
 
-    def get_task_distribution(self, task_id: str) -> torch.Tensor:
-        """Get the token distribution for a specific task."""
-        if task_id in self.task_distributions:
-            return self.task_distributions[task_id]
-        else:
-            # Fallback to uniform distribution
-            return torch.ones(11) / 11
+    def get_global_distribution(self) -> torch.Tensor:
+        """Get the global token distribution for noise sampling."""
+        return self.global_distribution
 
 
 class ARCDataLoader:

@@ -139,15 +139,11 @@ class ARCDiffusionTrainer:
         # Sample random timesteps (0-indexed for array access)
         timesteps = torch.randint(0, self.noise_scheduler.num_timesteps, (batch_size,), device=self.device)
 
-        # Get task-specific token distributions for this batch
-        task_distributions = []
-        for task_id in batch['task_ids']:
-            dist = self.dataset.get_task_distribution(task_id)
-            task_distributions.append(dist)
-        task_distributions = torch.stack(task_distributions)  # [batch_size, vocab_size]
+        # Get global token distribution for noise sampling
+        global_distribution = self.dataset.get_global_distribution()
 
-        # Add noise to clean output grids using task-specific distributions
-        noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps, task_distributions)
+        # Add noise to clean output grids using global distribution
+        noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps, global_distribution)
 
         # Forward pass with mixed precision
         if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
@@ -227,15 +223,11 @@ class ARCDiffusionTrainer:
                 # Sample random timesteps (0-indexed for array access)
                 timesteps = torch.randint(0, self.noise_scheduler.num_timesteps, (batch_size,), device=self.device)
 
-                # Get task-specific token distributions for this batch
-                task_distributions = []
-                for task_id in batch['task_ids']:
-                    dist = self.dataset.get_task_distribution(task_id)
-                    task_distributions.append(dist)
-                task_distributions = torch.stack(task_distributions)  # [batch_size, vocab_size]
+                # Get global token distribution for noise sampling
+                global_distribution = self.dataset.get_global_distribution()
 
-                # Add noise using task-specific distributions
-                noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps, task_distributions)
+                # Add noise using global distribution
+                noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps, global_distribution)
 
                 # Forward pass (no CFG during validation) with mixed precision
                 if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
@@ -289,7 +281,6 @@ class ARCDiffusionSampler:
         self,
         input_grids: torch.Tensor,
         task_indices: torch.Tensor,
-        task_ids: List[str] = None,
         num_inference_steps: Optional[int] = None
     ) -> torch.Tensor:
         """
@@ -298,7 +289,6 @@ class ARCDiffusionSampler:
         Args:
             input_grids: [batch_size, max_size, max_size]
             task_indices: [batch_size]
-            task_ids: List of task ID strings for getting task-specific noise distributions
             num_inference_steps: Number of denoising steps (default: use scheduler's num_timesteps)
 
         Returns:
@@ -312,23 +302,17 @@ class ARCDiffusionSampler:
         if num_inference_steps is None:
             num_inference_steps = self.noise_scheduler.num_timesteps
 
-        # Initialize with task-aware random noise
-        if self.dataset is not None and task_ids is not None:
-            # Get task-specific token distributions for initial noise
-            task_distributions = []
-            for task_id in task_ids:
-                dist = self.dataset.get_task_distribution(task_id)
-                task_distributions.append(dist)
-            task_distributions = torch.stack(task_distributions).to(self.device)
+        # Initialize with global distribution random noise
+        if self.dataset is not None:
+            # Get global token distribution for initial noise
+            global_distribution = self.dataset.get_global_distribution().to(self.device)
 
-            # Sample initial noise using task-specific distributions
-            x_t = torch.zeros(batch_size, max_size, max_size, dtype=torch.long, device=self.device)
-            for i in range(batch_size):
-                dist = task_distributions[i]
-                pixels = torch.multinomial(dist, num_samples=max_size * max_size, replacement=True)
-                x_t[i] = pixels.view(max_size, max_size)
+            # Sample initial noise using global distribution
+            total_pixels = batch_size * max_size * max_size
+            pixels = torch.multinomial(global_distribution, num_samples=total_pixels, replacement=True)
+            x_t = pixels.view(batch_size, max_size, max_size)
         else:
-            # Fallback to uniform noise if no task distributions available
+            # Fallback to uniform noise if no global distribution available
             x_t = torch.randint(
                 0, self.noise_scheduler.vocab_size,
                 (batch_size, max_size, max_size),
