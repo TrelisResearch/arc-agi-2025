@@ -28,6 +28,7 @@ class ARCDiffusionTrainer:
         device: torch.device,
         dataset,  # Need dataset reference to get task distributions
         learning_rate: float = 3e-4,
+        weight_decay: float = 0.01,
         use_mixed_precision: bool = True,
         pixel_noise_prob: float = 0.15,
         pixel_noise_rate: float = 0.02,
@@ -70,7 +71,7 @@ class ARCDiffusionTrainer:
         self.optimizer = torch.optim.AdamW(
             model.parameters(),
             lr=learning_rate,
-            weight_decay=0.01
+            weight_decay=weight_decay
         )
 
         # Learning rate scheduler
@@ -478,6 +479,7 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         device=device,
         dataset=full_dataset,  # Pass dataset for task-specific distributions
         learning_rate=config['learning_rate'],
+        weight_decay=config.get('weight_decay', 0.01),
         use_mixed_precision=config.get('use_mixed_precision', True),
         pixel_noise_prob=config.get('pixel_noise_prob', 0.15),
         pixel_noise_rate=config.get('pixel_noise_rate', 0.02)

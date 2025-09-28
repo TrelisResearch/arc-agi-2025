@@ -31,6 +31,16 @@ Commercial:
 ---
 ## Sept 28th 2025
 ### Diffusion testing
+The model has very low train loss, and validation loss has gone up quite a bit.
+
+```bash
+uv run experimental/diffusion/run_inference.py --dataset arc-prize-2024 --subset evaluation --limit 5 --output experimental/diffusion/outputs/gpu/evaluation-5-final.json --model-path experimental/diffusion/outputs/gpu/final_model.pt --num-steps 128
+```
+
+```bash
+uv run experimental/diffusion/run_inference.py --dataset arc-prize-2024 --subset evaluation --limit 5 --output experimental/diffusion/outputs/gpu/evaluation-5-best.json --model-path experimental/diffusion/outputs/gpu/best_model.pt --num-steps 128
+```
+
 
 
 ## September 27th 2025
