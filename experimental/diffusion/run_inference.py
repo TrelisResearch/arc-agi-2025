@@ -25,7 +25,7 @@ from experimental.diffusion.src.model import ARCDiffusionModel, GridSizePredicti
 from experimental.diffusion.src.training import ARCDiffusionSampler
 from experimental.diffusion.src.dataset import ARCDataset, load_arc_data_paths
 from experimental.diffusion.utils.noise_scheduler import DiscreteNoiseScheduler
-from experimental.diffusion.utils.grid_utils import grid_to_tokens, tokens_to_grid, detect_valid_region
+from experimental.diffusion.utils.grid_utils import grid_to_tokens, tokens_to_grid
 from llm_python.utils.task_loader import TaskData, get_task_loader
 
 
@@ -196,12 +196,12 @@ class DiffusionInference:
             print(f"Warning: Solutions file not found: {solutions_path}")
             return {}
 
-    def predict_single(self, input_grid: np.ndarray, task_idx: int, task_id: str = None) -> Tuple[np.ndarray, Optional[str], str]:
+    def predict_single(self, input_grid: np.ndarray, task_idx: int, task_id: str = None, expected_output: np.ndarray = None) -> Tuple[np.ndarray, Optional[str], str]:
         """
         Run single prediction on input grid.
 
         Returns:
-            predicted_grid: Predicted output grid (extracted from PAD tokens)
+            predicted_grid: Predicted output grid (cropped to predicted/ground truth size)
             error: Error message if any
             size_source: How the size was determined ("size_head" or "ground_truth")
         """
@@ -213,6 +213,24 @@ class DiffusionInference:
             # Use task ID (ensure it's within trained range)
             task_ids = torch.tensor([task_idx]).to(self.device)
 
+            # Get size predictions if size head is available
+            if self.size_head is not None:
+                with torch.no_grad():
+                    pred_heights, pred_widths = self.size_head.predict_sizes(input_batch, task_ids)
+                    pred_height, pred_width = pred_heights[0].item(), pred_widths[0].item()
+                size_source = "size_head"
+                print(f"Using size head predictions: {pred_height}×{pred_width}")
+            else:
+                # Fallback to ground truth dimensions
+                if expected_output is not None and len(expected_output) > 0:
+                    pred_height, pred_width = expected_output.shape
+                    print(f"⚠️  No size head available, using ground truth dimensions: {pred_height}×{pred_width}")
+                    size_source = "ground_truth"
+                else:
+                    print("⚠️  No size head and no ground truth available, using max size")
+                    pred_height, pred_width = self.config['max_size'], self.config['max_size']
+                    size_source = "ground_truth"
+
             # Sample output
             with torch.no_grad():
                 predicted_grids = self.sampler.sample(
@@ -221,14 +239,9 @@ class DiffusionInference:
                     num_inference_steps=self.num_inference_steps
                 )
 
-            # Extract valid region from predicted grid (find non-PAD tokens)
-            predicted_grid, region_error = detect_valid_region(predicted_grids[0].cpu().numpy())
-
-            if region_error:
-                return np.array([]), f"Region detection failed: {region_error}", "ground_truth"
-
-            # Determine size source - if size head was used in sampling, it's "size_head", otherwise "ground_truth"
-            size_source = "size_head" if self.size_head is not None else "ground_truth"
+            # Crop to predicted dimensions (no more region detection!)
+            full_grid = predicted_grids[0].cpu().numpy()
+            predicted_grid = full_grid[:pred_height, :pred_width]
 
             return predicted_grid, None, size_source
 
@@ -293,7 +306,7 @@ class DiffusionInference:
 
     def _run_attempt(self, input_grid: np.ndarray, expected_output: np.ndarray, test_idx: int, task_idx: int, task_id: str = None) -> DiffusionResult:
         """Run a single diffusion attempt"""
-        predicted_grid, error, size_source = self.predict_single(input_grid, task_idx, task_id)
+        predicted_grid, error, size_source = self.predict_single(input_grid, task_idx, task_id, expected_output)
 
         # Check correctness
         correct = False
