@@ -33,9 +33,6 @@ def train_size_head(
     diffusion_model_path: str,
     config_path: str,
     output_path: str,
-    epochs: int = 100,
-    learning_rate: float = 1e-3,
-    batch_size: int = 32,
     device: str = "auto"
 ) -> GridSizePredictionHead:
     """
@@ -43,11 +40,8 @@ def train_size_head(
 
     Args:
         diffusion_model_path: Path to trained diffusion model
-        config_path: Path to config file (for data loading)
+        config_path: Path to config file (contains size head training params)
         output_path: Where to save trained size head
-        epochs: Number of training epochs
-        learning_rate: Learning rate for size head training
-        batch_size: Batch size for training
         device: Device to use ("auto", "cuda", "mps", "cpu")
 
     Returns:
@@ -71,6 +65,21 @@ def train_size_head(
     with open(config_path, 'r') as f:
         config = json.load(f)
 
+    # Extract size head training parameters
+    size_head_config = config.get('size_head', {})
+    epochs = size_head_config.get('epochs', 100)
+    learning_rate = size_head_config.get('learning_rate', 1e-3)
+    batch_size = size_head_config.get('batch_size', 32)
+    hidden_dim = size_head_config.get('hidden_dim', 256)
+    weight_decay = size_head_config.get('weight_decay', 1e-4)
+
+    print(f"Size head training config:")
+    print(f"  Epochs: {epochs}")
+    print(f"  Learning rate: {learning_rate}")
+    print(f"  Batch size: {batch_size}")
+    print(f"  Hidden dim: {hidden_dim}")
+    print(f"  Weight decay: {weight_decay}")
+
     # Load pre-trained diffusion model
     print(f"Loading diffusion model from {diffusion_model_path}")
     diffusion_model = ARCDiffusionModel(**config['model'])
@@ -83,7 +92,7 @@ def train_size_head(
     # Create size prediction head
     size_head = GridSizePredictionHead(
         diffusion_model=diffusion_model,
-        hidden_dim=256,
+        hidden_dim=hidden_dim,
         max_size=config['model']['max_size']
     ).to(device)
 
@@ -118,7 +127,7 @@ def train_size_head(
     optimizer = torch.optim.AdamW(
         [p for p in size_head.parameters() if p.requires_grad],
         lr=learning_rate,
-        weight_decay=1e-4
+        weight_decay=weight_decay
     )
 
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -155,7 +164,7 @@ def train_size_head(
             optimizer.step()
 
             train_losses.append(loss.item())
-            pbar.set_postfix({'loss': loss.item():.4f})
+            pbar.set_postfix({'loss': f"{loss.item():.4f}"})
 
         scheduler.step()
 
@@ -237,24 +246,6 @@ def main():
         help="Output path for trained size head (.pt file)"
     )
     parser.add_argument(
-        "--epochs",
-        type=int,
-        default=100,
-        help="Number of training epochs (default: 100)"
-    )
-    parser.add_argument(
-        "--learning-rate",
-        type=float,
-        default=1e-3,
-        help="Learning rate (default: 1e-3)"
-    )
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=32,
-        help="Batch size (default: 32)"
-    )
-    parser.add_argument(
         "--device",
         default="auto",
         choices=["auto", "cuda", "mps", "cpu"],
@@ -280,9 +271,7 @@ def main():
     print(f"Diffusion model: {args.diffusion_model}")
     print(f"Config: {args.config}")
     print(f"Output: {args.output}")
-    print(f"Epochs: {args.epochs}")
-    print(f"Learning rate: {args.learning_rate}")
-    print(f"Batch size: {args.batch_size}")
+    print(f"Device: {args.device}")
     print("=" * 50)
 
     # Train size head
@@ -290,9 +279,6 @@ def main():
         diffusion_model_path=args.diffusion_model,
         config_path=args.config,
         output_path=args.output,
-        epochs=args.epochs,
-        learning_rate=args.learning_rate,
-        batch_size=args.batch_size,
         device=args.device
     )
 

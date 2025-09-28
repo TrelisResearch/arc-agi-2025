@@ -197,12 +197,10 @@ class ARCDiffusionModel(nn.Module):
         max_size: int = 30,
         max_tasks: int = 1000,
         embedding_dropout: float = 0.1,
-        use_weighted_loss: bool = False,
     ):
         super().__init__()
         self.vocab_size = vocab_size
         self.max_size = max_size
-        self.use_weighted_loss = use_weighted_loss
 
         self.denoiser = TransformerDenoiser(
             vocab_size=vocab_size,
@@ -269,44 +267,6 @@ class ARCDiffusionModel(nn.Module):
             'grid_loss': grid_loss,
         }
 
-    def _compute_weighted_loss(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        """
-        Compute example-specific weighted cross-entropy loss.
-        Balances content and PAD token contributions per example.
-
-        Args:
-            logits: [batch_size, max_size, max_size, vocab_size]
-            targets: [batch_size, max_size, max_size]
-
-        Returns:
-            Weighted loss scalar
-        """
-        batch_size = targets.size(0)
-        total_loss = 0.0
-
-        for i in range(batch_size):
-            target = targets[i].view(-1)  # [max_size^2]
-            logit = logits[i].view(-1, self.vocab_size)  # [max_size^2, vocab_size]
-
-            # Count content and PAD tokens
-            n_content = (target != 10).sum().float()
-            n_pad = (target == 10).sum().float()
-
-            # Compute weights to balance content and PAD contributions
-            if n_pad == 0:
-                # No PAD tokens - use uniform weighting
-                weights = torch.ones_like(target, dtype=torch.float)
-            else:
-                # Weight PAD tokens to balance with content tokens
-                pad_weight = n_content / n_pad
-                weights = torch.where(target == 10, pad_weight, 1.0)
-
-            # Compute weighted loss for this example
-            loss = F.cross_entropy(logit, target, reduction='none')
-            weighted_loss = (loss * weights).mean()
-            total_loss += weighted_loss
-
-        return total_loss / batch_size
 
 
 class GridSizePredictionHead(nn.Module):

@@ -107,9 +107,17 @@ def main():
     if dataset_ok:
         print("✅ All tests passed! Size head is ready for training.")
         print("\\nNext steps:")
-        print("1. Train diffusion model: uv run python experimental/diffusion/train_with_config.py --config configs/gpu_config.json")
-        print("2. Train size head: uv run python experimental/diffusion/train_size_head.py --diffusion-model outputs/gpu/best_model.pt --config configs/gpu_config.json --output outputs/gpu/size_head.pt")
-        print("3. Run inference: uv run python experimental/diffusion/run_inference.py --model-path outputs/gpu/best_model.pt --size-head-path outputs/gpu/size_head.pt")
+        print("1. Train diffusion model:")
+        print("   uv run python experimental/diffusion/train_with_config.py --config experimental/diffusion/configs/gpu_config.json")
+        print("2. Train size head (parameters from config):")
+        print("   uv run python experimental/diffusion/train_size_head.py \\")
+        print("     --diffusion-model experimental/diffusion/outputs/gpu/best_model.pt \\")
+        print("     --config experimental/diffusion/configs/gpu_config.json \\")
+        print("     --output experimental/diffusion/outputs/gpu/size_head.pt")
+        print("3. Run inference with size head:")
+        print("   uv run python experimental/diffusion/run_inference.py \\")
+        print("     --model-path experimental/diffusion/outputs/gpu/best_model.pt \\")
+        print("     --size-head-path experimental/diffusion/outputs/gpu/size_head.pt")
     else:
         print("❌ Some tests failed - check data directory exists")
 

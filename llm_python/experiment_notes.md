@@ -41,7 +41,13 @@ uv run experimental/diffusion/run_inference.py --dataset arc-prize-2024 --subset
 uv run experimental/diffusion/run_inference.py --dataset arc-prize-2024 --subset evaluation --limit 5 --output experimental/diffusion/outputs/gpu/evaluation-5-best.json --model-path experimental/diffusion/outputs/gpu/best_model.pt --num-steps 128
 ```
 
+```bash
+PYTHONUNBUFFERED=1 nohup uv run experimental/diffusion/train_with_config.py --config experimental/diffusion/configs/mps_config.json > training-v3-mps.log &
+```
 
+```bash
+PYTHONUNBUFFERED=1 nohup uv run experimental/diffusion/train_size_head.py --config experimental/diffusion/configs/mps_config.json > training-v3-mps-head.log &
+```
 
 ## September 27th 2025
 ### Creating more manual tasks
