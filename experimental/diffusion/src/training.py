@@ -322,8 +322,7 @@ class ARCDiffusionSampler:
         if self.size_predictor is not None:
             self.size_predictor.eval()
             predicted_heights, predicted_widths = self.size_predictor.predict_sizes(input_grids, task_indices)
-            if self.debug:
-                print(f"Predicted sizes: heights={predicted_heights.cpu().tolist()}, widths={predicted_widths.cpu().tolist()}")
+            print(f"Predicted sizes: heights={predicted_heights.cpu().tolist()}, widths={predicted_widths.cpu().tolist()}")
 
         # Initialize with global distribution random noise
         if self.dataset is not None:
