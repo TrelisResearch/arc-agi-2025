@@ -130,6 +130,8 @@ class ARCDiffusionTrainer:
         input_grids = batch['input_grid'].to(self.device)  # [batch_size, max_size, max_size]
         output_grids = batch['output_grid'].to(self.device)  # [batch_size, max_size, max_size]
         task_indices = batch['task_idx'].to(self.device)  # [batch_size]
+        heights = batch['height'].to(self.device)  # [batch_size] - grid heights
+        widths = batch['width'].to(self.device)   # [batch_size] - grid widths
 
         batch_size = input_grids.shape[0]
 
@@ -153,7 +155,9 @@ class ARCDiffusionTrainer:
                     input_grid=input_grids,
                     task_ids=task_indices,
                     xt=noisy_grids,
-                    timesteps=timesteps
+                    timesteps=timesteps,
+                    heights=heights,
+                    widths=widths
                 )
         else:
             losses = self.model.compute_loss(
@@ -161,7 +165,9 @@ class ARCDiffusionTrainer:
                 input_grid=input_grids,
                 task_ids=task_indices,
                 xt=noisy_grids,
-                timesteps=timesteps
+                timesteps=timesteps,
+                heights=heights,
+                widths=widths
             )
 
         # Backward pass with mixed precision
@@ -217,6 +223,8 @@ class ARCDiffusionTrainer:
                 input_grids = batch['input_grid'].to(self.device)
                 output_grids = batch['output_grid'].to(self.device)
                 task_indices = batch['task_idx'].to(self.device)
+                heights = batch['height'].to(self.device)
+                widths = batch['width'].to(self.device)
 
                 batch_size = input_grids.shape[0]
 
@@ -237,7 +245,9 @@ class ARCDiffusionTrainer:
                             input_grid=input_grids,
                             task_ids=task_indices,
                             xt=noisy_grids,
-                            timesteps=timesteps
+                            timesteps=timesteps,
+                            heights=heights,
+                            widths=widths
                         )
                 else:
                     losses = self.model.compute_loss(
@@ -245,7 +255,9 @@ class ARCDiffusionTrainer:
                         input_grid=input_grids,
                         task_ids=task_indices,
                         xt=noisy_grids,
-                        timesteps=timesteps
+                        timesteps=timesteps,
+                        heights=heights,
+                        widths=widths
                     )
 
                 # Accumulate losses
@@ -268,12 +280,14 @@ class ARCDiffusionSampler:
         noise_scheduler: DiscreteNoiseScheduler,
         device: torch.device,
         dataset=None,  # Need dataset to get task distributions
+        size_predictor=None,  # Optional GridSizePredictionHead for size prediction
         debug: bool = False
     ):
         self.model = model
         self.noise_scheduler = noise_scheduler
         self.device = device
         self.dataset = dataset
+        self.size_predictor = size_predictor
         self.debug = debug
 
     @torch.no_grad()
@@ -301,6 +315,15 @@ class ARCDiffusionSampler:
 
         if num_inference_steps is None:
             num_inference_steps = self.noise_scheduler.num_timesteps
+
+        # Predict output grid sizes if size predictor available
+        predicted_heights = None
+        predicted_widths = None
+        if self.size_predictor is not None:
+            self.size_predictor.eval()
+            predicted_heights, predicted_widths = self.size_predictor.predict_sizes(input_grids, task_indices)
+            if self.debug:
+                print(f"Predicted sizes: heights={predicted_heights.cpu().tolist()}, widths={predicted_widths.cpu().tolist()}")
 
         # Initialize with global distribution random noise
         if self.dataset is not None:
@@ -330,6 +353,16 @@ class ARCDiffusionSampler:
 
             # Sample next step (greedy for now)
             x_t = torch.argmax(logits, dim=-1)
+
+            # Apply masking if size predictor provided - set tokens outside predicted bounds to black (0)
+            if predicted_heights is not None and predicted_widths is not None:
+                for b in range(batch_size):
+                    h, w = predicted_heights[b].item(), predicted_widths[b].item()
+                    # Set positions outside [0:h, 0:w] to black (token 0)
+                    if h < max_size:
+                        x_t[b, h:, :] = 0  # Set rows beyond height to black
+                    if w < max_size:
+                        x_t[b, :, w:] = 0  # Set columns beyond width to black
 
             # Debug printing
             if self.debug:

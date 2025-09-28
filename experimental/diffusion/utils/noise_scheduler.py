@@ -90,7 +90,8 @@ class DiscreteNoiseScheduler:
             pixels = torch.multinomial(dist, num_samples=total_pixels, replacement=True)
             random_tokens = pixels.view(batch_size, height, width)
         else:
-            # Fallback to uniform sampling
+            # Fallback to uniform sampling (should only happen in tests)
+            print("Warning: Using uniform token distribution fallback - this may produce unrealistic noise")
             random_tokens = torch.randint(0, self.vocab_size, (batch_size, height, width), device=device)
 
         # Apply noise: keep original where mask is True, replace with random elsewhere

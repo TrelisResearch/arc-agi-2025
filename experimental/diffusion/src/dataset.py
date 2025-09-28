@@ -165,34 +165,32 @@ class ARCDataset(Dataset):
         """
         Get hard-coded global token distribution based on ARC dataset statistics.
 
-        Based on analysis of ARC 2024/2025 training and evaluation sets:
-        - PAD (token 10): 88.89% (median across tasks)
-        - Black (token 0): 5.43% (median across tasks)
-        - Colors (tokens 1-9): 0.34% each (equal distribution)
+        Noise sampling uses only actual ARC colors 0-9 (no PAD tokens):
+        - Black (token 0): keeps same relative frequency vs colors
+        - Colors (tokens 1-9): equal distribution among colors
+        - PAD token (10): excluded from noise sampling
 
         Returns:
-            Global probability distribution over tokens [vocab_size]
+            Global probability distribution over tokens 0-9 [vocab_size=10]
         """
-        token_probs = torch.zeros(11)
+        token_probs = torch.zeros(10)  # Only tokens 0-9 for noise sampling (no PAD)
 
-        # Hard-coded frequencies based on ARC dataset analysis
-        token_probs[0] = 0.0543    # Black
-        token_probs[1] = 0.0034    # Color 1
-        token_probs[2] = 0.0034    # Color 2
-        token_probs[3] = 0.0034    # Color 3
-        token_probs[4] = 0.0034    # Color 4
-        token_probs[5] = 0.0034    # Color 5
-        token_probs[6] = 0.0034    # Color 6
-        token_probs[7] = 0.0034    # Color 7
-        token_probs[8] = 0.0034    # Color 8
-        token_probs[9] = 0.0034    # Color 9
-        token_probs[10] = 0.8889   # PAD
+        # Based on original ratios: Black was 5.43%, colors were 0.34% each
+        # Ratio of black to single color: 5.43 / 0.34 = ~16:1
+        # So black gets 16 parts, each color gets 1 part = 25 total parts
+
+        black_weight = 16.0
+        color_weight = 1.0
+        total_weight = black_weight + 9 * color_weight  # 16 + 9 = 25
+
+        token_probs[0] = black_weight / total_weight      # Black: 16/25 = 0.64
+        token_probs[1:10] = color_weight / total_weight   # Colors: 1/25 = 0.04 each
 
         # Normalize to ensure exact sum of 1.0
         token_probs = token_probs / token_probs.sum()
 
-        print(f"Using hard-coded global token distribution:")
-        for i in range(11):
+        print(f"Using hard-coded global token distribution (no PAD):")
+        for i in range(10):
             print(f"  Token {i}: {token_probs[i]:.4f}")
 
         return token_probs

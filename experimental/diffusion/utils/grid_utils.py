@@ -116,13 +116,13 @@ def grid_to_tokens(grid: np.ndarray, max_size: int = 30) -> Tuple[torch.Tensor, 
         max_size: Target padded size
 
     Returns:
-        tokens: Padded tokens [max_size, max_size]
+        tokens: Padded tokens [max_size, max_size] (padded with black/0, no PAD token)
         height: Original height
         width: Original width
     """
     height, width = grid.shape
     tokens = torch.from_numpy(grid.astype(np.int64))
-    padded_tokens = pad_grid_to_size(tokens, max_size, pad_value=10)
+    padded_tokens = pad_grid_to_size(tokens, max_size, pad_value=10)  # Use PAD token for input grids
     return padded_tokens, height, width
 
 

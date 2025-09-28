@@ -21,7 +21,7 @@ import torch
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from experimental.diffusion.src.model import ARCDiffusionModel
+from experimental.diffusion.src.model import ARCDiffusionModel, GridSizePredictionHead
 from experimental.diffusion.src.training import ARCDiffusionSampler
 from experimental.diffusion.src.dataset import ARCDataset, load_arc_data_paths
 from experimental.diffusion.utils.noise_scheduler import DiscreteNoiseScheduler
@@ -67,9 +67,11 @@ class DiffusionInference:
         model_path: str,
         device: Optional[str] = None,
         num_inference_steps: Optional[int] = None,
+        size_head_path: Optional[str] = None,
         debug: bool = False
     ):
         self.model_path = model_path
+        self.size_head_path = size_head_path
         # Set up device (prioritize CUDA > MPS > CPU)
         if device:
             self.device = torch.device(device)
@@ -107,7 +109,28 @@ class DiffusionInference:
         )
         print(f"📊 Loaded dataset with {len(self.dataset.task_id_to_idx)} tasks for task-specific noise distributions")
 
-        self.sampler = ARCDiffusionSampler(self.model, self.noise_scheduler, self.device, dataset=self.dataset, debug=self.debug)
+        # Load size prediction head if provided
+        self.size_head = None
+        if self.size_head_path:
+            print(f"🧠 Loading size prediction head from {self.size_head_path}")
+            self.size_head = GridSizePredictionHead(
+                diffusion_model=self.model,
+                hidden_dim=256,
+                max_size=self.config['max_size']
+            )
+            self.size_head.load_state_dict(torch.load(self.size_head_path, map_location=self.device))
+            self.size_head.to(self.device)
+            self.size_head.eval()
+            print(f"✓ Size head loaded with {sum(p.numel() for p in self.size_head.parameters() if p.requires_grad):,} parameters")
+
+        self.sampler = ARCDiffusionSampler(
+            self.model,
+            self.noise_scheduler,
+            self.device,
+            dataset=self.dataset,
+            size_predictor=self.size_head,
+            debug=self.debug
+        )
 
         if self.num_inference_steps is None:
             self.num_inference_steps = self.config['num_timesteps']
@@ -370,6 +393,7 @@ def main():
 
     # Model and inference settings
     parser.add_argument("--model-path", required=True, help="Path to trained model checkpoint")
+    parser.add_argument("--size-head-path", help="Path to trained size prediction head (optional)")
     parser.add_argument("--device", choices=["cpu", "cuda", "auto"], default="auto", help="Device to use")
     parser.add_argument("--num-steps", type=int, help="Number of inference steps (default: use training steps)")
 
@@ -403,6 +427,7 @@ def main():
             model_path=args.model_path,
             device=args.device if args.device != "auto" else None,
             num_inference_steps=args.num_steps,
+            size_head_path=args.size_head_path,
             debug=args.debug
         )
 
