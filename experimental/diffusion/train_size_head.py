@@ -20,6 +20,13 @@ from pathlib import Path
 from tqdm import tqdm
 from typing import Dict, Any
 
+try:
+    import wandb
+    WANDB_AVAILABLE = True
+except ImportError:
+    WANDB_AVAILABLE = False
+    print("Warning: wandb not available, logging disabled")
+
 # Add project root to Python path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -151,6 +158,27 @@ def train_size_head(
         optimizer, T_max=epochs, eta_min=learning_rate * 0.1
     )
 
+    # Initialize wandb
+    if WANDB_AVAILABLE:
+        wandb.init(
+            project="arc-prize-2025-size-head",
+            config={
+                "epochs": epochs,
+                "learning_rate": learning_rate,
+                "batch_size": batch_size,
+                "hidden_dim": hidden_dim,
+                "weight_decay": weight_decay,
+                "max_size": model_config['max_size'],
+                "diffusion_model_path": diffusion_model_path,
+                "dataset_size": len(train_loader.dataset),
+                "device": str(device),
+                "model_version": model_config.get('model_version', 'unknown')
+            }
+        )
+        print(f"✓ Initialized wandb logging to project: arc-prize-2025-size-head")
+    else:
+        print("⚠️ Wandb not available, training metrics won't be logged")
+
     # Training loop
     print(f"\\nStarting size head training for {epochs} epochs...")
 
@@ -224,6 +252,19 @@ def train_size_head(
         print(f"  Width Acc: {width_acc:.3f}")
         print(f"  LR: {scheduler.get_last_lr()[0]:.6f}")
 
+        # Log to wandb
+        if WANDB_AVAILABLE:
+            wandb.log({
+                "epoch": epoch + 1,
+                "train_loss": train_loss,
+                "val_loss": val_loss,
+                "height_accuracy": height_acc,
+                "width_accuracy": width_acc,
+                "overall_accuracy": (height_acc + width_acc) / 2,
+                "learning_rate": scheduler.get_last_lr()[0],
+                "best_val_loss": best_val_loss
+            })
+
         # Save best model
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -238,6 +279,12 @@ def train_size_head(
     print(f"\\n✅ Training completed!")
     print(f"Best validation loss: {best_val_loss:.4f}")
     print(f"Size head saved to: {output_path}")
+
+    # Finish wandb logging
+    if WANDB_AVAILABLE:
+        wandb.log({"final_best_val_loss": best_val_loss})
+        wandb.finish()
+        print("✓ Wandb logging finished")
 
     # Load best model
     size_head.load_state_dict(torch.load(output_path, map_location=device))

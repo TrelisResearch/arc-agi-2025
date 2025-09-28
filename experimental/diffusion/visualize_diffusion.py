@@ -120,6 +120,8 @@ class DiffusionVisualizer:
             dataset=self.dataset,
             size_predictor=self.size_head
         )
+        # Pass the ground truth preference to the sampler
+        self.sampler.use_ground_truth_size = self.use_ground_truth_size
 
         print(f"✨ Model loaded: {self.model.__class__.__name__}")
         print(f"📊 Parameters: {sum(p.numel() for p in self.model.parameters()):,}")
@@ -220,11 +222,11 @@ class DiffusionVisualizer:
             print(f"📐 Expected output shape: {expected_output.shape}")
 
         # Run visualization
-        progression, timesteps = self.sampler.sample_with_progression(
+        progression, timesteps, size_source = self.sampler.sample_with_progression(
             input_grid=input_grid,
             task_id=task_id,
             num_steps=self.num_viz_steps,
-            ground_truth_size=(expected_output.shape if expected_output is not None and self.use_ground_truth_size else None)
+            ground_truth_size=(expected_output.shape if expected_output is not None else None)
         )
 
         # Create visualization
@@ -233,6 +235,7 @@ class DiffusionVisualizer:
             expected_output=expected_output,
             progression=progression,
             timesteps=timesteps,
+            size_source=size_source,
             task_id=task_id,
             test_idx=test_idx
         )
@@ -243,6 +246,7 @@ class DiffusionVisualizer:
         expected_output: Optional[np.ndarray],
         progression: List[np.ndarray],
         timesteps: List[int],
+        size_source: str,
         task_id: str,
         test_idx: int
     ):
@@ -303,8 +307,8 @@ class DiffusionVisualizer:
         for i in range(plot_idx, len(axes_flat)):
             axes_flat[i].set_visible(False)
 
-        # Main title
-        fig.suptitle(f"Diffusion Progression: {task_id} (test {test_idx})", fontsize=14, fontweight='bold')
+        # Main title with size source information
+        fig.suptitle(f"Diffusion Progression: {task_id} (test {test_idx})\n{size_source}", fontsize=14, fontweight='bold')
 
         plt.tight_layout()
         plt.show()
@@ -324,12 +328,12 @@ class VisualizationSampler(ARCDiffusionSampler):
         task_id: str,
         num_steps: int = 8,
         ground_truth_size: Optional[Tuple[int, int]] = None
-    ) -> List[np.ndarray]:
+    ) -> Tuple[List[np.ndarray], List[int], str]:
         """
         Sample with progression capture.
 
         Returns:
-            List of grids showing progression from noise to final output
+            Tuple of (progression grids, timesteps, size source description)
         """
         self.model.eval()
 
@@ -344,21 +348,39 @@ class VisualizationSampler(ARCDiffusionSampler):
             task_idx = 0  # Fallback
         task_tensor = torch.tensor([task_idx], device=self.device)
 
-        # Determine sizes to use
+        # Determine sizes to use - prioritize size prediction unless ground truth explicitly requested
         predicted_heights = None
         predicted_widths = None
+        size_source = None
 
-        if ground_truth_size is not None:
-            # Use ground truth size
+        if ground_truth_size is not None and self.use_ground_truth_size:
+            # Explicitly requested ground truth size
             h, w = ground_truth_size
             predicted_heights = torch.tensor([h], device=self.device)
             predicted_widths = torch.tensor([w], device=self.device)
+            size_source = f"Ground Truth: {h} x {w}"
             print(f"🎯 Using ground truth size: {h} x {w}")
         elif self.size_predictor is not None:
-            # Use size prediction
+            # Use size prediction (preferred method)
             predicted_heights, predicted_widths = self.size_predictor.predict_sizes(input_tensor, task_tensor)
-            print(f"🧠 Predicted size: {predicted_heights[0].item()} x {predicted_widths[0].item()}")
+            h, w = predicted_heights[0].item(), predicted_widths[0].item()
+            size_source = f"Size Head Prediction: {h} x {w}"
+            print(f"🧠 Predicted size: {h} x {w}")
+
+            # Show expected size for comparison if available
+            if ground_truth_size is not None:
+                exp_h, exp_w = ground_truth_size
+                accuracy_indicator = "✅" if (h == exp_h and w == exp_w) else "❌"
+                print(f"   Expected: {exp_h} x {exp_w} {accuracy_indicator}")
+        elif ground_truth_size is not None:
+            # Fallback to ground truth if no size head
+            h, w = ground_truth_size
+            predicted_heights = torch.tensor([h], device=self.device)
+            predicted_widths = torch.tensor([w], device=self.device)
+            size_source = f"Ground Truth (fallback): {h} x {w}"
+            print(f"🎯 Using ground truth size (no size head): {h} x {w}")
         else:
+            size_source = "No size constraint (full 30x30 grid)"
             print("⚠️ No size information available - using full grid")
 
         # Initialize noise
@@ -424,7 +446,7 @@ class VisualizationSampler(ARCDiffusionSampler):
                 progression.append(valid_grid)
                 progression_timesteps.append(t.item())
 
-        return progression, progression_timesteps
+        return progression, progression_timesteps, size_source
 
 
 def main():

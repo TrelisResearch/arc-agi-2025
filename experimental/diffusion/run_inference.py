@@ -39,6 +39,7 @@ class DiffusionResult(TypedDict):
     error: Optional[str]  # Error message if execution failed
     pred_height: int  # Height of predicted grid
     pred_width: int  # Width of predicted grid
+    size_source: str  # How the size was determined ("size_head", "ground_truth")
 
 
 class TaskResult(TypedDict):
@@ -195,13 +196,14 @@ class DiffusionInference:
             print(f"Warning: Solutions file not found: {solutions_path}")
             return {}
 
-    def predict_single(self, input_grid: np.ndarray, task_idx: int, task_id: str = None) -> Tuple[np.ndarray, Optional[str]]:
+    def predict_single(self, input_grid: np.ndarray, task_idx: int, task_id: str = None) -> Tuple[np.ndarray, Optional[str], str]:
         """
         Run single prediction on input grid.
 
         Returns:
             predicted_grid: Predicted output grid (extracted from PAD tokens)
             error: Error message if any
+            size_source: How the size was determined ("size_head" or "ground_truth")
         """
         try:
             # Convert to tokens and add batch dimension
@@ -223,15 +225,18 @@ class DiffusionInference:
             predicted_grid, region_error = detect_valid_region(predicted_grids[0].cpu().numpy())
 
             if region_error:
-                return np.array([]), f"Region detection failed: {region_error}"
+                return np.array([]), f"Region detection failed: {region_error}", "ground_truth"
 
-            return predicted_grid, None
+            # Determine size source - if size head was used in sampling, it's "size_head", otherwise "ground_truth"
+            size_source = "size_head" if self.size_head is not None else "ground_truth"
+
+            return predicted_grid, None, size_source
 
         except Exception as e:
             error_msg = f"Prediction failed: {str(e)}"
             if self.debug:
                 error_msg += f"\n{traceback.format_exc()}"
-            return np.array([]), error_msg
+            return np.array([]), error_msg, "ground_truth"
 
     def run_task(self, task_id: str, task_data: TaskData, dataset: str) -> TaskResult:
         """
@@ -288,7 +293,7 @@ class DiffusionInference:
 
     def _run_attempt(self, input_grid: np.ndarray, expected_output: np.ndarray, test_idx: int, task_idx: int, task_id: str = None) -> DiffusionResult:
         """Run a single diffusion attempt"""
-        predicted_grid, error = self.predict_single(input_grid, task_idx, task_id)
+        predicted_grid, error, size_source = self.predict_single(input_grid, task_idx, task_id)
 
         # Check correctness
         correct = False
@@ -316,7 +321,8 @@ class DiffusionInference:
             correct=correct,
             error=error,
             pred_height=pred_height,
-            pred_width=pred_width
+            pred_width=pred_width,
+            size_source=size_source
         )
 
 
