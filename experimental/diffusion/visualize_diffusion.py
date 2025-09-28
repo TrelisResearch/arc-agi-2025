@@ -220,7 +220,7 @@ class DiffusionVisualizer:
             print(f"📐 Expected output shape: {expected_output.shape}")
 
         # Run visualization
-        progression = self.sampler.sample_with_progression(
+        progression, timesteps = self.sampler.sample_with_progression(
             input_grid=input_grid,
             task_id=task_id,
             num_steps=self.num_viz_steps,
@@ -232,6 +232,7 @@ class DiffusionVisualizer:
             input_grid=input_grid,
             expected_output=expected_output,
             progression=progression,
+            timesteps=timesteps,
             task_id=task_id,
             test_idx=test_idx
         )
@@ -241,6 +242,7 @@ class DiffusionVisualizer:
         input_grid: np.ndarray,
         expected_output: Optional[np.ndarray],
         progression: List[np.ndarray],
+        timesteps: List[int],
         task_id: str,
         test_idx: int
     ):
@@ -284,17 +286,14 @@ class DiffusionVisualizer:
             ax = axes_flat[plot_idx]
             ax.imshow(step_grid, cmap=cmap, vmin=0, vmax=9)
 
-            # Label steps correctly
+            # Label steps with actual timesteps
             if i == 0:
                 # Initial noise
-                ax.set_title(f"Step 0\n(Noise)", fontsize=9, fontweight='bold')
+                ax.set_title(f"Step 0\n(Initial Noise)", fontsize=9, fontweight='bold')
             else:
-                # Calculate which timestep this represents
-                total_diffusion_steps = self.config['num_timesteps']
-                # Adjust for the fact that step 0 is noise, steps 1+ are denoising
-                denoising_step = i - 1
-                step_num = total_diffusion_steps - (denoising_step * total_diffusion_steps // (self.num_viz_steps - 1))
-                ax.set_title(f"Step {i}\n(t={step_num})", fontsize=9)
+                # Use actual timestep from the sampling
+                timestep = timesteps[i]
+                ax.set_title(f"Step {i}\n(t={timestep})", fontsize=9)
 
             ax.set_xticks([])
             ax.set_yticks([])
@@ -379,6 +378,7 @@ class VisualizationSampler(ARCDiffusionSampler):
         timesteps = torch.linspace(total_timesteps - 1, 0, total_timesteps, dtype=torch.long, device=self.device)
 
         progression = []
+        progression_timesteps = []  # Track which timesteps we capture
         # Include step 0 (initial noise) + num_steps-1 denoising steps
         capture_indices = np.linspace(0, len(timesteps)-1, num_steps-1, dtype=int)
 
@@ -392,6 +392,7 @@ class VisualizationSampler(ARCDiffusionSampler):
             if len(valid_grid) == 0:
                 valid_grid = grid_np  # Fallback to full grid
         progression.append(valid_grid)
+        progression_timesteps.append(total_timesteps)  # Initial noise is "before" timestep 0
 
         for i, t in enumerate(tqdm(timesteps, desc="Diffusion sampling")):
             t_batch = t.repeat(batch_size)
@@ -421,8 +422,9 @@ class VisualizationSampler(ARCDiffusionSampler):
                         valid_grid = grid_np  # Fallback to full grid
 
                 progression.append(valid_grid)
+                progression_timesteps.append(t.item())
 
-        return progression
+        return progression, progression_timesteps
 
 
 def main():

@@ -255,7 +255,7 @@ class ARCDataLoader:
             data_paths=train_data_paths,
             max_size=max_size,
             augment=augment,
-            use_test_examples_as_train=True
+            include_training_test_examples=True
         )
 
         return DataLoader(
