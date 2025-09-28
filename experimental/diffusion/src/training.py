@@ -545,9 +545,9 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
 
             # Log to wandb
             if config.get('use_wandb', False) and step % config.get('log_every', 50) == 0:
-                wandb.log({
-                    f"train/{key}": value for key, value in losses.items()
-                }, step=step)
+                log_dict = {f"train/{key}": value for key, value in losses.items()}
+                log_dict["train/learning_rate"] = trainer.scheduler.get_last_lr()[0]
+                wandb.log(log_dict, step=step)
 
             # Limit training batches for CPU testing
             if num_train_batches >= config.get('max_train_batches', float('inf')):
@@ -565,9 +565,9 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
 
             # Log validation losses
             if config.get('use_wandb', False):
-                wandb.log({
-                    f"val/{key}": value for key, value in val_losses.items()
-                }, step=step)
+                val_log_dict = {f"val/{key}": value for key, value in val_losses.items()}
+                val_log_dict["val/learning_rate"] = trainer.scheduler.get_last_lr()[0]
+                wandb.log(val_log_dict, step=step)
 
             # Save best model
             if val_losses['total_loss'] < best_val_loss:
@@ -587,7 +587,8 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
                 print(f"Saved best model with val loss: {best_val_loss:.4f}")
 
         # Print epoch summary
-        print(f"Epoch {epoch + 1} - Train Loss: {avg_train_losses['total_loss']:.4f}, Grad Norm: {avg_train_losses['grad_norm']:.3f}")
+        current_lr = trainer.scheduler.get_last_lr()[0]
+        print(f"Epoch {epoch + 1} - Train Loss: {avg_train_losses['total_loss']:.4f}, Grad Norm: {avg_train_losses['grad_norm']:.3f}, LR: {current_lr:.6f}")
 
         # Early stopping for CPU testing
         if config.get('early_stop_epochs') and epoch >= config['early_stop_epochs']:
