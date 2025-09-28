@@ -32,6 +32,7 @@ class ARCDiffusionTrainer:
         use_mixed_precision: bool = True,
         pixel_noise_prob: float = 0.15,
         pixel_noise_rate: float = 0.02,
+        total_steps: int = 10000
     ):
         self.model = model
         self.noise_scheduler = noise_scheduler
@@ -77,7 +78,7 @@ class ARCDiffusionTrainer:
         # Learning rate scheduler
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             self.optimizer,
-            T_max=10000,
+            T_max=total_steps,
             eta_min=learning_rate * 0.1
         )
 
@@ -488,6 +489,11 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
     )
     noise_scheduler.to(device)
 
+    # Calculate total training steps for scheduler
+    steps_per_epoch = len(train_loader)
+    total_steps = config['num_epochs'] * steps_per_epoch
+    print(f"Training setup: {config['num_epochs']} epochs × {steps_per_epoch} steps/epoch = {total_steps} total steps")
+
     # Create trainer
     trainer = ARCDiffusionTrainer(
         model=model,
@@ -498,7 +504,8 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         weight_decay=config.get('weight_decay', 0.01),
         use_mixed_precision=config.get('use_mixed_precision', True),
         pixel_noise_prob=config.get('pixel_noise_prob', 0.15),
-        pixel_noise_rate=config.get('pixel_noise_rate', 0.02)
+        pixel_noise_rate=config.get('pixel_noise_rate', 0.02),
+        total_steps=total_steps
     )
 
     print(f"Model has {sum(p.numel() for p in model.parameters()):,} parameters")
