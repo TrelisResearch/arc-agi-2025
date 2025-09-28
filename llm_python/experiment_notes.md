@@ -29,6 +29,10 @@ Commercial:
 - Reach back out to openrouter on sponsorship again.
 
 ---
+## Sept 28th 2025
+### Diffusion testing
+
+
 ## September 27th 2025
 ### Creating more manual tasks
 
@@ -57,8 +61,6 @@ Task creator:
 ```bash
 open /Users/ronanmcgovern/TR/arc-agi-2025/experimental/arc_task_creator_standalone.html
 ```
-
-uv run experimental/diffusion/run_inference_majority_vote.py --dataset arc-prize-2024 --subset training --limit 5 --output experimental/diffusion/outputs/mps/train-5-best.json --model-path experimental/diffusion/outputs/mps/best_model.pt --num-steps 64
 
 ### Diffusion model work
 
