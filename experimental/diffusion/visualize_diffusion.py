@@ -398,12 +398,13 @@ class VisualizationSampler(ARCDiffusionSampler):
 
         # Denoising with progression capture
         total_timesteps = self.noise_scheduler.num_timesteps
-        timesteps = torch.linspace(total_timesteps - 1, 0, total_timesteps, dtype=torch.long, device=self.device)
+        # Use requested number of steps, interpolating between available timesteps
+        timesteps = torch.linspace(total_timesteps - 1, 0, num_steps, dtype=torch.long, device=self.device)
 
         progression = []
         progression_timesteps = []  # Track which timesteps we capture
-        # Include step 0 (initial noise) + num_steps-1 denoising steps
-        capture_indices = np.linspace(0, len(timesteps)-1, num_steps-1, dtype=int)
+        # Capture all steps (initial noise + all denoising steps)
+        capture_indices = np.arange(len(timesteps))  # Capture every step
 
         # Capture initial noise (step 0)
         grid_np = x_t[0].cpu().numpy()
