@@ -82,8 +82,25 @@ def train_size_head(
 
     # Load pre-trained diffusion model
     print(f"Loading diffusion model from {diffusion_model_path}")
-    diffusion_model = ARCDiffusionModel(**config['model'])
-    diffusion_model.load_state_dict(torch.load(diffusion_model_path, map_location=device))
+    checkpoint = torch.load(diffusion_model_path, map_location=device)
+
+    # Extract model config and dataset info from checkpoint
+    model_config = checkpoint['config']
+    dataset_info = checkpoint['dataset_info']
+
+    # Create model with the correct parameters
+    diffusion_model = ARCDiffusionModel(
+        vocab_size=model_config['vocab_size'],
+        d_model=model_config['d_model'],
+        nhead=model_config['nhead'],
+        num_layers=model_config['num_layers'],
+        max_size=model_config['max_size'],
+        max_tasks=dataset_info['num_tasks'],
+        embedding_dropout=model_config.get('embedding_dropout', 0.1)
+    )
+
+    # Load the model weights
+    diffusion_model.load_state_dict(checkpoint['model_state_dict'])
     diffusion_model.to(device)
     diffusion_model.eval()
 
@@ -93,7 +110,7 @@ def train_size_head(
     size_head = GridSizePredictionHead(
         diffusion_model=diffusion_model,
         hidden_dim=hidden_dim,
-        max_size=config['model']['max_size']
+        max_size=model_config['max_size']
     ).to(device)
 
     print(f"✓ Created size head with {sum(p.numel() for p in size_head.parameters() if p.requires_grad):,} trainable parameters")

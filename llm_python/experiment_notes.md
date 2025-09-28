@@ -46,7 +46,7 @@ PYTHONUNBUFFERED=1 nohup uv run experimental/diffusion/train_with_config.py --co
 ```
 
 ```bash
-PYTHONUNBUFFERED=1 nohup uv run experimental/diffusion/train_size_head.py --config experimental/diffusion/configs/mps_config.json > training-v3-mps-head.log &
+PYTHONUNBUFFERED=1 nohup uv run experimental/diffusion/train_size_head.py --diffusion-model experimental/diffusion/outputs/mps/best_model.pt --config experimental/diffusion/configs/mps_config.json --output experimental/diffusion/outputs/mps/size_head.pt > training-v3-mps-head.log &
 ```
 
 ## September 27th 2025
