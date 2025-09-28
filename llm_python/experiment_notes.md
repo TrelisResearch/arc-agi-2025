@@ -38,7 +38,7 @@ uv run experimental/diffusion/run_inference.py --dataset arc-prize-2024 --subset
 ```
 
 ```bash
-uv run experimental/diffusion/run_inference.py --dataset arc-prize-2024 --subset evaluation --limit 5 --output experimental/diffusion/outputs/gpu/evaluation-5-best.json --model-path experimental/diffusion/outputs/gpu/best_model.pt --num-steps 128
+uv run experimental/diffusion/run_inference.py --dataset arc-prize-2024 --subset evaluation --limit 5 --output experimental/diffusion/outputs/mps/evaluation-5-best.json --model-path experimental/diffusion/outputs/mps/best_model.pt --num-steps 16
 ```
 
 ```bash
@@ -48,6 +48,8 @@ PYTHONUNBUFFERED=1 nohup uv run experimental/diffusion/train_with_config.py --co
 ```bash
 PYTHONUNBUFFERED=1 nohup uv run experimental/diffusion/train_size_head.py --diffusion-model experimental/diffusion/outputs/mps/best_model.pt --config experimental/diffusion/configs/mps_config.json --output experimental/diffusion/outputs/mps/size_head.pt > training-v3-mps-head.log &
 ```
+
+uv run python experimental/diffusion/visualize_diffusion.py --model-path experimental/diffusion/outputs/mps/best_model.pt --steps 32 --task-id 00dbd492 --subset evaluation --size-head-path experimental/diffusion/outputs/mps/size_head.pt
 
 ## September 27th 2025
 ### Creating more manual tasks
