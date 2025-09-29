@@ -33,6 +33,7 @@ from experimental.diffusion.src.dataset import ARCDataset, load_arc_data_paths
 from experimental.diffusion.utils.noise_scheduler import DiscreteNoiseScheduler
 from experimental.diffusion.utils.grid_utils import grid_to_tokens, tokens_to_grid
 from experimental.diffusion.utils.task_filters import filter_tasks_by_max_size
+from experimental.diffusion.utils.arc_colors import arc_cmap
 
 
 class DiffusionResult(TypedDict):
@@ -292,18 +293,16 @@ class DiffusionInference:
         if n_rows == 1:
             axes = axes.reshape(1, -1)
 
-        # Color mapping (same as training visualization)
-        cmap = plt.colormaps.get_cmap('tab10')
-
+        # Use ARC standard colors
         # Plot input
         ax = axes.flat[0]
-        im = ax.imshow(input_grid, cmap=cmap, vmin=0, vmax=9)
+        im = ax.imshow(input_grid, cmap=arc_cmap, vmin=0, vmax=9)
         ax.set_title(f"Input\n{input_grid.shape[0]}×{input_grid.shape[1]}", fontsize=10)
         ax.axis('off')
 
         # Plot ground truth
         ax = axes.flat[1]
-        im = ax.imshow(ground_truth, cmap=cmap, vmin=0, vmax=9)
+        im = ax.imshow(ground_truth, cmap=arc_cmap, vmin=0, vmax=9)
         ax.set_title(f"Ground Truth\n{ground_truth.shape[0]}×{ground_truth.shape[1]}", fontsize=10)
         ax.axis('off')
 
@@ -312,7 +311,7 @@ class DiffusionInference:
         for i, step_idx in enumerate(step_indices):
             ax = axes.flat[i + 2]
             grid, timestep = intermediate_steps[step_idx]
-            im = ax.imshow(grid, cmap=cmap, vmin=0, vmax=9)
+            im = ax.imshow(grid, cmap=arc_cmap, vmin=0, vmax=9)
             # Show the actual timestep value and predicted size
             ax.set_title(f"t={timestep}\n{grid.shape[0]}×{grid.shape[1]}", fontsize=10)
             ax.axis('off')
