@@ -404,13 +404,37 @@ class GridSizePredictionHead(nn.Module):
             pos_emb = self.diffusion_model.denoiser.pos_encoding(batch_size)  # [batch_size, max_size^2, d_model]
             input_emb = input_emb + pos_emb
 
-            # Add task conditioning
-            task_emb = self.diffusion_model.denoiser.task_embedding(task_ids)  # [batch_size, d_model]
-            task_emb_expanded = task_emb.unsqueeze(1).expand(-1, input_emb.shape[1], -1)  # [batch_size, max_size^2, d_model]
-            input_features = input_emb + task_emb_expanded
+            # Apply embedding dropout
+            input_emb = self.diffusion_model.denoiser.embedding_dropout(input_emb)
 
-            # Apply dropout like in main model
-            input_features = self.diffusion_model.denoiser.embedding_dropout(input_features)
+            # Create task and time conditioning tokens (match main model format)
+            task_emb = self.diffusion_model.denoiser.task_embedding(task_ids)  # [batch_size, d_model]
+            task_token = task_emb.unsqueeze(1)  # [batch_size, 1, d_model]
+
+            # Create dummy time token (size prediction doesn't need time, so use zeros)
+            time_token = torch.zeros_like(task_token)  # [batch_size, 1, d_model]
+
+            # Create dummy noised output using PAD tokens (more semantically neutral)
+            pad_tokens = torch.full((batch_size, self.max_size * self.max_size), 10, device=input_grid.device)  # PAD token = 10
+            dummy_noised = self.diffusion_model.denoiser.token_embedding(pad_tokens)  # [batch_size, max_size^2, d_model]
+            dummy_noised = dummy_noised + pos_emb  # Add positional encoding
+            dummy_noised = self.diffusion_model.denoiser.embedding_dropout(dummy_noised)  # Apply dropout
+
+            # Create sequence to match main diffusion model: [task, time, input_grid, dummy_noised_output]
+            sequence = torch.cat([
+                task_token,     # [batch_size, 1, d_model]
+                time_token,     # [batch_size, 1, d_model]
+                input_emb,      # [batch_size, max_size^2, d_model] - input grid
+                dummy_noised    # [batch_size, max_size^2, d_model] - placeholder for noised output
+            ], dim=1)
+
+            # Process through transformer (same as main model)
+            encoded_features = self.diffusion_model.denoiser.transformer(sequence)
+
+            # Extract features from the input grid positions (skip task + time tokens)
+            input_start_idx = 2  # Skip task and time tokens
+            input_end_idx = input_start_idx + self.max_size * self.max_size
+            input_features = encoded_features[:, input_start_idx:input_end_idx, :]  # [batch_size, max_size^2, d_model]
 
             # Global average pooling to get single feature vector per example
             pooled_features = input_features.mean(dim=1)  # [batch_size, d_model]
