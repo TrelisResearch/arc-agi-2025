@@ -7,9 +7,8 @@ The diffusion model weights are frozen during this training.
 
 Usage:
     python experimental/diffusion/train_size_head.py \
-        --diffusion-model experimental/diffusion/outputs/gpu/best_model.pt \
-        --config experimental/diffusion/configs/gpu_config.json \
-        --output experimental/diffusion/outputs/gpu/size_head.pt
+        --config experimental/diffusion/configs/smol_config.json \
+        [--diffusion-model path/to/model.pt]  # Optional, defaults to best model in output dir
 """
 import json
 import argparse
@@ -37,18 +36,16 @@ from experimental.diffusion.utils.noise_scheduler import DiscreteNoiseScheduler
 
 
 def train_size_head(
-    diffusion_model_path: str,
     config_path: str,
-    output_path: str,
+    diffusion_model_path: str = None,
     device: str = "auto"
 ) -> GridSizePredictionHead:
     """
     Train grid size prediction head on frozen diffusion model.
 
     Args:
-        diffusion_model_path: Path to trained diffusion model
         config_path: Path to config file (contains size head training params)
-        output_path: Where to save trained size head
+        diffusion_model_path: Path to trained diffusion model (optional, defaults to best model in output dir)
         device: Device to use ("auto", "cuda", "mps", "cpu")
 
     Returns:
@@ -71,6 +68,23 @@ def train_size_head(
     # Load config
     with open(config_path, 'r') as f:
         config = json.load(f)
+
+    # Extract output directory and determine paths
+    output_config = config.get('output', {})
+    output_dir = Path(output_config.get('output_dir', 'experimental/diffusion/outputs/default'))
+    save_best = output_config.get('save_best', True)
+    save_final = output_config.get('save_final', True)
+
+    # Determine diffusion model path
+    if diffusion_model_path is None:
+        diffusion_model_path = output_dir / 'best_model.pt'
+        print(f"Using default diffusion model: {diffusion_model_path}")
+    else:
+        diffusion_model_path = Path(diffusion_model_path)
+
+    # Set up size head output paths
+    best_size_head_path = output_dir / 'best_size_head.pt'
+    final_size_head_path = output_dir / 'final_size_head.pt'
 
     # Extract size head training parameters
     size_head_config = config.get('size_head', {})
@@ -270,15 +284,24 @@ def train_size_head(
             best_val_loss = val_loss
             print(f"  ✓ New best validation loss: {val_loss:.4f}")
 
-            # Save the size head
-            output_dir = Path(output_path).parent
-            output_dir.mkdir(parents=True, exist_ok=True)
-            torch.save(size_head.state_dict(), output_path)
-            print(f"  ✓ Saved size head to {output_path}")
+            # Save the best size head
+            if save_best:
+                best_size_head_path.parent.mkdir(parents=True, exist_ok=True)
+                torch.save(size_head.state_dict(), best_size_head_path)
+                print(f"  ✓ Saved best size head to {best_size_head_path}")
+
+    # Save final model
+    if save_final:
+        final_size_head_path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(size_head.state_dict(), final_size_head_path)
+        print(f"✓ Saved final size head to {final_size_head_path}")
 
     print(f"\\n✅ Training completed!")
     print(f"Best validation loss: {best_val_loss:.4f}")
-    print(f"Size head saved to: {output_path}")
+    if save_best:
+        print(f"Best size head saved to: {best_size_head_path}")
+    if save_final:
+        print(f"Final size head saved to: {final_size_head_path}")
 
     # Finish wandb logging
     if WANDB_AVAILABLE:
@@ -286,8 +309,13 @@ def train_size_head(
         wandb.finish()
         print("✓ Wandb logging finished")
 
-    # Load best model
-    size_head.load_state_dict(torch.load(output_path, map_location=device))
+    # Load best model if available, otherwise final model
+    if save_best and best_size_head_path.exists():
+        size_head.load_state_dict(torch.load(best_size_head_path, map_location=device))
+        print(f"✓ Loaded best model for return")
+    elif save_final and final_size_head_path.exists():
+        size_head.load_state_dict(torch.load(final_size_head_path, map_location=device))
+        print(f"✓ Loaded final model for return")
 
     return size_head
 
@@ -295,19 +323,13 @@ def train_size_head(
 def main():
     parser = argparse.ArgumentParser(description="Train grid size prediction head")
     parser.add_argument(
-        "--diffusion-model",
-        required=True,
-        help="Path to trained diffusion model (.pt file)"
-    )
-    parser.add_argument(
         "--config",
         required=True,
-        help="Path to config file (same as used for diffusion training)"
+        help="Path to config file (contains training params and output directory)"
     )
     parser.add_argument(
-        "--output",
-        required=True,
-        help="Output path for trained size head (.pt file)"
+        "--diffusion-model",
+        help="Path to trained diffusion model (.pt file). If not provided, uses best_model.pt from output directory"
     )
     parser.add_argument(
         "--device",
@@ -319,30 +341,33 @@ def main():
     args = parser.parse_args()
 
     # Validate inputs
-    diffusion_path = Path(args.diffusion_model)
     config_path = Path(args.config)
-
-    if not diffusion_path.exists():
-        print(f"❌ Diffusion model not found: {diffusion_path}")
-        sys.exit(1)
 
     if not config_path.exists():
         print(f"❌ Config file not found: {config_path}")
         sys.exit(1)
 
+    # Validate diffusion model if provided
+    if args.diffusion_model:
+        diffusion_path = Path(args.diffusion_model)
+        if not diffusion_path.exists():
+            print(f"❌ Diffusion model not found: {diffusion_path}")
+            sys.exit(1)
+
     print("Grid Size Prediction Head Training")
     print("=" * 50)
-    print(f"Diffusion model: {args.diffusion_model}")
     print(f"Config: {args.config}")
-    print(f"Output: {args.output}")
+    if args.diffusion_model:
+        print(f"Diffusion model: {args.diffusion_model}")
+    else:
+        print(f"Diffusion model: [will use best model from output directory]")
     print(f"Device: {args.device}")
     print("=" * 50)
 
     # Train size head
     size_head = train_size_head(
-        diffusion_model_path=args.diffusion_model,
         config_path=args.config,
-        output_path=args.output,
+        diffusion_model_path=args.diffusion_model,
         device=args.device
     )
 

@@ -26,7 +26,7 @@ from experimental.diffusion.src.training import ARCDiffusionSampler
 from experimental.diffusion.src.dataset import ARCDataset, load_arc_data_paths
 from experimental.diffusion.utils.noise_scheduler import DiscreteNoiseScheduler
 from experimental.diffusion.utils.grid_utils import grid_to_tokens, tokens_to_grid
-from llm_python.utils.task_loader import TaskData, get_task_loader
+from experimental.diffusion.utils.task_filters import filter_tasks_by_max_size
 
 
 class DiffusionResult(TypedDict):
@@ -251,7 +251,7 @@ class DiffusionInference:
                 error_msg += f"\n{traceback.format_exc()}"
             return np.array([]), error_msg, "ground_truth"
 
-    def run_task(self, task_id: str, task_data: TaskData, dataset: str) -> TaskResult:
+    def run_task(self, task_id: str, task_data: Dict[str, Any], dataset: str) -> TaskResult:
         """
         Run inference on a single ARC task with pass@2 scoring.
 
@@ -450,15 +450,51 @@ def main():
             debug=args.debug
         )
 
-        # Load tasks
+        # Load tasks directly from JSON files
         print(f"\n📂 Loading tasks from {args.dataset}/{args.subset}...")
-        task_loader = get_task_loader()
-        tasks = task_loader.get_dataset_subset(f"{args.dataset}/{args.subset}", max_rows=args.limit)
 
-        print(f"📋 Found {len(tasks)} tasks")
+        # Map dataset/subset to file paths
+        data_file_map = {
+            "arc-prize-2024/evaluation": "data/arc-prize-2024/arc-agi_evaluation_challenges.json",
+            "arc-prize-2024/training": "data/arc-prize-2024/arc-agi_training_challenges.json"
+        }
+
+        dataset_key = f"{args.dataset}/{args.subset}"
+        if dataset_key not in data_file_map:
+            raise ValueError(f"Unknown dataset/subset: {dataset_key}")
+
+        data_path = data_file_map[dataset_key]
+        with open(data_path, 'r') as f:
+            all_task_data = json.load(f)
+
+        # Convert to list of (task_id, task_data) tuples
+        all_tasks_list = [(task_id, task_data) for task_id, task_data in all_task_data.items()]
+
+        # Apply limit if specified
+        if args.limit:
+            all_tasks_list = all_tasks_list[:args.limit]
+
+        # Convert to dict for filtering
+        all_tasks_dict = {task_id: task_data for task_id, task_data in all_tasks_list}
+
+        # Filter tasks by max_size using our utility
+        filtered_tasks_dict, total_tasks, filtered_count = filter_tasks_by_max_size(
+            all_tasks_dict,
+            inference.config['max_size'],
+            verbose=True
+        )
+
+        # Convert back to list
+        filtered_tasks = [(task_id, task_data) for task_id, task_data in filtered_tasks_dict.items()]
+
+        tasks = filtered_tasks
+        print(f"📊 Task Filtering Results:")
+        print(f"  Total tasks loaded: {total_tasks}")
+        print(f"  Tasks filtered out (grid > {inference.config['max_size']}): {filtered_count}")
+        print(f"  Tasks remaining: {len(tasks)}")
 
         if not tasks:
-            print("❌ No tasks found")
+            print("❌ No tasks remaining after filtering")
             return
 
         # Run inference

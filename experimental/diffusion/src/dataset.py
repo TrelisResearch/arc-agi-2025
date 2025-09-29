@@ -10,6 +10,7 @@ import random
 from pathlib import Path
 
 from ..utils.grid_utils import grid_to_tokens, tokens_to_grid, GridAugmentation, TaskAugmentation
+from ..utils.task_filters import task_exceeds_max_size
 
 
 class ARCDataset(Dataset):
@@ -43,9 +44,21 @@ class ARCDataset(Dataset):
         self.examples = []
         self.task_id_to_idx = {}  # Map task IDs to integer indices
 
+        # Statistics for filtering
+        self.filtered_tasks = 0
+        self.total_tasks = 0
+
         self._load_data(data_paths)
 
-        print(f"Loaded {len(self.examples)} examples from {len(self.task_id_to_idx)} tasks")
+        print(f"📊 Dataset Statistics:")
+        print(f"  Total tasks processed: {self.total_tasks}")
+        print(f"  Tasks filtered out (grid > {max_size}): {self.filtered_tasks}")
+        print(f"  Tasks remaining: {len(self.task_id_to_idx)}")
+        print(f"  Examples loaded: {len(self.examples)}")
+
+    def _task_exceeds_max_size(self, task_examples: Dict) -> bool:
+        """Check if any grid in the task exceeds max_size."""
+        return task_exceeds_max_size(task_examples, self.max_size)
 
     def _load_data(self, data_paths: List[str]):
         """Load data from JSON files and apply task-level augmentation."""
@@ -65,6 +78,8 @@ class ARCDataset(Dataset):
             is_evaluation_challenges = "evaluation" in data_path
 
             for task_id, task_data in data.items():
+                self.total_tasks += 1
+
                 # Create task structure for augmentation
                 task_examples = {
                     'train': [],
@@ -98,6 +113,11 @@ class ARCDataset(Dataset):
                                 'input': input_grid,
                                 'output': output_grid
                             })
+
+                # Check if task should be filtered out due to large grids
+                if self._task_exceeds_max_size(task_examples):
+                    self.filtered_tasks += 1
+                    continue  # Skip this task
 
                 all_tasks[task_id] = task_examples
 
