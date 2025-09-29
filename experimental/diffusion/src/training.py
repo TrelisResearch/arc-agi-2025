@@ -288,14 +288,12 @@ class ARCDiffusionSampler:
         noise_scheduler: DiscreteNoiseScheduler,
         device: torch.device,
         dataset=None,  # Need dataset for task info
-        size_predictor=None,  # Optional GridSizePredictionHead for size prediction
         debug: bool = False
     ):
         self.model = model
         self.noise_scheduler = noise_scheduler
         self.device = device
         self.dataset = dataset
-        self.size_predictor = size_predictor
         self.debug = debug
 
     @torch.no_grad()
@@ -333,9 +331,6 @@ class ARCDiffusionSampler:
             predicted_heights, predicted_widths = self.model.predict_sizes(input_grids, task_indices)
             print(f"Predicted sizes (integrated): heights={predicted_heights.cpu().tolist()}, widths={predicted_widths.cpu().tolist()}")
         # Fallback to external size predictor if provided
-        elif self.size_predictor is not None:
-            self.size_predictor.eval()
-            predicted_heights, predicted_widths = self.size_predictor.predict_sizes(input_grids, task_indices)
             print(f"Predicted sizes (external): heights={predicted_heights.cpu().tolist()}, widths={predicted_widths.cpu().tolist()}")
 
         # Initialize with uniform random noise over {0..9}

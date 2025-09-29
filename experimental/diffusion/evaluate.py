@@ -25,7 +25,7 @@ import torch
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from experimental.diffusion.src.model import ARCDiffusionModel, GridSizePredictionHead
+from experimental.diffusion.src.model import ARCDiffusionModel
 from experimental.diffusion.src.training import ARCDiffusionSampler
 from experimental.diffusion.src.dataset import ARCDataset, load_arc_data_paths
 from experimental.diffusion.utils.noise_scheduler import DiscreteNoiseScheduler
@@ -121,48 +121,15 @@ class DiffusionInference:
             print(f"✓ Using integrated size head from model")
             # No need to load external size head - model has it built in
         elif self.size_head_path:
-            try:
-                print(f"🧠 Loading size prediction head from {self.size_head_path}")
-                # Load size head checkpoint
-                size_head_checkpoint = torch.load(self.size_head_path, map_location=self.device)
-
-                # Handle different checkpoint formats
-                if 'model_state_dict' in size_head_checkpoint:
-                    # New format with wrapped state dict
-                    state_dict = size_head_checkpoint['model_state_dict']
-                    size_head_config = size_head_checkpoint.get('config', {})
-                    hidden_dim = size_head_config.get('hidden_dim', 256)
-                else:
-                    # Old format - raw state dict
-                    state_dict = size_head_checkpoint
-                    # Try to infer hidden_dim from weight shapes
-                    if 'feature_extractor.0.weight' in state_dict:
-                        hidden_dim = state_dict['feature_extractor.0.weight'].shape[0]
-                        print(f"📏 Inferred hidden_dim={hidden_dim} from checkpoint")
-                    else:
-                        hidden_dim = 256  # Fallback
-
-                self.size_head = GridSizePredictionHead(
-                    diffusion_model=self.model,
-                    hidden_dim=hidden_dim,
-                    max_size=self.config['max_size']
-                )
-                self.size_head.load_state_dict(state_dict)
-                self.size_head.to(self.device)
-                self.size_head.eval()
-                print(f"✓ Size head loaded with {sum(p.numel() for p in self.size_head.parameters() if p.requires_grad):,} parameters")
-
-            except Exception as e:
-                print(f"⚠️ Failed to load size head: {e}")
-                print(f"⚠️ Continuing without size head (will use ground truth dimensions)")
-                self.size_head = None
+            print(f"⚠️ External size head checkpoint provided but no longer supported.")
+            print(f"⚠️ Model should have integrated size head. Ignoring size_head_checkpoint.")
+            self.size_head = None
 
         self.sampler = ARCDiffusionSampler(
             self.model,
             self.noise_scheduler,
             self.device,
             dataset=self.dataset,
-            size_predictor=self.size_head,
             debug=self.debug
         )
 
