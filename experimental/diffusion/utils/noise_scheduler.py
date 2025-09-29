@@ -77,6 +77,7 @@ class DiscreteNoiseScheduler:
     def add_noise(self, x0: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
         """
         Add noise to clean tokens x0 at timestep t using uniform mixing kernel.
+        Only adds noise to non-PAD regions (PAD=10 stays PAD).
 
         Args:
             x0: Clean tokens [batch_size, height, width]
@@ -94,11 +95,15 @@ class DiscreteNoiseScheduler:
         # Create random mask: keep original token with prob alpha_bar_t
         keep_mask = torch.rand(batch_size, height, width, device=device) < alpha_bars_t.unsqueeze(-1).unsqueeze(-1)
 
-        # Create random tokens for replacement using uniform distribution over {0..9}
+        # Create random tokens for replacement using uniform distribution over colors {0..9} (no PAD)
         random_tokens = torch.randint(0, 10, (batch_size, height, width), device=device)
 
         # Apply noise: keep original where mask is True, replace with random elsewhere
         xt = torch.where(keep_mask, x0, random_tokens)
+
+        # Preserve PAD tokens - never add noise to PAD regions
+        pad_mask = (x0 == 10)
+        xt = torch.where(pad_mask, x0, xt)
 
         return xt
 
