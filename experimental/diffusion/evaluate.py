@@ -118,16 +118,41 @@ class DiffusionInference:
         # Load size prediction head if provided
         self.size_head = None
         if self.size_head_path:
-            print(f"🧠 Loading size prediction head from {self.size_head_path}")
-            self.size_head = GridSizePredictionHead(
-                diffusion_model=self.model,
-                hidden_dim=256,
-                max_size=self.config['max_size']
-            )
-            self.size_head.load_state_dict(torch.load(self.size_head_path, map_location=self.device))
-            self.size_head.to(self.device)
-            self.size_head.eval()
-            print(f"✓ Size head loaded with {sum(p.numel() for p in self.size_head.parameters() if p.requires_grad):,} parameters")
+            try:
+                print(f"🧠 Loading size prediction head from {self.size_head_path}")
+                # Load size head checkpoint
+                size_head_checkpoint = torch.load(self.size_head_path, map_location=self.device)
+
+                # Handle different checkpoint formats
+                if 'model_state_dict' in size_head_checkpoint:
+                    # New format with wrapped state dict
+                    state_dict = size_head_checkpoint['model_state_dict']
+                    size_head_config = size_head_checkpoint.get('config', {})
+                    hidden_dim = size_head_config.get('hidden_dim', 256)
+                else:
+                    # Old format - raw state dict
+                    state_dict = size_head_checkpoint
+                    # Try to infer hidden_dim from weight shapes
+                    if 'feature_extractor.0.weight' in state_dict:
+                        hidden_dim = state_dict['feature_extractor.0.weight'].shape[0]
+                        print(f"📏 Inferred hidden_dim={hidden_dim} from checkpoint")
+                    else:
+                        hidden_dim = 256  # Fallback
+
+                self.size_head = GridSizePredictionHead(
+                    diffusion_model=self.model,
+                    hidden_dim=hidden_dim,
+                    max_size=self.config['max_size']
+                )
+                self.size_head.load_state_dict(state_dict)
+                self.size_head.to(self.device)
+                self.size_head.eval()
+                print(f"✓ Size head loaded with {sum(p.numel() for p in self.size_head.parameters() if p.requires_grad):,} parameters")
+
+            except Exception as e:
+                print(f"⚠️ Failed to load size head: {e}")
+                print(f"⚠️ Continuing without size head (will use ground truth dimensions)")
+                self.size_head = None
 
         self.sampler = ARCDiffusionSampler(
             self.model,

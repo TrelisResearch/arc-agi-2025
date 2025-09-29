@@ -1,7 +1,9 @@
 **Todo**
 [x] Implement cosine noise scheduler. Move to a uniform noise distribution.
-[ ] Remove weight decay if duplicated?
-[ ] Use optimizer updates not epochs.
+[x] Remove weight decay if duplicated? Was not duplicated, so added it back.
+[x] Use optimizer updates not epochs.
+[ ] Log info on accuracy.
+[ ] Generate diffusion charts every x optimizer updates.
 
 **Things to consider adding:**
 - Self-conditioning.

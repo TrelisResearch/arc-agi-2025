@@ -11,6 +11,9 @@ class DiscreteNoiseScheduler:
     """
     Discrete diffusion noise scheduler using uniform mixing kernel.
     At each step, keep token with prob (1 - beta_t), else replace with random token.
+
+    For cosine schedule: Uses alpha_bar_final and cosine_s parameters.
+    For linear schedule: Uses beta_min and beta_max parameters.
     """
 
     def __init__(
@@ -18,18 +21,22 @@ class DiscreteNoiseScheduler:
         num_timesteps: int = 32,
         vocab_size: int = 11,  # {0..9, PAD}
         schedule_type: str = "cosine",
-        beta_min: float = 1e-4,
-        beta_max: float = 2e-2,
         alpha_bar_final: float = 0.02,  # α_bar_T target (88.2% noise for 10-class uniform)
-        cosine_s: float = 0.008         # cosine offset
+        cosine_s: float = 0.008,        # cosine offset
+        # Legacy parameters for linear schedule (unused for cosine)
+        beta_min: float = 1e-4,
+        beta_max: float = 2e-2
     ):
         self.num_timesteps = num_timesteps
         self.vocab_size = vocab_size
         self.schedule_type = schedule_type
-        self.beta_min = beta_min
-        self.beta_max = beta_max
         self.alpha_bar_final = alpha_bar_final
         self.cosine_s = cosine_s
+
+        # Only used for linear schedule
+        if schedule_type == "linear":
+            self.beta_min = beta_min
+            self.beta_max = beta_max
 
         # Create noise schedule
         self.alpha_bars = self._create_alpha_bars()
@@ -65,8 +72,12 @@ class DiscreteNoiseScheduler:
             return alpha_bars[1:]
 
         elif self.schedule_type == "linear":
-            # Linear interpolation from 1.0 to alpha_bar_final
-            alpha_bars = torch.linspace(1.0, self.alpha_bar_final, self.num_timesteps)
+            # Traditional linear-beta schedule: betas linearly spaced, then derive α_bars
+            # β_t linearly spaced from beta_min to beta_max
+            betas = torch.linspace(self.beta_min, self.beta_max, self.num_timesteps)
+            alphas = 1.0 - betas
+            # α_bar_t = ∏(α_i) for i=1 to t
+            alpha_bars = torch.cumprod(alphas, dim=0)
             return alpha_bars
         else:
             raise ValueError(f"Unknown schedule type: {self.schedule_type}")

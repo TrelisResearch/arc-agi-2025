@@ -475,10 +475,16 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
     )
     noise_scheduler.to(device)
 
-    # Calculate total training steps for scheduler
+    # Get optimizer steps from config
+    if 'optimizer_steps' not in config:
+        raise KeyError(
+            "Config missing 'optimizer_steps'. Please update your config file to use 'optimizer_steps' instead of 'num_epochs'. "
+            "Example: 'optimizer_steps': 3000"
+        )
+    optimizer_steps = config['optimizer_steps']
     steps_per_epoch = len(train_loader)
-    total_steps = config['num_epochs'] * steps_per_epoch
-    print(f"Training setup: {config['num_epochs']} epochs × {steps_per_epoch} steps/epoch = {total_steps} total steps")
+    estimated_epochs = optimizer_steps / steps_per_epoch
+    print(f"Training setup: {optimizer_steps} optimizer steps (~{estimated_epochs:.1f} epochs at {steps_per_epoch} steps/epoch)")
 
     # Create trainer
     trainer = ARCDiffusionTrainer(
@@ -491,7 +497,7 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         use_mixed_precision=config.get('use_mixed_precision', True),
         pixel_noise_prob=config.get('pixel_noise_prob', 0.15),
         pixel_noise_rate=config.get('pixel_noise_rate', 0.02),
-        total_steps=total_steps
+        total_steps=optimizer_steps
     )
 
     print(f"Model has {sum(p.numel() for p in model.parameters()):,} parameters")
@@ -509,95 +515,123 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
     step = 0
     best_val_loss = float('inf')
 
-    for epoch in range(config['num_epochs']):
-        print(f"\nEpoch {epoch + 1}/{config['num_epochs']}")
+    # Training loop using steps instead of epochs
+    steps_per_epoch = len(train_loader)
+    current_epoch = 0
 
-        # Training
-        epoch_losses = {
-            'total_loss': 0.0,
-            'grid_loss': 0.0,
-            'grad_norm': 0.0
-        }
-        num_train_batches = 0
+    # Create infinite data loader
+    def infinite_dataloader(dataloader):
+        while True:
+            for batch in dataloader:
+                yield batch
 
-        progress_bar = tqdm(train_loader, desc=f"Training Epoch {epoch + 1}")
-        for batch in progress_bar:
-            losses = trainer.train_step(batch)
+    data_iter = infinite_dataloader(train_loader)
 
-            # Accumulate losses
-            for key in epoch_losses:
-                if key in losses:
-                    epoch_losses[key] += losses[key]
-            num_train_batches += 1
-            step += 1
+    # Progress bar for optimizer steps
+    progress_bar = tqdm(range(optimizer_steps), desc="Training")
 
-            # Update progress bar
-            progress_bar.set_postfix({
-                'loss': f"{losses['total_loss']:.4f}",
-                'grid': f"{losses['grid_loss']:.4f}",
-                'grad': f"{losses['grad_norm']:.2f}"
-            })
+    # Track epoch losses for validation
+    epoch_losses = {
+        'total_loss': 0.0,
+        'grid_loss': 0.0,
+        'grad_norm': 0.0
+    }
+    num_batches_this_epoch = 0
 
-            # Log to wandb
-            if config.get('use_wandb', False) and step % config.get('log_every', 50) == 0:
-                log_dict = {f"train/{key}": value for key, value in losses.items()}
-                log_dict["train/learning_rate"] = trainer.scheduler.get_last_lr()[0]
-                wandb.log(log_dict, step=step)
+    for step_idx in progress_bar:
+        batch = next(data_iter)
+        losses = trainer.train_step(batch)
 
-            # Limit training batches for CPU testing
-            if num_train_batches >= config.get('max_train_batches', float('inf')):
-                break
+        # Accumulate losses for epoch average
+        for key in epoch_losses:
+            if key in losses:
+                epoch_losses[key] += losses[key]
+        num_batches_this_epoch += 1
+        step = step_idx + 1
 
-        # Average training losses
-        avg_train_losses = {key: total / num_train_batches for key, total in epoch_losses.items()}
+        # Update progress bar
+        current_epoch_approx = step / steps_per_epoch
+        progress_bar.set_postfix({
+            'loss': f"{losses['total_loss']:.4f}",
+            'grid': f"{losses['grid_loss']:.4f}",
+            'grad': f"{losses['grad_norm']:.2f}",
+            'epoch': f"{current_epoch_approx:.1f}"
+        })
 
-        # Validation
-        if (epoch + 1) % config.get('val_every', 1) == 0:
-            print("Running validation...")
-            val_losses = trainer.validate(val_loader, num_batches=config.get('max_val_batches', 10))
+        # Log to wandb
+        if config.get('use_wandb', False) and step % config.get('log_every', 50) == 0:
+            log_dict = {f"train/{key}": value for key, value in losses.items()}
+            log_dict["train/learning_rate"] = trainer.scheduler.get_last_lr()[0]
+            log_dict["train/step"] = step
+            log_dict["train/epoch"] = current_epoch_approx
+            wandb.log(log_dict, step=step)
 
-            print(f"Validation losses: {val_losses}")
+        # Check if we've completed an epoch for validation
+        if step % steps_per_epoch == 0:
+            current_epoch = step // steps_per_epoch
+            print(f"\nCompleted epoch {current_epoch} (step {step})")
 
-            # Log validation losses
-            if config.get('use_wandb', False):
-                val_log_dict = {f"val/{key}": value for key, value in val_losses.items()}
-                val_log_dict["val/learning_rate"] = trainer.scheduler.get_last_lr()[0]
-                wandb.log(val_log_dict, step=step)
+            # Validation at epoch boundaries
+            val_every_steps = config.get('val_every_steps', steps_per_epoch)  # Default to every epoch
+            avg_train_losses = {key: total / num_batches_this_epoch for key, total in epoch_losses.items()}
 
-            # Save best model
-            if val_losses['total_loss'] < best_val_loss:
-                best_val_loss = val_losses['total_loss']
-                # Save model in bfloat16 without modifying the original
-                model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
-                torch.save({
-                    'model_state_dict': model_state_dict_bf16,
-                    'optimizer_state_dict': trainer.optimizer.state_dict(),
-                    'scheduler_state_dict': trainer.scheduler.state_dict(),
-                    'epoch': epoch,
-                    'step': step,
-                    'val_loss': val_losses['total_loss'],
-                    'config': config,
-                    'dataset_info': dataset_info
+            if step % val_every_steps == 0:
+                print("Running validation...")
+                val_losses = trainer.validate(val_loader, num_batches=config.get('max_val_batches', 10))
+
+                print(f"Validation losses: {val_losses}")
+
+                # Log validation losses
+                if config.get('use_wandb', False):
+                    val_log_dict = {f"val/{key}": value for key, value in val_losses.items()}
+                    val_log_dict["val/learning_rate"] = trainer.scheduler.get_last_lr()[0]
+                    val_log_dict["val/step"] = step
+                    val_log_dict["val/epoch"] = current_epoch_approx
+                    wandb.log(val_log_dict, step=step)
+
+                # Save best model
+                if val_losses['total_loss'] < best_val_loss:
+                    best_val_loss = val_losses['total_loss']
+                    # Save model in bfloat16 without modifying the original
+                    model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
+                    torch.save({
+                        'model_state_dict': model_state_dict_bf16,
+                        'optimizer_state_dict': trainer.optimizer.state_dict(),
+                        'scheduler_state_dict': trainer.scheduler.state_dict(),
+                        'epoch': current_epoch,
+                        'step': step,
+                        'val_loss': val_losses['total_loss'],
+                        'config': config,
+                        'dataset_info': dataset_info
                 }, output_dir / 'best_model.pt')
                 print(f"Saved best model with val loss: {best_val_loss:.4f}")
 
-        # Print epoch summary
-        current_lr = trainer.scheduler.get_last_lr()[0]
-        print(f"Epoch {epoch + 1} - Train Loss: {avg_train_losses['total_loss']:.4f}, Grad Norm: {avg_train_losses['grad_norm']:.3f}, LR: {current_lr:.6f}")
+                # Print epoch summary
+                current_lr = trainer.scheduler.get_last_lr()[0]
+                print(f"Epoch {current_epoch} - Train Loss: {avg_train_losses['total_loss']:.4f}, Grad Norm: {avg_train_losses['grad_norm']:.3f}, LR: {current_lr:.6f}")
 
-        # Early stopping for CPU testing
-        if config.get('early_stop_epochs') and epoch >= config['early_stop_epochs']:
-            print(f"Early stopping after {epoch + 1} epochs")
+                # Reset epoch tracking
+                epoch_losses = {
+                    'total_loss': 0.0,
+                    'grid_loss': 0.0,
+                    'grad_norm': 0.0
+                }
+                num_batches_this_epoch = 0
+
+        # Early stopping based on steps if configured
+        if config.get('early_stop_steps') and step >= config['early_stop_steps']:
+            print(f"Early stopping after {step} steps")
             break
 
     # Save final model
     # Save final model in bfloat16 without modifying the original
+    final_epoch = step // steps_per_epoch
     model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
     torch.save({
         'model_state_dict': model_state_dict_bf16,
         'optimizer_state_dict': trainer.optimizer.state_dict(),
         'scheduler_state_dict': trainer.scheduler.state_dict(),
-        'epoch': epoch,
+        'epoch': final_epoch,
         'step': step,
         'config': config,
         'dataset_info': dataset_info

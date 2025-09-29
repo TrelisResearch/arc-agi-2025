@@ -20,20 +20,22 @@ def task_exceeds_max_size(task_data: Dict[str, Any], max_size: int) -> bool:
         for example in task_data.get(split, []):
             # Handle both numpy arrays and lists
             input_grid = example['input']
-            output_grid = example['output']
 
             if isinstance(input_grid, list):
                 input_grid = np.array(input_grid)
-            if isinstance(output_grid, list):
-                output_grid = np.array(output_grid)
 
             # Check input grid size
             if input_grid.shape[0] > max_size or input_grid.shape[1] > max_size:
                 return True
 
-            # Check output grid size
-            if output_grid.shape[0] > max_size or output_grid.shape[1] > max_size:
-                return True
+            # Check output grid size (if it exists - test examples in evaluation sets may not have outputs)
+            if 'output' in example:
+                output_grid = example['output']
+                if isinstance(output_grid, list):
+                    output_grid = np.array(output_grid)
+
+                if output_grid.shape[0] > max_size or output_grid.shape[1] > max_size:
+                    return True
 
     return False
 

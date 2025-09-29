@@ -88,14 +88,21 @@ def train_size_head(
 
     # Extract size head training parameters
     size_head_config = config.get('size_head', {})
-    epochs = size_head_config.get('epochs', 100)
+
+    # Extract step-based training parameters
+    if 'optimizer_steps' not in size_head_config:
+        raise KeyError(
+            "Size head config missing 'optimizer_steps'. Please update your config file to use 'optimizer_steps' instead of 'epochs'. "
+            "Example: 'size_head': {'optimizer_steps': 1000, ...}"
+        )
+    optimizer_steps = size_head_config['optimizer_steps']
     learning_rate = size_head_config.get('learning_rate', 1e-3)
     batch_size = size_head_config.get('batch_size', 32)
     hidden_dim = size_head_config.get('hidden_dim', 256)
     weight_decay = size_head_config.get('weight_decay', 1e-4)
 
     print(f"Size head training config:")
-    print(f"  Epochs: {epochs}")
+    print(f"  Optimizer steps: {optimizer_steps}")
     print(f"  Learning rate: {learning_rate}")
     print(f"  Batch size: {batch_size}")
     print(f"  Hidden dim: {hidden_dim}")
@@ -161,6 +168,11 @@ def train_size_head(
 
     print(f"✓ Loaded training data: {len(train_loader.dataset)} examples")
 
+    # Calculate estimated epochs from optimizer steps
+    steps_per_epoch = len(train_loader)
+    estimated_epochs = optimizer_steps / steps_per_epoch
+    print(f"Training for {optimizer_steps} optimizer steps (~{estimated_epochs:.1f} epochs at {steps_per_epoch} steps/epoch)")
+
     # Set up optimizer
     optimizer = torch.optim.AdamW(
         [p for p in size_head.parameters() if p.requires_grad],
@@ -169,7 +181,7 @@ def train_size_head(
     )
 
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=epochs, eta_min=learning_rate * 0.1
+        optimizer, T_max=optimizer_steps, eta_min=learning_rate * 0.1
     )
 
     # Initialize wandb
@@ -177,7 +189,8 @@ def train_size_head(
         wandb.init(
             project="arc-prize-2025-size-head",
             config={
-                "epochs": epochs,
+                "optimizer_steps": optimizer_steps,
+                "estimated_epochs": estimated_epochs,
                 "learning_rate": learning_rate,
                 "batch_size": batch_size,
                 "hidden_dim": hidden_dim,
@@ -194,101 +207,125 @@ def train_size_head(
         print("⚠️ Wandb not available, training metrics won't be logged")
 
     # Training loop
-    print(f"\\nStarting size head training for {epochs} epochs...")
+    print(f"\\nStarting size head training for {optimizer_steps} optimizer steps...")
 
     best_val_loss = float('inf')
 
-    for epoch in range(epochs):
-        # Training phase
+    # Create infinite data loader
+    def infinite_dataloader(dataloader):
+        while True:
+            for batch in dataloader:
+                yield batch
+
+    data_iter = infinite_dataloader(train_loader)
+
+    # Progress bar for optimizer steps
+    pbar = tqdm(range(optimizer_steps), desc="Training")
+
+    # Track epoch-level metrics
+    epoch_train_losses = []
+    current_epoch = 0
+
+    for step in pbar:
+        batch = next(data_iter)
         size_head.train()
-        train_losses = []
 
-        pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}")
-        for batch in pbar:
-            # Move batch to device
-            input_grids = batch['input_grid'].to(device)
-            target_heights = batch['height'].to(device)
-            target_widths = batch['width'].to(device)
-            task_ids = batch['task_idx'].to(device)
+        # Move batch to device
+        input_grids = batch['input_grid'].to(device)
+        target_heights = batch['height'].to(device)
+        target_widths = batch['width'].to(device)
+        task_ids = batch['task_idx'].to(device)
 
-            # Forward pass
-            optimizer.zero_grad()
-            loss = size_head.compute_size_loss(
-                input_grids, task_ids, target_heights, target_widths
-            )
+        # Forward pass
+        optimizer.zero_grad()
+        loss = size_head.compute_size_loss(
+            input_grids, task_ids, target_heights, target_widths
+        )
 
-            # Backward pass
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(size_head.parameters(), max_norm=1.0)
-            optimizer.step()
-
-            train_losses.append(loss.item())
-            pbar.set_postfix({'loss': f"{loss.item():.4f}"})
-
+        # Backward pass
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(size_head.parameters(), max_norm=1.0)
+        optimizer.step()
         scheduler.step()
 
-        # Validation phase
-        size_head.eval()
-        val_losses = []
-        correct_heights = 0
-        correct_widths = 0
-        total_samples = 0
+        epoch_train_losses.append(loss.item())
+        current_epoch_approx = step / steps_per_epoch
 
-        with torch.no_grad():
-            for batch in val_loader:
-                input_grids = batch['input_grid'].to(device)
-                target_heights = batch['height'].to(device)
-                target_widths = batch['width'].to(device)
-                task_ids = batch['task_idx'].to(device)
+        # Update progress bar
+        pbar.set_postfix({
+            'loss': f"{loss.item():.4f}",
+            'epoch': f"{current_epoch_approx:.1f}"
+        })
 
-                # Compute loss
-                loss = size_head.compute_size_loss(
-                    input_grids, task_ids, target_heights, target_widths
-                )
-                val_losses.append(loss.item())
+        # Run validation at intervals (every epoch or specified steps)
+        val_every_steps = size_head_config.get('val_every_steps', steps_per_epoch)
+        if (step + 1) % val_every_steps == 0:
+            current_epoch = (step + 1) // steps_per_epoch
 
-                # Compute accuracy
-                pred_heights, pred_widths = size_head.predict_sizes(input_grids, task_ids)
-                correct_heights += (pred_heights == target_heights).sum().item()
-                correct_widths += (pred_widths == target_widths).sum().item()
-                total_samples += len(target_heights)
+            # Validation phase
+            size_head.eval()
+            val_losses = []
+            correct_heights = 0
+            correct_widths = 0
+            total_samples = 0
 
-        # Calculate metrics
-        train_loss = sum(train_losses) / len(train_losses)
-        val_loss = sum(val_losses) / len(val_losses)
-        height_acc = correct_heights / total_samples
-        width_acc = correct_widths / total_samples
+            with torch.no_grad():
+                for batch in val_loader:
+                    input_grids = batch['input_grid'].to(device)
+                    target_heights = batch['height'].to(device)
+                    target_widths = batch['width'].to(device)
+                    task_ids = batch['task_idx'].to(device)
 
-        print(f"Epoch {epoch+1}/{epochs}:")
-        print(f"  Train Loss: {train_loss:.4f}")
-        print(f"  Val Loss: {val_loss:.4f}")
-        print(f"  Height Acc: {height_acc:.3f}")
-        print(f"  Width Acc: {width_acc:.3f}")
-        print(f"  LR: {scheduler.get_last_lr()[0]:.6f}")
+                    # Compute loss
+                    loss = size_head.compute_size_loss(
+                        input_grids, task_ids, target_heights, target_widths
+                    )
+                    val_losses.append(loss.item())
 
-        # Log to wandb
-        if WANDB_AVAILABLE:
-            wandb.log({
-                "epoch": epoch + 1,
-                "train_loss": train_loss,
-                "val_loss": val_loss,
-                "height_accuracy": height_acc,
-                "width_accuracy": width_acc,
-                "overall_accuracy": (height_acc + width_acc) / 2,
-                "learning_rate": scheduler.get_last_lr()[0],
-                "best_val_loss": best_val_loss
-            })
+                    # Compute accuracy
+                    pred_heights, pred_widths = size_head.predict_sizes(input_grids, task_ids)
+                    correct_heights += (pred_heights == target_heights).sum().item()
+                    correct_widths += (pred_widths == target_widths).sum().item()
+                    total_samples += len(target_heights)
 
-        # Save best model
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            print(f"  ✓ New best validation loss: {val_loss:.4f}")
+            # Calculate metrics
+            recent_train_losses = epoch_train_losses[-val_every_steps:] if len(epoch_train_losses) >= val_every_steps else epoch_train_losses
+            train_loss = sum(recent_train_losses) / len(recent_train_losses)
+            val_loss = sum(val_losses) / len(val_losses)
+            height_acc = correct_heights / total_samples
+            width_acc = correct_widths / total_samples
 
-            # Save the best size head
-            if save_best:
-                best_size_head_path.parent.mkdir(parents=True, exist_ok=True)
-                torch.save(size_head.state_dict(), best_size_head_path)
-                print(f"  ✓ Saved best size head to {best_size_head_path}")
+            print(f"\nStep {step + 1} (Epoch {current_epoch}):")
+            print(f"  Train Loss: {train_loss:.4f}")
+            print(f"  Val Loss: {val_loss:.4f}")
+            print(f"  Height Acc: {height_acc:.3f}")
+            print(f"  Width Acc: {width_acc:.3f}")
+            print(f"  LR: {scheduler.get_last_lr()[0]:.6f}")
+
+            # Log to wandb
+            if WANDB_AVAILABLE:
+                wandb.log({
+                    "step": step + 1,
+                    "epoch": current_epoch,
+                    "train_loss": train_loss,
+                    "val_loss": val_loss,
+                    "height_accuracy": height_acc,
+                    "width_accuracy": width_acc,
+                    "overall_accuracy": (height_acc + width_acc) / 2,
+                    "learning_rate": scheduler.get_last_lr()[0],
+                    "best_val_loss": best_val_loss
+                }, step=step + 1)
+
+            # Save best model
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                print(f"  ✓ New best validation loss: {val_loss:.4f}")
+
+                # Save the best size head
+                if save_best:
+                    best_size_head_path.parent.mkdir(parents=True, exist_ok=True)
+                    torch.save(size_head.state_dict(), best_size_head_path)
+                    print(f"  ✓ Saved best size head to {best_size_head_path}")
 
     # Save final model
     if save_final:
