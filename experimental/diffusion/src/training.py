@@ -299,7 +299,8 @@ class ARCDiffusionSampler:
         self,
         input_grids: torch.Tensor,
         task_indices: torch.Tensor,
-        num_inference_steps: Optional[int] = None
+        num_inference_steps: Optional[int] = None,
+        temperature: float = 1.0
     ) -> torch.Tensor:
         """
         Sample outputs for given inputs using DDPM sampling.
@@ -344,8 +345,18 @@ class ARCDiffusionSampler:
             # Forward pass
             logits = self.model(x_t, input_grids, task_indices, t_batch)
 
-            # Sample next step (greedy for now)
-            x_t = torch.argmax(logits, dim=-1)
+            # Apply temperature scaling
+            logits_scaled = logits / temperature
+
+            # Get predicted probabilities
+            probs = F.softmax(logits_scaled, dim=-1)
+
+            # Sample from categorical distribution instead of greedy argmax
+            # This adds stochasticity which helps avoid mode collapse
+            if t > 0:  # Sample for all but the last step
+                x_t = torch.multinomial(probs.view(-1, probs.shape[-1]), 1).view(x_t.shape)
+            else:  # Use argmax only for final step
+                x_t = torch.argmax(logits_scaled, dim=-1)
 
             # Apply masking if size predictor provided - set tokens outside predicted bounds to black (0)
             if predicted_heights is not None and predicted_widths is not None:
