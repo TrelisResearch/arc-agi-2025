@@ -257,11 +257,14 @@ def train_size_head(
         # Backward pass
         loss.backward()
 
-        # Compute gradient norm before clipping (matches backbone training)
-        grad_norm = torch.nn.utils.clip_grad_norm_(size_head.parameters(), max_norm=float('inf'))
+        # Get trainable parameters only
+        trainable_params = [p for p in size_head.parameters() if p.requires_grad]
+
+        # Compute gradient norm before clipping
+        grad_norm = torch.nn.utils.clip_grad_norm_(trainable_params, max_norm=float('inf'))
 
         # Gradient clipping
-        torch.nn.utils.clip_grad_norm_(size_head.parameters(), max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_(trainable_params, max_norm=1.0)
         optimizer.step()
         scheduler.step()
 
