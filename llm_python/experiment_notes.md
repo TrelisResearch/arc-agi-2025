@@ -29,6 +29,29 @@ Commercial:
 - Reach back out to openrouter on sponsorship again.
 
 ---
+## Sept 29th 2025
+### Manual task creation
+Already done:
+e8686506 -> kmpi991v
+20270e3b -> vxdfxvxp
+28a6681f -> kl40vkhr
+7b5033c1 -> 7qyjcy7q
+dbff022c -> a9h4pk85
+
+Today:
+78332cb0 -> uyze2hm9
+3dc255db -> ayznmbv2
+f931b4a8 -> hard to solve for now.
+136b0064 -> yua0n8qr
+eee78d87 -> have not solved yet.
+b0039139 -> vmfierg9
+97d7923e -> eeusogkd
+d35bdbdc -> llzz3y54
+dd6b8c4b -> not solved yet
+4c3d4a41 -> yqk3tkur
+291dc1e1
+faa9f03d
+
 ## Sept 28th 2025
 ### Diffusion testing
 The model has very low train loss, and validation loss has gone up quite a bit.
