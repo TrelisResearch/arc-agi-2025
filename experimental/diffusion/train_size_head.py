@@ -266,7 +266,7 @@ def train_size_head(
         scheduler.step()
 
         epoch_train_losses.append(loss.item())
-        epoch_grad_norms.append(grad_norm)
+        epoch_grad_norms.append(grad_norm.item())
         current_epoch_approx = step / steps_per_epoch
 
         # Update progress bar
@@ -338,6 +338,10 @@ def train_size_head(
                     "learning_rate": scheduler.get_last_lr()[0],
                     "best_val_loss": best_val_loss
                 }, step=step + 1)
+
+            # Reset accumulation lists after validation logging
+            epoch_train_losses = []
+            epoch_grad_norms = []
 
             # Save best model
             if val_loss < best_val_loss:
