@@ -16,9 +16,12 @@
 - Adding noise to inputs seems to hurt size and diffusion performance.
 - Integrating the size head seems to hurt diffusion performance. Makes sense as this is now multi-objective.
 
+**Results at 90M params with integrated diffusion head**
+- ...
+
 **Things to consider adding:**
-- Self-conditioning.
-The idea is to pass previous logits as an additional input 50% of the time during training.
+- Self-conditioning. The idea is to pass previous logits as an additional input 50% of the time during training.
+- Classifier-free guidance.
 
 Things still to understand:
 - EMA
