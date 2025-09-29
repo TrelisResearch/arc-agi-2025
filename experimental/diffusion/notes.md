@@ -8,8 +8,13 @@
 [x] Generate diffusion charts every x optimizer updates.
 
 **Results at 7M params with separate diffusion head training**
-- Adding noise to the inputs seems to hurt diffusion performance but help grid size prediction
+- Adding noise to the inputs seems to hurt diffusion performance but help grid size prediction.
 - Going from 0->9 augmentations helps diffusion and grid size. Going to 39 augmentations hurts diffusion but helps grid size.
+
+**Results at 7M params with integrated diffusion head training**
+- Size prediction is much better.
+- Adding noise to inputs seems to hurt size and diffusion performance.
+- Integrating the size head seems to hurt diffusion performance. Makes sense as this is now multi-objective.
 
 **Things to consider adding:**
 - Self-conditioning.
@@ -24,7 +29,7 @@ Things still to understand:
 Beta is the chance a cell gets repainted at step t. Alpha is the chance a cell stays the same! alpha_bar is the chance a cell survives without any change from start to finish.
 
 - What is the interpertation of cross entropy? Would it be useful to also plot some kind of pixel accuracy metric? If so what and how?
-
+Yes we plot by noise bucket and also total.
 
 - During training and forward passing on one batch, will each datapoint in a batch get a different randomly sampled timestamp? Are timestamps sampled uniformly?
 Yes! and uniform should be fine.
