@@ -753,8 +753,8 @@ def main():
         progress_bar = tqdm(tasks, desc="Running inference")
         for i, (task_id, task_data) in enumerate(progress_bar):
             try:
-                # Visualize denoising for the first task
-                visualize = (i == 0)
+                # Visualize denoising for all tasks
+                visualize = True
                 result = inference.run_task(task_id, task_data, f"{args.dataset}/{args.subset}", visualize=visualize)
                 results.append(result)
 
