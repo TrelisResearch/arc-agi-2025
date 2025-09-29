@@ -2,8 +2,8 @@
 [x] Implement cosine noise scheduler. Move to a uniform noise distribution.
 [x] Remove weight decay if duplicated? Was not duplicated, so added it back.
 [x] Use optimizer updates not epochs.
-[ ] Remove input encoder
-[ ] Simplify positional encodings
+[x] Remove input encoder and simplify positional encodings to use coordinate embeddings.
+[ ] Just do self attention between task id, timestep, input cells and noised output cells.
 [ ] Log info on accuracy.
 [ ] Generate diffusion charts every x optimizer updates.
 

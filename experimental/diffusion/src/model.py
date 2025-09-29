@@ -4,48 +4,37 @@ Discrete diffusion model for ARC tasks with size prediction and transformer back
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import math
-from typing import Tuple, Optional, Dict, Any
+from typing import Tuple, Optional, Dict
 
 from ..utils.noise_scheduler import create_timestep_embedding
-from ..utils.grid_utils import clamp_outside_mask, batch_create_masks
 
 
-class PositionalEncoding(nn.Module):
-    """2D positional encoding for grid positions."""
+class CoordinatePositionalEncoding(nn.Module):
+    """2D coordinate-based positional encoding for grid positions."""
 
-    def __init__(self, d_model: int, max_size: int = 30):
+    def __init__(self, max_size: int = 20, d_model: int = 256):
         super().__init__()
-        self.d_model = d_model
-
-        # Create 2D positional encoding
-        pe = torch.zeros(max_size, max_size, d_model)
-        pos_h = torch.arange(0, max_size).unsqueeze(1).float()  # [max_size, 1]
-        pos_w = torch.arange(0, max_size).unsqueeze(0).float()  # [1, max_size]
-
-        div_term = torch.exp(torch.arange(0, d_model // 2, 2).float() *
-                           -(math.log(10000.0) / (d_model // 2)))
-
-        # Apply sinusoidal encoding to height dimension
-        sin_h = torch.sin(pos_h.unsqueeze(-1) * div_term)  # [max_size, 1, d_model//4]
-        cos_h = torch.cos(pos_h.unsqueeze(-1) * div_term)  # [max_size, 1, d_model//4]
-
-        # Apply sinusoidal encoding to width dimension
-        sin_w = torch.sin(pos_w.unsqueeze(-1) * div_term)  # [1, max_size, d_model//4]
-        cos_w = torch.cos(pos_w.unsqueeze(-1) * div_term)  # [1, max_size, d_model//4]
-
-        # Broadcast and assign to appropriate positions
-        pe[:, :, 0::4] = sin_h.expand(max_size, max_size, -1)
-        pe[:, :, 1::4] = cos_h.expand(max_size, max_size, -1)
-        pe[:, :, 2::4] = sin_w.expand(max_size, max_size, -1)
-        pe[:, :, 3::4] = cos_w.expand(max_size, max_size, -1)
-
-        self.register_buffer('pe', pe)
+        assert d_model % 2 == 0
+        self.max_size = max_size
+        self.row_embed = nn.Embedding(max_size, d_model // 2)
+        self.col_embed = nn.Embedding(max_size, d_model // 2)
 
     def forward(self, batch_size: int) -> torch.Tensor:
         """Return positional encoding [batch_size, max_size * max_size, d_model]."""
-        pe = self.pe.view(-1, self.d_model)  # [max_size^2, d_model]
-        return pe.unsqueeze(0).expand(batch_size, -1, -1)
+        rows = torch.arange(self.max_size, device=self.row_embed.weight.device)
+        cols = torch.arange(self.max_size, device=self.col_embed.weight.device)
+
+        # Create grid of indices
+        row_idx = rows.view(-1, 1).expand(-1, self.max_size).flatten()
+        col_idx = cols.view(1, -1).expand(self.max_size, -1).flatten()
+
+        # Get embeddings and concatenate
+        pos_embed = torch.cat([
+            self.row_embed(row_idx),
+            self.col_embed(col_idx)
+        ], dim=-1)
+
+        return pos_embed.unsqueeze(0).expand(batch_size, -1, -1)
 
 
 class TransformerDenoiser(nn.Module):
@@ -73,7 +62,7 @@ class TransformerDenoiser(nn.Module):
         self.token_embedding = nn.Embedding(vocab_size, d_model)
 
         # Positional encoding
-        self.pos_encoding = PositionalEncoding(d_model, max_size)
+        self.pos_encoding = CoordinatePositionalEncoding(max_size, d_model)
 
         # Task embedding (for task conditioning)
         self.task_embedding = nn.Embedding(max_tasks, d_model)
@@ -87,18 +76,6 @@ class TransformerDenoiser(nn.Module):
 
         # Embedding dropout for regularization
         self.embedding_dropout = nn.Dropout(embedding_dropout)
-
-        # Input grid encoder (separate from the main grid being denoised)
-        self.input_encoder = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(
-                d_model=d_model,
-                nhead=nhead,
-                dim_feedforward=d_model * 4,
-                dropout=0.1,
-                batch_first=True
-            ),
-            num_layers=2
-        )
 
         # Main transformer
         self.transformer = nn.TransformerEncoder(
@@ -132,50 +109,46 @@ class TransformerDenoiser(nn.Module):
         batch_size = xt.shape[0]
         device = xt.device
 
-        # Embed tokens
-        xt_flat = xt.view(batch_size, -1)  # [batch_size, max_size^2]
+        # Flatten grids
         input_flat = input_grid.view(batch_size, -1)  # [batch_size, max_size^2]
+        xt_flat = xt.view(batch_size, -1)  # [batch_size, max_size^2]
 
-        xt_emb = self.token_embedding(xt_flat)  # [batch_size, max_size^2, d_model]
+        # Embed tokens
         input_emb = self.token_embedding(input_flat)  # [batch_size, max_size^2, d_model]
+        xt_emb = self.token_embedding(xt_flat)  # [batch_size, max_size^2, d_model]
 
-        # Add positional encoding
-        pos_emb = self.pos_encoding(batch_size)
-        xt_emb = xt_emb + pos_emb
+        # Add positional encoding to both
+        pos_emb = self.pos_encoding(batch_size)  # [batch_size, max_size^2, d_model]
         input_emb = input_emb + pos_emb
+        xt_emb = xt_emb + pos_emb
 
-        # Apply embedding dropout for regularization
-        xt_emb = self.embedding_dropout(xt_emb)
+        # Apply embedding dropout
         input_emb = self.embedding_dropout(input_emb)
+        xt_emb = self.embedding_dropout(xt_emb)
 
-        # Encode input grid
-        input_encoded = self.input_encoder(input_emb)  # [batch_size, max_size^2, d_model]
+        # Create separate conditioning tokens
+        task_token = self.task_embedding(task_ids).unsqueeze(1)  # [batch_size, 1, d_model]
 
-        # Create task conditioning
-        task_emb = self.task_embedding(task_ids)  # [batch_size, d_model]
-
-        # Create time conditioning
         time_emb = create_timestep_embedding(timesteps, self.d_model).to(device)
-        time_emb = self.time_projection(time_emb)  # [batch_size, d_model]
+        time_token = self.time_projection(time_emb).unsqueeze(1)  # [batch_size, 1, d_model]
 
-        # Combine task and time conditioning into a single token
-        conditioning = task_emb + time_emb  # [batch_size, d_model]
-        conditioning_token = conditioning.unsqueeze(1)  # [batch_size, 1, d_model]
+        # Concatenate in sequence dimension: [task, time, input_grid, noised_output]
+        sequence = torch.cat([
+            task_token,    # [batch_size, 1, d_model]
+            time_token,    # [batch_size, 1, d_model]
+            input_emb,     # [batch_size, max_size^2, d_model]
+            xt_emb         # [batch_size, max_size^2, d_model]
+        ], dim=1)  # [batch_size, 2 + 2*max_size^2, d_model]
 
-        # Cross-attention: add input encoding as conditioning
-        xt_emb = xt_emb + input_encoded
+        # Single transformer processes the entire sequence
+        output = self.transformer(sequence)  # [batch_size, 2 + 2*max_size^2, d_model]
 
-        # Include task/time conditioning in self-attention sequence
-        combined_sequence = torch.cat([conditioning_token, xt_emb], dim=1)  # [batch_size, 1 + max_size^2, d_model]
-
-        # Apply transformer (now includes task token in self-attention)
-        output = self.transformer(combined_sequence)  # [batch_size, 1 + max_size^2, d_model]
-
-        # Extract spatial tokens (skip the conditioning token)
-        spatial_output = output[:, 1:, :]  # [batch_size, max_size^2, d_model]
+        # Extract predictions for noised output positions (skip task + time + input)
+        output_start_idx = 2 + self.max_size * self.max_size
+        output_preds = output[:, output_start_idx:, :]  # [batch_size, max_size^2, d_model]
 
         # Predict logits for each cell
-        logits = self.output_head(spatial_output)  # [batch_size, max_size^2, vocab_size]
+        logits = self.output_head(output_preds)  # [batch_size, max_size^2, vocab_size]
         logits = logits.view(batch_size, self.max_size, self.max_size, self.vocab_size)
 
         return logits
@@ -320,25 +293,27 @@ class GridSizePredictionHead(nn.Module):
         batch_size = input_grid.shape[0]
 
         with torch.no_grad():
-            # Extract features using frozen diffusion model's input encoder
+            # Extract features using frozen diffusion model's embeddings
+            # Flatten input grid
+            input_flat = input_grid.view(batch_size, -1)  # [batch_size, max_size^2]
+
             # Embed tokens
-            input_tokens = self.diffusion_model.denoiser.token_embedding(input_grid)  # [batch_size, max_size, max_size, d_model]
+            input_emb = self.diffusion_model.denoiser.token_embedding(input_flat)  # [batch_size, max_size^2, d_model]
 
             # Add positional encoding
-            pos_enc = self.diffusion_model.denoiser.pos_encoding(batch_size)  # [batch_size, max_size^2, d_model]
-            input_tokens_flat = input_tokens.view(batch_size, -1, self.diffusion_model.denoiser.d_model)  # [batch_size, max_size^2, d_model]
-            input_tokens_flat = input_tokens_flat + pos_enc
+            pos_emb = self.diffusion_model.denoiser.pos_encoding(batch_size)  # [batch_size, max_size^2, d_model]
+            input_emb = input_emb + pos_emb
 
             # Add task conditioning
             task_emb = self.diffusion_model.denoiser.task_embedding(task_ids)  # [batch_size, d_model]
-            task_emb = task_emb.unsqueeze(1).expand(-1, input_tokens_flat.shape[1], -1)  # [batch_size, max_size^2, d_model]
-            input_features = input_tokens_flat + task_emb
+            task_emb_expanded = task_emb.unsqueeze(1).expand(-1, input_emb.shape[1], -1)  # [batch_size, max_size^2, d_model]
+            input_features = input_emb + task_emb_expanded
 
-            # Pass through input encoder to get rich features
-            encoded_features = self.diffusion_model.denoiser.input_encoder(input_features)  # [batch_size, max_size^2, d_model]
+            # Apply dropout like in main model
+            input_features = self.diffusion_model.denoiser.embedding_dropout(input_features)
 
             # Global average pooling to get single feature vector per example
-            pooled_features = encoded_features.mean(dim=1)  # [batch_size, d_model]
+            pooled_features = input_features.mean(dim=1)  # [batch_size, d_model]
 
         # Extract features for size prediction (trainable)
         features = self.feature_extractor(pooled_features)  # [batch_size, hidden_dim]
