@@ -224,6 +224,7 @@ def train_size_head(
 
     # Track epoch-level metrics
     epoch_train_losses = []
+    epoch_grad_norms = []
     current_epoch = 0
 
     for step in pbar:
@@ -244,16 +245,20 @@ def train_size_head(
 
         # Backward pass
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(size_head.parameters(), max_norm=1.0)
+
+        # Calculate gradient norm before clipping
+        grad_norm = torch.nn.utils.clip_grad_norm_(size_head.parameters(), max_norm=1.0)
         optimizer.step()
         scheduler.step()
 
         epoch_train_losses.append(loss.item())
+        epoch_grad_norms.append(grad_norm.item())
         current_epoch_approx = step / steps_per_epoch
 
         # Update progress bar
         pbar.set_postfix({
             'loss': f"{loss.item():.4f}",
+            'grad': f"{grad_norm:.2f}",
             'epoch': f"{current_epoch_approx:.1f}"
         })
 
@@ -290,7 +295,9 @@ def train_size_head(
 
             # Calculate metrics
             recent_train_losses = epoch_train_losses[-val_every_steps:] if len(epoch_train_losses) >= val_every_steps else epoch_train_losses
+            recent_grad_norms = epoch_grad_norms[-val_every_steps:] if len(epoch_grad_norms) >= val_every_steps else epoch_grad_norms
             train_loss = sum(recent_train_losses) / len(recent_train_losses)
+            avg_grad_norm = sum(recent_grad_norms) / len(recent_grad_norms)
             val_loss = sum(val_losses) / len(val_losses)
             height_acc = correct_heights / total_samples
             width_acc = correct_widths / total_samples
@@ -300,6 +307,7 @@ def train_size_head(
             print(f"  Val Loss: {val_loss:.4f}")
             print(f"  Height Acc: {height_acc:.3f}")
             print(f"  Width Acc: {width_acc:.3f}")
+            print(f"  Grad Norm: {avg_grad_norm:.2f}")
             print(f"  LR: {scheduler.get_last_lr()[0]:.6f}")
 
             # Log to wandb
@@ -312,6 +320,7 @@ def train_size_head(
                     "height_accuracy": height_acc,
                     "width_accuracy": width_acc,
                     "overall_accuracy": (height_acc + width_acc) / 2,
+                    "grad_norm": avg_grad_norm,
                     "learning_rate": scheduler.get_last_lr()[0],
                     "best_val_loss": best_val_loss
                 }, step=step + 1)
