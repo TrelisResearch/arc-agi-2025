@@ -20,6 +20,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, TypedDict, Union, Tuple, Any
 from tqdm import tqdm
 import torch
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 
 # Add project root to Python path
 project_root = Path(__file__).parent.parent.parent
@@ -204,7 +206,139 @@ class DiffusionInference:
             print(f"Warning: Solutions file not found: {solutions_path}")
             return {}
 
-    def predict_single(self, input_grid: np.ndarray, task_idx: int, task_id: str = None, expected_output: np.ndarray = None) -> Tuple[np.ndarray, Optional[str], str]:
+    def sample_with_steps(
+        self,
+        input_grids: torch.Tensor,
+        task_indices: torch.Tensor,
+        pred_height: int,
+        pred_width: int
+    ) -> Tuple[torch.Tensor, List[np.ndarray]]:
+        """
+        Sample with intermediate step capture for visualization.
+
+        Returns:
+            final_prediction: Final denoised output
+            intermediate_steps: List of grids at different denoising timesteps
+        """
+        self.model.eval()
+
+        batch_size = input_grids.shape[0]
+        max_size = input_grids.shape[1]
+        num_inference_steps = self.num_inference_steps
+
+        # Initialize with uniform random noise
+        x_t = torch.randint(0, 10, (batch_size, max_size, max_size), device=self.device)
+
+        # Storage for intermediate steps (grid, timestep) tuples
+        intermediate_steps = []
+        capture_interval = max(1, num_inference_steps // 6)  # Capture ~6 evenly spaced steps
+
+        # Denoising loop
+        timesteps = torch.linspace(num_inference_steps - 1, 0, num_inference_steps, dtype=torch.long, device=self.device)
+
+        with torch.no_grad():
+            for i, t in enumerate(timesteps):
+                t_batch = t.repeat(batch_size)
+
+                # Forward pass
+                logits = self.model(x_t, input_grids, task_indices, t_batch)
+
+                # Get predicted probabilities
+                probs = torch.softmax(logits, dim=-1)
+
+                # Sample or argmax
+                if t > 0:
+                    x_t = torch.multinomial(probs.view(-1, probs.shape[-1]), 1).view(x_t.shape)
+                else:
+                    x_t = torch.argmax(logits, dim=-1)
+
+                # Apply size masking
+                for b in range(batch_size):
+                    if pred_height < max_size:
+                        x_t[b, pred_height:, :] = 0
+                    if pred_width < max_size:
+                        x_t[b, :, pred_width:] = 0
+
+                # Capture intermediate steps with their timestep
+                if i % capture_interval == 0 or i == num_inference_steps - 1:
+                    intermediate_steps.append((x_t[0].cpu().numpy().copy(), t.item()))
+
+        return x_t, intermediate_steps
+
+    def visualize_denoising_progression(
+        self,
+        input_grid: np.ndarray,
+        ground_truth: np.ndarray,
+        intermediate_steps: List[Tuple[np.ndarray, int]],
+        task_id: str,
+        save_path: Optional[str] = None
+    ):
+        """
+        Create visualization showing input, ground truth, and denoising progression.
+
+        Args:
+            input_grid: Input grid
+            ground_truth: Expected output
+            intermediate_steps: List of (grid, timestep) tuples
+            task_id: Task identifier
+            save_path: Path to save the visualization
+        """
+        # Create figure with subplots
+        n_steps = len(intermediate_steps)
+        n_cols = min(n_steps + 2, 8)  # Input + GT + up to 6 intermediate steps
+        n_rows = (n_steps + 2 + n_cols - 1) // n_cols  # Calculate rows needed
+
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(3 * n_cols, 3 * n_rows))
+        if n_rows == 1:
+            axes = axes.reshape(1, -1)
+
+        # Color mapping (same as training visualization)
+        cmap = plt.colormaps.get_cmap('tab10')
+
+        # Plot input
+        ax = axes.flat[0]
+        im = ax.imshow(input_grid, cmap=cmap, vmin=0, vmax=9)
+        ax.set_title(f"Input\n{input_grid.shape[0]}×{input_grid.shape[1]}", fontsize=10)
+        ax.axis('off')
+
+        # Plot ground truth
+        ax = axes.flat[1]
+        im = ax.imshow(ground_truth, cmap=cmap, vmin=0, vmax=9)
+        ax.set_title(f"Ground Truth\n{ground_truth.shape[0]}×{ground_truth.shape[1]}", fontsize=10)
+        ax.axis('off')
+
+        # Plot intermediate denoising steps
+        step_indices = np.linspace(0, len(intermediate_steps)-1, min(n_cols-2, len(intermediate_steps)), dtype=int)
+        for i, step_idx in enumerate(step_indices):
+            ax = axes.flat[i + 2]
+            grid, timestep = intermediate_steps[step_idx]
+            im = ax.imshow(grid, cmap=cmap, vmin=0, vmax=9)
+            # Show the actual timestep value and predicted size
+            ax.set_title(f"t={timestep}\n{grid.shape[0]}×{grid.shape[1]}", fontsize=10)
+            ax.axis('off')
+
+        # Hide any unused subplots
+        for i in range(len(step_indices) + 2, len(axes.flat)):
+            axes.flat[i].axis('off')
+
+        # Add main title and colorbar
+        fig.suptitle(f"Denoising Progression - Task: {task_id}", fontsize=12, y=1.02)
+
+        # Add colorbar
+        cbar = fig.colorbar(im, ax=axes.ravel().tolist(), orientation='horizontal',
+                           pad=0.05, aspect=30, shrink=0.8)
+        cbar.set_label('Token Value')
+        cbar.set_ticks(range(10))
+
+        plt.tight_layout()
+
+        if save_path:
+            plt.savefig(save_path, dpi=100, bbox_inches='tight')
+            print(f"📊 Saved denoising visualization to: {save_path}")
+
+        plt.close()
+
+    def predict_single(self, input_grid: np.ndarray, task_idx: int, task_id: str = None, expected_output: np.ndarray = None, capture_steps: bool = False) -> Tuple[np.ndarray, Optional[str], str]:
         """
         Run single prediction on input grid.
 
@@ -248,18 +382,37 @@ class DiffusionInference:
                     size_source = "ground_truth"
 
             # Sample output
-            with torch.no_grad():
-                predicted_grids = self.sampler.sample(
-                    input_grids=input_batch,
-                    task_indices=task_ids,
-                    num_inference_steps=self.num_inference_steps
+            if capture_steps:
+                # Sample with intermediate step capture for visualization
+                predicted_grids, intermediate_steps = self.sample_with_steps(
+                    input_batch, task_ids, pred_height, pred_width
                 )
 
-            # Crop to predicted dimensions (no more region detection!)
-            full_grid = predicted_grids[0].cpu().numpy()
-            predicted_grid = full_grid[:pred_height, :pred_width]
+                # Crop final prediction
+                full_grid = predicted_grids[0].cpu().numpy()
+                predicted_grid = full_grid[:pred_height, :pred_width]
 
-            return predicted_grid, None, size_source
+                # Also crop intermediate steps (maintaining timestep info)
+                cropped_steps = []
+                for grid, timestep in intermediate_steps:
+                    cropped = grid[:pred_height, :pred_width]
+                    cropped_steps.append((cropped, timestep))
+
+                return predicted_grid, None, size_source, cropped_steps
+            else:
+                # Normal sampling without capturing steps
+                with torch.no_grad():
+                    predicted_grids = self.sampler.sample(
+                        input_grids=input_batch,
+                        task_indices=task_ids,
+                        num_inference_steps=self.num_inference_steps
+                    )
+
+                # Crop to predicted dimensions (no more region detection!)
+                full_grid = predicted_grids[0].cpu().numpy()
+                predicted_grid = full_grid[:pred_height, :pred_width]
+
+                return predicted_grid, None, size_source
 
         except Exception as e:
             error_msg = f"Prediction failed: {str(e)}"
@@ -267,7 +420,7 @@ class DiffusionInference:
                 error_msg += f"\n{traceback.format_exc()}"
             return np.array([]), error_msg, "ground_truth"
 
-    def run_task(self, task_id: str, task_data: Dict[str, Any], dataset: str) -> TaskResult:
+    def run_task(self, task_id: str, task_data: Dict[str, Any], dataset: str, visualize: bool = False) -> TaskResult:
         """
         Run inference on a single ARC task with pass@2 scoring.
 
@@ -302,8 +455,26 @@ class DiffusionInference:
         task_idx = self.get_task_idx(task_id)
 
         # Run two attempts for pass@2
-        attempt_1 = self._run_attempt(input_grid, expected_output, test_idx=0, task_idx=task_idx, task_id=task_id)
-        attempt_2 = self._run_attempt(input_grid, expected_output, test_idx=0, task_idx=task_idx, task_id=task_id)
+        # For the first attempt, capture steps if visualization is requested
+        if visualize:
+            attempt_1_result = self._run_attempt(input_grid, expected_output, test_idx=0, task_idx=task_idx, task_id=task_id, capture_steps=True)
+            attempt_1, intermediate_steps = attempt_1_result
+
+            # Create visualization
+            output_dir = Path(self.config.get('output_dir', 'experimental/diffusion/outputs'))
+            output_dir.mkdir(parents=True, exist_ok=True)
+            vis_path = output_dir / f"denoising_progression_{task_id}.png"
+            self.visualize_denoising_progression(
+                input_grid,
+                expected_output,
+                intermediate_steps,
+                task_id,
+                save_path=str(vis_path)
+            )
+        else:
+            attempt_1 = self._run_attempt(input_grid, expected_output, test_idx=0, task_idx=task_idx, task_id=task_id, capture_steps=False)
+
+        attempt_2 = self._run_attempt(input_grid, expected_output, test_idx=0, task_idx=task_idx, task_id=task_id, capture_steps=False)
 
         # Calculate pass@2 metrics
         pass_at_2 = attempt_1["correct"] or attempt_2["correct"]
@@ -320,9 +491,14 @@ class DiffusionInference:
             num_test_examples=len(task_data["test"])
         )
 
-    def _run_attempt(self, input_grid: np.ndarray, expected_output: np.ndarray, test_idx: int, task_idx: int, task_id: str = None) -> DiffusionResult:
+    def _run_attempt(self, input_grid: np.ndarray, expected_output: np.ndarray, test_idx: int, task_idx: int, task_id: str = None, capture_steps: bool = False) -> DiffusionResult:
         """Run a single diffusion attempt"""
-        predicted_grid, error, size_source = self.predict_single(input_grid, task_idx, task_id, expected_output)
+        result = self.predict_single(input_grid, task_idx, task_id, expected_output, capture_steps=capture_steps)
+        if capture_steps:
+            predicted_grid, error, size_source, intermediate_steps = result
+        else:
+            predicted_grid, error, size_source = result
+            intermediate_steps = None
 
         # Check correctness
         correct = False
@@ -342,7 +518,7 @@ class DiffusionInference:
         pred_height = predicted_grid.shape[0] if len(predicted_grid) > 0 else 30
         pred_width = predicted_grid.shape[1] if len(predicted_grid) > 0 else 30
 
-        return DiffusionResult(
+        result_dict = DiffusionResult(
             test_idx=test_idx,
             input_grid=input_grid.tolist(),
             predicted=predicted_grid.tolist() if len(predicted_grid) > 0 else None,
@@ -353,6 +529,12 @@ class DiffusionInference:
             pred_width=pred_width,
             size_source=size_source
         )
+
+        # Return intermediate steps if captured
+        if capture_steps:
+            return result_dict, intermediate_steps
+        else:
+            return result_dict
 
 
 def calculate_metrics(results: List[TaskResult]) -> Dict[str, Any]:
@@ -570,9 +752,11 @@ def main():
         errors = 0
 
         progress_bar = tqdm(tasks, desc="Running inference")
-        for task_id, task_data in progress_bar:
+        for i, (task_id, task_data) in enumerate(progress_bar):
             try:
-                result = inference.run_task(task_id, task_data, f"{args.dataset}/{args.subset}")
+                # Visualize denoising for the first task
+                visualize = (i == 0)
+                result = inference.run_task(task_id, task_data, f"{args.dataset}/{args.subset}", visualize=visualize)
                 results.append(result)
 
                 # Update progress bar with current stats
