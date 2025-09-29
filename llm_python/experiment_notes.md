@@ -30,6 +30,41 @@ Commercial:
 
 ---
 ## Sept 29th 2025
+### Inferencing the OSS model
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/gpt-oss-20b_ds-arc-agi-2-partialplus-max-c2842" --max-attempts 12 --max-workers 128 --subset evaluation > OSS-max.log &
+```
+Dataset: arc-prize-2025
+Subset: evaluation
+Model: Trelis/gpt-oss-20b_ds-arc-agi-2-partialplus-max-c2842
+Total tasks: 120
+Total time: 2310.2s
+Successful API calls: 120/120 (100.0%)
+Total tokens used: 19,354,656
+Total cost: $8.018221
+
+📊 CORE METRICS:
+  Pass@2 (Weighted Voting): 0.0% (0.0% excl. trans)
+  Pass@2 (Train Majority):  0.0% (0.0% excl. trans)
+  Oracle (Best Attempt):    0.0% (0.0% excl. trans)
+  All Train Correct:        0.0% (0.0% excl. trans)
+  Min 1 Train Correct:      0.0% (0.0% excl. trans)
+  Min 1 Code Success:       45.8%
+  Max Length Responses:     60.8%
+  Timeout Responses:        0.0%
+  API Failure Responses:    0.0%
+  Execution Timeout Responses (of all attempts): 0.0%
+  Execution Error Responses (of all attempts): 1.3%
+  No Program Responses (of all attempts): 93.5%
+✅ Checkpointed 73 programs to /Users/ronanmcgovern/TR/arc-agi-2025/llm_python/datasets/inference/20250929_183013_Trelis_gpt-oss-20b_ds-arc-agi-2-partialplus-max-c2842_arc-prize-2025_evaluation.parquet
+
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 "Trelis/gpt-oss-20b_ds-arc-agi-2-partialplus-max-c2842" --max-attempts 12 --max-workers 128 --subset evaluation --max-tokens 32000 > OSS-max-32k.log &
+```
+
+### Diffusion Modelling
+See `experimental/diffusion/notes.md` for diffusion notes from here, I won't continue in this file, which I'll keep for llm_python.
+
 ### Manual task creation
 Already done:
 e8686506 -> kmpi991v
@@ -53,6 +88,7 @@ dd6b8c4b -> not solved yet
 faa9f03d
 
 ## Sept 28th 2025
+
 ### Diffusion testing
 The model has very low train loss, and validation loss has gone up quite a bit.
 

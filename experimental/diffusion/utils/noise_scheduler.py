@@ -12,8 +12,7 @@ class DiscreteNoiseScheduler:
     Discrete diffusion noise scheduler using uniform mixing kernel.
     At each step, keep token with prob (1 - beta_t), else replace with random token.
 
-    For cosine schedule: Uses alpha_bar_final and cosine_s parameters.
-    For linear schedule: Uses beta_min and beta_max parameters.
+    Uses cosine schedule with alpha_bar_final and cosine_s parameters.
     """
 
     def __init__(
@@ -23,20 +22,12 @@ class DiscreteNoiseScheduler:
         schedule_type: str = "cosine",
         alpha_bar_final: float = 0.02,  # α_bar_T target (88.2% noise for 10-class uniform)
         cosine_s: float = 0.008,        # cosine offset
-        # Legacy parameters for linear schedule (unused for cosine)
-        beta_min: float = 1e-4,
-        beta_max: float = 2e-2
     ):
         self.num_timesteps = num_timesteps
         self.vocab_size = vocab_size
         self.schedule_type = schedule_type
         self.alpha_bar_final = alpha_bar_final
         self.cosine_s = cosine_s
-
-        # Only used for linear schedule
-        if schedule_type == "linear":
-            self.beta_min = beta_min
-            self.beta_max = beta_max
 
         # Create noise schedule
         self.alpha_bars = self._create_alpha_bars()
@@ -53,34 +44,22 @@ class DiscreteNoiseScheduler:
         return self
 
     def _create_alpha_bars(self) -> torch.Tensor:
-        """Create alpha_bar schedule using specified formula."""
-        if self.schedule_type == "cosine":
-            # Use exact formula: r_t = cos^2((t/T + s)/(1 + s) * π/2)
-            # α_bar_t = α_bar_T + (1 - α_bar_T) * r_t / r_0
-            # With α_bar_T = 0.02, this gives 88.2% noise level (near max 90% for 10 classes)
+        """Create alpha_bar schedule using cosine formula."""
+        # Use exact formula: r_t = cos^2((t/T + s)/(1 + s) * π/2)
+        # α_bar_t = α_bar_T + (1 - α_bar_T) * r_t / r_0
+        # With α_bar_T = 0.02, this gives 88.2% noise level (near max 90% for 10 classes)
 
-            timesteps = torch.arange(0, self.num_timesteps + 1, dtype=torch.float32)  # [0, 1, ..., T]
+        timesteps = torch.arange(0, self.num_timesteps + 1, dtype=torch.float32)  # [0, 1, ..., T]
 
-            # Compute raw cosine values r_t
-            r_values = torch.cos(((timesteps / self.num_timesteps) + self.cosine_s) / (1 + self.cosine_s) * np.pi / 2) ** 2
+        # Compute raw cosine values r_t
+        r_values = torch.cos(((timesteps / self.num_timesteps) + self.cosine_s) / (1 + self.cosine_s) * np.pi / 2) ** 2
 
-            # Normalize and scale: α_bar_t = α_bar_T + (1 - α_bar_T) * r_t / r_0
-            r_0 = r_values[0]  # r_0 for normalization
-            alpha_bars = self.alpha_bar_final + (1 - self.alpha_bar_final) * r_values / r_0
+        # Normalize and scale: α_bar_t = α_bar_T + (1 - α_bar_T) * r_t / r_0
+        r_0 = r_values[0]  # r_0 for normalization
+        alpha_bars = self.alpha_bar_final + (1 - self.alpha_bar_final) * r_values / r_0
 
-            # Return α_bars for timesteps 1, 2, ..., T (exclude t=0)
-            return alpha_bars[1:]
-
-        elif self.schedule_type == "linear":
-            # Traditional linear-beta schedule: betas linearly spaced, then derive α_bars
-            # β_t linearly spaced from beta_min to beta_max
-            betas = torch.linspace(self.beta_min, self.beta_max, self.num_timesteps)
-            alphas = 1.0 - betas
-            # α_bar_t = ∏(α_i) for i=1 to t
-            alpha_bars = torch.cumprod(alphas, dim=0)
-            return alpha_bars
-        else:
-            raise ValueError(f"Unknown schedule type: {self.schedule_type}")
+        # Return α_bars for timesteps 1, 2, ..., T (exclude t=0)
+        return alpha_bars[1:]
 
     def _compute_betas_from_alpha_bars(self) -> torch.Tensor:
         """Compute betas from alpha_bars: β_t = 1 - α_t = 1 - α_bar_t / α_bar_{t-1}"""
