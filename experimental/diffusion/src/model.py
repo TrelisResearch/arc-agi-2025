@@ -414,9 +414,10 @@ class GridSizePredictionHead(nn.Module):
             # Create dummy time token (size prediction doesn't need time, so use zeros)
             time_token = torch.zeros_like(task_token)  # [batch_size, 1, d_model]
 
-            # Create dummy noised output using PAD tokens (more semantically neutral)
-            pad_tokens = torch.full((batch_size, self.max_size * self.max_size), 10, device=input_grid.device)  # PAD token = 10
-            dummy_noised = self.diffusion_model.denoiser.token_embedding(pad_tokens)  # [batch_size, max_size^2, d_model]
+            # Create dummy noised output using random tokens (more realistic for diffusion)
+            # Use uniform random tokens from valid vocab range [0, 9] to match training distribution
+            random_tokens = torch.randint(0, 10, (batch_size, self.max_size * self.max_size), device=input_grid.device)
+            dummy_noised = self.diffusion_model.denoiser.token_embedding(random_tokens)  # [batch_size, max_size^2, d_model]
             dummy_noised = dummy_noised + pos_emb  # Add positional encoding
             dummy_noised = self.diffusion_model.denoiser.embedding_dropout(dummy_noised)  # Apply dropout
 
