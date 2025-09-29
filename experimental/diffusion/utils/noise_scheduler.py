@@ -19,20 +19,24 @@ class DiscreteNoiseScheduler:
         vocab_size: int = 11,  # {0..9, PAD}
         schedule_type: str = "cosine",
         beta_min: float = 1e-4,
-        beta_max: float = 2e-2
+        beta_max: float = 2e-2,
+        alpha_bar_final: float = 0.02,  # α_bar_T target (88.2% noise for 10-class uniform)
+        cosine_s: float = 0.008         # cosine offset
     ):
         self.num_timesteps = num_timesteps
         self.vocab_size = vocab_size
         self.schedule_type = schedule_type
         self.beta_min = beta_min
         self.beta_max = beta_max
+        self.alpha_bar_final = alpha_bar_final
+        self.cosine_s = cosine_s
 
         # Create noise schedule
-        self.betas = self._create_schedule()
+        self.alpha_bars = self._create_alpha_bars()
+        self.betas = self._compute_betas_from_alpha_bars()
 
         # Pre-compute useful quantities
         self.alphas = 1.0 - self.betas
-        self.alpha_bars = torch.cumprod(self.alphas, dim=0)
 
     def to(self, device: torch.device):
         """Move scheduler tensors to device."""
@@ -41,34 +45,52 @@ class DiscreteNoiseScheduler:
         self.alpha_bars = self.alpha_bars.to(device)
         return self
 
-    def _create_schedule(self) -> torch.Tensor:
-        """Create beta schedule (noise levels over time)."""
+    def _create_alpha_bars(self) -> torch.Tensor:
+        """Create alpha_bar schedule using specified formula."""
         if self.schedule_type == "cosine":
-            # Cosine schedule from beta_min to beta_max
-            timesteps = torch.arange(0, self.num_timesteps + 1, dtype=torch.float32)
-            s = 0.008  # offset to prevent beta from becoming too small at t=0
-            alpha_bars = torch.cos(((timesteps / self.num_timesteps) + s) / (1 + s) * np.pi / 2) ** 2
-            alpha_bars = alpha_bars / alpha_bars[0]  # normalize so alpha_bar[0] = 1
+            # Use exact formula: r_t = cos^2((t/T + s)/(1 + s) * π/2)
+            # α_bar_t = α_bar_T + (1 - α_bar_T) * r_t / r_0
+            # With α_bar_T = 0.02, this gives 88.2% noise level (near max 90% for 10 classes)
 
-            # Convert to betas, clip to [beta_min, beta_max]
-            betas = 1 - alpha_bars[1:] / alpha_bars[:-1]
-            betas = torch.clamp(betas, self.beta_min, self.beta_max)
+            timesteps = torch.arange(0, self.num_timesteps + 1, dtype=torch.float32)  # [0, 1, ..., T]
+
+            # Compute raw cosine values r_t
+            r_values = torch.cos(((timesteps / self.num_timesteps) + self.cosine_s) / (1 + self.cosine_s) * np.pi / 2) ** 2
+
+            # Normalize and scale: α_bar_t = α_bar_T + (1 - α_bar_T) * r_t / r_0
+            r_0 = r_values[0]  # r_0 for normalization
+            alpha_bars = self.alpha_bar_final + (1 - self.alpha_bar_final) * r_values / r_0
+
+            # Return α_bars for timesteps 1, 2, ..., T (exclude t=0)
+            return alpha_bars[1:]
 
         elif self.schedule_type == "linear":
-            betas = torch.linspace(self.beta_min, self.beta_max, self.num_timesteps)
+            # Linear interpolation from 1.0 to alpha_bar_final
+            alpha_bars = torch.linspace(1.0, self.alpha_bar_final, self.num_timesteps)
+            return alpha_bars
         else:
             raise ValueError(f"Unknown schedule type: {self.schedule_type}")
 
+    def _compute_betas_from_alpha_bars(self) -> torch.Tensor:
+        """Compute betas from alpha_bars: β_t = 1 - α_t = 1 - α_bar_t / α_bar_{t-1}"""
+        # Prepend α_bar_0 = 1.0 for computation
+        alpha_bars_with_0 = torch.cat([torch.tensor([1.0]), self.alpha_bars])
+
+        # Compute α_t = α_bar_t / α_bar_{t-1}
+        alphas = self.alpha_bars / alpha_bars_with_0[:-1]
+
+        # Compute β_t = 1 - α_t
+        betas = 1.0 - alphas
+
         return betas
 
-    def add_noise(self, x0: torch.Tensor, t: torch.Tensor, token_distribution: torch.Tensor = None) -> torch.Tensor:
+    def add_noise(self, x0: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
         """
-        Add noise to clean tokens x0 at timestep t using global mixing kernel.
+        Add noise to clean tokens x0 at timestep t using uniform mixing kernel.
 
         Args:
             x0: Clean tokens [batch_size, height, width]
             t: Timestep tensor [batch_size]
-            token_distribution: Global token probabilities [vocab_size] or None for uniform
 
         Returns:
             xt: Noisy tokens [batch_size, height, width]
@@ -82,17 +104,8 @@ class DiscreteNoiseScheduler:
         # Create random mask: keep original token with prob alpha_bar_t
         keep_mask = torch.rand(batch_size, height, width, device=device) < alpha_bars_t.unsqueeze(-1).unsqueeze(-1)
 
-        # Create random tokens for replacement using global distribution
-        if token_distribution is not None:
-            # Sample from global distribution
-            dist = token_distribution.to(device)
-            total_pixels = batch_size * height * width
-            pixels = torch.multinomial(dist, num_samples=total_pixels, replacement=True)
-            random_tokens = pixels.view(batch_size, height, width)
-        else:
-            # Fallback to uniform sampling (should only happen in tests)
-            print("Warning: Using uniform token distribution fallback - this may produce unrealistic noise")
-            random_tokens = torch.randint(0, self.vocab_size, (batch_size, height, width), device=device)
+        # Create random tokens for replacement using uniform distribution over {0..9}
+        random_tokens = torch.randint(0, 10, (batch_size, height, width), device=device)
 
         # Apply noise: keep original where mask is True, replace with random elsewhere
         xt = torch.where(keep_mask, x0, random_tokens)

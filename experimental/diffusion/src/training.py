@@ -140,14 +140,12 @@ class ARCDiffusionTrainer:
         # Apply pixel noise to input grids only (not outputs)
         input_grids = self.apply_pixel_noise(input_grids)
 
-        # Sample random timesteps (0-indexed for array access)
-        timesteps = torch.randint(0, self.noise_scheduler.num_timesteps, (batch_size,), device=self.device)
+        # Sample random timesteps from {1, ..., T} (1-indexed as specified)
+        # Convert to 0-indexed for array access by subtracting 1
+        timesteps = torch.randint(1, self.noise_scheduler.num_timesteps + 1, (batch_size,), device=self.device) - 1
 
-        # Get global token distribution for noise sampling
-        global_distribution = self.dataset.get_global_distribution()
-
-        # Add noise to clean output grids using global distribution
-        noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps, global_distribution)
+        # Add noise to clean output grids using uniform distribution over {0..9}
+        noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps)
 
         # Forward pass with mixed precision
         if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
@@ -233,11 +231,8 @@ class ARCDiffusionTrainer:
                 # Sample random timesteps (0-indexed for array access)
                 timesteps = torch.randint(0, self.noise_scheduler.num_timesteps, (batch_size,), device=self.device)
 
-                # Get global token distribution for noise sampling
-                global_distribution = self.dataset.get_global_distribution()
-
-                # Add noise using global distribution
-                noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps, global_distribution)
+                # Add noise using uniform distribution over {0..9}
+                noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps)
 
                 # Forward pass (no CFG during validation) with mixed precision
                 if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
@@ -326,22 +321,12 @@ class ARCDiffusionSampler:
             predicted_heights, predicted_widths = self.size_predictor.predict_sizes(input_grids, task_indices)
             print(f"Predicted sizes: heights={predicted_heights.cpu().tolist()}, widths={predicted_widths.cpu().tolist()}")
 
-        # Initialize with global distribution random noise
-        if self.dataset is not None:
-            # Get global token distribution for initial noise
-            global_distribution = self.dataset.get_global_distribution().to(self.device)
-
-            # Sample initial noise using global distribution
-            total_pixels = batch_size * max_size * max_size
-            pixels = torch.multinomial(global_distribution, num_samples=total_pixels, replacement=True)
-            x_t = pixels.view(batch_size, max_size, max_size)
-        else:
-            # Fallback to uniform noise if no global distribution available
-            x_t = torch.randint(
-                0, self.noise_scheduler.vocab_size,
-                (batch_size, max_size, max_size),
-                device=self.device
-            )
+        # Initialize with uniform random noise over {0..9}
+        x_t = torch.randint(
+            0, 10,  # Uniform over {0..9}
+            (batch_size, max_size, max_size),
+            device=self.device
+        )
 
         # Denoising loop (0-indexed timesteps)
         timesteps = torch.linspace(num_inference_steps - 1, 0, num_inference_steps, dtype=torch.long, device=self.device)

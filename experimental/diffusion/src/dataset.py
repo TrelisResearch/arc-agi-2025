@@ -130,8 +130,7 @@ class ARCDataset(Dataset):
             all_tasks.update(augmented_tasks)
             print(f"Total tasks after augmentation: {len(all_tasks)}")
 
-        # Use hard-coded global token distribution based on ARC dataset statistics
-        self.global_distribution = self._get_hardcoded_distribution()
+        # Note: No longer using global token distribution, using uniform over {0..9}
 
         # Convert tasks to examples
         for task_id, task_data in all_tasks.items():
@@ -181,39 +180,6 @@ class ARCDataset(Dataset):
 
         return augmented_tasks
 
-    def _get_hardcoded_distribution(self) -> torch.Tensor:
-        """
-        Get hard-coded global token distribution based on ARC dataset statistics.
-
-        Noise sampling uses only actual ARC colors 0-9 (no PAD tokens):
-        - Black (token 0): keeps same relative frequency vs colors
-        - Colors (tokens 1-9): equal distribution among colors
-        - PAD token (10): excluded from noise sampling
-
-        Returns:
-            Global probability distribution over tokens 0-9 [vocab_size=10]
-        """
-        token_probs = torch.zeros(10)  # Only tokens 0-9 for noise sampling (no PAD)
-
-        # Based on original ratios: Black was 5.43%, colors were 0.34% each
-        # Ratio of black to single color: 5.43 / 0.34 = ~16:1
-        # So black gets 16 parts, each color gets 1 part = 25 total parts
-
-        black_weight = 16.0
-        color_weight = 1.0
-        total_weight = black_weight + 9 * color_weight  # 16 + 9 = 25
-
-        token_probs[0] = black_weight / total_weight      # Black: 16/25 = 0.64
-        token_probs[1:10] = color_weight / total_weight   # Colors: 1/25 = 0.04 each
-
-        # Normalize to ensure exact sum of 1.0
-        token_probs = token_probs / token_probs.sum()
-
-        print(f"Using hard-coded global token distribution (no PAD):")
-        for i in range(10):
-            print(f"  Token {i}: {token_probs[i]:.4f}")
-
-        return token_probs
 
     def _load_solutions(self, solutions_path: str) -> Dict[str, List[List[List[int]]]]:
         """Load solutions from JSON file."""
@@ -253,9 +219,6 @@ class ARCDataset(Dataset):
             'task_id_to_idx': self.task_id_to_idx
         }
 
-    def get_global_distribution(self) -> torch.Tensor:
-        """Get the global token distribution for noise sampling."""
-        return self.global_distribution
 
 
 class ARCDataLoader:

@@ -95,7 +95,6 @@ def visualize_noise_schedule(
     output_valid_height: int,
     output_valid_width: int,
     noise_scheduler,
-    global_distribution: torch.Tensor,
     device: torch.device,
     output_path: str,
     num_timesteps: int = 5
@@ -111,7 +110,6 @@ def visualize_noise_schedule(
         output_valid_height: Height of valid (non-padded) region in output
         output_valid_width: Width of valid (non-padded) region in output
         noise_scheduler: The noise scheduler used for training
-        global_distribution: Global token distribution for noise sampling
         device: PyTorch device
         output_path: Path to save the visualization PNG
         num_timesteps: Number of timesteps to visualize (default 5)
@@ -147,14 +145,16 @@ def visualize_noise_schedule(
         timestep_tensor = torch.tensor([t], device=device)
         noisy_tensor = noise_scheduler.add_noise(
             output_tensor.unsqueeze(0),
-            timestep_tensor,
-            global_distribution
+            timestep_tensor
         )
         noisy_grid = noisy_tensor[0].cpu().numpy()
 
-        # Calculate noise percentage
-        noise_pct = t / max_t * 100
-        title = f"Noisy Target t={t}\n({noise_pct:.0f}% noise)"
+        # Calculate actual noise level for 10-class discrete diffusion
+        alpha_bar_t = noise_scheduler.alpha_bars[t].item()
+        # P(correct) = P(kept) + P(replaced & random correct) = alpha_bar_t + (1-alpha_bar_t) * 0.1
+        prob_correct = alpha_bar_t + (1 - alpha_bar_t) * 0.1
+        actual_noise_pct = (1 - prob_correct) * 100
+        title = f"Noisy Target t={t}\n({actual_noise_pct:.0f}% noise)"
 
         render_grid(noisy_grid, axes[1, i], title,
                    valid_height=output_valid_height, valid_width=output_valid_width,
@@ -231,8 +231,7 @@ def create_training_visualization(
         input_height, input_width = output_height, output_width
         print("⚠️  Could not determine input dimensions, using output dimensions")
 
-    # Get global distribution
-    global_distribution = dataset.get_global_distribution().to(device)
+    # Note: No longer using global distribution, noise scheduler uses uniform over {0..9}
 
     # Create output path
     output_path = output_dir / "training_noise_visualization.png"
@@ -246,7 +245,6 @@ def create_training_visualization(
         output_valid_height=output_height,
         output_valid_width=output_width,
         noise_scheduler=noise_scheduler,
-        global_distribution=global_distribution,
         device=device,
         output_path=str(output_path),
         num_timesteps=5
