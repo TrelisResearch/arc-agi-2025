@@ -231,7 +231,6 @@ def create_training_visualization(
         input_height, input_width = output_height, output_width
         print("⚠️  Could not determine input dimensions, using output dimensions")
 
-    # Note: No longer using global distribution, noise scheduler uses uniform over {0..9}
 
     # Create output path
     output_path = output_dir / "training_noise_visualization.png"

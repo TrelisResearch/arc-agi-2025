@@ -27,7 +27,7 @@ class ARCDiffusionTrainer:
         model: ARCDiffusionModel,
         noise_scheduler: DiscreteNoiseScheduler,
         device: torch.device,
-        dataset,  # Need dataset reference to get task distributions
+        dataset,  # Need dataset reference to get task info
         learning_rate: float = 3e-4,
         weight_decay: float = 0.01,
         use_mixed_precision: bool = True,
@@ -276,7 +276,7 @@ class ARCDiffusionSampler:
         model: ARCDiffusionModel,
         noise_scheduler: DiscreteNoiseScheduler,
         device: torch.device,
-        dataset=None,  # Need dataset to get task distributions
+        dataset=None,  # Need dataset for task info
         size_predictor=None,  # Optional GridSizePredictionHead for size prediction
         debug: bool = False
     ):
@@ -491,7 +491,7 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         model=model,
         noise_scheduler=noise_scheduler,
         device=device,
-        dataset=full_dataset,  # Pass dataset for task-specific distributions
+        dataset=full_dataset,  # Pass dataset for task info
         learning_rate=config['learning_rate'],
         weight_decay=config.get('weight_decay', 0.01),
         use_mixed_precision=config.get('use_mixed_precision', True),
@@ -566,57 +566,58 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             log_dict["train/epoch"] = current_epoch_approx
             wandb.log(log_dict, step=step)
 
-        # Check if we've completed an epoch for validation
+        # Check if we've completed an epoch for printing
         if step % steps_per_epoch == 0:
             current_epoch = step // steps_per_epoch
             print(f"\nCompleted epoch {current_epoch} (step {step})")
 
-            # Validation at epoch boundaries
-            val_every_steps = config.get('val_every_steps', steps_per_epoch)  # Default to every epoch
+        # Validation based on step intervals (not epoch boundaries)
+        val_every_steps = config.get('val_every_steps', steps_per_epoch)  # Default to every epoch
+        if step % val_every_steps == 0:
+            # Calculate average training losses for this validation period
             avg_train_losses = {key: total / num_batches_this_epoch for key, total in epoch_losses.items()}
 
-            if step % val_every_steps == 0:
-                print("Running validation...")
-                val_losses = trainer.validate(val_loader, num_batches=config.get('max_val_batches', 10))
+            print("Running validation...")
+            val_losses = trainer.validate(val_loader, num_batches=config.get('max_val_batches', 10))
 
-                print(f"Validation losses: {val_losses}")
+            print(f"Validation losses: {val_losses}")
 
-                # Log validation losses
-                if config.get('use_wandb', False):
-                    val_log_dict = {f"val/{key}": value for key, value in val_losses.items()}
-                    val_log_dict["val/learning_rate"] = trainer.scheduler.get_last_lr()[0]
-                    val_log_dict["val/step"] = step
-                    val_log_dict["val/epoch"] = current_epoch_approx
-                    wandb.log(val_log_dict, step=step)
+            # Log validation losses
+            if config.get('use_wandb', False):
+                val_log_dict = {f"val/{key}": value for key, value in val_losses.items()}
+                val_log_dict["val/learning_rate"] = trainer.scheduler.get_last_lr()[0]
+                val_log_dict["val/step"] = step
+                val_log_dict["val/epoch"] = current_epoch_approx
+                wandb.log(val_log_dict, step=step)
 
-                # Save best model
-                if val_losses['total_loss'] < best_val_loss:
-                    best_val_loss = val_losses['total_loss']
-                    # Save model in bfloat16 without modifying the original
-                    model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
-                    torch.save({
-                        'model_state_dict': model_state_dict_bf16,
-                        'optimizer_state_dict': trainer.optimizer.state_dict(),
-                        'scheduler_state_dict': trainer.scheduler.state_dict(),
-                        'epoch': current_epoch,
-                        'step': step,
-                        'val_loss': val_losses['total_loss'],
-                        'config': config,
-                        'dataset_info': dataset_info
+            # Save best model
+            if val_losses['total_loss'] < best_val_loss:
+                best_val_loss = val_losses['total_loss']
+                # Save model in bfloat16 without modifying the original
+                model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
+                torch.save({
+                    'model_state_dict': model_state_dict_bf16,
+                    'optimizer_state_dict': trainer.optimizer.state_dict(),
+                    'scheduler_state_dict': trainer.scheduler.state_dict(),
+                    'epoch': current_epoch,
+                    'step': step,
+                    'val_loss': val_losses['total_loss'],
+                    'config': config,
+                    'dataset_info': dataset_info
                 }, output_dir / 'best_model.pt')
                 print(f"Saved best model with val loss: {best_val_loss:.4f}")
 
-                # Print epoch summary
-                current_lr = trainer.scheduler.get_last_lr()[0]
-                print(f"Epoch {current_epoch} - Train Loss: {avg_train_losses['total_loss']:.4f}, Grad Norm: {avg_train_losses['grad_norm']:.3f}, LR: {current_lr:.6f}")
+            # Print validation summary
+            current_lr = trainer.scheduler.get_last_lr()[0]
+            print(f"Step {step} - Train Loss: {avg_train_losses['total_loss']:.4f}, Grad Norm: {avg_train_losses['grad_norm']:.3f}, LR: {current_lr:.6f}")
 
-                # Reset epoch tracking
-                epoch_losses = {
-                    'total_loss': 0.0,
-                    'grid_loss': 0.0,
-                    'grad_norm': 0.0
-                }
-                num_batches_this_epoch = 0
+            # Reset validation period tracking
+            epoch_losses = {
+                'total_loss': 0.0,
+                'grid_loss': 0.0,
+                'grad_norm': 0.0
+            }
+            num_batches_this_epoch = 0
 
         # Early stopping based on steps if configured
         if config.get('early_stop_steps') and step >= config['early_stop_steps']:

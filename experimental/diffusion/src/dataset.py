@@ -130,7 +130,6 @@ class ARCDataset(Dataset):
             all_tasks.update(augmented_tasks)
             print(f"Total tasks after augmentation: {len(all_tasks)}")
 
-        # Note: No longer using global token distribution, using uniform over {0..9}
 
         # Convert tasks to examples
         for task_id, task_data in all_tasks.items():

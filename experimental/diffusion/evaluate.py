@@ -102,7 +102,7 @@ class DiffusionInference:
         )
         self.noise_scheduler.to(self.device)
 
-        # Create dataset for task-specific distributions
+        # Create dataset for task indexing
         data_paths = load_arc_data_paths(
             data_dir="data/arc-prize-2024",
             datasets=["training_challenges", "evaluation_challenges"]
@@ -113,7 +113,7 @@ class DiffusionInference:
             augment=False,  # No augmentation for inference
             include_training_test_examples=True
         )
-        print(f"📊 Loaded dataset with {len(self.dataset.task_id_to_idx)} tasks for task-specific noise distributions")
+        print(f"📊 Loaded dataset with {len(self.dataset.task_id_to_idx)} tasks for task indexing")
 
         # Load size prediction head if provided
         self.size_head = None
