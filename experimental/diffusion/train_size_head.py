@@ -143,6 +143,17 @@ def train_size_head(
 
     print(f"✓ Created size head with {sum(p.numel() for p in size_head.parameters() if p.requires_grad):,} trainable parameters")
 
+    # Debug: Check which parameters require gradients
+    trainable_params = [p for p in size_head.parameters() if p.requires_grad]
+    diffusion_trainable_params = [p for p in diffusion_model.parameters() if p.requires_grad]
+    print(f"  DEBUG: Size head trainable parameters: {len(trainable_params)}")
+    print(f"  DEBUG: Diffusion model trainable parameters: {len(diffusion_trainable_params)} (should be 0)")
+
+    if len(diffusion_trainable_params) > 0:
+        print(f"  ⚠️  WARNING: Diffusion model has {len(diffusion_trainable_params)} trainable parameters!")
+        for i, p in enumerate(diffusion_trainable_params[:5]):  # Show first 5
+            print(f"    Param {i}: shape {p.shape}, requires_grad={p.requires_grad}")
+
     # Set up data loading
     data_paths = load_arc_data_paths(
         data_dir=config['data']['data_dir'],
@@ -246,13 +257,16 @@ def train_size_head(
         # Backward pass
         loss.backward()
 
-        # Calculate gradient norm before clipping
-        grad_norm = torch.nn.utils.clip_grad_norm_(size_head.parameters(), max_norm=1.0)
+        # Compute gradient norm before clipping (matches backbone training)
+        grad_norm = torch.nn.utils.clip_grad_norm_(size_head.parameters(), max_norm=float('inf'))
+
+        # Gradient clipping
+        torch.nn.utils.clip_grad_norm_(size_head.parameters(), max_norm=1.0)
         optimizer.step()
         scheduler.step()
 
         epoch_train_losses.append(loss.item())
-        epoch_grad_norms.append(grad_norm.item())
+        epoch_grad_norms.append(grad_norm)
         current_epoch_approx = step / steps_per_epoch
 
         # Update progress bar
