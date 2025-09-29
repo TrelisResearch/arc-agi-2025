@@ -3,9 +3,9 @@
 [x] Remove weight decay if duplicated? Was not duplicated, so added it back.
 [x] Use optimizer updates not epochs.
 [x] Remove input encoder and simplify positional encodings to use coordinate embeddings.
-[ ] Just do self attention between task id, timestep, input cells and noised output cells.
-[ ] Log info on accuracy.
-[ ] Generate diffusion charts every x optimizer updates.
+[x] Just do self attention between task id, timestep, input cells and noised output cells.
+[x] Log info on accuracy.
+[x] Generate diffusion charts every x optimizer updates.
 
 **Things to consider adding:**
 - Self-conditioning.

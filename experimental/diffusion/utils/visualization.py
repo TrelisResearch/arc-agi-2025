@@ -174,6 +174,124 @@ def visualize_noise_schedule(
     print(f"📊 Saved noise schedule visualization to: {output_path}")
 
 
+def create_denoising_progression_visualization(
+    model,
+    noise_scheduler,
+    val_dataset,
+    device: torch.device,
+    output_dir: Path,
+    step: int,
+    config: Dict
+) -> None:
+    """
+    Create a visualization showing the denoising progression during training.
+    Shows input grid, ground truth, and denoising steps at different timesteps.
+
+    Args:
+        model: The diffusion model
+        noise_scheduler: The noise scheduler
+        val_dataset: Validation dataset to sample from
+        device: PyTorch device
+        output_dir: Directory to save visualization
+        step: Current training step (for filename)
+        config: Training configuration
+    """
+    print(f"🎨 Creating denoising progression visualization at step {step}...")
+
+    model.eval()
+
+    # Get a random validation example
+    import random
+    val_idx = random.randint(0, len(val_dataset) - 1)
+    example = val_dataset[val_idx]
+
+    # Extract data and move to device
+    input_grid = example['input_grid'].unsqueeze(0).to(device)  # [1, max_size, max_size]
+    output_grid = example['output_grid'].unsqueeze(0).to(device)  # [1, max_size, max_size]
+    task_idx = example['task_idx'].unsqueeze(0).to(device)  # [1]
+    height = example['height'].item()
+    width = example['width'].item()
+
+    # Define timesteps to visualize (as fractions of total timesteps)
+    timestep_fractions = [0.0, 0.25, 0.5, 0.75, 1.0]
+    max_timesteps = noise_scheduler.num_timesteps
+    timesteps_to_viz = [int(frac * (max_timesteps - 1)) for frac in timestep_fractions]
+
+    # Create figure: 2 rows, len(timesteps_to_viz) + 2 columns
+    # First row: Input, Ground Truth, then denoising steps
+    # Second row: Noisy versions at each timestep
+    fig, axes = plt.subplots(2, len(timesteps_to_viz) + 2, figsize=(3 * (len(timesteps_to_viz) + 2), 6))
+
+    # Row 1, Col 1: Input grid
+    input_np = input_grid[0].cpu().numpy()
+    render_grid(input_np, axes[0, 0], "Input Grid",
+                valid_height=height, valid_width=width)
+
+    # Row 1, Col 2: Ground truth
+    output_np = output_grid[0].cpu().numpy()
+    render_grid(output_np, axes[0, 1], "Ground Truth",
+                valid_height=height, valid_width=width, show_loss_mask=True)
+
+    # Row 2, Cols 1-2: Empty (or repeat input/gt for reference)
+    axes[1, 0].axis('off')
+    axes[1, 1].axis('off')
+
+    with torch.no_grad():
+        for i, t in enumerate(timesteps_to_viz):
+            col_idx = i + 2  # Offset by 2 for input and ground truth columns
+
+            # Create noisy version at timestep t
+            t_tensor = torch.tensor([t], device=device)
+            noisy_grid = noise_scheduler.add_noise(output_grid, t_tensor)
+
+            # Show noisy grid in bottom row
+            noisy_np = noisy_grid[0].cpu().numpy()
+            alpha_bar_t = noise_scheduler.alpha_bars[t].item()
+            prob_correct = alpha_bar_t + (1 - alpha_bar_t) * 0.1
+            noise_pct = (1 - prob_correct) * 100
+
+            render_grid(noisy_np, axes[1, col_idx], f"Noisy t={t}\n({noise_pct:.0f}% noise)",
+                       valid_height=height, valid_width=width)
+
+            # Generate denoised prediction from this timestep
+            logits = model(noisy_grid, input_grid, task_idx, t_tensor)
+            predicted_grid = torch.argmax(logits, dim=-1)
+
+            # Debug: Check prediction statistics
+            if i == 0:  # Only print for first timestep to avoid spam
+                unique_preds, counts = torch.unique(predicted_grid[0, :height, :width], return_counts=True)
+                pred_stats = {pred.item(): count.item() for pred, count in zip(unique_preds, counts)}
+                print(f"Debug - Step {step}, t={t}: Prediction distribution in valid region: {pred_stats}")
+
+            # Apply ground truth masking (only show predictions within valid region)
+            masked_pred = predicted_grid.clone()
+            masked_pred[0, height:, :] = 10  # Set invalid rows to PAD
+            masked_pred[0, :, width:] = 10   # Set invalid cols to PAD
+
+            pred_np = masked_pred[0].cpu().numpy()
+
+            # Show denoised prediction in top row
+            title = f"Denoised t={t}\n(frac={timestep_fractions[i]:.2f})"
+            render_grid(pred_np, axes[0, col_idx], title,
+                       valid_height=height, valid_width=width, show_loss_mask=True)
+
+    # Adjust layout and add title
+    plt.tight_layout()
+    task_id = example.get('task_id', 'unknown')
+    fig.suptitle(f"Denoising Progression - Step {step} - Task: {task_id}", fontsize=14, y=1.02)
+
+    # Create output path
+    output_path = output_dir / f"denoising_progression_step_{step:06d}.png"
+
+    # Save visualization
+    plt.savefig(output_path, dpi=200, bbox_inches='tight', facecolor='white')
+    plt.close()
+
+    print(f"📊 Saved denoising progression to: {output_path}")
+
+    model.train()  # Return to training mode
+
+
 def create_training_visualization(
     dataset,
     noise_scheduler,

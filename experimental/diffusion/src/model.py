@@ -227,6 +227,50 @@ class ARCDiffusionModel(nn.Module):
 
             # Compute loss only on valid positions
             grid_loss = F.cross_entropy(valid_logits, valid_targets, reduction='mean')
+
+            # Compute accuracy metrics on valid positions only
+            with torch.no_grad():
+                predictions = torch.argmax(valid_logits, dim=-1)
+                correct = (predictions == valid_targets).float()
+                accuracy = correct.mean().item()
+                chance_adjusted_acc = accuracy - 0.10  # 10 colors = 10% chance
+
+                # Expand timesteps to match mask shape for per-timestep metrics
+                timesteps_expanded = timesteps.unsqueeze(1).unsqueeze(2).expand_as(mask)
+                valid_timesteps = timesteps_expanded[mask]  # [num_valid_positions]
+
+                # Normalize timesteps to [0, 1] range (timesteps are 0-indexed)
+                timesteps_norm = valid_timesteps.float() / 127.0  # 128 timesteps: 0-127
+
+                # Create timestep buckets: low [0, 0.33), mid [0.33, 0.66), high [0.66, 1.0]
+                low_mask = timesteps_norm < 0.33
+                mid_mask = (timesteps_norm >= 0.33) & (timesteps_norm < 0.66)
+                high_mask = timesteps_norm >= 0.66
+
+                def compute_bucket_metrics(bucket_mask, bucket_name):
+                    if bucket_mask.sum() == 0:
+                        return {}
+
+                    bucket_correct = correct[bucket_mask]
+                    bucket_logits = valid_logits[bucket_mask]
+                    bucket_targets = valid_targets[bucket_mask]
+
+                    bucket_acc = bucket_correct.mean().item()
+                    bucket_chance_adj = bucket_acc - 0.10
+                    bucket_ce = F.cross_entropy(bucket_logits, bucket_targets, reduction='mean').item()
+                    bucket_count = bucket_mask.sum().item()
+
+                    return {
+                        f'{bucket_name}_accuracy': bucket_acc,
+                        f'{bucket_name}_chance_adj_acc': bucket_chance_adj,
+                        f'{bucket_name}_cross_entropy': bucket_ce,
+                        f'{bucket_name}_count': bucket_count,
+                    }
+
+                # Compute metrics for each bucket
+                low_metrics = compute_bucket_metrics(low_mask, 'low_noise')
+                mid_metrics = compute_bucket_metrics(mid_mask, 'mid_noise')
+                high_metrics = compute_bucket_metrics(high_mask, 'high_noise')
         else:
             # Fallback to original behavior (all positions)
             grid_loss = F.cross_entropy(
@@ -235,10 +279,66 @@ class ARCDiffusionModel(nn.Module):
                 reduction='mean'
             )
 
-        return {
+            # Compute accuracy metrics on all positions
+            with torch.no_grad():
+                predictions = torch.argmax(logits, dim=-1)
+                correct = (predictions == x0).float()
+                accuracy = correct.mean().item()
+                chance_adjusted_acc = accuracy - 0.10
+
+                # Flatten for per-timestep metrics
+                predictions_flat = predictions.view(-1)
+                targets_flat = x0.view(-1)
+                correct_flat = correct.view(-1)
+
+                # Expand timesteps to match flattened shape
+                timesteps_flat = timesteps.unsqueeze(1).unsqueeze(2).expand_as(x0).view(-1)
+                timesteps_norm = timesteps_flat.float() / 127.0  # 128 timesteps: 0-127
+
+                # Create timestep buckets
+                low_mask = timesteps_norm < 0.33
+                mid_mask = (timesteps_norm >= 0.33) & (timesteps_norm < 0.66)
+                high_mask = timesteps_norm >= 0.66
+
+                def compute_bucket_metrics(bucket_mask, bucket_name):
+                    if bucket_mask.sum() == 0:
+                        return {}
+
+                    bucket_correct = correct_flat[bucket_mask]
+                    bucket_logits = logits.view(-1, self.vocab_size)[bucket_mask]
+                    bucket_targets = targets_flat[bucket_mask]
+
+                    bucket_acc = bucket_correct.mean().item()
+                    bucket_chance_adj = bucket_acc - 0.10
+                    bucket_ce = F.cross_entropy(bucket_logits, bucket_targets, reduction='mean').item()
+                    bucket_count = bucket_mask.sum().item()
+
+                    return {
+                        f'{bucket_name}_accuracy': bucket_acc,
+                        f'{bucket_name}_chance_adj_acc': bucket_chance_adj,
+                        f'{bucket_name}_cross_entropy': bucket_ce,
+                        f'{bucket_name}_count': bucket_count,
+                    }
+
+                # Compute metrics for each bucket
+                low_metrics = compute_bucket_metrics(low_mask, 'low_noise')
+                mid_metrics = compute_bucket_metrics(mid_mask, 'mid_noise')
+                high_metrics = compute_bucket_metrics(high_mask, 'high_noise')
+
+        # Combine all metrics
+        metrics = {
             'total_loss': grid_loss,
             'grid_loss': grid_loss,
+            'accuracy': accuracy,
+            'chance_adjusted_accuracy': chance_adjusted_acc,
         }
+
+        # Add bucket-specific metrics
+        metrics.update(low_metrics)
+        metrics.update(mid_metrics)
+        metrics.update(high_metrics)
+
+        return metrics
 
 
 

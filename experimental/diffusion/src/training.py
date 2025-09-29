@@ -15,7 +15,7 @@ from .model import ARCDiffusionModel
 from .dataset import ARCDataset, ARCDataLoader, load_arc_data_paths, collate_fn
 from ..utils.noise_scheduler import DiscreteNoiseScheduler
 from ..utils.grid_utils import clamp_outside_mask, batch_create_masks, extract_valid_region, grid_to_display_string
-from ..utils.visualization import create_training_visualization
+from ..utils.visualization import create_training_visualization, create_denoising_progression_visualization
 from torch.utils.data import DataLoader
 
 
@@ -208,10 +208,7 @@ class ARCDiffusionTrainer:
     def validate(self, val_loader: torch.utils.data.DataLoader, num_batches: int = 10) -> Dict[str, float]:
         """Run validation."""
         self.model.eval()
-        total_losses = {
-            'total_loss': 0.0,
-            'grid_loss': 0.0
-        }
+        total_losses = {}  # Will be initialized from first batch
         num_samples = 0
 
         with torch.no_grad():
@@ -257,9 +254,19 @@ class ARCDiffusionTrainer:
                         widths=widths
                     )
 
-                # Accumulate losses
+                # Initialize total_losses on first batch
+                if not total_losses:
+                    total_losses = {key: 0.0 for key in losses.keys()}
+
+                # Accumulate losses - handle missing keys gracefully
                 for key, value in losses.items():
-                    total_losses[key] += value.item() * batch_size
+                    if key not in total_losses:
+                        total_losses[key] = 0.0
+
+                    if isinstance(value, torch.Tensor):
+                        total_losses[key] += value.item() * batch_size
+                    else:
+                        total_losses[key] += value * batch_size
 
                 num_samples += batch_size
 
@@ -554,6 +561,8 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         progress_bar.set_postfix({
             'loss': f"{losses['total_loss']:.4f}",
             'grid': f"{losses['grid_loss']:.4f}",
+            'acc': f"{losses.get('accuracy', 0.0):.3f}",
+            'adj_acc': f"{losses.get('chance_adjusted_accuracy', -0.10):.3f}",
             'grad': f"{losses['grad_norm']:.2f}",
             'epoch': f"{current_epoch_approx:.1f}"
         })
@@ -580,7 +589,22 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             print("Running validation...")
             val_losses = trainer.validate(val_loader, num_batches=config.get('max_val_batches', 10))
 
+            # Print key validation metrics in a readable format
             print(f"Validation losses: {val_losses}")
+
+            # Print timestep bucket summary if available
+            if any(key.endswith('_count') for key in val_losses.keys()):
+                print("Timestep bucket breakdown:")
+                for bucket in ['low_noise', 'mid_noise', 'high_noise']:
+                    if f'{bucket}_count' in val_losses:
+                        acc = val_losses.get(f'{bucket}_accuracy', 0.0)
+                        adj_acc = val_losses.get(f'{bucket}_chance_adj_acc', -0.10)
+                        count = val_losses.get(f'{bucket}_count', 0)
+                        print(f"  {bucket:10s}: acc={acc:.3f}, adj_acc={adj_acc:+.3f}, count={count:4.0f}")
+
+            overall_acc = val_losses.get('accuracy', 0.0)
+            overall_adj = val_losses.get('chance_adjusted_accuracy', -0.10)
+            print(f"Overall: acc={overall_acc:.3f}, chance_adj_acc={overall_adj:+.3f}")
 
             # Log validation losses
             if config.get('use_wandb', False):
@@ -606,6 +630,22 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
                     'dataset_info': dataset_info
                 }, output_dir / 'best_model.pt')
                 print(f"Saved best model with val loss: {best_val_loss:.4f}")
+
+            # Create denoising progression visualization
+            vis_every_steps = config.get('vis_every_steps', val_every_steps)  # Default to same as validation
+            if step % vis_every_steps == 0:
+                try:
+                    create_denoising_progression_visualization(
+                        model=model,
+                        noise_scheduler=noise_scheduler,
+                        val_dataset=val_dataset,
+                        device=device,
+                        output_dir=output_dir,
+                        step=step,
+                        config=config
+                    )
+                except Exception as e:
+                    print(f"⚠️ Failed to create denoising visualization: {e}")
 
             # Print validation summary
             current_lr = trainer.scheduler.get_last_lr()[0]
