@@ -170,10 +170,14 @@ class ARCDiffusionModel(nn.Module):
         max_size: int = 30,
         max_tasks: int = 1000,
         embedding_dropout: float = 0.1,
+        include_size_head: bool = True,
+        size_head_hidden_dim: int = None,
     ):
         super().__init__()
         self.vocab_size = vocab_size
         self.max_size = max_size
+        self.include_size_head = include_size_head
+        self.d_model = d_model
 
         self.denoiser = TransformerDenoiser(
             vocab_size=vocab_size,
@@ -184,6 +188,22 @@ class ARCDiffusionModel(nn.Module):
             max_tasks=max_tasks,
             embedding_dropout=embedding_dropout
         )
+
+        # Integrated size prediction head (auxiliary task)
+        if include_size_head:
+            if size_head_hidden_dim is None:
+                size_head_hidden_dim = int(d_model * 0.67)  # Default to 2/3 of d_model
+
+            self.size_head = nn.Sequential(
+                nn.Linear(d_model, size_head_hidden_dim),
+                nn.ReLU(),
+                nn.Dropout(0.1),
+                nn.Linear(size_head_hidden_dim, size_head_hidden_dim),
+                nn.ReLU(),
+                nn.Dropout(0.1)
+            )
+            self.height_head = nn.Linear(size_head_hidden_dim, max_size)
+            self.width_head = nn.Linear(size_head_hidden_dim, max_size)
 
     def forward(
         self,
@@ -205,6 +225,7 @@ class ARCDiffusionModel(nn.Module):
         timesteps: torch.Tensor,  # [batch_size] - timesteps
         heights: Optional[torch.Tensor] = None,  # [batch_size] - grid heights
         widths: Optional[torch.Tensor] = None,   # [batch_size] - grid widths
+        auxiliary_size_loss_weight: float = 0.1,  # Weight for auxiliary size loss
     ) -> Dict[str, torch.Tensor]:
         """Compute training losses with optional masking for pad regions."""
         batch_size = x0.shape[0]
@@ -325,9 +346,43 @@ class ARCDiffusionModel(nn.Module):
                 mid_metrics = compute_bucket_metrics(mid_mask, 'mid_noise')
                 high_metrics = compute_bucket_metrics(high_mask, 'high_noise')
 
+        # Compute auxiliary size loss if size head is included
+        size_loss = torch.tensor(0.0, device=x0.device)
+        size_metrics = {}
+
+        if self.include_size_head and heights is not None and widths is not None:
+            # Get size predictions
+            height_logits, width_logits = self.predict_size(input_grid, task_ids)
+
+            # Convert 1-indexed targets to 0-indexed for cross-entropy
+            height_targets = heights - 1  # [batch_size]
+            width_targets = widths - 1    # [batch_size]
+
+            # Compute losses
+            height_loss = F.cross_entropy(height_logits, height_targets)
+            width_loss = F.cross_entropy(width_logits, width_targets)
+            size_loss = height_loss + width_loss
+
+            # Compute size accuracies
+            with torch.no_grad():
+                height_preds = torch.argmax(height_logits, dim=-1) + 1
+                width_preds = torch.argmax(width_logits, dim=-1) + 1
+                height_acc = (height_preds == heights).float().mean().item()
+                width_acc = (width_preds == widths).float().mean().item()
+                size_acc = ((height_preds == heights) & (width_preds == widths)).float().mean().item()
+
+            size_metrics = {
+                'size_loss': size_loss.item(),
+                'height_loss': height_loss.item(),
+                'width_loss': width_loss.item(),
+                'height_accuracy': height_acc,
+                'width_accuracy': width_acc,
+                'size_accuracy': size_acc,
+            }
+
         # Combine all metrics
         metrics = {
-            'total_loss': grid_loss,
+            'total_loss': grid_loss + auxiliary_size_loss_weight * size_loss,  # Add auxiliary loss with weight
             'grid_loss': grid_loss,
             'accuracy': accuracy,
             'chance_adjusted_accuracy': chance_adjusted_acc,
@@ -338,7 +393,92 @@ class ARCDiffusionModel(nn.Module):
         metrics.update(mid_metrics)
         metrics.update(high_metrics)
 
+        # Add size metrics
+        metrics.update(size_metrics)
+
         return metrics
+
+    def predict_size(
+        self,
+        input_grid: torch.Tensor,
+        task_ids: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Predict output grid size using integrated size head.
+
+        Returns:
+            height_logits: [batch_size, max_size] - logits for height
+            width_logits: [batch_size, max_size] - logits for width
+        """
+        if not self.include_size_head:
+            raise ValueError("Size head not included in model")
+
+        batch_size = input_grid.shape[0]
+
+        # Flatten input grid
+        input_flat = input_grid.view(batch_size, -1)  # [batch_size, max_size^2]
+
+        # Embed tokens
+        input_emb = self.denoiser.token_embedding(input_flat)  # [batch_size, max_size^2, d_model]
+
+        # Add positional encoding
+        pos_emb = self.denoiser.pos_encoding(batch_size)  # [batch_size, max_size^2, d_model]
+        input_emb = input_emb + pos_emb
+
+        # Apply embedding dropout
+        input_emb = self.denoiser.embedding_dropout(input_emb)
+
+        # Create task embedding
+        task_emb = self.denoiser.task_embedding(task_ids)  # [batch_size, d_model]
+        task_token = task_emb.unsqueeze(1)  # [batch_size, 1, d_model]
+
+        # Create dummy time token (zeros for size prediction)
+        time_token = torch.zeros_like(task_token)
+
+        # Create sequence similar to main forward but simpler for size prediction
+        sequence = torch.cat([
+            task_token,     # [batch_size, 1, d_model]
+            time_token,     # [batch_size, 1, d_model]
+            input_emb,      # [batch_size, max_size^2, d_model]
+        ], dim=1)
+
+        # Process through transformer
+        encoded_features = self.denoiser.transformer(sequence)
+
+        # Extract features from input positions (skip task and time)
+        input_features = encoded_features[:, 2:2+self.max_size*self.max_size, :]
+
+        # Global average pooling
+        pooled_features = input_features.mean(dim=1)  # [batch_size, d_model]
+
+        # Pass through size head
+        features = self.size_head(pooled_features)  # [batch_size, hidden_dim]
+
+        # Get height and width logits
+        height_logits = self.height_head(features)  # [batch_size, max_size]
+        width_logits = self.width_head(features)    # [batch_size, max_size]
+
+        return height_logits, width_logits
+
+    def predict_sizes(
+        self,
+        input_grid: torch.Tensor,
+        task_ids: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Predict grid sizes (returns actual height/width values, not logits).
+
+        Returns:
+            heights: [batch_size] - predicted heights (1-indexed)
+            widths: [batch_size] - predicted widths (1-indexed)
+        """
+        height_logits, width_logits = self.predict_size(input_grid, task_ids)
+
+        # Get predictions
+        predicted_heights = torch.argmax(height_logits, dim=-1) + 1
+        predicted_widths = torch.argmax(width_logits, dim=-1) + 1
+
+        return predicted_heights, predicted_widths
 
 
 

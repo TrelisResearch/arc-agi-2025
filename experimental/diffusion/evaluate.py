@@ -115,9 +115,12 @@ class DiffusionInference:
         )
         print(f"📊 Loaded dataset with {len(self.dataset.task_id_to_idx)} tasks for task indexing")
 
-        # Load size prediction head if provided
+        # Check for integrated size head in model first
         self.size_head = None
-        if self.size_head_path:
+        if hasattr(self.model, 'include_size_head') and self.model.include_size_head:
+            print(f"✓ Using integrated size head from model")
+            # No need to load external size head - model has it built in
+        elif self.size_head_path:
             try:
                 print(f"🧠 Loading size prediction head from {self.size_head_path}")
                 # Load size head checkpoint

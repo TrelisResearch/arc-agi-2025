@@ -155,12 +155,8 @@ Examples:
             backbone_path = None
 
         if backbone_path:
-            if not run_command(
-                ["uv", "run", "python", "experimental/diffusion/train_size_head.py", "--config", str(config_path)],
-                "Size head training",
-                cwd=str(project_root)
-            ):
-                print("⚠️ Size head training failed, but continuing to evaluation")
+            print("📐 Size head is now integrated into main model training")
+            print("   The backbone model already includes size prediction capabilities!")
     else:
         print("\n⏭️ Skipping size head training")
 

@@ -7,6 +7,10 @@
 [x] Log info on accuracy.
 [x] Generate diffusion charts every x optimizer updates.
 
+**Results at 7M params with separate diffusion head training**
+- Adding noise to the inputs seems to hurt diffusion performance but help grid size prediction
+- Going from 0->9 augmentations helps diffusion and grid size. Going to 39 augmentations hurts diffusion but helps grid size.
+
 **Things to consider adding:**
 - Self-conditioning.
 The idea is to pass previous logits as an additional input 50% of the time during training.

@@ -33,7 +33,8 @@ class ARCDiffusionTrainer:
         use_mixed_precision: bool = True,
         pixel_noise_prob: float = 0.15,
         pixel_noise_rate: float = 0.02,
-        total_steps: int = 10000
+        total_steps: int = 10000,
+        auxiliary_size_loss_weight: float = 0.1
     ):
         self.model = model
         self.noise_scheduler = noise_scheduler
@@ -42,6 +43,7 @@ class ARCDiffusionTrainer:
         self.use_mixed_precision = use_mixed_precision
         self.pixel_noise_prob = pixel_noise_prob
         self.pixel_noise_rate = pixel_noise_rate
+        self.auxiliary_size_loss_weight = auxiliary_size_loss_weight
 
         # Set up mixed precision
         if use_mixed_precision and device.type in ['cuda', 'mps']:
@@ -157,7 +159,8 @@ class ARCDiffusionTrainer:
                     xt=noisy_grids,
                     timesteps=timesteps,
                     heights=heights,
-                    widths=widths
+                    widths=widths,
+                    auxiliary_size_loss_weight=self.auxiliary_size_loss_weight
                 )
         else:
             losses = self.model.compute_loss(
@@ -167,7 +170,8 @@ class ARCDiffusionTrainer:
                 xt=noisy_grids,
                 timesteps=timesteps,
                 heights=heights,
-                widths=widths
+                widths=widths,
+                auxiliary_size_loss_weight=self.auxiliary_size_loss_weight
             )
 
         # Backward pass with mixed precision
@@ -321,13 +325,18 @@ class ARCDiffusionSampler:
         if num_inference_steps is None:
             num_inference_steps = self.noise_scheduler.num_timesteps
 
-        # Predict output grid sizes if size predictor available
+        # Predict output grid sizes if available
         predicted_heights = None
         predicted_widths = None
-        if self.size_predictor is not None:
+        # First check for integrated size head in model
+        if hasattr(self.model, 'include_size_head') and self.model.include_size_head:
+            predicted_heights, predicted_widths = self.model.predict_sizes(input_grids, task_indices)
+            print(f"Predicted sizes (integrated): heights={predicted_heights.cpu().tolist()}, widths={predicted_widths.cpu().tolist()}")
+        # Fallback to external size predictor if provided
+        elif self.size_predictor is not None:
             self.size_predictor.eval()
             predicted_heights, predicted_widths = self.size_predictor.predict_sizes(input_grids, task_indices)
-            print(f"Predicted sizes: heights={predicted_heights.cpu().tolist()}, widths={predicted_widths.cpu().tolist()}")
+            print(f"Predicted sizes (external): heights={predicted_heights.cpu().tolist()}, widths={predicted_widths.cpu().tolist()}")
 
         # Initialize with uniform random noise over {0..9}
         x_t = torch.randint(
@@ -474,6 +483,11 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
     dataset_info = full_dataset.get_task_info()
     print(f"Dataset info: {dataset_info}")
 
+    # Get auxiliary loss config
+    aux_config = config.get('auxiliary_loss', {})
+    include_size_head = aux_config.get('include_size_head', True)
+    size_head_hidden_dim = aux_config.get('size_head_hidden_dim', None)
+
     # Create model
     model = ARCDiffusionModel(
         vocab_size=config['vocab_size'],
@@ -482,7 +496,9 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         num_layers=config['num_layers'],
         max_size=config['max_size'],
         max_tasks=dataset_info['num_tasks'],
-        embedding_dropout=config.get('embedding_dropout', 0.1)
+        embedding_dropout=config.get('embedding_dropout', 0.1),
+        include_size_head=include_size_head,
+        size_head_hidden_dim=size_head_hidden_dim
     )
 
     # Create noise scheduler
@@ -515,7 +531,8 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         use_mixed_precision=config.get('use_mixed_precision', True),
         pixel_noise_prob=config.get('pixel_noise_prob', 0.15),
         pixel_noise_rate=config.get('pixel_noise_rate', 0.02),
-        total_steps=optimizer_steps
+        total_steps=optimizer_steps,
+        auxiliary_size_loss_weight=aux_config.get('auxiliary_size_loss_weight', 0.1)
     )
 
     print(f"Model has {sum(p.numel() for p in model.parameters()):,} parameters")
