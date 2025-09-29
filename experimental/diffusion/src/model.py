@@ -52,11 +52,13 @@ class TransformerDenoiser(nn.Module):
         max_size: int = 30,
         max_tasks: int = 1000,  # Maximum number of task IDs
         embedding_dropout: float = 0.1,
+        input_grid_dropout: float = 0.0,  # Dropout probability for input grid conditioning
     ):
         super().__init__()
         self.d_model = d_model
         self.max_size = max_size
         self.vocab_size = vocab_size
+        self.input_grid_dropout = input_grid_dropout
 
         # Token embedding
         self.token_embedding = nn.Embedding(vocab_size, d_model)
@@ -126,6 +128,15 @@ class TransformerDenoiser(nn.Module):
         input_emb = self.embedding_dropout(input_emb)
         xt_emb = self.embedding_dropout(xt_emb)
 
+        # Apply input grid conditioning dropout (training only)
+        if self.training and self.input_grid_dropout > 0:
+            # Sample Bernoulli gates for each batch item
+            # b ~ Bernoulli(1 - p) where p is dropout probability
+            keep_prob = 1.0 - self.input_grid_dropout
+            dropout_mask = torch.bernoulli(torch.full((batch_size, 1, 1), keep_prob, device=device))
+            # Apply dropout with scaling to maintain expectation
+            input_emb = input_emb * dropout_mask / keep_prob
+
         # Create separate conditioning tokens
         task_token = self.task_embedding(task_ids).unsqueeze(1)  # [batch_size, 1, d_model]
 
@@ -170,6 +181,7 @@ class ARCDiffusionModel(nn.Module):
         max_size: int = 30,
         max_tasks: int = 1000,
         embedding_dropout: float = 0.1,
+        input_grid_dropout: float = 0.0,
         include_size_head: bool = True,
         size_head_hidden_dim: int = None,
     ):
@@ -186,7 +198,8 @@ class ARCDiffusionModel(nn.Module):
             num_layers=num_layers,
             max_size=max_size,
             max_tasks=max_tasks,
-            embedding_dropout=embedding_dropout
+            embedding_dropout=embedding_dropout,
+            input_grid_dropout=input_grid_dropout
         )
 
         # Integrated size prediction head (auxiliary task)

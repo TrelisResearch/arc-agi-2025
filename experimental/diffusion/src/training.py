@@ -492,6 +492,7 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         max_size=config['max_size'],
         max_tasks=dataset_info['num_tasks'],
         embedding_dropout=config.get('embedding_dropout', 0.1),
+        input_grid_dropout=config.get('input_grid_dropout', 0.0),
         include_size_head=include_size_head,
         size_head_hidden_dim=size_head_hidden_dim
     )
