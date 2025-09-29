@@ -15,6 +15,7 @@ from .model import ARCDiffusionModel
 from .dataset import ARCDataset, ARCDataLoader, load_arc_data_paths, collate_fn
 from ..utils.noise_scheduler import DiscreteNoiseScheduler
 from ..utils.grid_utils import clamp_outside_mask, batch_create_masks, extract_valid_region, grid_to_display_string
+from ..utils.visualization import create_training_visualization
 from torch.utils.data import DataLoader
 
 
@@ -509,6 +510,15 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
     )
 
     print(f"Model has {sum(p.numel() for p in model.parameters()):,} parameters")
+
+    # Create training data visualization before starting training
+    create_training_visualization(
+        dataset=full_dataset,
+        noise_scheduler=noise_scheduler,
+        device=device,
+        output_dir=output_dir,
+        config=config
+    )
 
     # Training loop
     step = 0
