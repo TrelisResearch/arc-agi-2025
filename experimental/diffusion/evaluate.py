@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """
-ARC Diffusion Model Inference Script
+ARC Diffusion Model Evaluation
 
 Runs diffusion model inference on ARC tasks with pass@2 scoring.
-Follows the same pattern as run_arc_tasks_soar.py for consistency.
+Uses config-driven parameters for simplified usage.
+
+Usage:
+    python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/smol_config.json
+    python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/smol_config.json --limit 10
 """
 import json
 import argparse
@@ -66,7 +70,7 @@ class DiffusionInference:
     def __init__(
         self,
         model_path: str,
-        device: Optional[str] = None,
+        device: str = "auto",
         num_inference_steps: Optional[int] = None,
         size_head_path: Optional[str] = None,
         debug: bool = False
@@ -74,14 +78,15 @@ class DiffusionInference:
         self.model_path = model_path
         self.size_head_path = size_head_path
         # Set up device (prioritize CUDA > MPS > CPU)
-        if device:
-            self.device = torch.device(device)
-        elif torch.cuda.is_available():
-            self.device = torch.device('cuda')
-        elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-            self.device = torch.device('mps')
+        if device == "auto":
+            if torch.cuda.is_available():
+                self.device = torch.device('cuda')
+            elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                self.device = torch.device('mps')
+            else:
+                self.device = torch.device('cpu')
         else:
-            self.device = torch.device('cpu')
+            self.device = torch.device(device)
         self.num_inference_steps = num_inference_steps
         self.debug = debug
 
@@ -408,24 +413,73 @@ def print_metrics_report(metrics: Dict[str, Any], dataset: str, subset: str):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run ARC Diffusion Model Inference")
+    parser = argparse.ArgumentParser(description="Run ARC Diffusion Model Evaluation")
 
-    # Model and inference settings
-    parser.add_argument("--model-path", required=True, help="Path to trained model checkpoint")
-    parser.add_argument("--size-head-path", help="Path to trained size prediction head (optional)")
-    parser.add_argument("--device", choices=["cpu", "cuda", "auto"], default="auto", help="Device to use")
+    # Required config file
+    parser.add_argument("--config", required=True, help="Path to config file (contains model paths and output directory)")
+
+    # Optional overrides
+    parser.add_argument("--model-path", help="Override model path (defaults to best model in config output dir)")
+    parser.add_argument("--size-head-path", help="Override size head path (defaults to best size head in config output dir)")
+    parser.add_argument("--device", choices=["cpu", "cuda", "mps", "auto"], default="auto", help="Device to use (default: auto)")
     parser.add_argument("--num-steps", type=int, help="Number of inference steps (default: use training steps)")
 
-    # Data settings (following soar pattern)
-    parser.add_argument("--dataset", default="arc-prize-2024", help="Dataset to use")
-    parser.add_argument("--subset", default="evaluation", help="Subset to use")
-    parser.add_argument("--limit", type=int, help="Limit number of tasks to run")
+    # Data settings with defaults
+    parser.add_argument("--dataset", default="arc-prize-2024", help="Dataset to use (default: arc-prize-2024)")
+    parser.add_argument("--subset", default="evaluation", help="Subset to use (default: evaluation)")
+    parser.add_argument("--limit", type=int, default=5, help="Limit number of tasks to run (default: 5, use 0 for all)")
 
     # Output and debugging
-    parser.add_argument("--output", help="Output file to save results")
+    parser.add_argument("--output", help="Override output file path (defaults to config output dir)")
     parser.add_argument("--debug", action="store_true", help="Enable debug output")
 
     args = parser.parse_args()
+
+    # Load config file
+    config_path = Path(args.config)
+    if not config_path.exists():
+        print(f"❌ Config file not found: {config_path}")
+        sys.exit(1)
+
+    with open(config_path, 'r') as f:
+        config = json.load(f)
+
+    # Extract output directory from config
+    output_config = config.get('output', {})
+    output_dir = Path(output_config.get('output_dir', 'experimental/diffusion/outputs/default'))
+
+    # Determine model paths
+    if args.model_path:
+        model_path = args.model_path
+    else:
+        model_path = str(output_dir / 'best_model.pt')
+        print(f"Using default model path: {model_path}")
+
+    if args.size_head_path:
+        size_head_path = args.size_head_path
+    else:
+        size_head_path = str(output_dir / 'best_size_head.pt')
+        if Path(size_head_path).exists():
+            print(f"Using default size head path: {size_head_path}")
+        else:
+            size_head_path = None
+            print(f"No size head found at {output_dir / 'best_size_head.pt'}, proceeding without size head")
+
+    # Determine output file path
+    if args.output:
+        output_file = args.output
+    else:
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        output_file = str(output_dir / f"evaluation_{args.dataset}_{args.subset}_{timestamp}.json")
+        print(f"Using default output path: {output_file}")
+
+    # Validate model path
+    if not Path(model_path).exists():
+        print(f"❌ Model not found: {model_path}")
+        sys.exit(1)
+
+    # Handle limit parameter (0 means no limit)
+    limit = args.limit if args.limit > 0 else None
 
     # Override device detection if specified
     if args.device != "auto":
@@ -436,17 +490,20 @@ def main():
 
     print(f"🚀 ARC Diffusion Model Inference")
     print(f"📅 Started at: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"📁 Config: {args.config}")
     print(f"🎲 Dataset: {args.dataset}/{args.subset}")
-    if args.limit:
-        print(f"⚡ Task limit: {args.limit}")
+    if limit:
+        print(f"⚡ Task limit: {limit}")
+    else:
+        print(f"⚡ Task limit: All tasks")
 
     try:
         # Initialize inference
         inference = DiffusionInference(
-            model_path=args.model_path,
-            device=args.device if args.device != "auto" else None,
+            model_path=model_path,
+            device=args.device,
             num_inference_steps=args.num_steps,
-            size_head_path=args.size_head_path,
+            size_head_path=size_head_path,
             debug=args.debug
         )
 
@@ -471,8 +528,8 @@ def main():
         all_tasks_list = [(task_id, task_data) for task_id, task_data in all_task_data.items()]
 
         # Apply limit if specified
-        if args.limit:
-            all_tasks_list = all_tasks_list[:args.limit]
+        if limit:
+            all_tasks_list = all_tasks_list[:limit]
 
         # Convert to dict for filtering
         all_tasks_dict = {task_id: task_data for task_id, task_data in all_tasks_list}
@@ -525,27 +582,31 @@ def main():
         metrics = calculate_metrics(results)
         print_metrics_report(metrics, args.dataset, args.subset)
 
-        # Save results if requested
-        if args.output:
-            output_data = {
-                "metadata": {
-                    "timestamp": datetime.datetime.now().isoformat(),
-                    "dataset": args.dataset,
-                    "subset": args.subset,
-                    "model_path": args.model_path,
-                    "num_inference_steps": args.num_steps or inference.config['num_timesteps'],
-                    "device": str(inference.device),
-                    "total_tasks": len(tasks),
-                    "completed_tasks": len(results),
-                    "errors": errors
-                },
-                "metrics": metrics,
-                "results": results
-            }
+        # Save results
+        output_data = {
+            "metadata": {
+                "timestamp": datetime.datetime.now().isoformat(),
+                "config_path": args.config,
+                "dataset": args.dataset,
+                "subset": args.subset,
+                "model_path": model_path,
+                "size_head_path": size_head_path,
+                "num_inference_steps": args.num_steps or inference.config['num_timesteps'],
+                "device": str(inference.device),
+                "total_tasks": len(tasks),
+                "completed_tasks": len(results),
+                "errors": errors,
+                "limit": limit
+            },
+            "metrics": metrics,
+            "results": results
+        }
 
-            with open(args.output, 'w') as f:
-                json.dump(output_data, f, indent=2)
-            print(f"💾 Results saved to {args.output}")
+        # Ensure output directory exists
+        Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+        with open(output_file, 'w') as f:
+            json.dump(output_data, f, indent=2)
+        print(f"💾 Results saved to {output_file}")
 
         print(f"\n✅ Inference completed: {len(results)}/{len(tasks)} tasks successful")
 
