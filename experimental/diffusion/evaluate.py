@@ -186,14 +186,22 @@ class DiffusionInference:
         self.task_id_to_idx = dataset_info.get('task_id_to_idx', {})
         self.max_tasks = dataset_info['num_tasks']
 
-        # Recreate model
+        # Get auxiliary loss config for size head parameters
+        aux_config = config.get('auxiliary_loss', {})
+        include_size_head = aux_config.get('include_size_head', True)
+        size_head_hidden_dim = aux_config.get('size_head_hidden_dim', None)
+
+        # Recreate model with size head parameters
         model = ARCDiffusionModel(
             vocab_size=config['vocab_size'],
             d_model=config['d_model'],
             nhead=config['nhead'],
             num_layers=config['num_layers'],
             max_size=config['max_size'],
-            max_tasks=dataset_info['num_tasks']
+            max_tasks=dataset_info['num_tasks'],
+            embedding_dropout=config.get('embedding_dropout', 0.1),
+            include_size_head=include_size_head,
+            size_head_hidden_dim=size_head_hidden_dim
         )
 
         # Load weights
@@ -246,13 +254,21 @@ class DiffusionInference:
             # Use task ID (ensure it's within trained range)
             task_ids = torch.tensor([task_idx]).to(self.device)
 
-            # Get size predictions if size head is available
-            if self.size_head is not None:
+            # Get size predictions - check integrated first, then external
+            if hasattr(self.model, 'include_size_head') and self.model.include_size_head:
+                # Use integrated size head
+                with torch.no_grad():
+                    pred_heights, pred_widths = self.model.predict_sizes(input_batch, task_ids)
+                    pred_height, pred_width = pred_heights[0].item(), pred_widths[0].item()
+                size_source = "integrated_size_head"
+                print(f"Using integrated size head predictions: {pred_height}×{pred_width}")
+            elif self.size_head is not None:
+                # Use external size head
                 with torch.no_grad():
                     pred_heights, pred_widths = self.size_head.predict_sizes(input_batch, task_ids)
                     pred_height, pred_width = pred_heights[0].item(), pred_widths[0].item()
-                size_source = "size_head"
-                print(f"Using size head predictions: {pred_height}×{pred_width}")
+                size_source = "external_size_head"
+                print(f"Using external size head predictions: {pred_height}×{pred_width}")
             else:
                 # Fallback to ground truth dimensions
                 if expected_output is not None and len(expected_output) > 0:
