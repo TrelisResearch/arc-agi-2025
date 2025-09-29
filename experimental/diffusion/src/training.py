@@ -394,7 +394,7 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
     elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
         device = torch.device('mps')
         # MPS memory optimization
-        torch.mps.set_per_process_memory_fraction(0.7)  # Use max 70% of memory
+        torch.mps.set_per_process_memory_fraction(0.5)  # Use max 70% of memory
     else:
         device = torch.device('cpu')
     print(f"Using device: {device}")
