@@ -3,14 +3,12 @@
 Full ARC Diffusion Pipeline Runner
 
 Runs the complete training pipeline in sequence:
-1. Diffusion backbone training
-2. Size head training
-3. Model evaluation
+1. Diffusion model training (with integrated size head)
+2. Model evaluation
 
 Usage:
     uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/my_config.json
     uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/my_config.json --skip-training
-    uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/my_config.json --skip-size-head
 """
 
 import argparse
@@ -64,23 +62,19 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Run full pipeline
+  # Run full pipeline (training + evaluation)
   uv run experimental/diffusion/pipeline.py --config configs/my_config.json
 
-  # Skip training, only run size head and evaluation
+  # Skip training, only run evaluation
   uv run experimental/diffusion/pipeline.py --config configs/my_config.json --skip-training
 
-  # Skip size head training
-  uv run experimental/diffusion/pipeline.py --config configs/my_config.json --skip-size-head
-
-  # Only run evaluation
-  uv run experimental/diffusion/pipeline.py --config configs/my_config.json --skip-training --skip-size-head
+  # Only run training
+  uv run experimental/diffusion/pipeline.py --config configs/my_config.json --skip-evaluation
         """
     )
 
     parser.add_argument("--config", required=True, help="Path to config JSON file")
-    parser.add_argument("--skip-training", action="store_true", help="Skip diffusion backbone training")
-    parser.add_argument("--skip-size-head", action="store_true", help="Skip size head training")
+    parser.add_argument("--skip-training", action="store_true", help="Skip diffusion model training")
     parser.add_argument("--skip-evaluation", action="store_true", help="Skip evaluation")
     parser.add_argument("--eval-limit", type=int, default=5, help="Limit evaluation to N tasks (default: 5)")
 
@@ -112,9 +106,7 @@ Examples:
     # Track which steps to run
     steps_to_run = []
     if not args.skip_training:
-        steps_to_run.append("training")
-    if not args.skip_size_head:
-        steps_to_run.append("size-head")
+        steps_to_run.append("training (with integrated size head)")
     if not args.skip_evaluation:
         steps_to_run.append("evaluation")
 
@@ -123,44 +115,19 @@ Examples:
     # Get project root (assuming we're running from repo root)
     project_root = Path.cwd()
 
-    # Step 1: Diffusion backbone training
+    # Step 1: Diffusion model training (with integrated size head)
     if not args.skip_training:
         if not run_command(
             ["uv", "run", "python", "experimental/diffusion/train_diffusion_backbone.py", "--config", str(config_path)],
-            "Diffusion backbone training",
+            "Diffusion model training (with integrated size head)",
             cwd=str(project_root)
         ):
             print("❌ Training failed, stopping pipeline")
             sys.exit(1)
     else:
-        print("\n⏭️ Skipping diffusion backbone training")
+        print("\n⏭️ Skipping diffusion model training")
 
-    # Step 2: Size head training
-    if not args.skip_size_head:
-        # Check if backbone model exists
-        best_model_path = output_dir / "best_model.pt"
-        final_model_path = output_dir / "final_model.pt"
-
-        if best_model_path.exists():
-            backbone_path = best_model_path
-            print(f"✓ Using best model for size head: {backbone_path}")
-        elif final_model_path.exists():
-            backbone_path = final_model_path
-            print(f"⚠️ Using final model for size head (no best model found): {backbone_path}")
-        else:
-            print(f"❌ No backbone model found: tried {best_model_path} and {final_model_path}")
-            print("   Cannot train size head without backbone model")
-            if not args.skip_evaluation:
-                print("   Will skip size head but continue to evaluation")
-            backbone_path = None
-
-        if backbone_path:
-            print("📐 Size head is now integrated into main model training")
-            print("   The backbone model already includes size prediction capabilities!")
-    else:
-        print("\n⏭️ Skipping size head training")
-
-    # Step 3: Evaluation
+    # Step 2: Evaluation
     if not args.skip_evaluation:
         # Check if backbone model exists
         best_model_path = output_dir / "best_model.pt"
@@ -202,13 +169,9 @@ Examples:
     # Show key output files
     print(f"\n📋 Key output files:")
 
-    backbone_path = output_dir / "best_model.pt"
-    if backbone_path.exists():
-        print(f"  🧠 Backbone model: {backbone_path}")
-
-    size_head_path = output_dir / "best_size_head.pt"
-    if size_head_path.exists():
-        print(f"  📐 Size head: {size_head_path}")
+    model_path = output_dir / "best_model.pt"
+    if model_path.exists():
+        print(f"  🧠 Model (with integrated size head): {model_path}")
 
     # Find evaluation results
     eval_files = list(output_dir.glob("evaluation_*.json"))
