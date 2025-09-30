@@ -5,11 +5,11 @@ import json
 import torch
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
-from typing import Dict, List, Tuple, Optional, Any
+from typing import Dict, List, Any
 import random
 from pathlib import Path
 
-from ..utils.grid_utils import grid_to_tokens, tokens_to_grid, GridAugmentation, TaskAugmentation
+from ..utils.grid_utils import grid_to_tokens, TaskAugmentation
 from ..utils.task_filters import task_exceeds_max_size
 
 
