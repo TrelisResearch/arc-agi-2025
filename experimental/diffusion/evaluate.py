@@ -260,6 +260,9 @@ class DiffusionInference:
         entropy_curve = []
         early_lock_step = None
 
+        # Initialize self-conditioning buffer
+        sc_p0 = None
+
         # Denoising loop
         timesteps = torch.linspace(num_inference_steps - 1, 0, num_inference_steps, dtype=torch.long, device=self.device)
 
@@ -268,15 +271,26 @@ class DiffusionInference:
         for b in range(batch_size):
             valid_mask[b, :pred_height, :pred_width] = True
 
+        # Create float mask for model
+        mask_float = valid_mask.float()
+
         with torch.no_grad():
             for i, t in enumerate(timesteps):
                 t_batch = t.repeat(batch_size)
 
-                # Forward pass
-                logits = self.model(x_t, input_grids, task_indices, t_batch)
+                # Calculate self-conditioning gain (ramp from 0.3 to 1.0 over denoising process)
+                # At t=T-1 (start): gain=0.3, at t=0 (end): gain=1.0
+                progress = 1.0 - (t.item() / (num_inference_steps - 1)) if num_inference_steps > 1 else 1.0
+                sc_gain = 0.3 + 0.7 * progress
+
+                # Forward pass with self-conditioning
+                logits = self.model(x_t, input_grids, task_indices, t_batch, masks=mask_float, sc_p0=sc_p0, sc_gain=sc_gain)
 
                 # Get predicted probabilities
                 probs = torch.softmax(logits, dim=-1)
+
+                # Update self-conditioning buffer with current predictions
+                sc_p0 = probs.clone()
 
                 # Compute trajectory statistics (only on valid region)
                 valid_probs = probs[valid_mask]  # [N_valid, vocab_size]

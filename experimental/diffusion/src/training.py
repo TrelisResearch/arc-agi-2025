@@ -86,6 +86,7 @@ class ARCDiffusionTrainer:
             T_max=total_steps,
             eta_min=learning_rate * 0.1
         )
+        print(f"LR Scheduler: T_max={self.scheduler.T_max}, eta_min={self.scheduler.eta_min}, initial_lr={learning_rate}")
 
         # Set up EMA if enabled
         self.ema = None
