@@ -60,8 +60,8 @@ class TransformerDenoiser(nn.Module):
         self.vocab_size = vocab_size
         self.input_grid_dropout = input_grid_dropout
 
-        # Token embedding (with PAD token as padding_idx)
-        PAD_ID = 10  # PAD token is value 10 in vocab_size=11
+        # Token embedding (PAD token at index 10 should not receive gradients)
+        PAD_ID = 10
         self.token_embedding = nn.Embedding(vocab_size, d_model, padding_idx=PAD_ID)
 
         # Positional encoding
@@ -92,8 +92,9 @@ class TransformerDenoiser(nn.Module):
             num_layers=num_layers
         )
 
-        # Output head (predicts logits for each cell - only colors 0-9, no PAD)
-        self.output_head = nn.Linear(d_model, 10)  # Only predict colors 0-9, not PAD
+        # Output head (predicts logits for colors 0-9 only, not PAD)
+        # PAD regions are handled via masking, not prediction
+        self.output_head = nn.Linear(d_model, 10)
 
     def forward(
         self,
@@ -107,11 +108,11 @@ class TransformerDenoiser(nn.Module):
         Forward pass of the denoiser.
 
         Returns:
-            logits: [batch_size, max_size, max_size, vocab_size] - predicted logits
+            logits: [batch_size, max_size, max_size, 10] - predicted logits for colors 0-9
         """
-        # Verify xt contains only valid colors (0-9) or PAD tokens (10)
-        assert xt.max().item() <= 10, f"xt must contain only colors 0-10, got max value {xt.max().item()}"
-        assert xt.min().item() >= 0, f"xt must contain only non-negative values, got min value {xt.min().item()}"
+        # Verify xt contains only valid tokens (0-10, where 10 is PAD)
+        assert xt.max().item() <= 10, f"xt must contain tokens 0-10, got max {xt.max().item()}"
+        assert xt.min().item() >= 0, f"xt must contain only non-negative values, got min {xt.min().item()}"
 
         batch_size = xt.shape[0]
         device = xt.device
@@ -163,9 +164,9 @@ class TransformerDenoiser(nn.Module):
         output_start_idx = 2 + self.max_size * self.max_size
         output_preds = output[:, output_start_idx:, :]  # [batch_size, max_size^2, d_model]
 
-        # Predict logits for each cell
+        # Predict logits for each cell (only for colors 0-9)
         logits = self.output_head(output_preds)  # [batch_size, max_size^2, 10]
-        logits = logits.view(batch_size, self.max_size, self.max_size, 10)  # Only 10 output classes
+        logits = logits.view(batch_size, self.max_size, self.max_size, 10)
 
         return logits
 
