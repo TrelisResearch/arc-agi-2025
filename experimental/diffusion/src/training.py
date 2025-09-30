@@ -80,13 +80,31 @@ class ARCDiffusionTrainer:
             weight_decay=weight_decay
         )
 
-        # Learning rate scheduler
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        # Learning rate scheduler with linear warmup
+        warmup_steps = int(0.05 * total_steps)  # 5% warmup
+
+        # Create warmup scheduler (linear from 0 to max_lr)
+        warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
             self.optimizer,
-            T_max=total_steps,
+            start_factor=0.01,  # Start at 1% of max LR
+            end_factor=1.0,     # End at max LR
+            total_iters=warmup_steps
+        )
+
+        # Create cosine annealing scheduler (after warmup)
+        cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            self.optimizer,
+            T_max=total_steps - warmup_steps,
             eta_min=learning_rate * 0.1
         )
-        print(f"LR Scheduler: T_max={self.scheduler.T_max}, eta_min={self.scheduler.eta_min}, initial_lr={learning_rate}")
+
+        # Combine with SequentialLR
+        self.scheduler = torch.optim.lr_scheduler.SequentialLR(
+            self.optimizer,
+            schedulers=[warmup_scheduler, cosine_scheduler],
+            milestones=[warmup_steps]
+        )
+        print(f"LR Scheduler: warmup_steps={warmup_steps}, cosine_T_max={total_steps - warmup_steps}, eta_min={learning_rate * 0.1}, initial_lr={learning_rate}")
 
         # Set up EMA if enabled
         self.ema = None
