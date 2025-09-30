@@ -99,6 +99,10 @@ class ARCDiffusionTrainer:
             )
             print(f"Using EMA with decay={ema_decay}, warmup={ema_warmup_steps} steps")
 
+        # Initialize global step counter for self-conditioning gain scheduling
+        self.global_step = 0
+        self.optimizer_steps = total_steps
+
     def apply_pixel_noise(self, grids: torch.Tensor) -> torch.Tensor:
         """
         Apply pixel noise to input grids: randomly swap black pixels (0) with colors (1-9).
@@ -167,7 +171,39 @@ class ARCDiffusionTrainer:
         # Only noise valid regions, clamp invalid regions to 0
         noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps, masks)
 
-        # Forward pass with mixed precision
+        # Calculate self-conditioning gain (ramp from 0.3 to 1.0 over training)
+        progress = min(1.0, self.global_step / (0.8 * self.optimizer_steps))  # Reach 1.0 at 80% of training
+        sc_gain = 0.3 + 0.7 * progress
+
+        # First pass: Generate p0_prev without gradients for self-conditioning
+        sc_p0 = None
+        if torch.rand(1).item() > 0.5:  # 50% dropout for self-conditioning
+            with torch.no_grad():
+                if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
+                    with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
+                        logits_prev = self.model(
+                            xt=noisy_grids,
+                            input_grid=input_grids,
+                            task_ids=task_indices,
+                            timesteps=timesteps,
+                            masks=masks,
+                            sc_p0=None,  # No self-conditioning in first pass
+                            sc_gain=0.0
+                        )
+                else:
+                    logits_prev = self.model(
+                        xt=noisy_grids,
+                        input_grid=input_grids,
+                        task_ids=task_indices,
+                        timesteps=timesteps,
+                        masks=masks,
+                        sc_p0=None,  # No self-conditioning in first pass
+                        sc_gain=0.0
+                    )
+                # Convert logits to probabilities
+                sc_p0 = torch.softmax(logits_prev, dim=-1)
+
+        # Second pass: Forward with self-conditioning and compute loss
         if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
             with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
                 losses = self.model.compute_loss(
@@ -178,7 +214,9 @@ class ARCDiffusionTrainer:
                     timesteps=timesteps,
                     heights=heights,
                     widths=widths,
-                    auxiliary_size_loss_weight=self.auxiliary_size_loss_weight
+                    auxiliary_size_loss_weight=self.auxiliary_size_loss_weight,
+                    sc_p0=sc_p0,
+                    sc_gain=sc_gain
                 )
         else:
             losses = self.model.compute_loss(
@@ -189,7 +227,9 @@ class ARCDiffusionTrainer:
                 timesteps=timesteps,
                 heights=heights,
                 widths=widths,
-                auxiliary_size_loss_weight=self.auxiliary_size_loss_weight
+                auxiliary_size_loss_weight=self.auxiliary_size_loss_weight,
+                sc_p0=sc_p0,
+                sc_gain=sc_gain
             )
 
         # Backward pass with mixed precision
@@ -220,6 +260,9 @@ class ARCDiffusionTrainer:
         # Update EMA after optimizer step
         if self.ema is not None:
             self.ema.update(self.model)
+
+        # Increment global step counter
+        self.global_step += 1
 
         # Return losses and grad norm as Python floats
         losses['grad_norm'] = grad_norm.item()
@@ -449,6 +492,9 @@ class ARCDiffusionSampler:
         )
         x_t = torch.where(mask, x_t, torch.zeros_like(x_t))
 
+        # Initialize self-conditioning buffer
+        sc_p0 = None
+
         # Denoising loop (reverse from T-1 to 0)
         for t in reversed(range(num_inference_steps)):
             if self.debug:
@@ -457,11 +503,18 @@ class ARCDiffusionSampler:
             # Create batch of current timestep
             t_batch = torch.full((batch_size,), t, device=self.device, dtype=torch.long)
 
-            # Forward pass with masking
-            logits = self.model(x_t, input_grids, task_indices, t_batch, masks=mask_float)
+            # Calculate self-conditioning gain (full gain during inference)
+            sc_gain = 1.0
+
+            # Forward pass with masking and self-conditioning
+            logits = self.model(x_t, input_grids, task_indices, t_batch,
+                               masks=mask_float, sc_p0=sc_p0, sc_gain=sc_gain)
 
             # Apply temperature scaling
             logits_scaled = logits / temperature
+
+            # Update self-conditioning buffer with current predictions
+            sc_p0 = torch.softmax(logits_scaled, dim=-1)
 
             # Perform discrete reverse step
             x_t = self.discrete_reverse_step(

@@ -53,12 +53,14 @@ class TransformerDenoiser(nn.Module):
         max_tasks: int = 1000,  # Maximum number of task IDs
         embedding_dropout: float = 0.1,
         input_grid_dropout: float = 0.0,  # Dropout probability for input grid conditioning
+        sc_dropout_prob: float = 0.5,  # Self-conditioning dropout probability
     ):
         super().__init__()
         self.d_model = d_model
         self.max_size = max_size
         self.vocab_size = vocab_size
         self.input_grid_dropout = input_grid_dropout
+        self.sc_dropout_prob = sc_dropout_prob
 
         # Token embedding with padding_idx for PAD token
         # Input/output grids use PAD (10) which gets auto-zeroed
@@ -78,6 +80,10 @@ class TransformerDenoiser(nn.Module):
             nn.SiLU(),
             nn.Linear(d_model, d_model)
         )
+
+        # Self-conditioning projection
+        # Maps probability distributions (10 classes) to features
+        self.sc_proj = nn.Linear(10, d_model)
 
         # Embedding dropout for regularization
         self.embedding_dropout = nn.Dropout(embedding_dropout)
@@ -105,6 +111,8 @@ class TransformerDenoiser(nn.Module):
         task_ids: torch.Tensor,  # [batch_size] - task IDs
         timesteps: torch.Tensor,  # [batch_size] - timesteps
         masks: Optional[torch.Tensor] = None,  # [batch_size, max_size, max_size]
+        sc_p0: Optional[torch.Tensor] = None,  # [batch_size, max_size, max_size, 10] - self-conditioning probs
+        sc_gain: float = 1.0,  # Self-conditioning gain factor
     ) -> torch.Tensor:
         """
         Forward pass of the denoiser.
@@ -138,6 +146,21 @@ class TransformerDenoiser(nn.Module):
         # Apply embedding dropout
         input_emb = self.embedding_dropout(input_emb)
         xt_emb = self.embedding_dropout(xt_emb)
+
+        # Handle self-conditioning
+        if sc_p0 is not None:
+            # Reshape and project previous predictions
+            sc_p0_flat = sc_p0.view(batch_size, -1, 10)  # [batch_size, max_size^2, 10]
+            sc_features = self.sc_proj(sc_p0_flat)  # [batch_size, max_size^2, d_model]
+
+            # Add to xt embeddings with gain factor
+            xt_emb = xt_emb + sc_gain * sc_features
+        elif self.training and torch.rand(1).item() > self.sc_dropout_prob:
+            # During training without sc_p0, randomly apply zero self-conditioning
+            # to train the model to work without self-conditioning
+            zero_sc = torch.zeros(batch_size, self.max_size * self.max_size, 10, device=device)
+            sc_features = self.sc_proj(zero_sc)
+            xt_emb = xt_emb + sc_gain * sc_features
 
         # Apply masking to xt features if masks provided
         # Zero out embeddings outside valid regions
@@ -199,6 +222,7 @@ class ARCDiffusionModel(nn.Module):
         max_tasks: int = 1000,
         embedding_dropout: float = 0.1,
         input_grid_dropout: float = 0.0,
+        sc_dropout_prob: float = 0.5,
         include_size_head: bool = True,
         size_head_hidden_dim: int = None,
     ):
@@ -216,7 +240,8 @@ class ARCDiffusionModel(nn.Module):
             max_size=max_size,
             max_tasks=max_tasks,
             embedding_dropout=embedding_dropout,
-            input_grid_dropout=input_grid_dropout
+            input_grid_dropout=input_grid_dropout,
+            sc_dropout_prob=sc_dropout_prob
         )
 
         # Integrated size prediction head (auxiliary task)
@@ -242,9 +267,11 @@ class ARCDiffusionModel(nn.Module):
         task_ids: torch.Tensor,
         timesteps: torch.Tensor,
         masks: Optional[torch.Tensor] = None,
+        sc_p0: Optional[torch.Tensor] = None,
+        sc_gain: float = 1.0,
     ) -> torch.Tensor:
         """Forward pass - predict x0 given xt."""
-        return self.denoiser(xt, input_grid, task_ids, timesteps, masks)
+        return self.denoiser(xt, input_grid, task_ids, timesteps, masks, sc_p0, sc_gain)
 
     def _compute_bucket_metrics(
         self,
@@ -300,6 +327,8 @@ class ARCDiffusionModel(nn.Module):
         heights: Optional[torch.Tensor] = None,  # [batch_size] - grid heights
         widths: Optional[torch.Tensor] = None,   # [batch_size] - grid widths
         auxiliary_size_loss_weight: float = 0.1,  # Weight for auxiliary size loss
+        sc_p0: Optional[torch.Tensor] = None,  # [batch_size, max_size, max_size, 10] - self-conditioning probs
+        sc_gain: float = 1.0,  # Self-conditioning gain factor
     ) -> Dict[str, torch.Tensor]:
         """Compute training losses with optional masking for pad regions."""
         batch_size = x0.shape[0]
@@ -313,8 +342,8 @@ class ARCDiffusionModel(nn.Module):
                 h, w = heights[i].item(), widths[i].item()
                 masks[i, :h, :w] = 1.0
 
-        # Forward pass with masks
-        logits = self.forward(xt, input_grid, task_ids, timesteps, masks)
+        # Forward pass with masks and self-conditioning
+        logits = self.forward(xt, input_grid, task_ids, timesteps, masks, sc_p0, sc_gain)
 
         # Create mask for valid positions if heights/widths provided
         if heights is not None and widths is not None:
