@@ -796,10 +796,34 @@ def print_metrics_report(metrics: Dict[str, Any], dataset: str, subset: str):
         return
 
     # Main metrics
-    print(f"🎲 Pass@2: {metrics['pass_at_2']}/{total} ({metrics['pass_at_2_rate']:.1%})")
-    print(f"🎯 Both Correct: {metrics['both_correct']}/{total} ({metrics['both_correct_rate']:.1%})")
-    print(f"🥇 Attempt 1: {metrics['attempt_1_correct']}/{total} ({metrics['attempt_1_accuracy']:.1%})")
-    print(f"🥈 Attempt 2: {metrics['attempt_2_correct']}/{total} ({metrics['attempt_2_accuracy']:.1%})")
+    print(f"\n🎯 Accuracy Metrics:")
+    print(f"  Pass@2: {metrics['pass_at_2']}/{total} ({metrics['pass_at_2_rate']:.1%})")
+    print(f"  Both Correct: {metrics['both_correct']}/{total} ({metrics['both_correct_rate']:.1%})")
+    print(f"  Attempt 1: {metrics['attempt_1_correct']}/{total} ({metrics['attempt_1_accuracy']:.1%})")
+    print(f"  Attempt 2: {metrics['attempt_2_correct']}/{total} ({metrics['attempt_2_accuracy']:.1%})")
+
+    # Copy statistics
+    print(f"\n📋 Copy Behavior Statistics:")
+    print(f"  Copy Rate: {metrics['avg_copy_rate']:.1%}")
+    print(f"  Edit Accuracy: {metrics['avg_edit_accuracy']:.1%} (accuracy on cells requiring transformation)")
+    print(f"  Keep Accuracy: {metrics['avg_keep_accuracy']:.1%} (accuracy on cells to preserve)")
+    print(f"  Total Edit Cells: {metrics['total_edit_cells']:,}")
+    print(f"  Total Keep Cells: {metrics['total_keep_cells']:,}")
+
+    # Interpret copy behavior
+    if metrics['avg_keep_accuracy'] > metrics['avg_edit_accuracy'] + 0.1:
+        print(f"  ⚠️  Identity Attractor: Keep accuracy >> Edit accuracy")
+
+    # Trajectory statistics
+    print(f"\n🔄 Sampling Trajectory Statistics:")
+    print(f"  Final Δ-change: {metrics['avg_final_delta']:.2%} (fraction of cells changed in last step)")
+    print(f"  Final Confidence: {metrics['avg_final_confidence']:.1%}")
+    print(f"  Early-lock Tasks: {metrics['early_lock_tasks']}/{total} ({metrics['early_lock_tasks']/total:.1%})")
+    if metrics['avg_early_lock_step'] is not None:
+        print(f"  Avg Early-lock Step: {metrics['avg_early_lock_step']:.1f}")
+
+    if metrics['early_lock_tasks'] > total * 0.5 and metrics['avg_copy_rate'] > 0.7:
+        print(f"  ⚠️  Input Gravity Confirmed: Early-lock + high copy rate")
 
     # Error analysis
     print(f"\n📋 Error Analysis:")
@@ -807,6 +831,8 @@ def print_metrics_report(metrics: Dict[str, Any], dataset: str, subset: str):
     print(f"  Attempt 2 Errors: {metrics['attempt_2_errors']}/{total} ({metrics['attempt_2_error_rate']:.1%})")
 
     print(f"{'='*80}")
+
+
 
 
 def main():
