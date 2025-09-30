@@ -32,7 +32,10 @@ class ARCDiffusionTrainer:
         pixel_noise_prob: float = 0.15,
         pixel_noise_rate: float = 0.02,
         total_steps: int = 10000,
-        auxiliary_size_loss_weight: float = 0.1
+        auxiliary_size_loss_weight: float = 0.1,
+        use_ema: bool = True,
+        ema_decay: float = 0.9995,
+        ema_warmup_steps: int = 1000
     ):
         self.model = model
         self.noise_scheduler = noise_scheduler
@@ -42,6 +45,7 @@ class ARCDiffusionTrainer:
         self.pixel_noise_prob = pixel_noise_prob
         self.pixel_noise_rate = pixel_noise_rate
         self.auxiliary_size_loss_weight = auxiliary_size_loss_weight
+        self.use_ema = use_ema
 
         # Set up mixed precision
         if use_mixed_precision and device.type in ['cuda', 'mps']:
@@ -82,6 +86,18 @@ class ARCDiffusionTrainer:
             T_max=total_steps,
             eta_min=learning_rate * 0.1
         )
+
+        # Set up EMA if enabled
+        self.ema = None
+        if use_ema:
+            from experimental.diffusion.utils.ema import EMA
+            self.ema = EMA(
+                model=model,
+                decay=ema_decay,
+                warmup_steps=ema_warmup_steps,
+                device=device
+            )
+            print(f"Using EMA with decay={ema_decay}, warmup={ema_warmup_steps} steps")
 
     def apply_pixel_noise(self, grids: torch.Tensor) -> torch.Tensor:
         """
@@ -201,12 +217,26 @@ class ARCDiffusionTrainer:
 
         self.scheduler.step()
 
+        # Update EMA after optimizer step
+        if self.ema is not None:
+            self.ema.update(self.model)
+
         # Return losses and grad norm as Python floats
         losses['grad_norm'] = grad_norm.item()
         return {key: value.item() if hasattr(value, 'item') else value for key, value in losses.items()}
 
-    def validate(self, val_loader: torch.utils.data.DataLoader, num_batches: int = 10) -> Dict[str, float]:
+    def validate(self, val_loader: torch.utils.data.DataLoader, num_batches: int = 10, use_ema: bool = True) -> Dict[str, float]:
         """Run validation."""
+        # Use EMA weights if available and requested
+        if use_ema and self.ema is not None:
+            from experimental.diffusion.utils.ema import ModelWithEMA
+            with ModelWithEMA(self.model, self.ema) as ema_model:
+                return self._validate_impl(val_loader, num_batches)
+        else:
+            return self._validate_impl(val_loader, num_batches)
+
+    def _validate_impl(self, val_loader: torch.utils.data.DataLoader, num_batches: int = 10) -> Dict[str, float]:
+        """Internal validation implementation."""
         self.model.eval()
         total_losses = {}  # Will be initialized from first batch
         num_samples = 0
@@ -594,7 +624,10 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         pixel_noise_prob=config.get('pixel_noise_prob', 0.15),
         pixel_noise_rate=config.get('pixel_noise_rate', 0.02),
         total_steps=optimizer_steps,
-        auxiliary_size_loss_weight=aux_config.get('auxiliary_size_loss_weight', 0.1)
+        auxiliary_size_loss_weight=aux_config.get('auxiliary_size_loss_weight', 0.1),
+        use_ema=config.get('use_ema', True),
+        ema_decay=config.get('ema_decay', 0.9995),
+        ema_warmup_steps=config.get('ema_warmup_steps', 1000)
     )
 
     print(f"Model has {sum(p.numel() for p in model.parameters()):,} parameters")
@@ -709,7 +742,7 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
                 best_val_loss = val_losses['total_loss']
                 # Save model in bfloat16 without modifying the original
                 model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
-                torch.save({
+                save_dict = {
                     'model_state_dict': model_state_dict_bf16,
                     'optimizer_state_dict': trainer.optimizer.state_dict(),
                     'scheduler_state_dict': trainer.scheduler.state_dict(),
@@ -718,7 +751,11 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
                     'val_loss': val_losses['total_loss'],
                     'config': config,
                     'dataset_info': dataset_info
-                }, output_dir / 'best_model.pt')
+                }
+                # Save EMA state if available
+                if trainer.ema is not None:
+                    save_dict['ema_state_dict'] = trainer.ema.state_dict()
+                torch.save(save_dict, output_dir / 'best_model.pt')
                 print(f"Saved best model with val loss: {best_val_loss:.4f}")
 
             # Create denoising progression visualization
@@ -758,7 +795,7 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
     # Save final model in bfloat16 without modifying the original
     final_epoch = step // steps_per_epoch
     model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
-    torch.save({
+    save_dict = {
         'model_state_dict': model_state_dict_bf16,
         'optimizer_state_dict': trainer.optimizer.state_dict(),
         'scheduler_state_dict': trainer.scheduler.state_dict(),
@@ -766,7 +803,11 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         'step': step,
         'config': config,
         'dataset_info': dataset_info
-    }, output_dir / 'final_model.pt')
+    }
+    # Save EMA state if available
+    if trainer.ema is not None:
+        save_dict['ema_state_dict'] = trainer.ema.state_dict()
+    torch.save(save_dict, output_dir / 'final_model.pt')
 
     if config.get('use_wandb', False):
         wandb.finish()
