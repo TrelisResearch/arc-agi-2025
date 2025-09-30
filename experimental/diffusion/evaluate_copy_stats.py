@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
-ARC Diffusion Model Evaluation
+ARC Diffusion Model Evaluation with Copy Statistics
 
-Runs diffusion model inference on ARC tasks with pass@2 scoring.
-Uses config-driven parameters for simplified usage.
+Tracks detailed statistics about input copying behavior and trajectory dynamics:
+- Copy rate: fraction of output that matches input
+- Edit accuracy: accuracy on cells that differ between input/target
+- Keep accuracy: accuracy on cells that stay the same
+- Trajectory stats: change rate, confidence, early-lock detection
 
 Usage:
-    python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/smol_config.json
-    python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/smol_config.json --limit 10
+    python experimental/diffusion/evaluate_copy_stats.py --config experimental/diffusion/configs/smol_config.json
 """
 import json
 import argparse
@@ -36,6 +38,26 @@ from experimental.diffusion.utils.task_filters import filter_tasks_by_max_size
 from experimental.diffusion.utils.arc_colors import arc_cmap
 
 
+class TrajectoryStats(TypedDict):
+    """Statistics about the sampling trajectory"""
+    delta_change_curve: List[float]  # Fraction of cells that changed at each step
+    confidence_curve: List[float]  # Mean top-1 probability at each step
+    entropy_curve: List[float]  # Mean entropy at each step
+    early_lock_step: Optional[int]  # First step where delta <= 1% and confidence >= 95%
+    final_delta: float  # Delta at last step
+    final_confidence: float  # Confidence at last step
+
+
+class CopyStats(TypedDict):
+    """Statistics about input copying behavior"""
+    copy_rate: float  # Fraction of valid cells where pred == input
+    edit_accuracy: float  # Accuracy on cells where target != input
+    keep_accuracy: float  # Accuracy on cells where target == input
+    num_edit_cells: int  # Number of cells where target != input
+    num_keep_cells: int  # Number of cells where target == input
+    num_valid_cells: int  # Total number of valid cells
+
+
 class DiffusionResult(TypedDict):
     """Result of running diffusion model on a single test example"""
     test_idx: int
@@ -47,6 +69,10 @@ class DiffusionResult(TypedDict):
     pred_height: int  # Height of predicted grid
     pred_width: int  # Width of predicted grid
     size_source: str  # How the size was determined ("size_head", "ground_truth")
+
+    # New: Copy and trajectory statistics
+    copy_stats: Optional[CopyStats]  # Copy behavior statistics
+    trajectory_stats: Optional[TrajectoryStats]  # Sampling trajectory statistics
 
 
 class TaskResult(TypedDict):
@@ -205,13 +231,14 @@ class DiffusionInference:
         task_indices: torch.Tensor,
         pred_height: int,
         pred_width: int
-    ) -> Tuple[torch.Tensor, List[np.ndarray]]:
+    ) -> Tuple[torch.Tensor, List[np.ndarray], TrajectoryStats]:
         """
-        Sample with intermediate step capture for visualization.
+        Sample with intermediate step capture and trajectory statistics.
 
         Returns:
             final_prediction: Final denoised output
             intermediate_steps: List of grids at different denoising timesteps
+            trajectory_stats: Statistics about the sampling trajectory
         """
         self.model.eval()
 
@@ -221,13 +248,25 @@ class DiffusionInference:
 
         # Initialize with uniform random noise
         x_t = torch.randint(0, 10, (batch_size, max_size, max_size), device=self.device)
+        x_prev = x_t.clone()
 
         # Storage for intermediate steps (grid, timestep) tuples
         intermediate_steps = []
         capture_interval = max(1, num_inference_steps // 6)  # Capture ~6 evenly spaced steps
 
+        # Storage for trajectory statistics
+        delta_change_curve = []
+        confidence_curve = []
+        entropy_curve = []
+        early_lock_step = None
+
         # Denoising loop
         timesteps = torch.linspace(num_inference_steps - 1, 0, num_inference_steps, dtype=torch.long, device=self.device)
+
+        # Create valid region mask for statistics (only compute within predicted size)
+        valid_mask = torch.zeros((batch_size, max_size, max_size), dtype=torch.bool, device=self.device)
+        for b in range(batch_size):
+            valid_mask[b, :pred_height, :pred_width] = True
 
         with torch.no_grad():
             for i, t in enumerate(timesteps):
@@ -238,6 +277,21 @@ class DiffusionInference:
 
                 # Get predicted probabilities
                 probs = torch.softmax(logits, dim=-1)
+
+                # Compute trajectory statistics (only on valid region)
+                valid_probs = probs[valid_mask]  # [N_valid, vocab_size]
+
+                # Confidence: mean top-1 probability
+                top1_probs, _ = torch.max(valid_probs, dim=-1)
+                mean_confidence = top1_probs.mean().item()
+                confidence_curve.append(mean_confidence)
+
+                # Entropy: mean entropy across valid cells
+                # H = -sum(p * log(p))
+                log_probs = torch.log(valid_probs + 1e-10)
+                entropy = -(valid_probs * log_probs).sum(dim=-1)
+                mean_entropy = entropy.mean().item()
+                entropy_curve.append(mean_entropy)
 
                 # Sample or argmax
                 if t > 0:
@@ -252,11 +306,33 @@ class DiffusionInference:
                     if pred_width < max_size:
                         x_t[b, :, pred_width:] = 0
 
+                # Compute delta-change (fraction of cells that changed in valid region)
+                if i > 0:
+                    changed = (x_t != x_prev) & valid_mask
+                    delta = changed.sum().item() / valid_mask.sum().item()
+                    delta_change_curve.append(delta)
+
+                    # Check for early-lock: delta <= 1% and confidence >= 95%
+                    if early_lock_step is None and delta <= 0.01 and mean_confidence >= 0.95:
+                        early_lock_step = i
+
+                x_prev = x_t.clone()
+
                 # Capture intermediate steps with their timestep
                 if i % capture_interval == 0 or i == num_inference_steps - 1:
                     intermediate_steps.append((x_t[0].cpu().numpy().copy(), t.item()))
 
-        return x_t, intermediate_steps
+        # Create trajectory stats
+        trajectory_stats = TrajectoryStats(
+            delta_change_curve=delta_change_curve,
+            confidence_curve=confidence_curve,
+            entropy_curve=entropy_curve,
+            early_lock_step=early_lock_step,
+            final_delta=delta_change_curve[-1] if delta_change_curve else 0.0,
+            final_confidence=confidence_curve[-1] if confidence_curve else 0.0
+        )
+
+        return x_t, intermediate_steps, trajectory_stats
 
     def visualize_denoising_progression(
         self,
@@ -329,6 +405,92 @@ class DiffusionInference:
 
         plt.close()
 
+    def compute_copy_stats(
+        self,
+        pred: np.ndarray,
+        input_grid: np.ndarray,
+        target: np.ndarray
+    ) -> CopyStats:
+        """
+        Compute copy statistics comparing prediction to input and target.
+
+        Args:
+            pred: Predicted output grid
+            input_grid: Input grid (conditioned on during sampling)
+            target: Ground truth output grid
+
+        Returns:
+            CopyStats with copy_rate, edit_accuracy, keep_accuracy
+        """
+        # Ensure all grids have the same shape
+        if pred.shape != target.shape:
+            # If shapes don't match, we can't compute meaningful stats
+            return CopyStats(
+                copy_rate=0.0,
+                edit_accuracy=0.0,
+                keep_accuracy=0.0,
+                num_edit_cells=0,
+                num_keep_cells=0,
+                num_valid_cells=0
+            )
+
+        # If input is different size, resize it to match (pad with 0s or crop)
+        if input_grid.shape != target.shape:
+            # Pad or crop input to match target size
+            h, w = target.shape
+            resized_input = np.zeros_like(target)
+            h_min = min(h, input_grid.shape[0])
+            w_min = min(w, input_grid.shape[1])
+            resized_input[:h_min, :w_min] = input_grid[:h_min, :w_min]
+            input_grid = resized_input
+
+        # Create masks
+        # Valid mask: all non-PAD cells in target (assuming target doesn't contain PAD)
+        valid_mask = np.ones_like(target, dtype=bool)
+        num_valid_cells = valid_mask.sum()
+
+        if num_valid_cells == 0:
+            return CopyStats(
+                copy_rate=0.0,
+                edit_accuracy=0.0,
+                keep_accuracy=0.0,
+                num_edit_cells=0,
+                num_keep_cells=0,
+                num_valid_cells=0
+            )
+
+        # Edit mask: cells where target != input (requires transformation)
+        edit_mask = valid_mask & (target != input_grid)
+        num_edit_cells = edit_mask.sum()
+
+        # Keep mask: cells where target == input (should be preserved)
+        keep_mask = valid_mask & (target == input_grid)
+        num_keep_cells = keep_mask.sum()
+
+        # Copy rate: fraction of valid cells where pred == input
+        copy_rate = (pred[valid_mask] == input_grid[valid_mask]).mean()
+
+        # Edit accuracy: accuracy on cells that need to be changed
+        if num_edit_cells > 0:
+            edit_accuracy = (pred[edit_mask] == target[edit_mask]).mean()
+        else:
+            edit_accuracy = 1.0  # No edits needed, vacuously true
+
+        # Keep accuracy: accuracy on cells that should be preserved
+        if num_keep_cells > 0:
+            keep_accuracy = (pred[keep_mask] == target[keep_mask]).mean()
+        else:
+            keep_accuracy = 1.0  # No cells to preserve, vacuously true
+
+        return CopyStats(
+            copy_rate=float(copy_rate),
+            edit_accuracy=float(edit_accuracy),
+            keep_accuracy=float(keep_accuracy),
+            num_edit_cells=int(num_edit_cells),
+            num_keep_cells=int(num_keep_cells),
+            num_valid_cells=int(num_valid_cells)
+        )
+
     def predict_single(self, input_grid: np.ndarray, task_idx: int, task_id: str = None, expected_output: np.ndarray = None, capture_steps: bool = False) -> Tuple[np.ndarray, Optional[str], str]:
         """
         Run single prediction on input grid.
@@ -365,38 +527,25 @@ class DiffusionInference:
                     pred_height, pred_width = self.config['max_size'], self.config['max_size']
                     size_source = "ground_truth"
 
-            # Sample output
+            # Sample output - always capture steps for trajectory stats
+            predicted_grids, intermediate_steps, trajectory_stats = self.sample_with_steps(
+                input_batch, task_ids, pred_height, pred_width
+            )
+
+            # Crop final prediction
+            full_grid = predicted_grids[0].cpu().numpy()
+            predicted_grid = full_grid[:pred_height, :pred_width]
+
+            # Also crop intermediate steps (maintaining timestep info)
+            cropped_steps = []
+            for grid, timestep in intermediate_steps:
+                cropped = grid[:pred_height, :pred_width]
+                cropped_steps.append((cropped, timestep))
+
             if capture_steps:
-                # Sample with intermediate step capture for visualization
-                predicted_grids, intermediate_steps = self.sample_with_steps(
-                    input_batch, task_ids, pred_height, pred_width
-                )
-
-                # Crop final prediction
-                full_grid = predicted_grids[0].cpu().numpy()
-                predicted_grid = full_grid[:pred_height, :pred_width]
-
-                # Also crop intermediate steps (maintaining timestep info)
-                cropped_steps = []
-                for grid, timestep in intermediate_steps:
-                    cropped = grid[:pred_height, :pred_width]
-                    cropped_steps.append((cropped, timestep))
-
-                return predicted_grid, None, size_source, cropped_steps
+                return predicted_grid, None, size_source, cropped_steps, trajectory_stats
             else:
-                # Normal sampling without capturing steps
-                with torch.no_grad():
-                    predicted_grids = self.sampler.sample(
-                        input_grids=input_batch,
-                        task_indices=task_ids,
-                        num_inference_steps=self.num_inference_steps
-                    )
-
-                # Crop to predicted dimensions (no more region detection!)
-                full_grid = predicted_grids[0].cpu().numpy()
-                predicted_grid = full_grid[:pred_height, :pred_width]
-
-                return predicted_grid, None, size_source
+                return predicted_grid, None, size_source, None, trajectory_stats
 
         except Exception as e:
             error_msg = f"Prediction failed: {str(e)}"
@@ -476,13 +625,12 @@ class DiffusionInference:
         )
 
     def _run_attempt(self, input_grid: np.ndarray, expected_output: np.ndarray, test_idx: int, task_idx: int, task_id: str = None, capture_steps: bool = False) -> DiffusionResult:
-        """Run a single diffusion attempt"""
+        """Run a single diffusion attempt with copy and trajectory statistics"""
         result = self.predict_single(input_grid, task_idx, task_id, expected_output, capture_steps=capture_steps)
         if capture_steps:
-            predicted_grid, error, size_source, intermediate_steps = result
+            predicted_grid, error, size_source, intermediate_steps, trajectory_stats = result
         else:
-            predicted_grid, error, size_source = result
-            intermediate_steps = None
+            predicted_grid, error, size_source, intermediate_steps, trajectory_stats = result
 
         # Check correctness
         correct = False
@@ -502,6 +650,11 @@ class DiffusionInference:
         pred_height = predicted_grid.shape[0] if len(predicted_grid) > 0 else 30
         pred_width = predicted_grid.shape[1] if len(predicted_grid) > 0 else 30
 
+        # Compute copy statistics if we have valid prediction and target
+        copy_stats = None
+        if error is None and len(predicted_grid) > 0 and len(expected_output) > 0:
+            copy_stats = self.compute_copy_stats(predicted_grid, input_grid, expected_output)
+
         result_dict = DiffusionResult(
             test_idx=test_idx,
             input_grid=input_grid.tolist(),
@@ -511,7 +664,9 @@ class DiffusionInference:
             error=error,
             pred_height=pred_height,
             pred_width=pred_width,
-            size_source=size_source
+            size_source=size_source,
+            copy_stats=copy_stats,
+            trajectory_stats=trajectory_stats
         )
 
         # Return intermediate steps if captured
@@ -522,7 +677,7 @@ class DiffusionInference:
 
 
 def calculate_metrics(results: List[TaskResult]) -> Dict[str, Any]:
-    """Calculate pass@2 and other metrics from results"""
+    """Calculate pass@2 and other metrics from results, including copy and trajectory stats"""
     if not results:
         return {}
 
@@ -540,6 +695,30 @@ def calculate_metrics(results: List[TaskResult]) -> Dict[str, Any]:
     attempt_1_errors = sum(1 for r in results if r["attempt_1"]["error"] is not None)
     attempt_2_errors = sum(1 for r in results if r["attempt_2"]["error"] is not None)
 
+    # Aggregate copy statistics (from attempt 1)
+    copy_stats_list = [r["attempt_1"]["copy_stats"] for r in results if r["attempt_1"]["copy_stats"] is not None]
+    if copy_stats_list:
+        avg_copy_rate = np.mean([cs["copy_rate"] for cs in copy_stats_list])
+        avg_edit_acc = np.mean([cs["edit_accuracy"] for cs in copy_stats_list])
+        avg_keep_acc = np.mean([cs["keep_accuracy"] for cs in copy_stats_list])
+        total_edit_cells = sum(cs["num_edit_cells"] for cs in copy_stats_list)
+        total_keep_cells = sum(cs["num_keep_cells"] for cs in copy_stats_list)
+    else:
+        avg_copy_rate = avg_edit_acc = avg_keep_acc = 0.0
+        total_edit_cells = total_keep_cells = 0
+
+    # Aggregate trajectory statistics (from attempt 1)
+    traj_stats_list = [r["attempt_1"]["trajectory_stats"] for r in results if r["attempt_1"]["trajectory_stats"] is not None]
+    if traj_stats_list:
+        avg_final_delta = np.mean([ts["final_delta"] for ts in traj_stats_list])
+        avg_final_confidence = np.mean([ts["final_confidence"] for ts in traj_stats_list])
+        early_lock_tasks = sum(1 for ts in traj_stats_list if ts["early_lock_step"] is not None)
+        avg_early_lock_step = np.mean([ts["early_lock_step"] for ts in traj_stats_list if ts["early_lock_step"] is not None]) if early_lock_tasks > 0 else None
+    else:
+        avg_final_delta = avg_final_confidence = 0.0
+        early_lock_tasks = 0
+        avg_early_lock_step = None
+
     metrics = {
         "total_tasks": total_tasks,
         "pass_at_2": pass_at_2_count,
@@ -556,17 +735,30 @@ def calculate_metrics(results: List[TaskResult]) -> Dict[str, Any]:
         "attempt_2_accuracy": attempt_2_correct / total_tasks if total_tasks > 0 else 0.0,
         "attempt_1_error_rate": attempt_1_errors / total_tasks if total_tasks > 0 else 0.0,
         "attempt_2_error_rate": attempt_2_errors / total_tasks if total_tasks > 0 else 0.0,
+
+        # Copy statistics
+        "avg_copy_rate": avg_copy_rate,
+        "avg_edit_accuracy": avg_edit_acc,
+        "avg_keep_accuracy": avg_keep_acc,
+        "total_edit_cells": total_edit_cells,
+        "total_keep_cells": total_keep_cells,
+
+        # Trajectory statistics
+        "avg_final_delta": avg_final_delta,
+        "avg_final_confidence": avg_final_confidence,
+        "early_lock_tasks": early_lock_tasks,
+        "avg_early_lock_step": avg_early_lock_step,
     }
 
     return metrics
 
 
 def print_metrics_report(metrics: Dict[str, Any], dataset: str, subset: str):
-    """Print formatted metrics report similar to soar style"""
+    """Print formatted metrics report with copy and trajectory statistics"""
     total = metrics["total_tasks"]
 
     print(f"\n{'='*80}")
-    print(f"🎯 DIFFUSION MODEL INFERENCE RESULTS")
+    print(f"🎯 DIFFUSION MODEL INFERENCE RESULTS WITH COPY STATISTICS")
     print(f"📊 Dataset: {dataset}, Subset: {subset}")
     print(f"📋 Total Tasks: {total}")
     print(f"{'='*80}")
@@ -576,10 +768,34 @@ def print_metrics_report(metrics: Dict[str, Any], dataset: str, subset: str):
         return
 
     # Main metrics
-    print(f"🎲 Pass@2: {metrics['pass_at_2']}/{total} ({metrics['pass_at_2_rate']:.1%})")
-    print(f"🎯 Both Correct: {metrics['both_correct']}/{total} ({metrics['both_correct_rate']:.1%})")
-    print(f"🥇 Attempt 1: {metrics['attempt_1_correct']}/{total} ({metrics['attempt_1_accuracy']:.1%})")
-    print(f"🥈 Attempt 2: {metrics['attempt_2_correct']}/{total} ({metrics['attempt_2_accuracy']:.1%})")
+    print(f"\n🎯 Accuracy Metrics:")
+    print(f"  Pass@2: {metrics['pass_at_2']}/{total} ({metrics['pass_at_2_rate']:.1%})")
+    print(f"  Both Correct: {metrics['both_correct']}/{total} ({metrics['both_correct_rate']:.1%})")
+    print(f"  Attempt 1: {metrics['attempt_1_correct']}/{total} ({metrics['attempt_1_accuracy']:.1%})")
+    print(f"  Attempt 2: {metrics['attempt_2_correct']}/{total} ({metrics['attempt_2_accuracy']:.1%})")
+
+    # Copy statistics
+    print(f"\n📋 Copy Behavior Statistics:")
+    print(f"  Copy Rate: {metrics['avg_copy_rate']:.1%}")
+    print(f"  Edit Accuracy: {metrics['avg_edit_accuracy']:.1%} (accuracy on cells requiring transformation)")
+    print(f"  Keep Accuracy: {metrics['avg_keep_accuracy']:.1%} (accuracy on cells to preserve)")
+    print(f"  Total Edit Cells: {metrics['total_edit_cells']:,}")
+    print(f"  Total Keep Cells: {metrics['total_keep_cells']:,}")
+
+    # Interpret copy behavior
+    if metrics['avg_keep_accuracy'] > metrics['avg_edit_accuracy'] + 0.1:
+        print(f"  ⚠️  Identity Attractor: Keep accuracy >> Edit accuracy")
+
+    # Trajectory statistics
+    print(f"\n🔄 Sampling Trajectory Statistics:")
+    print(f"  Final Δ-change: {metrics['avg_final_delta']:.2%} (fraction of cells changed in last step)")
+    print(f"  Final Confidence: {metrics['avg_final_confidence']:.1%}")
+    print(f"  Early-lock Tasks: {metrics['early_lock_tasks']}/{total} ({metrics['early_lock_tasks']/total:.1%})")
+    if metrics['avg_early_lock_step'] is not None:
+        print(f"  Avg Early-lock Step: {metrics['avg_early_lock_step']:.1f}")
+
+    if metrics['early_lock_tasks'] > total * 0.5 and metrics['avg_copy_rate'] > 0.7:
+        print(f"  ⚠️  Input Gravity Confirmed: Early-lock + high copy rate")
 
     # Error analysis
     print(f"\n📋 Error Analysis:")
