@@ -234,6 +234,50 @@ class ARCDiffusionModel(nn.Module):
         """Forward pass - predict x0 given xt."""
         return self.denoiser(xt, input_grid, task_ids, timesteps, masks)
 
+    def _compute_bucket_metrics(
+        self,
+        correct: torch.Tensor,
+        logits: torch.Tensor,
+        targets: torch.Tensor,
+        timesteps_norm: torch.Tensor,
+        bucket_name: str
+    ) -> Dict[str, float]:
+        """Helper to compute metrics for a specific noise bucket."""
+        # Define bucket ranges
+        bucket_ranges = {
+            'low_noise': (0.0, 0.33),
+            'mid_noise': (0.33, 0.66),
+            'high_noise': (0.66, 1.0)
+        }
+
+        if bucket_name not in bucket_ranges:
+            return {}
+
+        low, high = bucket_ranges[bucket_name]
+        if high == 1.0:
+            bucket_mask = timesteps_norm >= low
+        else:
+            bucket_mask = (timesteps_norm >= low) & (timesteps_norm < high)
+
+        if bucket_mask.sum() == 0:
+            return {}
+
+        bucket_correct = correct[bucket_mask]
+        bucket_logits = logits[bucket_mask]
+        bucket_targets = targets[bucket_mask]
+
+        bucket_acc = bucket_correct.mean().item()
+        bucket_chance_adj = bucket_acc - 0.10
+        bucket_ce = F.cross_entropy(bucket_logits, bucket_targets, reduction='mean').item()
+        bucket_count = bucket_mask.sum().item()
+
+        return {
+            f'{bucket_name}_accuracy': bucket_acc,
+            f'{bucket_name}_chance_adj_acc': bucket_chance_adj,
+            f'{bucket_name}_cross_entropy': bucket_ce,
+            f'{bucket_name}_count': bucket_count,
+        }
+
     def compute_loss(
         self,
         x0: torch.Tensor,  # [batch_size, max_size, max_size] - clean output
@@ -281,35 +325,10 @@ class ARCDiffusionModel(nn.Module):
                 # Normalize timesteps to [0, 1] range (timesteps are 0-indexed)
                 timesteps_norm = valid_timesteps.float() / 127.0  # 128 timesteps: 0-127
 
-                # Create timestep buckets: low [0, 0.33), mid [0.33, 0.66), high [0.66, 1.0]
-                low_mask = timesteps_norm < 0.33
-                mid_mask = (timesteps_norm >= 0.33) & (timesteps_norm < 0.66)
-                high_mask = timesteps_norm >= 0.66
-
-                def compute_bucket_metrics(bucket_mask, bucket_name):
-                    if bucket_mask.sum() == 0:
-                        return {}
-
-                    bucket_correct = correct[bucket_mask]
-                    bucket_logits = valid_logits[bucket_mask]
-                    bucket_targets = valid_targets[bucket_mask]
-
-                    bucket_acc = bucket_correct.mean().item()
-                    bucket_chance_adj = bucket_acc - 0.10
-                    bucket_ce = F.cross_entropy(bucket_logits, bucket_targets, reduction='mean').item()
-                    bucket_count = bucket_mask.sum().item()
-
-                    return {
-                        f'{bucket_name}_accuracy': bucket_acc,
-                        f'{bucket_name}_chance_adj_acc': bucket_chance_adj,
-                        f'{bucket_name}_cross_entropy': bucket_ce,
-                        f'{bucket_name}_count': bucket_count,
-                    }
-
                 # Compute metrics for each bucket
-                low_metrics = compute_bucket_metrics(low_mask, 'low_noise')
-                mid_metrics = compute_bucket_metrics(mid_mask, 'mid_noise')
-                high_metrics = compute_bucket_metrics(high_mask, 'high_noise')
+                low_metrics = self._compute_bucket_metrics(correct, valid_logits, valid_targets, timesteps_norm, 'low_noise')
+                mid_metrics = self._compute_bucket_metrics(correct, valid_logits, valid_targets, timesteps_norm, 'mid_noise')
+                high_metrics = self._compute_bucket_metrics(correct, valid_logits, valid_targets, timesteps_norm, 'high_noise')
         else:
             # Fallback to original behavior (all positions)
             grid_loss = F.cross_entropy(
@@ -326,43 +345,18 @@ class ARCDiffusionModel(nn.Module):
                 chance_adjusted_acc = accuracy - 0.10
 
                 # Flatten for per-timestep metrics
-                predictions_flat = predictions.view(-1)
-                targets_flat = x0.view(-1)
                 correct_flat = correct.view(-1)
+                logits_flat = logits.view(-1, self.vocab_size)
+                targets_flat = x0.view(-1)
 
                 # Expand timesteps to match flattened shape
                 timesteps_flat = timesteps.unsqueeze(1).unsqueeze(2).expand_as(x0).view(-1)
                 timesteps_norm = timesteps_flat.float() / 127.0  # 128 timesteps: 0-127
 
-                # Create timestep buckets
-                low_mask = timesteps_norm < 0.33
-                mid_mask = (timesteps_norm >= 0.33) & (timesteps_norm < 0.66)
-                high_mask = timesteps_norm >= 0.66
-
-                def compute_bucket_metrics(bucket_mask, bucket_name):
-                    if bucket_mask.sum() == 0:
-                        return {}
-
-                    bucket_correct = correct_flat[bucket_mask]
-                    bucket_logits = logits.view(-1, self.vocab_size)[bucket_mask]
-                    bucket_targets = targets_flat[bucket_mask]
-
-                    bucket_acc = bucket_correct.mean().item()
-                    bucket_chance_adj = bucket_acc - 0.10
-                    bucket_ce = F.cross_entropy(bucket_logits, bucket_targets, reduction='mean').item()
-                    bucket_count = bucket_mask.sum().item()
-
-                    return {
-                        f'{bucket_name}_accuracy': bucket_acc,
-                        f'{bucket_name}_chance_adj_acc': bucket_chance_adj,
-                        f'{bucket_name}_cross_entropy': bucket_ce,
-                        f'{bucket_name}_count': bucket_count,
-                    }
-
                 # Compute metrics for each bucket
-                low_metrics = compute_bucket_metrics(low_mask, 'low_noise')
-                mid_metrics = compute_bucket_metrics(mid_mask, 'mid_noise')
-                high_metrics = compute_bucket_metrics(high_mask, 'high_noise')
+                low_metrics = self._compute_bucket_metrics(correct_flat, logits_flat, targets_flat, timesteps_norm, 'low_noise')
+                mid_metrics = self._compute_bucket_metrics(correct_flat, logits_flat, targets_flat, timesteps_norm, 'mid_noise')
+                high_metrics = self._compute_bucket_metrics(correct_flat, logits_flat, targets_flat, timesteps_norm, 'high_noise')
 
         # Compute auxiliary size loss if size head is included
         size_loss = torch.tensor(0.0, device=x0.device)

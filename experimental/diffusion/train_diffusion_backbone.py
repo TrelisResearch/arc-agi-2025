@@ -26,17 +26,20 @@ def load_config(config_path: str) -> dict:
     # Flatten the nested config for compatibility with existing training function
     flat_config = {}
 
-    # Model config
+    # Flatten model config
     flat_config.update(config['model'])
 
-    # Training config
+    # Flatten training config
     flat_config.update(config['training'])
 
-    # Add other configs as needed
-    flat_config['data_dir'] = config['data']['data_dir']
-    flat_config['max_val_examples'] = config['data']['max_val_examples']
-    flat_config['output_dir'] = config['output']['output_dir']
-    flat_config['use_wandb'] = config['output']['use_wandb']
+    # Flatten data config
+    flat_config.update(config['data'])
+
+    # Flatten output config
+    flat_config.update(config['output'])
+
+    # Keep auxiliary_loss as nested dict (training.py expects config.get('auxiliary_loss', {}))
+    flat_config['auxiliary_loss'] = config.get('auxiliary_loss', {})
 
     return flat_config
 

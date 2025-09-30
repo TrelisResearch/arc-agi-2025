@@ -142,9 +142,8 @@ class ARCDiffusionTrainer:
         # Apply pixel noise to input grids only (not outputs)
         input_grids = self.apply_pixel_noise(input_grids)
 
-        # Sample random timesteps from {1, ..., T} (1-indexed as specified)
-        # Convert to 0-indexed for array access by subtracting 1
-        timesteps = torch.randint(1, self.noise_scheduler.num_timesteps + 1, (batch_size,), device=self.device) - 1
+        # Sample random timesteps (0-indexed: [0, num_timesteps))
+        timesteps = torch.randint(0, self.noise_scheduler.num_timesteps, (batch_size,), device=self.device)
 
         # Add noise to clean output grids using uniform distribution over {0..9}
         noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps)
@@ -181,13 +180,10 @@ class ARCDiffusionTrainer:
         if self.scaler is not None:
             # CUDA with float16 and gradient scaling
             self.scaler.scale(total_loss).backward()
-
-            # Compute gradient norm before clipping
             self.scaler.unscale_(self.optimizer)
-            grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=float('inf'))
 
-            # Gradient clipping
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+            # Compute gradient norm and clip
+            grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
 
             self.scaler.step(self.optimizer)
             self.scaler.update()
@@ -195,11 +191,8 @@ class ARCDiffusionTrainer:
             # MPS, CPU, or bfloat16 without gradient scaling
             total_loss.backward()
 
-            # Compute gradient norm before clipping
-            grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=float('inf'))
-
-            # Gradient clipping
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+            # Compute gradient norm and clip
+            grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
 
             self.optimizer.step()
 
