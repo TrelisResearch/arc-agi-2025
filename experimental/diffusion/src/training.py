@@ -5,16 +5,14 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 from typing import Dict, List, Tuple, Optional, Any
-import random
 from tqdm import tqdm
 import wandb
-import os
 from pathlib import Path
 
 from .model import ARCDiffusionModel
-from .dataset import ARCDataset, ARCDataLoader, load_arc_data_paths, collate_fn
+from .dataset import ARCDataset, load_arc_data_paths, collate_fn
 from ..utils.noise_scheduler import DiscreteNoiseScheduler
-from ..utils.grid_utils import clamp_outside_mask, batch_create_masks, extract_valid_region, grid_to_display_string
+from ..utils.grid_utils import grid_to_display_string
 from ..utils.visualization import create_training_visualization, create_denoising_progression_visualization
 from torch.utils.data import DataLoader
 
@@ -145,8 +143,13 @@ class ARCDiffusionTrainer:
         # Sample random timesteps (0-indexed: [0, num_timesteps))
         timesteps = torch.randint(0, self.noise_scheduler.num_timesteps, (batch_size,), device=self.device)
 
+        # Create masks for valid regions
+        from experimental.diffusion.utils.grid_utils import batch_create_masks
+        masks = batch_create_masks(heights, widths, self.model.max_size).to(self.device)
+
         # Add noise to clean output grids using uniform distribution over {0..9}
-        noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps)
+        # Only noise valid regions, clamp invalid regions to 0
+        noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps, masks)
 
         # Forward pass with mixed precision
         if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
@@ -225,8 +228,13 @@ class ARCDiffusionTrainer:
                 # Sample random timesteps (0-indexed for array access)
                 timesteps = torch.randint(0, self.noise_scheduler.num_timesteps, (batch_size,), device=self.device)
 
+                # Create masks for valid regions
+                from experimental.diffusion.utils.grid_utils import batch_create_masks
+                masks = batch_create_masks(heights, widths, self.model.max_size).to(self.device)
+
                 # Add noise using uniform distribution over {0..9}
-                noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps)
+                # Only noise valid regions, clamp invalid regions to 0
+                noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps, masks)
 
                 # Forward pass (no CFG during validation) with mixed precision
                 if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
@@ -289,6 +297,72 @@ class ARCDiffusionSampler:
         self.dataset = dataset
         self.debug = debug
 
+    def discrete_reverse_step(
+        self,
+        x_t: torch.Tensor,
+        logits_x0: torch.Tensor,
+        t: int,
+        mask: Optional[torch.Tensor] = None,
+        deterministic: bool = True
+    ) -> torch.Tensor:
+        """
+        Perform discrete reverse diffusion step using uniform kernel.
+
+        Args:
+            x_t: Current noised state [batch_size, H, W] with values in {0..9}
+            logits_x0: Model's prediction of clean data [batch_size, H, W, 10]
+            t: Current timestep (0-indexed)
+            mask: Valid region mask [batch_size, H, W]
+            deterministic: If True, use argmax; if False, sample
+
+        Returns:
+            x_{t-1}: Less noisy state [batch_size, H, W]
+        """
+        batch_size, H, W, _ = logits_x0.shape
+        device = logits_x0.device
+
+        # Get model's p(x0|xt)
+        p0 = torch.softmax(logits_x0, dim=-1)  # [B, H, W, 10]
+
+        # Get schedule parameters
+        beta = self.noise_scheduler.betas[t].to(device).view(1, 1, 1, 1)
+
+        # alpha_bar_{t-1}
+        if t > 0:
+            abar_tm1 = self.noise_scheduler.alpha_bars[t-1].to(device).view(1, 1, 1, 1)
+        else:
+            abar_tm1 = torch.tensor(1.0, device=device).view(1, 1, 1, 1)
+
+        # Uniform kernel over 10 colors
+        K = 0.1
+
+        # Compute A(x0) = (1 - alpha_bar_{t-1}) * K + alpha_bar_{t-1} * p(x0)
+        A = (1 - abar_tm1) * K + abar_tm1 * p0  # [B, H, W, 10]
+
+        # Initialize mass with base term: beta * K * A(x0)
+        mass = beta * K * A  # [B, H, W, 10]
+
+        # Add inertia term: (1 - beta) * A(x_t) for current token
+        s = x_t.unsqueeze(-1)  # [B, H, W, 1] - current token indices
+        A_s = A.gather(-1, s)  # [B, H, W, 1] - A values at current tokens
+        mass.scatter_(-1, s, (1 - beta) * A_s)  # Update mass at current token positions
+
+        # Normalize to get probabilities
+        probs = mass / mass.sum(-1, keepdim=True).clamp_min(1e-8)  # [B, H, W, 10]
+
+        # Sample or take argmax
+        if deterministic:
+            x_tm1 = probs.argmax(-1)  # [B, H, W]
+        else:
+            # Sample from categorical distribution
+            x_tm1 = torch.multinomial(probs.view(-1, 10), 1).view(batch_size, H, W)
+
+        # Apply mask to keep invalid regions fixed at 0
+        if mask is not None:
+            x_tm1 = torch.where(mask, x_tm1, torch.zeros_like(x_tm1))
+
+        return x_tm1
+
     @torch.no_grad()
     def sample(
         self,
@@ -319,57 +393,56 @@ class ARCDiffusionSampler:
         # Predict output grid sizes if available
         predicted_heights = None
         predicted_widths = None
-        # First check for integrated size head in model
+        # Check for integrated size head in model
         if hasattr(self.model, 'include_size_head') and self.model.include_size_head:
             predicted_heights, predicted_widths = self.model.predict_sizes(input_grids, task_indices)
             print(f"Predicted sizes (integrated): heights={predicted_heights.cpu().tolist()}, widths={predicted_widths.cpu().tolist()}")
-        # Fallback to external size predictor if provided
-            print(f"Predicted sizes (external): heights={predicted_heights.cpu().tolist()}, widths={predicted_widths.cpu().tolist()}")
 
-        # Initialize with uniform random noise over {0..9}
+        # Build mask from predicted sizes (or full grid if no size prediction)
+        mask = torch.zeros((batch_size, max_size, max_size), dtype=torch.bool, device=self.device)
+        if predicted_heights is not None and predicted_widths is not None:
+            for b in range(batch_size):
+                h, w = predicted_heights[b].item(), predicted_widths[b].item()
+                mask[b, :h, :w] = True
+        else:
+            # If no size prediction, assume full grid is valid
+            mask[:] = True
+
+        # Create float mask for model
+        mask_float = mask.float()
+
+        # Initialize with uniform random noise over {0..9}, black outside mask
         x_t = torch.randint(
             0, 10,  # Uniform over {0..9}
             (batch_size, max_size, max_size),
             device=self.device
         )
+        x_t = torch.where(mask, x_t, torch.zeros_like(x_t))
 
-        # Denoising loop (0-indexed timesteps)
-        timesteps = torch.linspace(num_inference_steps - 1, 0, num_inference_steps, dtype=torch.long, device=self.device)
+        # Denoising loop (reverse from T-1 to 0)
+        for t in reversed(range(num_inference_steps)):
+            if self.debug:
+                print(f"\n=== Timestep {t} (step {num_inference_steps - t}/{num_inference_steps}) ===")
 
-        for i, t in enumerate(tqdm(timesteps, desc="Sampling", disable=(not self.debug))):
-            t_batch = t.repeat(batch_size)
+            # Create batch of current timestep
+            t_batch = torch.full((batch_size,), t, device=self.device, dtype=torch.long)
 
-            # Forward pass
-            logits = self.model(x_t, input_grids, task_indices, t_batch)
+            # Forward pass with masking
+            logits = self.model(x_t, input_grids, task_indices, t_batch, masks=mask_float)
 
             # Apply temperature scaling
             logits_scaled = logits / temperature
 
-            # Get predicted probabilities
-            probs = F.softmax(logits_scaled, dim=-1)
-
-            # Sample from categorical distribution instead of greedy argmax
-            # This adds stochasticity which helps avoid mode collapse
-            if t > 0:  # Sample for all but the last step
-                x_t = torch.multinomial(probs.view(-1, probs.shape[-1]), 1).view(x_t.shape)
-            else:  # Use argmax only for final step
-                x_t = torch.argmax(logits_scaled, dim=-1)
-
-            # Apply masking if size predictor provided - set tokens outside predicted bounds to black (0)
-            if predicted_heights is not None and predicted_widths is not None:
-                for b in range(batch_size):
-                    h, w = predicted_heights[b].item(), predicted_widths[b].item()
-                    # Set positions outside [0:h, 0:w] to black (token 0)
-                    if h < max_size:
-                        x_t[b, h:, :] = 0  # Set rows beyond height to black
-                    if w < max_size:
-                        x_t[b, :, w:] = 0  # Set columns beyond width to black
+            # Perform discrete reverse step
+            x_t = self.discrete_reverse_step(
+                x_t, logits_scaled, t, mask=mask,
+                deterministic=True
+                # deterministic=(t == 0)  # Only deterministic at final step
+            )
 
             # Debug printing
             if self.debug:
-                print(f"\n=== Timestep {t.item()} (step {i+1}/{len(timesteps)}) ===")
-
-                # Show first 10x10 of the grid with PAD tokens as *
+                # Show first 10x10 of the grid
                 display_size = min(10, max_size)
                 valid_grid = x_t[0, :display_size, :display_size].cpu().numpy()
                 print(f"Grid content (showing {display_size}x{display_size}):")

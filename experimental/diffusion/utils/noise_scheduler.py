@@ -74,14 +74,15 @@ class DiscreteNoiseScheduler:
 
         return betas
 
-    def add_noise(self, x0: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+    def add_noise(self, x0: torch.Tensor, t: torch.Tensor, masks: Optional[torch.Tensor] = None) -> torch.Tensor:
         """
         Add noise to clean tokens x0 at timestep t using uniform mixing kernel.
-        PAD tokens (value 10) are preserved and never corrupted with noise.
+        Only noise valid regions (where mask=1), clamp invalid regions to 0 (black).
 
         Args:
             x0: Clean tokens [batch_size, height, width]
             t: Timestep tensor [batch_size]
+            masks: Valid region masks [batch_size, height, width], 1 for valid, 0 for invalid
 
         Returns:
             xt: Noisy tokens [batch_size, height, width]
@@ -89,22 +90,26 @@ class DiscreteNoiseScheduler:
         batch_size, height, width = x0.shape
         device = x0.device
 
+        # If masks provided, ensure x0 doesn't have PAD tokens outside valid region
+        # (convert any PAD/10 to 0/black outside the mask)
+        if masks is not None:
+            x0 = torch.where(masks.bool(), x0, torch.zeros_like(x0))
+
         # Get alpha_bar for each sample in the batch
         alpha_bars_t = self.alpha_bars[t].to(device)  # [batch_size]
 
         # Create random mask: keep original token with prob alpha_bar_t
         keep_mask = torch.rand(batch_size, height, width, device=device) < alpha_bars_t.unsqueeze(-1).unsqueeze(-1)
 
-        # Create random tokens for replacement using uniform distribution over colors {0..9} only
-        # We never sample PAD (10) as noise
+        # Create random tokens for replacement using uniform distribution over colors {0..9}
         random_tokens = torch.randint(0, 10, (batch_size, height, width), device=device)
 
         # Apply noise: keep original where mask is True, replace with random elsewhere
         xt = torch.where(keep_mask, x0, random_tokens)
 
-        # Preserve PAD tokens - PAD regions should never be corrupted
-        pad_mask = (x0 == 10)
-        xt = torch.where(pad_mask, x0, xt)
+        # If masks provided, clamp invalid regions to 0 (black)
+        if masks is not None:
+            xt = torch.where(masks.bool(), xt, torch.zeros_like(xt))
 
         return xt
 

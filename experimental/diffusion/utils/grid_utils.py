@@ -14,7 +14,7 @@ def pad_grid_to_size(grid: torch.Tensor, target_size: int = 30, pad_value: int =
     Args:
         grid: Input grid [H, W] or [batch, H, W]
         target_size: Target size (assumes square grids)
-        pad_value: Value to pad with (PAD token = 10)
+        pad_value: Value to pad with (10/PAD for invalid regions)
 
     Returns:
         Padded grid [target_size, target_size] or [batch, target_size, target_size]
@@ -79,12 +79,12 @@ def clamp_outside_mask(grid: torch.Tensor, mask: torch.Tensor, pad_value: int = 
     Args:
         grid: Grid tensor [..., H, W]
         mask: Mask tensor [..., H, W] with 1s for valid regions
-        pad_value: Value to set outside valid region
+        pad_value: Value to set outside valid region (10/PAD)
 
     Returns:
         Grid with tokens outside mask set to pad_value
     """
-    return torch.where(mask.bool(), grid, pad_value)
+    return torch.where(mask.bool(), grid, torch.zeros_like(grid) if pad_value == 0 else torch.full_like(grid, pad_value))
 
 
 def extract_valid_region(grid: torch.Tensor, height: int, width: int) -> torch.Tensor:
@@ -116,13 +116,13 @@ def grid_to_tokens(grid: np.ndarray, max_size: int = 30) -> Tuple[torch.Tensor, 
         max_size: Target padded size
 
     Returns:
-        tokens: Padded tokens [max_size, max_size] (padded with black/0, no PAD token)
+        tokens: Padded tokens [max_size, max_size] (padded with black/0)
         height: Original height
         width: Original width
     """
     height, width = grid.shape
     tokens = torch.from_numpy(grid.astype(np.int64))
-    padded_tokens = pad_grid_to_size(tokens, max_size, pad_value=10)  # Use PAD token for input grids
+    padded_tokens = pad_grid_to_size(tokens, max_size, pad_value=10)  # Use PAD/10 for padding
     return padded_tokens, height, width
 
 

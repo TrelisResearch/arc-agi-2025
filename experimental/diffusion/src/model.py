@@ -60,9 +60,11 @@ class TransformerDenoiser(nn.Module):
         self.vocab_size = vocab_size
         self.input_grid_dropout = input_grid_dropout
 
-        # Token embedding (PAD token at index 10 should not receive gradients)
-        PAD_ID = 10
-        self.token_embedding = nn.Embedding(vocab_size, d_model, padding_idx=PAD_ID)
+        # Token embedding with padding_idx for PAD token
+        # Input/output grids use PAD (10) which gets auto-zeroed
+        # Noised grids (xt) use 0 for invalid regions and need explicit masking
+        self.PAD_ID = 10
+        self.token_embedding = nn.Embedding(vocab_size, d_model, padding_idx=self.PAD_ID)
 
         # Positional encoding
         self.pos_encoding = CoordinatePositionalEncoding(max_size, d_model)
@@ -110,9 +112,12 @@ class TransformerDenoiser(nn.Module):
         Returns:
             logits: [batch_size, max_size, max_size, 10] - predicted logits for colors 0-9
         """
-        # Verify xt contains only valid tokens (0-10, where 10 is PAD)
-        assert xt.max().item() <= 10, f"xt must contain tokens 0-10, got max {xt.max().item()}"
+        # Verify tokens are valid
+        # xt contains only 0-9 (uses 0/black for invalid regions)
+        # input_grid can contain 0-10 (uses 10/PAD for invalid regions)
+        assert xt.max().item() <= 9, f"xt must contain tokens 0-9, got max {xt.max().item()}"
         assert xt.min().item() >= 0, f"xt must contain only non-negative values, got min {xt.min().item()}"
+        assert input_grid.max().item() <= 10, f"input_grid must contain tokens 0-10, got max {input_grid.max().item()}"
 
         batch_size = xt.shape[0]
         device = xt.device
@@ -133,6 +138,12 @@ class TransformerDenoiser(nn.Module):
         # Apply embedding dropout
         input_emb = self.embedding_dropout(input_emb)
         xt_emb = self.embedding_dropout(xt_emb)
+
+        # Apply masking to xt features if masks provided
+        # Zero out embeddings outside valid regions
+        if masks is not None:
+            masks_flat = masks.view(batch_size, -1, 1).float()  # [batch_size, max_size^2, 1]
+            xt_emb = xt_emb * masks_flat  # Zero out invalid regions
 
         # Apply input grid conditioning dropout (training only)
         if self.training and self.input_grid_dropout > 0:
@@ -294,8 +305,16 @@ class ARCDiffusionModel(nn.Module):
         batch_size = x0.shape[0]
         max_size = x0.shape[1]
 
-        # Forward pass
-        logits = self.forward(xt, input_grid, task_ids, timesteps)
+        # Create masks for valid positions if heights/widths provided
+        masks = None
+        if heights is not None and widths is not None:
+            masks = torch.zeros(batch_size, max_size, max_size, dtype=torch.float32, device=x0.device)
+            for i in range(batch_size):
+                h, w = heights[i].item(), widths[i].item()
+                masks[i, :h, :w] = 1.0
+
+        # Forward pass with masks
+        logits = self.forward(xt, input_grid, task_ids, timesteps, masks)
 
         # Create mask for valid positions if heights/widths provided
         if heights is not None and widths is not None:
@@ -333,7 +352,7 @@ class ARCDiffusionModel(nn.Module):
         else:
             # Fallback to original behavior (all positions)
             grid_loss = F.cross_entropy(
-                logits.view(-1, self.vocab_size),
+                logits.view(-1, 10),  # Model outputs 10 classes (0-9), not vocab_size
                 x0.view(-1),
                 reduction='mean'
             )
@@ -347,7 +366,7 @@ class ARCDiffusionModel(nn.Module):
 
                 # Flatten for per-timestep metrics
                 correct_flat = correct.view(-1)
-                logits_flat = logits.view(-1, self.vocab_size)
+                logits_flat = logits.view(-1, 10)  # Model outputs 10 classes
                 targets_flat = x0.view(-1)
 
                 # Expand timesteps to match flattened shape

@@ -237,12 +237,18 @@ def create_denoising_progression_visualization(
     axes[1, 1].axis('off')
 
     with torch.no_grad():
+        # Create mask for valid region
+        from experimental.diffusion.utils.grid_utils import batch_create_masks
+        heights = torch.tensor([height], device=device)
+        widths = torch.tensor([width], device=device)
+        mask = batch_create_masks(heights, widths, output_grid.shape[1]).to(device)
+
         for i, t in enumerate(timesteps_to_viz):
             col_idx = i + 2  # Offset by 2 for input and ground truth columns
 
-            # Create noisy version at timestep t
+            # Create noisy version at timestep t with masking
             t_tensor = torch.tensor([t], device=device)
-            noisy_grid = noise_scheduler.add_noise(output_grid, t_tensor)
+            noisy_grid = noise_scheduler.add_noise(output_grid, t_tensor, mask)
 
             # Show noisy grid in bottom row
             noisy_np = noisy_grid[0].cpu().numpy()
@@ -253,8 +259,8 @@ def create_denoising_progression_visualization(
             render_grid(noisy_np, axes[1, col_idx], f"Noisy t={t}\n({noise_pct:.0f}% noise)",
                        valid_height=height, valid_width=width)
 
-            # Generate denoised prediction from this timestep
-            logits = model(noisy_grid, input_grid, task_idx, t_tensor)
+            # Generate denoised prediction from this timestep with masking
+            logits = model(noisy_grid, input_grid, task_idx, t_tensor, mask.float())
             predicted_grid = torch.argmax(logits, dim=-1)
 
             # Debug: Check prediction statistics
