@@ -12,7 +12,7 @@ from ..utils.noise_scheduler import create_timestep_embedding
 class CoordinatePositionalEncoding(nn.Module):
     """2D coordinate-based positional encoding for grid positions."""
 
-    def __init__(self, max_size: int = 20, d_model: int = 256):
+    def __init__(self, max_size: int = 30, d_model: int = 256):
         super().__init__()
         assert d_model % 2 == 0
         self.max_size = max_size
