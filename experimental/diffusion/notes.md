@@ -76,3 +76,5 @@ mediom 496 mins training time on H200:
 - final: Pass@2: 25/284 (8.8%)
 
 lorge (still training)...
+
+#### Majority Voting Stats (now grading, with partial credit, on all output test grids)

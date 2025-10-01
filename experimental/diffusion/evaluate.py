@@ -304,15 +304,17 @@ class DiffusionInference:
         input_grid: np.ndarray,
         task_idx: int,
         augmentations: List[AugmentationParams],
+        batch_size: int,
         print_stats: bool = False
     ) -> Tuple[int, int]:
         """
-        Predict output size using majority voting over augmented inputs.
+        Predict output size using majority voting over augmented inputs with batched inference.
 
         Args:
             input_grid: Original input grid
             task_idx: Task index
             augmentations: List of augmentation parameters
+            batch_size: Batch size for inference
             print_stats: Whether to print histogram statistics
 
         Returns:
@@ -320,23 +322,31 @@ class DiffusionInference:
         """
         size_predictions = []
 
-        for aug_params in augmentations:
-            # Apply augmentation to input
-            aug_input = apply_augmentation(input_grid, aug_params)
+        # Process augmentations in batches
+        for batch_start in range(0, len(augmentations), batch_size):
+            batch_augs = augmentations[batch_start:batch_start + batch_size]
+            batch_inputs = []
 
-            # Convert to tokens and add batch dimension
-            input_tokens, _, _ = grid_to_tokens(aug_input, max_size=self.config['max_size'])
-            input_batch = input_tokens.unsqueeze(0).to(self.device)
+            # Apply augmentations to create batch
+            for aug_params in batch_augs:
+                aug_input = apply_augmentation(input_grid, aug_params)
+                input_tokens, _, _ = grid_to_tokens(aug_input, max_size=self.config['max_size'])
+                batch_inputs.append(input_tokens)
 
-            # Get size prediction
-            task_ids = torch.tensor([task_idx]).to(self.device)
+            # Stack into batch
+            input_batch = torch.stack(batch_inputs).to(self.device)
+            task_ids = torch.tensor([task_idx] * len(batch_augs)).to(self.device)
+
+            # Get size predictions for batch
             with torch.no_grad():
                 pred_heights, pred_widths = self.model.predict_sizes(input_batch, task_ids)
-                pred_height, pred_width = pred_heights[0].item(), pred_widths[0].item()
 
-            # De-augment size
-            deaug_height, deaug_width = deaugment_size(pred_height, pred_width, aug_params)
-            size_predictions.append((deaug_height, deaug_width))
+            # De-augment each size prediction
+            for i, aug_params in enumerate(batch_augs):
+                pred_height = pred_heights[i].item()
+                pred_width = pred_widths[i].item()
+                deaug_height, deaug_width = deaugment_size(pred_height, pred_width, aug_params)
+                size_predictions.append((deaug_height, deaug_width))
 
         # Majority vote
         size_counter = Counter(size_predictions)
@@ -883,7 +893,7 @@ class DiffusionInference:
 
             # Predict size with majority voting
             pred_height, pred_width = self.predict_size_with_majority_voting(
-                input_grid, task_idx, augmentations, print_stats=print_stats
+                input_grid, task_idx, augmentations, batch_size=n_augment, print_stats=print_stats
             )
 
             # Predict output with majority voting
