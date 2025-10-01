@@ -757,7 +757,6 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             'loss': f"{losses['total_loss']:.4f}",
             'grid': f"{losses['grid_loss']:.4f}",
             'acc': f"{losses.get('accuracy', 0.0):.3f}",
-            'adj_acc': f"{losses.get('chance_adjusted_accuracy', -0.10):.3f}",
             'grad': f"{losses['grad_norm']:.2f}",
             'epoch': f"{current_epoch_approx:.1f}"
         })
@@ -793,13 +792,11 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
                 for bucket in ['low_noise', 'mid_noise', 'high_noise']:
                     if f'{bucket}_count' in val_losses:
                         acc = val_losses.get(f'{bucket}_accuracy', 0.0)
-                        adj_acc = val_losses.get(f'{bucket}_chance_adj_acc', -0.10)
                         count = val_losses.get(f'{bucket}_count', 0)
-                        print(f"  {bucket:10s}: acc={acc:.3f}, adj_acc={adj_acc:+.3f}, count={count:4.0f}")
+                        print(f"  {bucket:10s}: acc={acc:.3f}, count={count:4.0f}")
 
             overall_acc = val_losses.get('accuracy', 0.0)
-            overall_adj = val_losses.get('chance_adjusted_accuracy', -0.10)
-            print(f"Overall: acc={overall_acc:.3f}, chance_adj_acc={overall_adj:+.3f}")
+            print(f"Overall: acc={overall_acc:.3f}")
 
             # Log validation losses
             if config.get('use_wandb', False):
@@ -809,18 +806,13 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
                 val_log_dict["val/epoch"] = current_epoch_approx
                 wandb.log(val_log_dict, step=step)
 
-            # Save best model
+            # Save best model (weights only to save space)
             if val_losses['total_loss'] < best_val_loss:
                 best_val_loss = val_losses['total_loss']
                 # Save model in bfloat16 without modifying the original
                 model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
                 save_dict = {
                     'model_state_dict': model_state_dict_bf16,
-                    'optimizer_state_dict': trainer.optimizer.state_dict(),
-                    'scheduler_state_dict': trainer.scheduler.state_dict(),
-                    'epoch': current_epoch,
-                    'step': step,
-                    'val_loss': val_losses['total_loss'],
                     'config': config,
                     'dataset_info': dataset_info
                 }
@@ -863,16 +855,10 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             print(f"Early stopping after {step} steps")
             break
 
-    # Save final model
-    # Save final model in bfloat16 without modifying the original
-    final_epoch = step // steps_per_epoch
+    # Save final model (weights only to save space)
     model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
     save_dict = {
         'model_state_dict': model_state_dict_bf16,
-        'optimizer_state_dict': trainer.optimizer.state_dict(),
-        'scheduler_state_dict': trainer.scheduler.state_dict(),
-        'epoch': final_epoch,
-        'step': step,
         'config': config,
         'dataset_info': dataset_info
     }

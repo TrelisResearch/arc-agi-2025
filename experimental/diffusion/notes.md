@@ -59,13 +59,14 @@ Correct!
 ## Daily Notes
 ### Oct 1st 2025
 #### Model Results
-smol: 
-- best:
-- best (rerun): 
-- final: 
+smol 145 mins training time on H200: 
+- best model: 
+- best model (rerun): 
+- best model (rerun); 32 steps only: 
+- final model: 
 
-mediom:
-- best: 
+mediom 496 mins training time on H200:
+- best: Pass@2: 25/284 (8.8%)
 - final: 
 
 lorge: 

@@ -306,13 +306,11 @@ class ARCDiffusionModel(nn.Module):
         bucket_targets = targets[bucket_mask]
 
         bucket_acc = bucket_correct.mean().item()
-        bucket_chance_adj = bucket_acc - 0.10
         bucket_ce = F.cross_entropy(bucket_logits, bucket_targets, reduction='mean').item()
         bucket_count = bucket_mask.sum().item()
 
         return {
             f'{bucket_name}_accuracy': bucket_acc,
-            f'{bucket_name}_chance_adj_acc': bucket_chance_adj,
             f'{bucket_name}_cross_entropy': bucket_ce,
             f'{bucket_name}_count': bucket_count,
         }
@@ -365,7 +363,6 @@ class ARCDiffusionModel(nn.Module):
                 predictions = torch.argmax(valid_logits, dim=-1)
                 correct = (predictions == valid_targets).float()
                 accuracy = correct.mean().item()
-                chance_adjusted_acc = accuracy - 0.10  # 10 colors = 10% chance
 
                 # Expand timesteps to match mask shape for per-timestep metrics
                 timesteps_expanded = timesteps.unsqueeze(1).unsqueeze(2).expand_as(mask)
@@ -391,7 +388,6 @@ class ARCDiffusionModel(nn.Module):
                 predictions = torch.argmax(logits, dim=-1)
                 correct = (predictions == x0).float()
                 accuracy = correct.mean().item()
-                chance_adjusted_acc = accuracy - 0.10
 
                 # Flatten for per-timestep metrics
                 correct_flat = correct.view(-1)
@@ -446,7 +442,6 @@ class ARCDiffusionModel(nn.Module):
             'total_loss': grid_loss + auxiliary_size_loss_weight * size_loss,  # Add auxiliary loss with weight
             'grid_loss': grid_loss,
             'accuracy': accuracy,
-            'chance_adjusted_accuracy': chance_adjusted_acc,
         }
 
         # Add bucket-specific metrics
