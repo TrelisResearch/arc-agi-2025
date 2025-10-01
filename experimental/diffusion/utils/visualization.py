@@ -212,6 +212,11 @@ def create_denoising_progression_visualization(
     height = example['height'].item()
     width = example['width'].item()
 
+    # Extract augmentation parameters
+    rotation = example['rotation'].unsqueeze(0).to(device)  # [1]
+    flip = example['flip'].unsqueeze(0).to(device)  # [1]
+    color_shift = example['color_shift'].unsqueeze(0).to(device)  # [1]
+
     # Define timesteps to visualize (as fractions of total timesteps)
     timestep_fractions = [0.0, 0.25, 0.5, 0.75, 1.0]
     max_timesteps = noise_scheduler.num_timesteps
@@ -260,7 +265,9 @@ def create_denoising_progression_visualization(
                        valid_height=height, valid_width=width)
 
             # Generate denoised prediction from this timestep with masking
-            logits = model(noisy_grid, input_grid, task_idx, t_tensor, mask.float())
+            logits = model(noisy_grid, input_grid, task_idx, t_tensor,
+                         rotation=rotation, flip=flip, color_shift=color_shift,
+                         masks=mask.float())
             predicted_grid = torch.argmax(logits, dim=-1)
 
             # Debug: Check prediction statistics

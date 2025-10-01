@@ -64,6 +64,11 @@ Correct!
 
 ## Daily Notes
 ### Oct 1st 2025
+#### Testing splitting up inputs instead of creating new task embeddings
+```bash
+PYTHONUNBUFFERED=1 nohup uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config.json > smol-sep.log &
+```
+
 #### Model Results on AA1 Eval (Measured only on first test grid!)
 smol 145 mins training time on H200: 
 - best model: Pass@2: 13/284 (4.6%)
