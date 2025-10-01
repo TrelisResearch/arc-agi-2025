@@ -55,3 +55,17 @@ Uniform is mroe robust and simpler.
 
 - During inference, what normally happens? We start with a noised input and denoise repeatedly? We don't add any intermediate noise do we?
 Correct!
+
+## Daily Notes
+### Oct 1st 2025
+#### Model Results
+smol: 
+- best:
+- best (rerun): 
+- final: 
+
+mediom:
+- best: 
+- final: 
+
+lorge: 

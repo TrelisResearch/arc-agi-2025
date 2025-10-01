@@ -100,17 +100,17 @@ def test_model_forward():
     batch_size = 2
     max_size = 10
 
-    # Create test inputs
-    xt = torch.randint(0, 11, (batch_size, max_size, max_size))
-    input_grid = torch.randint(0, 10, (batch_size, max_size, max_size))
+    # Create test inputs (xt contains noised grids with colors 0-9, input_grid can have PAD=10)
+    xt = torch.randint(0, 10, (batch_size, max_size, max_size))
+    input_grid = torch.randint(0, 11, (batch_size, max_size, max_size))
     task_ids = torch.tensor([0, 1])
     timesteps = torch.tensor([1, 2])
 
     # Forward pass
     logits = model(xt, input_grid, task_ids, timesteps)
 
-    # Check shapes
-    assert logits.shape == (batch_size, max_size, max_size, 11)
+    # Check shapes (model outputs 10 classes for colors 0-9)
+    assert logits.shape == (batch_size, max_size, max_size, 10)
 
     print("✓ Model forward pass test passed")
 
@@ -134,11 +134,11 @@ def test_loss_computation():
 
     # Create test data
     x0 = torch.randint(0, 10, (batch_size, max_size, max_size))
-    input_grid = torch.randint(0, 10, (batch_size, max_size, max_size))
+    input_grid = torch.randint(0, 11, (batch_size, max_size, max_size))
     task_ids = torch.tensor([0, 1])
     heights = torch.tensor([5, 7])
     widths = torch.tensor([6, 8])
-    xt = torch.randint(0, 11, (batch_size, max_size, max_size))
+    xt = torch.randint(0, 10, (batch_size, max_size, max_size))
     timesteps = torch.tensor([1, 2])
 
     # Compute losses
@@ -152,9 +152,9 @@ def test_loss_computation():
     print("✓ Loss computation test passed")
 
 
-def test_pad_token_prediction():
-    """Test that model can predict PAD tokens."""
-    print("Testing PAD token prediction...")
+def test_color_prediction():
+    """Test that model can predict colors 0-9."""
+    print("Testing color prediction...")
 
     model = ARCDiffusionModel(
         vocab_size=11,
@@ -169,23 +169,23 @@ def test_pad_token_prediction():
     batch_size = 2
     max_size = 10
 
-    # Create test inputs with some PAD tokens
-    xt = torch.randint(0, 11, (batch_size, max_size, max_size))
-    input_grid = torch.randint(0, 10, (batch_size, max_size, max_size))
+    # Create test inputs (xt uses 0-9 for noised grids, input_grid can have PAD=10)
+    xt = torch.randint(0, 10, (batch_size, max_size, max_size))
+    input_grid = torch.randint(0, 11, (batch_size, max_size, max_size))
     task_ids = torch.tensor([0, 1])
     timesteps = torch.tensor([1, 2])
 
     # Forward pass
     logits = model(xt, input_grid, task_ids, timesteps)
 
-    # Check that model can predict all 11 classes including PAD (10)
-    assert logits.shape == (batch_size, max_size, max_size, 11)
+    # Check that model predicts 10 color classes (0-9), not PAD
+    assert logits.shape == (batch_size, max_size, max_size, 10)
 
-    # Sample from logits and check that PAD tokens can be generated
+    # Sample from logits and check that predictions are valid colors (0-9)
     predictions = torch.argmax(logits, dim=-1)
-    assert predictions.min() >= 0 and predictions.max() <= 10
+    assert predictions.min() >= 0 and predictions.max() <= 9
 
-    print("✓ PAD token prediction test passed")
+    print("✓ Color prediction test passed")
 
 
 def test_data_loading():
@@ -240,7 +240,7 @@ def run_all_tests():
         test_grid_utils()
         test_model_forward()
         test_loss_computation()
-        test_pad_token_prediction()
+        test_color_prediction()
         test_data_loading()
 
         print("\n" + "=" * 50)

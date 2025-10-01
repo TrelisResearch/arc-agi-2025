@@ -1,29 +1,29 @@
 #!/usr/bin/env python3
 """
-ARC Diffusion Model Evaluation with Copy Statistics
+ARC Diffusion Model Evaluation
 
-Tracks detailed statistics about input copying behavior and trajectory dynamics:
-- Copy rate: fraction of output that matches input
-- Edit accuracy: accuracy on cells that differ between input/target
-- Keep accuracy: accuracy on cells that stay the same
-- Trajectory stats: change rate, confidence, early-lock detection
+Evaluates trained diffusion models with pass@2 scoring and detailed statistics:
+- Accuracy metrics (pass@2, both correct, per-attempt accuracy)
+- Copy behavior statistics (copy rate, edit accuracy, keep accuracy)
+- Trajectory dynamics (delta-change curves, confidence, early-lock detection)
+- Denoising visualizations for qualitative analysis
 
 Usage:
-    python experimental/diffusion/evaluate_copy_stats.py --config experimental/diffusion/configs/smol_config.json
+    uv run python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/smol_config.json
+    uv run python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/smol_config.json --limit 10
+    uv run python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/smol_config.json --dataset arc-prize-2024 --subset evaluation
 """
 import json
 import argparse
 import datetime
 import sys
-import time
 import traceback
 import numpy as np
 from pathlib import Path
-from typing import Dict, List, Optional, TypedDict, Union, Tuple, Any
+from typing import Dict, List, Optional, TypedDict, Tuple, Any
 from tqdm import tqdm
 import torch
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 
 # Add project root to Python path
 project_root = Path(__file__).parent.parent.parent

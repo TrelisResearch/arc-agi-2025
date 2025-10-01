@@ -399,7 +399,7 @@ class ARCDiffusionModel(nn.Module):
                 targets_flat = x0.view(-1)
 
                 # Expand timesteps to match flattened shape
-                timesteps_flat = timesteps.unsqueeze(1).unsqueeze(2).expand_as(x0).view(-1)
+                timesteps_flat = timesteps.unsqueeze(1).unsqueeze(2).expand_as(x0).reshape(-1)
                 timesteps_norm = timesteps_flat.float() / 127.0  # 128 timesteps: 0-127
 
                 # Compute metrics for each bucket

@@ -1,10 +1,21 @@
 #!/usr/bin/env python3
 """
-ARC Diffusion Training with JSON Config Support
+ARC Diffusion Backbone Training with JSON Config Support
+
+Trains the diffusion model with integrated size prediction head.
 
 Usage:
-    python experimental/diffusion/train_with_config.py --config configs/cpu_config.json
-    python experimental/diffusion/train_with_config.py --config configs/gpu_config.json
+    uv run python experimental/diffusion/train_diffusion_backbone.py --config experimental/diffusion/configs/smol_config.json
+    uv run python experimental/diffusion/train_diffusion_backbone.py --config experimental/diffusion/configs/smol_config.json --no-wandb
+
+Config file structure:
+    {
+        "model": {d_model, nhead, num_layers, max_size, etc.},
+        "training": {batch_size, learning_rate, optimizer_steps, etc.},
+        "data": {data_dir, datasets, etc.},
+        "auxiliary_loss": {include_size_head, size_head_hidden_dim, etc.},
+        "output": {output_dir, use_wandb, etc.}
+    }
 """
 import json
 import argparse
@@ -18,53 +29,84 @@ sys.path.insert(0, str(project_root))
 from experimental.diffusion.src.training import train_arc_diffusion
 
 
-def load_config(config_path: str) -> dict:
-    """Load configuration from JSON file."""
+def load_and_flatten_config(config_path: str) -> dict:
+    """
+    Load configuration from JSON file and flatten nested structure.
+
+    The training function expects a flat dictionary, so we flatten the nested
+    config structure while preserving the auxiliary_loss section.
+    """
     with open(config_path, 'r') as f:
         config = json.load(f)
 
-    # Flatten the nested config for compatibility with existing training function
+    # Flatten nested config sections
     flat_config = {}
 
-    # Flatten model config
-    flat_config.update(config['model'])
+    # Flatten model, training, data, and output sections
+    for section in ['model', 'training', 'data', 'output']:
+        if section in config:
+            flat_config.update(config[section])
 
-    # Flatten training config
-    flat_config.update(config['training'])
-
-    # Flatten data config
-    flat_config.update(config['data'])
-
-    # Flatten output config
-    flat_config.update(config['output'])
-
-    # Keep auxiliary_loss as nested dict (training.py expects config.get('auxiliary_loss', {}))
-    flat_config['auxiliary_loss'] = config.get('auxiliary_loss', {})
+    # Keep auxiliary_loss as nested dict (expected by training.py)
+    if 'auxiliary_loss' in config:
+        flat_config['auxiliary_loss'] = config['auxiliary_loss']
 
     return flat_config
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train ARC Diffusion Model with JSON Config")
-    parser.add_argument("--config", required=True, help="Path to JSON config file")
-    parser.add_argument("--no-wandb", action="store_true", help="Disable wandb logging")
+    parser = argparse.ArgumentParser(
+        description="Train ARC Diffusion Model with JSON Config",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--config",
+        required=True,
+        help="Path to JSON config file (see configs/ for examples)"
+    )
+    parser.add_argument(
+        "--no-wandb",
+        action="store_true",
+        help="Disable wandb logging (overrides config)"
+    )
 
     args = parser.parse_args()
 
-    # Load config
-    config = load_config(args.config)
+    # Validate config file exists
+    config_path = Path(args.config)
+    if not config_path.exists():
+        print(f"❌ Config file not found: {config_path}")
+        sys.exit(1)
+
+    # Load and flatten config
+    try:
+        config = load_and_flatten_config(args.config)
+    except Exception as e:
+        print(f"❌ Failed to load config: {e}")
+        sys.exit(1)
 
     # Override wandb setting if requested
     if args.no_wandb:
         config['use_wandb'] = False
 
-    print(f"Using config from: {args.config}")
-    print(f"Config: {config}")
+    print(f"✨ Training ARC Diffusion Model")
+    print(f"📁 Config: {args.config}")
+    print(f"📊 Model: {config['d_model']}d, {config['num_layers']} layers")
+    print(f"🎯 Training: {config['optimizer_steps']} steps, batch_size={config['batch_size']}")
+    print(f"💾 Output: {config['output_dir']}")
 
     # Train model
-    model = train_arc_diffusion(config=config)
-
-    print("Training completed successfully!")
+    try:
+        model = train_arc_diffusion(config=config)
+        print("✅ Training completed successfully!")
+    except KeyboardInterrupt:
+        print("\n⏹️ Training interrupted by user")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n❌ Training failed: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 
 if __name__ == "__main__":
