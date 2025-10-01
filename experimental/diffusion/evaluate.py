@@ -33,9 +33,91 @@ from experimental.diffusion.src.model import ARCDiffusionModel
 from experimental.diffusion.src.training import ARCDiffusionSampler
 from experimental.diffusion.src.dataset import ARCDataset, load_arc_data_paths
 from experimental.diffusion.utils.noise_scheduler import DiscreteNoiseScheduler
-from experimental.diffusion.utils.grid_utils import grid_to_tokens, tokens_to_grid
+from experimental.diffusion.utils.grid_utils import grid_to_tokens, tokens_to_grid, TaskAugmentation
 from experimental.diffusion.utils.task_filters import filter_tasks_by_max_size
 from experimental.diffusion.utils.arc_colors import arc_cmap
+import random
+from collections import Counter
+
+
+class AugmentationParams(TypedDict):
+    """Parameters for a single augmentation"""
+    flip_type: str  # 'none', 'horizontal', 'vertical'
+    rotation: int  # 0, 90, 180, 270
+    color_cycle: int  # 0-8
+
+
+def generate_augmentations(n_augment: int) -> List[AugmentationParams]:
+    """
+    Generate random augmentations similar to training.
+
+    Args:
+        n_augment: Number of augmentations to generate (includes identity)
+
+    Returns:
+        List of augmentation parameters (first one is always identity)
+    """
+    augmentations = []
+
+    # First augmentation is always identity
+    augmentations.append(AugmentationParams(
+        flip_type='none',
+        rotation=0,
+        color_cycle=0
+    ))
+
+    # Generate n_augment - 1 random augmentations
+    for _ in range(n_augment - 1):
+        flip_type = random.choice(['none', 'none', 'horizontal', 'vertical'])  # 'none' has 2x weight
+        rotation = random.choice([0, 90, 180, 270])
+        color_cycle = random.choice(range(9))  # 0-8
+
+        augmentations.append(AugmentationParams(
+            flip_type=flip_type,
+            rotation=rotation,
+            color_cycle=color_cycle
+        ))
+
+    return augmentations
+
+
+def apply_augmentation(grid: np.ndarray, aug_params: AugmentationParams) -> np.ndarray:
+    """Apply augmentation to a grid."""
+    grid = TaskAugmentation.apply_flip_augmentation(grid, aug_params['flip_type'])
+    grid = TaskAugmentation.apply_rotation_augmentation(grid, aug_params['rotation'])
+    grid = TaskAugmentation.apply_color_cycle_augmentation(grid, aug_params['color_cycle'])
+    return grid
+
+
+def reverse_augmentation(grid: np.ndarray, aug_params: AugmentationParams) -> np.ndarray:
+    """Reverse augmentation on a grid (de-augment)."""
+    # Reverse color cycle
+    if aug_params['color_cycle'] != 0:
+        # To reverse cycle, apply (9 - offset) since we cycle 9 colors
+        reverse_cycle = 9 - aug_params['color_cycle']
+        grid = TaskAugmentation.apply_color_cycle_augmentation(grid, reverse_cycle)
+
+    # Reverse rotation
+    if aug_params['rotation'] != 0:
+        # To reverse rotation, apply opposite rotation
+        reverse_rotation = (360 - aug_params['rotation']) % 360
+        grid = TaskAugmentation.apply_rotation_augmentation(grid, reverse_rotation)
+
+    # Reverse flip (flips are self-inverse)
+    grid = TaskAugmentation.apply_flip_augmentation(grid, aug_params['flip_type'])
+
+    return grid
+
+
+def deaugment_size(height: int, width: int, aug_params: AugmentationParams) -> Tuple[int, int]:
+    """
+    De-augment size prediction.
+    Only rotation 90/270 swaps height and width.
+    """
+    if aug_params['rotation'] in [90, 270]:
+        return width, height  # Swap
+    else:
+        return height, width  # No swap
 
 
 class TrajectoryStats(TypedDict):
@@ -75,22 +157,30 @@ class DiffusionResult(TypedDict):
     trajectory_stats: Optional[TrajectoryStats]  # Sampling trajectory statistics
 
 
-class TaskResult(TypedDict):
-    """Result for a single ARC task with pass@2 attempts"""
-    task_id: str
-    timestamp: str
-
-    # Attempt results (2 attempts for pass@2)
+class TestExampleResult(TypedDict):
+    """Results for a single test example with pass@2 attempts"""
+    test_idx: int
     attempt_1: DiffusionResult
     attempt_2: DiffusionResult
-
-    # Pass@2 scoring
     pass_at_2: bool  # True if either attempt is correct
     both_correct: bool  # True if both attempts are correct
 
+
+class TaskResult(TypedDict):
+    """Result for a single ARC task with multiple test examples"""
+    task_id: str
+    timestamp: str
+
+    # Results for each test example
+    test_results: List[TestExampleResult]
+
+    # Task-level scoring (partial credit)
+    num_test_examples: int
+    num_test_examples_passed: int  # Number of test examples where pass@2 = True
+    task_score: float  # Fraction of test examples passed (partial credit)
+
     # Task metadata
     num_train_examples: int
-    num_test_examples: int
 
 
 class DiffusionInference:
@@ -208,6 +298,129 @@ class DiffusionInference:
             # Could also raise an error or use a special "unknown" token
             print(f"Warning: Unknown task {task_id}, using default task index 0")
             return 0
+
+    def predict_size_with_majority_voting(
+        self,
+        input_grid: np.ndarray,
+        task_idx: int,
+        augmentations: List[AugmentationParams],
+        print_stats: bool = False
+    ) -> Tuple[int, int]:
+        """
+        Predict output size using majority voting over augmented inputs.
+
+        Args:
+            input_grid: Original input grid
+            task_idx: Task index
+            augmentations: List of augmentation parameters
+            print_stats: Whether to print histogram statistics
+
+        Returns:
+            (height, width): Majority-voted size
+        """
+        size_predictions = []
+
+        for aug_params in augmentations:
+            # Apply augmentation to input
+            aug_input = apply_augmentation(input_grid, aug_params)
+
+            # Convert to tokens and add batch dimension
+            input_tokens, _, _ = grid_to_tokens(aug_input, max_size=self.config['max_size'])
+            input_batch = input_tokens.unsqueeze(0).to(self.device)
+
+            # Get size prediction
+            task_ids = torch.tensor([task_idx]).to(self.device)
+            with torch.no_grad():
+                pred_heights, pred_widths = self.model.predict_sizes(input_batch, task_ids)
+                pred_height, pred_width = pred_heights[0].item(), pred_widths[0].item()
+
+            # De-augment size
+            deaug_height, deaug_width = deaugment_size(pred_height, pred_width, aug_params)
+            size_predictions.append((deaug_height, deaug_width))
+
+        # Majority vote
+        size_counter = Counter(size_predictions)
+        majority_size, count = size_counter.most_common(1)[0]
+
+        if print_stats:
+            print(f"  Size prediction histogram (n={len(augmentations)}):")
+            for size, cnt in size_counter.most_common(5):
+                print(f"    {size[0]}×{size[1]}: {cnt} ({cnt/len(augmentations):.1%})")
+
+        return majority_size
+
+    def predict_with_majority_voting(
+        self,
+        input_grid: np.ndarray,
+        task_idx: int,
+        pred_height: int,
+        pred_width: int,
+        augmentations: List[AugmentationParams],
+        batch_size: int,
+        print_stats: bool = False
+    ) -> np.ndarray:
+        """
+        Generate predictions using majority voting over augmented inputs with batched inference.
+
+        Args:
+            input_grid: Original input grid
+            task_idx: Task index
+            pred_height: Predicted output height
+            pred_width: Predicted output width
+            augmentations: List of augmentation parameters
+            batch_size: Batch size for inference
+            print_stats: Whether to print histogram statistics
+
+        Returns:
+            Majority-voted prediction grid
+        """
+        all_predictions = []
+
+        # Process augmentations in batches
+        for batch_start in range(0, len(augmentations), batch_size):
+            batch_augs = augmentations[batch_start:batch_start + batch_size]
+            batch_inputs = []
+
+            # Apply augmentations to create batch
+            for aug_params in batch_augs:
+                aug_input = apply_augmentation(input_grid, aug_params)
+                input_tokens, _, _ = grid_to_tokens(aug_input, max_size=self.config['max_size'])
+                batch_inputs.append(input_tokens)
+
+            # Stack into batch
+            input_batch = torch.stack(batch_inputs).to(self.device)
+            task_ids = torch.tensor([task_idx] * len(batch_augs)).to(self.device)
+
+            # Run diffusion sampling
+            predicted_grids, _, _ = self.sample_with_steps(
+                input_batch, task_ids, pred_height, pred_width
+            )
+
+            # De-augment each prediction and store
+            for i, aug_params in enumerate(batch_augs):
+                pred_grid = predicted_grids[i].cpu().numpy()
+                # Crop to predicted size
+                pred_grid = pred_grid[:pred_height, :pred_width]
+                # De-augment
+                deaug_pred = reverse_augmentation(pred_grid, aug_params)
+                all_predictions.append(deaug_pred)
+
+        # Majority vote across all predictions
+        # Convert each prediction to a tuple of tuples for hashing
+        pred_tuples = [tuple(map(tuple, pred)) for pred in all_predictions]
+        pred_counter = Counter(pred_tuples)
+        majority_pred_tuple, count = pred_counter.most_common(1)[0]
+
+        if print_stats:
+            unique_preds = len(pred_counter)
+            print(f"  Output prediction histogram (n={len(all_predictions)}, unique={unique_preds}):")
+            for i, (pred_tuple, cnt) in enumerate(pred_counter.most_common(min(5, unique_preds))):
+                print(f"    Prediction {i+1}: {cnt} ({cnt/len(all_predictions):.1%})")
+
+        # Convert back to numpy array
+        majority_pred = np.array(majority_pred_tuple)
+
+        return majority_pred
 
     def _load_solutions(self, dataset: str) -> Dict[str, List[List[List[int]]]]:
         """Load solutions from appropriate solutions file."""
@@ -567,84 +780,128 @@ class DiffusionInference:
                 error_msg += f"\n{traceback.format_exc()}"
             return np.array([]), error_msg, "ground_truth"
 
-    def run_task(self, task_id: str, task_data: Dict[str, Any], dataset: str, visualize: bool = False) -> TaskResult:
+    def run_task(self, task_id: str, task_data: Dict[str, Any], dataset: str, visualize: bool = False, use_majority_voting: bool = False, n_augment: int = 40, print_stats: bool = False) -> TaskResult:
         """
-        Run inference on a single ARC task with pass@2 scoring.
+        Run inference on a single ARC task with pass@2 scoring on all test examples.
 
         Args:
             task_id: Task identifier
             task_data: Task data containing train/test examples
             dataset: Dataset name to load appropriate solutions
+            visualize: If True, visualize the first test example only
 
         Returns:
-            TaskResult with both attempts and scoring
+            TaskResult with results for all test examples and partial credit scoring
         """
         timestamp = datetime.datetime.now().isoformat()
 
-        # Use the first test example for inference
+        # Check for test examples
         if not task_data["test"]:
             raise ValueError(f"Task {task_id} has no test examples")
 
-        test_example = task_data["test"][0]
-        input_grid = np.array(test_example["input"])
-
-        # Get expected output from solutions file
+        # Get solutions for all test examples
         solutions = self._load_solutions(dataset)
-        if task_id in solutions and len(solutions[task_id]) > 0:
-            expected_output = np.array(solutions[task_id][0])
-        elif 'output' in test_example:
-            # Fallback if solutions not found but output is in test data
-            expected_output = np.array(test_example["output"])
-        else:
-            raise ValueError(f"No solution found for task {task_id}, test example 0")
 
         # Get correct task index
         task_idx = self.get_task_idx(task_id)
 
-        # Run two attempts for pass@2
-        # For the first attempt, capture steps if visualization is requested
-        if visualize:
-            attempt_1_result = self._run_attempt(input_grid, expected_output, test_idx=0, task_idx=task_idx, task_id=task_id, capture_steps=True)
-            attempt_1, intermediate_steps = attempt_1_result
+        # Process each test example
+        test_results = []
+        num_test_examples_passed = 0
 
-            # Create visualization
-            output_dir = Path(self.config.get('output_dir', 'experimental/diffusion/outputs'))
-            output_dir.mkdir(parents=True, exist_ok=True)
-            vis_path = output_dir / f"denoising_progression_{task_id}.png"
-            self.visualize_denoising_progression(
-                input_grid,
-                expected_output,
-                intermediate_steps,
-                task_id,
-                save_path=str(vis_path)
-            )
-        else:
-            attempt_1 = self._run_attempt(input_grid, expected_output, test_idx=0, task_idx=task_idx, task_id=task_id, capture_steps=False)
+        for test_idx, test_example in enumerate(task_data["test"]):
+            input_grid = np.array(test_example["input"])
 
-        attempt_2 = self._run_attempt(input_grid, expected_output, test_idx=0, task_idx=task_idx, task_id=task_id, capture_steps=False)
+            # Get expected output for this test example
+            if task_id in solutions and test_idx < len(solutions[task_id]):
+                expected_output = np.array(solutions[task_id][test_idx])
+            elif 'output' in test_example:
+                # Fallback if solutions not found but output is in test data
+                expected_output = np.array(test_example["output"])
+            else:
+                raise ValueError(f"No solution found for task {task_id}, test example {test_idx}")
 
-        # Calculate pass@2 metrics
-        pass_at_2 = attempt_1["correct"] or attempt_2["correct"]
-        both_correct = attempt_1["correct"] and attempt_2["correct"]
+            # Run two attempts for pass@2
+            # Only visualize the first test example if requested (and not using majority voting)
+            if visualize and test_idx == 0 and not use_majority_voting:
+                attempt_1_result = self._run_attempt(input_grid, expected_output, test_idx=test_idx, task_idx=task_idx, task_id=task_id, capture_steps=True, use_majority_voting=use_majority_voting, n_augment=n_augment, print_stats=print_stats)
+                attempt_1, intermediate_steps = attempt_1_result
+
+                # Create visualization
+                output_dir = Path(self.config.get('output_dir', 'experimental/diffusion/outputs'))
+                output_dir.mkdir(parents=True, exist_ok=True)
+                vis_path = output_dir / f"denoising_progression_{task_id}_test{test_idx}.png"
+                self.visualize_denoising_progression(
+                    input_grid,
+                    expected_output,
+                    intermediate_steps,
+                    f"{task_id}_test{test_idx}",
+                    save_path=str(vis_path)
+                )
+            else:
+                attempt_1 = self._run_attempt(input_grid, expected_output, test_idx=test_idx, task_idx=task_idx, task_id=task_id, capture_steps=False, use_majority_voting=use_majority_voting, n_augment=n_augment, print_stats=print_stats)
+
+            attempt_2 = self._run_attempt(input_grid, expected_output, test_idx=test_idx, task_idx=task_idx, task_id=task_id, capture_steps=False, use_majority_voting=use_majority_voting, n_augment=n_augment, print_stats=print_stats)
+
+            # Calculate pass@2 for this test example
+            pass_at_2 = attempt_1["correct"] or attempt_2["correct"]
+            both_correct = attempt_1["correct"] and attempt_2["correct"]
+
+            if pass_at_2:
+                num_test_examples_passed += 1
+
+            test_results.append(TestExampleResult(
+                test_idx=test_idx,
+                attempt_1=attempt_1,
+                attempt_2=attempt_2,
+                pass_at_2=pass_at_2,
+                both_correct=both_correct
+            ))
+
+        # Calculate task score (partial credit)
+        num_test_examples = len(task_data["test"])
+        task_score = num_test_examples_passed / num_test_examples if num_test_examples > 0 else 0.0
 
         return TaskResult(
             task_id=task_id,
             timestamp=timestamp,
-            attempt_1=attempt_1,
-            attempt_2=attempt_2,
-            pass_at_2=pass_at_2,
-            both_correct=both_correct,
-            num_train_examples=len(task_data["train"]),
-            num_test_examples=len(task_data["test"])
+            test_results=test_results,
+            num_test_examples=num_test_examples,
+            num_test_examples_passed=num_test_examples_passed,
+            task_score=task_score,
+            num_train_examples=len(task_data["train"])
         )
 
-    def _run_attempt(self, input_grid: np.ndarray, expected_output: np.ndarray, test_idx: int, task_idx: int, task_id: str = None, capture_steps: bool = False) -> DiffusionResult:
+    def _run_attempt(self, input_grid: np.ndarray, expected_output: np.ndarray, test_idx: int, task_idx: int, task_id: str = None, capture_steps: bool = False, use_majority_voting: bool = False, n_augment: int = 40, print_stats: bool = False) -> DiffusionResult:
         """Run a single diffusion attempt with copy and trajectory statistics"""
-        result = self.predict_single(input_grid, task_idx, task_id, expected_output, capture_steps=capture_steps)
-        if capture_steps:
-            predicted_grid, error, size_source, intermediate_steps, trajectory_stats = result
+        if use_majority_voting:
+            # Generate augmentations
+            augmentations = generate_augmentations(n_augment)
+
+            if print_stats:
+                print(f"\n🔮 Majority voting for {task_id} test {test_idx}:")
+
+            # Predict size with majority voting
+            pred_height, pred_width = self.predict_size_with_majority_voting(
+                input_grid, task_idx, augmentations, print_stats=print_stats
+            )
+
+            # Predict output with majority voting
+            predicted_grid = self.predict_with_majority_voting(
+                input_grid, task_idx, pred_height, pred_width,
+                augmentations, batch_size=n_augment, print_stats=print_stats
+            )
+
+            error = None
+            size_source = "majority_voting"
+            intermediate_steps = None
+            trajectory_stats = None
         else:
-            predicted_grid, error, size_source, intermediate_steps, trajectory_stats = result
+            result = self.predict_single(input_grid, task_idx, task_id, expected_output, capture_steps=capture_steps)
+            if capture_steps:
+                predicted_grid, error, size_source, intermediate_steps, trajectory_stats = result
+            else:
+                predicted_grid, error, size_source, intermediate_steps, trajectory_stats = result
 
         # Check correctness
         correct = False
@@ -691,26 +948,34 @@ class DiffusionInference:
 
 
 def calculate_metrics(results: List[TaskResult]) -> Dict[str, Any]:
-    """Calculate pass@2 and other metrics from results, including copy and trajectory stats"""
+    """Calculate pass@2 and other metrics from results with partial credit scoring"""
     if not results:
         return {}
 
     total_tasks = len(results)
 
-    # Pass@2 metrics
-    pass_at_2_count = sum(1 for r in results if r["pass_at_2"])
-    both_correct_count = sum(1 for r in results if r["both_correct"])
+    # Task-level metrics (with partial credit)
+    total_task_score = sum(r["task_score"] for r in results)
+    avg_task_score = total_task_score / total_tasks if total_tasks > 0 else 0.0
+    perfect_tasks = sum(1 for r in results if r["task_score"] == 1.0)
+    failed_tasks = sum(1 for r in results if r["task_score"] == 0.0)
+    partial_tasks = sum(1 for r in results if 0.0 < r["task_score"] < 1.0)
 
-    # Attempt-level accuracy
-    attempt_1_correct = sum(1 for r in results if r["attempt_1"]["correct"])
-    attempt_2_correct = sum(1 for r in results if r["attempt_2"]["correct"])
+    # Test example-level metrics
+    all_test_results = [test_result for r in results for test_result in r["test_results"]]
+    total_test_examples = len(all_test_results)
+
+    test_pass_at_2_count = sum(1 for tr in all_test_results if tr["pass_at_2"])
+    test_both_correct_count = sum(1 for tr in all_test_results if tr["both_correct"])
+    test_attempt_1_correct = sum(1 for tr in all_test_results if tr["attempt_1"]["correct"])
+    test_attempt_2_correct = sum(1 for tr in all_test_results if tr["attempt_2"]["correct"])
 
     # Error analysis
-    attempt_1_errors = sum(1 for r in results if r["attempt_1"]["error"] is not None)
-    attempt_2_errors = sum(1 for r in results if r["attempt_2"]["error"] is not None)
+    test_attempt_1_errors = sum(1 for tr in all_test_results if tr["attempt_1"]["error"] is not None)
+    test_attempt_2_errors = sum(1 for tr in all_test_results if tr["attempt_2"]["error"] is not None)
 
-    # Aggregate copy statistics (from attempt 1)
-    copy_stats_list = [r["attempt_1"]["copy_stats"] for r in results if r["attempt_1"]["copy_stats"] is not None]
+    # Aggregate copy statistics (from attempt 1 of all test examples)
+    copy_stats_list = [tr["attempt_1"]["copy_stats"] for tr in all_test_results if tr["attempt_1"]["copy_stats"] is not None]
     if copy_stats_list:
         avg_copy_rate = np.mean([cs["copy_rate"] for cs in copy_stats_list])
         avg_edit_acc = np.mean([cs["edit_accuracy"] for cs in copy_stats_list])
@@ -721,34 +986,50 @@ def calculate_metrics(results: List[TaskResult]) -> Dict[str, Any]:
         avg_copy_rate = avg_edit_acc = avg_keep_acc = 0.0
         total_edit_cells = total_keep_cells = 0
 
-    # Aggregate trajectory statistics (from attempt 1)
-    traj_stats_list = [r["attempt_1"]["trajectory_stats"] for r in results if r["attempt_1"]["trajectory_stats"] is not None]
+    # Aggregate trajectory statistics (from attempt 1 of all test examples)
+    traj_stats_list = [tr["attempt_1"]["trajectory_stats"] for tr in all_test_results if tr["attempt_1"]["trajectory_stats"] is not None]
     if traj_stats_list:
         avg_final_delta = np.mean([ts["final_delta"] for ts in traj_stats_list])
         avg_final_confidence = np.mean([ts["final_confidence"] for ts in traj_stats_list])
-        early_lock_tasks = sum(1 for ts in traj_stats_list if ts["early_lock_step"] is not None)
-        avg_early_lock_step = np.mean([ts["early_lock_step"] for ts in traj_stats_list if ts["early_lock_step"] is not None]) if early_lock_tasks > 0 else None
+        early_lock_count = sum(1 for ts in traj_stats_list if ts["early_lock_step"] is not None)
+        avg_early_lock_step = np.mean([ts["early_lock_step"] for ts in traj_stats_list if ts["early_lock_step"] is not None]) if early_lock_count > 0 else None
     else:
         avg_final_delta = avg_final_confidence = 0.0
-        early_lock_tasks = 0
+        early_lock_count = 0
         avg_early_lock_step = None
 
-    metrics = {
-        "total_tasks": total_tasks,
-        "pass_at_2": pass_at_2_count,
-        "both_correct": both_correct_count,
-        "attempt_1_correct": attempt_1_correct,
-        "attempt_2_correct": attempt_2_correct,
-        "attempt_1_errors": attempt_1_errors,
-        "attempt_2_errors": attempt_2_errors,
+    # Per-task statistics
+    avg_test_examples_per_task = total_test_examples / total_tasks if total_tasks > 0 else 0.0
+    total_test_examples_passed = sum(r["num_test_examples_passed"] for r in results)
+    avg_test_examples_passed_per_task = total_test_examples_passed / total_tasks if total_tasks > 0 else 0.0
 
-        # Percentages
-        "pass_at_2_rate": pass_at_2_count / total_tasks if total_tasks > 0 else 0.0,
-        "both_correct_rate": both_correct_count / total_tasks if total_tasks > 0 else 0.0,
-        "attempt_1_accuracy": attempt_1_correct / total_tasks if total_tasks > 0 else 0.0,
-        "attempt_2_accuracy": attempt_2_correct / total_tasks if total_tasks > 0 else 0.0,
-        "attempt_1_error_rate": attempt_1_errors / total_tasks if total_tasks > 0 else 0.0,
-        "attempt_2_error_rate": attempt_2_errors / total_tasks if total_tasks > 0 else 0.0,
+    metrics = {
+        # Task-level metrics (partial credit)
+        "total_tasks": total_tasks,
+        "avg_task_score": avg_task_score,
+        "perfect_tasks": perfect_tasks,
+        "partial_tasks": partial_tasks,
+        "failed_tasks": failed_tasks,
+        "perfect_task_rate": perfect_tasks / total_tasks if total_tasks > 0 else 0.0,
+
+        # Test example-level metrics
+        "total_test_examples": total_test_examples,
+        "test_pass_at_2": test_pass_at_2_count,
+        "test_pass_at_2_rate": test_pass_at_2_count / total_test_examples if total_test_examples > 0 else 0.0,
+        "test_both_correct": test_both_correct_count,
+        "test_both_correct_rate": test_both_correct_count / total_test_examples if total_test_examples > 0 else 0.0,
+        "test_attempt_1_correct": test_attempt_1_correct,
+        "test_attempt_1_accuracy": test_attempt_1_correct / total_test_examples if total_test_examples > 0 else 0.0,
+        "test_attempt_2_correct": test_attempt_2_correct,
+        "test_attempt_2_accuracy": test_attempt_2_correct / total_test_examples if total_test_examples > 0 else 0.0,
+        "test_attempt_1_errors": test_attempt_1_errors,
+        "test_attempt_2_errors": test_attempt_2_errors,
+        "test_attempt_1_error_rate": test_attempt_1_errors / total_test_examples if total_test_examples > 0 else 0.0,
+        "test_attempt_2_error_rate": test_attempt_2_errors / total_test_examples if total_test_examples > 0 else 0.0,
+
+        # Per-task breakdown
+        "avg_test_examples_per_task": avg_test_examples_per_task,
+        "avg_test_examples_passed_per_task": avg_test_examples_passed_per_task,
 
         # Copy statistics
         "avg_copy_rate": avg_copy_rate,
@@ -760,7 +1041,7 @@ def calculate_metrics(results: List[TaskResult]) -> Dict[str, Any]:
         # Trajectory statistics
         "avg_final_delta": avg_final_delta,
         "avg_final_confidence": avg_final_confidence,
-        "early_lock_tasks": early_lock_tasks,
+        "early_lock_count": early_lock_count,
         "avg_early_lock_step": avg_early_lock_step,
     }
 
@@ -768,28 +1049,41 @@ def calculate_metrics(results: List[TaskResult]) -> Dict[str, Any]:
 
 
 def print_metrics_report(metrics: Dict[str, Any], dataset: str, subset: str):
-    """Print formatted metrics report with copy and trajectory statistics"""
-    total = metrics["total_tasks"]
+    """Print formatted metrics report with partial credit scoring"""
+    total_tasks = metrics["total_tasks"]
+    total_test_examples = metrics["total_test_examples"]
 
     print(f"\n{'='*80}")
-    print(f"🎯 DIFFUSION MODEL INFERENCE RESULTS WITH COPY STATISTICS")
+    print(f"🎯 DIFFUSION MODEL EVALUATION RESULTS (PARTIAL CREDIT SCORING)")
     print(f"📊 Dataset: {dataset}, Subset: {subset}")
-    print(f"📋 Total Tasks: {total}")
     print(f"{'='*80}")
 
-    if total == 0:
+    if total_tasks == 0:
         print("❌ No tasks processed")
         return
 
-    # Main metrics
-    print(f"\n🎯 Accuracy Metrics:")
-    print(f"  Pass@2: {metrics['pass_at_2']}/{total} ({metrics['pass_at_2_rate']:.1%})")
-    print(f"  Both Correct: {metrics['both_correct']}/{total} ({metrics['both_correct_rate']:.1%})")
-    print(f"  Attempt 1: {metrics['attempt_1_correct']}/{total} ({metrics['attempt_1_accuracy']:.1%})")
-    print(f"  Attempt 2: {metrics['attempt_2_correct']}/{total} ({metrics['attempt_2_accuracy']:.1%})")
+    # Task-level metrics (partial credit)
+    print(f"\n🎯 TASK-LEVEL METRICS (Partial Credit):")
+    print(f"  Total Tasks: {total_tasks}")
+    print(f"  Average Task Score: {metrics['avg_task_score']:.1%}")
+    print(f"  Perfect Tasks (100%): {metrics['perfect_tasks']}/{total_tasks} ({metrics['perfect_task_rate']:.1%})")
+    print(f"  Partial Credit Tasks: {metrics['partial_tasks']}/{total_tasks} ({metrics['partial_tasks']/total_tasks:.1%})")
+    print(f"  Failed Tasks (0%): {metrics['failed_tasks']}/{total_tasks} ({metrics['failed_tasks']/total_tasks:.1%})")
+
+    # Test example-level metrics
+    print(f"\n📊 TEST EXAMPLE-LEVEL METRICS:")
+    print(f"  Total Test Examples: {total_test_examples} (avg {metrics['avg_test_examples_per_task']:.2f} per task)")
+    print(f"  Pass@2 Rate: {metrics['test_pass_at_2']}/{total_test_examples} ({metrics['test_pass_at_2_rate']:.1%})")
+    print(f"  Both Correct Rate: {metrics['test_both_correct']}/{total_test_examples} ({metrics['test_both_correct_rate']:.1%})")
+    print(f"  Attempt 1 Accuracy: {metrics['test_attempt_1_correct']}/{total_test_examples} ({metrics['test_attempt_1_accuracy']:.1%})")
+    print(f"  Attempt 2 Accuracy: {metrics['test_attempt_2_correct']}/{total_test_examples} ({metrics['test_attempt_2_accuracy']:.1%})")
+
+    # Per-task breakdown
+    print(f"\n📈 PER-TASK BREAKDOWN:")
+    print(f"  Avg Test Examples Passed Per Task: {metrics['avg_test_examples_passed_per_task']:.2f} / {metrics['avg_test_examples_per_task']:.2f}")
 
     # Copy statistics
-    print(f"\n📋 Copy Behavior Statistics:")
+    print(f"\n📋 COPY BEHAVIOR STATISTICS:")
     print(f"  Copy Rate: {metrics['avg_copy_rate']:.1%}")
     print(f"  Edit Accuracy: {metrics['avg_edit_accuracy']:.1%} (accuracy on cells requiring transformation)")
     print(f"  Keep Accuracy: {metrics['avg_keep_accuracy']:.1%} (accuracy on cells to preserve)")
@@ -801,20 +1095,20 @@ def print_metrics_report(metrics: Dict[str, Any], dataset: str, subset: str):
         print(f"  ⚠️  Identity Attractor: Keep accuracy >> Edit accuracy")
 
     # Trajectory statistics
-    print(f"\n🔄 Sampling Trajectory Statistics:")
+    print(f"\n🔄 SAMPLING TRAJECTORY STATISTICS:")
     print(f"  Final Δ-change: {metrics['avg_final_delta']:.2%} (fraction of cells changed in last step)")
     print(f"  Final Confidence: {metrics['avg_final_confidence']:.1%}")
-    print(f"  Early-lock Tasks: {metrics['early_lock_tasks']}/{total} ({metrics['early_lock_tasks']/total:.1%})")
+    print(f"  Early-lock Count: {metrics['early_lock_count']}/{total_test_examples} ({metrics['early_lock_count']/total_test_examples:.1%})")
     if metrics['avg_early_lock_step'] is not None:
         print(f"  Avg Early-lock Step: {metrics['avg_early_lock_step']:.1f}")
 
-    if metrics['early_lock_tasks'] > total * 0.5 and metrics['avg_copy_rate'] > 0.7:
+    if metrics['early_lock_count'] > total_test_examples * 0.5 and metrics['avg_copy_rate'] > 0.7:
         print(f"  ⚠️  Input Gravity Confirmed: Early-lock + high copy rate")
 
     # Error analysis
-    print(f"\n📋 Error Analysis:")
-    print(f"  Attempt 1 Errors: {metrics['attempt_1_errors']}/{total} ({metrics['attempt_1_error_rate']:.1%})")
-    print(f"  Attempt 2 Errors: {metrics['attempt_2_errors']}/{total} ({metrics['attempt_2_error_rate']:.1%})")
+    print(f"\n📋 ERROR ANALYSIS:")
+    print(f"  Attempt 1 Errors: {metrics['test_attempt_1_errors']}/{total_test_examples} ({metrics['test_attempt_1_error_rate']:.1%})")
+    print(f"  Attempt 2 Errors: {metrics['test_attempt_2_errors']}/{total_test_examples} ({metrics['test_attempt_2_error_rate']:.1%})")
 
     print(f"{'='*80}")
 
@@ -834,6 +1128,11 @@ def main():
     parser.add_argument("--dataset", default="arc-prize-2024", help="Dataset to use (default: arc-prize-2024)")
     parser.add_argument("--subset", default="evaluation", help="Subset to use (default: evaluation)")
     parser.add_argument("--limit", type=int, default=0, help="Limit number of tasks to run (default: 0 for all)")
+
+    # Majority voting ensemble
+    parser.add_argument("--maj", action="store_true", help="Enable majority voting with augmented inputs")
+    parser.add_argument("--n-augment", type=int, default=40, help="Number of augmentations for majority voting (default: 40)")
+    parser.add_argument("--stats", action="store_true", help="Print histogram statistics for majority voting")
 
     # Output and debugging
     parser.add_argument("--output", help="Override output file path (defaults to config output dir)")
@@ -956,16 +1255,25 @@ def main():
         progress_bar = tqdm(tasks, desc="Running inference")
         for i, (task_id, task_data) in enumerate(progress_bar):
             try:
-                # Visualize denoising for all tasks
-                visualize = True
-                result = inference.run_task(task_id, task_data, f"{args.dataset}/{args.subset}", visualize=visualize)
+                # Visualize denoising for all tasks (unless using majority voting)
+                visualize = not args.maj
+                result = inference.run_task(
+                    task_id,
+                    task_data,
+                    f"{args.dataset}/{args.subset}",
+                    visualize=visualize,
+                    use_majority_voting=args.maj,
+                    n_augment=args.n_augment,
+                    print_stats=args.stats
+                )
                 results.append(result)
 
                 # Update progress bar with current stats
                 current_metrics = calculate_metrics(results)
                 if current_metrics:
                     progress_bar.set_postfix({
-                        'Pass@2': f"{current_metrics['pass_at_2_rate']:.1%}",
+                        'Avg Score': f"{current_metrics['avg_task_score']:.1%}",
+                        'Test Pass@2': f"{current_metrics['test_pass_at_2_rate']:.1%}",
                         'Errors': errors
                     })
 

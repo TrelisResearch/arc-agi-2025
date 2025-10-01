@@ -56,17 +56,23 @@ Uniform is mroe robust and simpler.
 - During inference, what normally happens? We start with a noised input and denoise repeatedly? We don't add any intermediate noise do we?
 Correct!
 
+## Possible Ablations
+- Simplify: Remove input_grid_dropout and pixel noise.
+- Increase LR. Grad norm is stable and <1. In the past, this likely helped performance.
+- Use separate encodings for task augmentations (rotate, flip, recolor).
+- One-hot encode train vs test examples.
+
 ## Daily Notes
 ### Oct 1st 2025
-#### Model Results
+#### Model Results on AA1 Eval (Measured only on first test grid!)
 smol 145 mins training time on H200: 
-- best model: 
-- best model (rerun): 
-- best model (rerun); 32 steps only: 
-- final model: 
+- best model: Pass@2: 13/284 (4.6%)
+- best model (rerun): Pass@2: 12/284 (4.2%)
+- best model (rerun); 32 steps only [instead of 128 used for training]: Pass@2: 13/284 (4.6%)
+- final model: Pass@2: 12/284 (4.2%)
 
 mediom 496 mins training time on H200:
-- best: Pass@2: 25/284 (8.8%)
-- final: 
+- best: Pass@2: 23/284 (8.1%)
+- final: Pass@2: 25/284 (8.8%)
 
-lorge: 
+lorge (still training)...
