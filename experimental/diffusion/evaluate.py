@@ -386,10 +386,16 @@ class DiffusionInference:
         """
         all_predictions = []
 
+        # Mapping for augmentation parameters to indices
+        flip_to_idx = {'none': 0, 'horizontal': 1, 'vertical': 2, 'diagonal': 3}
+
         # Process augmentations in batches
         for batch_start in range(0, len(augmentations), batch_size):
             batch_augs = augmentations[batch_start:batch_start + batch_size]
             batch_inputs = []
+            batch_rotations = []
+            batch_flips = []
+            batch_color_shifts = []
 
             # Apply augmentations to create batch
             for aug_params in batch_augs:
@@ -397,13 +403,26 @@ class DiffusionInference:
                 input_tokens, _, _ = grid_to_tokens(aug_input, max_size=self.config['max_size'])
                 batch_inputs.append(input_tokens)
 
+                # Convert augmentation params to indices
+                rotation_idx = aug_params['rotation'] // 90  # 0,90,180,270 -> 0,1,2,3
+                flip_idx = flip_to_idx[aug_params['flip_type']]
+                color_shift_idx = aug_params['color_cycle']
+
+                batch_rotations.append(rotation_idx)
+                batch_flips.append(flip_idx)
+                batch_color_shifts.append(color_shift_idx)
+
             # Stack into batch
             input_batch = torch.stack(batch_inputs).to(self.device)
             task_ids = torch.tensor([task_idx] * len(batch_augs)).to(self.device)
+            rotation_batch = torch.tensor(batch_rotations, dtype=torch.long).to(self.device)
+            flip_batch = torch.tensor(batch_flips, dtype=torch.long).to(self.device)
+            color_shift_batch = torch.tensor(batch_color_shifts, dtype=torch.long).to(self.device)
 
-            # Run diffusion sampling
+            # Run diffusion sampling with augmentation parameters
             predicted_grids, _, _ = self.sample_with_steps(
-                input_batch, task_ids, pred_height, pred_width
+                input_batch, task_ids, pred_height, pred_width,
+                rotation=rotation_batch, flip=flip_batch, color_shift=color_shift_batch
             )
 
             # De-augment each prediction and store
@@ -453,7 +472,10 @@ class DiffusionInference:
         input_grids: torch.Tensor,
         task_indices: torch.Tensor,
         pred_height: int,
-        pred_width: int
+        pred_width: int,
+        rotation: Optional[torch.Tensor] = None,
+        flip: Optional[torch.Tensor] = None,
+        color_shift: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, List[np.ndarray], TrajectoryStats]:
         """
         Sample with intermediate step capture and trajectory statistics.
@@ -507,7 +529,9 @@ class DiffusionInference:
                 sc_gain = 0.3 + 0.7 * progress
 
                 # Forward pass with self-conditioning
-                logits = self.model(x_t, input_grids, task_indices, t_batch, masks=mask_float, sc_p0=sc_p0, sc_gain=sc_gain)
+                logits = self.model(x_t, input_grids, task_indices, t_batch,
+                                   rotation=rotation, flip=flip, color_shift=color_shift,
+                                   masks=mask_float, sc_p0=sc_p0, sc_gain=sc_gain)
 
                 # Get predicted probabilities
                 probs = torch.softmax(logits, dim=-1)

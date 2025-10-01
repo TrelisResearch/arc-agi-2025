@@ -148,36 +148,60 @@ class ARCDataset(Dataset):
                         'task_idx': task_idx,
                         'input_grid': example['input'],
                         'output_grid': example['output'],
-                        'split': split
+                        'split': split,
+                        'rotation': example.get('rotation', 0),
+                        'flip': example.get('flip', 0),  # 0=none, 1=h, 2=v, 3=diag
+                        'color_shift': example.get('color_shift', 0)
                     })
 
     def _apply_task_augmentation(self, tasks: Dict[str, Dict]) -> Dict[str, Dict]:
-        """Apply task-level augmentation to create new tasks."""
-        augmented_tasks = {}
+        """Apply task-level augmentation by adding augmentation parameters to examples."""
+        augmented_examples = {}
+
+        # Mapping for flip types to indices
+        flip_to_idx = {'none': 0, 'horizontal': 1, 'vertical': 2, 'diagonal': 3}
 
         for task_id, task_data in tasks.items():
+            # Store augmented versions under the same task_id
+            if task_id not in augmented_examples:
+                augmented_examples[task_id] = {'train': [], 'test': []}
+
             for aug_idx in range(self.n_augment):
                 # Generate random augmentation parameters
                 flip_type = random.choice(['none', 'none', 'horizontal', 'vertical'])  # 'none' has 2x weight
                 rotation = random.choice([0, 90, 180, 270])
-                color_cycle = random.choice(range(9))  # 0-8
+                color_shift = random.choice(range(9))  # 0-8
 
                 # Skip no-op augmentations (identical to original)
-                is_no_op = (flip_type == 'none' and rotation == 0 and color_cycle == 0)
+                is_no_op = (flip_type == 'none' and rotation == 0 and color_shift == 0)
                 if is_no_op:
                     continue
 
-                # Create augmented task
-                aug_suffix = f"_aug{aug_idx}_f{flip_type[0]}_r{rotation}_c{color_cycle}"
-                aug_task_id = f"{task_id}{aug_suffix}"
+                # Convert rotation to index (0->0, 90->1, 180->2, 270->3)
+                rotation_idx = rotation // 90
+                flip_idx = flip_to_idx[flip_type]
 
-                augmented_task = TaskAugmentation.augment_task(
-                    task_data, flip_type, rotation, color_cycle, aug_suffix
-                )
+                # Apply augmentation to all examples in this task
+                for split in ['train', 'test']:
+                    for example in task_data[split]:
+                        # Augment grids
+                        input_grid = TaskAugmentation.apply_flip_augmentation(example['input'], flip_type)
+                        input_grid = TaskAugmentation.apply_rotation_augmentation(input_grid, rotation)
+                        input_grid = TaskAugmentation.apply_color_cycle_augmentation(input_grid, color_shift)
 
-                augmented_tasks[aug_task_id] = augmented_task
+                        output_grid = TaskAugmentation.apply_flip_augmentation(example['output'], flip_type)
+                        output_grid = TaskAugmentation.apply_rotation_augmentation(output_grid, rotation)
+                        output_grid = TaskAugmentation.apply_color_cycle_augmentation(output_grid, color_shift)
 
-        return augmented_tasks
+                        augmented_examples[task_id][split].append({
+                            'input': input_grid,
+                            'output': output_grid,
+                            'rotation': rotation_idx,
+                            'flip': flip_idx,
+                            'color_shift': color_shift
+                        })
+
+        return augmented_examples
 
 
     def _load_solutions(self, solutions_path: str) -> Dict[str, List[List[List[int]]]]:
@@ -206,6 +230,9 @@ class ARCDataset(Dataset):
             'task_idx': torch.tensor(example['task_idx'], dtype=torch.long),
             'height': torch.tensor(output_h, dtype=torch.long),
             'width': torch.tensor(output_w, dtype=torch.long),
+            'rotation': torch.tensor(example['rotation'], dtype=torch.long),
+            'flip': torch.tensor(example['flip'], dtype=torch.long),
+            'color_shift': torch.tensor(example['color_shift'], dtype=torch.long),
             'task_id': example['task_id']  # Keep string ID for debugging
         }
 
@@ -320,6 +347,9 @@ def collate_fn(batch: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
     task_indices = torch.stack([item['task_idx'] for item in batch])
     heights = torch.stack([item['height'] for item in batch])
     widths = torch.stack([item['width'] for item in batch])
+    rotations = torch.stack([item['rotation'] for item in batch])
+    flips = torch.stack([item['flip'] for item in batch])
+    color_shifts = torch.stack([item['color_shift'] for item in batch])
 
     return {
         'input_grid': input_grids,
@@ -327,6 +357,9 @@ def collate_fn(batch: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
         'task_idx': task_indices,
         'height': heights,
         'width': widths,
+        'rotation': rotations,
+        'flip': flips,
+        'color_shift': color_shifts,
         'task_ids': [item['task_id'] for item in batch]  # Keep string IDs for debugging
     }
 

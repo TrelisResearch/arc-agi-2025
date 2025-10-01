@@ -74,6 +74,11 @@ class TransformerDenoiser(nn.Module):
         # Task embedding (for task conditioning)
         self.task_embedding = nn.Embedding(max_tasks, d_model)
 
+        # Augmentation embeddings
+        self.rotation_embedding = nn.Embedding(4, d_model)  # 0, 90, 180, 270 -> indices 0,1,2,3
+        self.flip_embedding = nn.Embedding(4, d_model)      # none, h, v, diag -> indices 0,1,2,3
+        self.color_shift_embedding = nn.Embedding(9, d_model)  # 0-8 color cycle offset
+
         # Time embedding
         self.time_projection = nn.Sequential(
             nn.Linear(d_model, d_model),
@@ -110,6 +115,9 @@ class TransformerDenoiser(nn.Module):
         input_grid: torch.Tensor,  # [batch_size, max_size, max_size] - input grid
         task_ids: torch.Tensor,  # [batch_size] - task IDs
         timesteps: torch.Tensor,  # [batch_size] - timesteps
+        rotation: Optional[torch.Tensor] = None,  # [batch_size] - rotation index (0,1,2,3)
+        flip: Optional[torch.Tensor] = None,  # [batch_size] - flip index (0,1,2,3)
+        color_shift: Optional[torch.Tensor] = None,  # [batch_size] - color shift (0-8)
         masks: Optional[torch.Tensor] = None,  # [batch_size, max_size, max_size]
         sc_p0: Optional[torch.Tensor] = None,  # [batch_size, max_size, max_size, 10] - self-conditioning probs
         sc_gain: float = 1.0,  # Self-conditioning gain factor
@@ -183,19 +191,34 @@ class TransformerDenoiser(nn.Module):
         time_emb = create_timestep_embedding(timesteps, self.d_model).to(device)
         time_token = self.time_projection(time_emb).unsqueeze(1)  # [batch_size, 1, d_model]
 
-        # Concatenate in sequence dimension: [task, time, input_grid, noised_output]
+        # Add augmentation tokens if provided, otherwise use zeros (no augmentation)
+        if rotation is None:
+            rotation = torch.zeros(batch_size, dtype=torch.long, device=device)
+        if flip is None:
+            flip = torch.zeros(batch_size, dtype=torch.long, device=device)
+        if color_shift is None:
+            color_shift = torch.zeros(batch_size, dtype=torch.long, device=device)
+
+        rotation_token = self.rotation_embedding(rotation).unsqueeze(1)  # [batch_size, 1, d_model]
+        flip_token = self.flip_embedding(flip).unsqueeze(1)  # [batch_size, 1, d_model]
+        color_shift_token = self.color_shift_embedding(color_shift).unsqueeze(1)  # [batch_size, 1, d_model]
+
+        # Concatenate in sequence dimension: [task, time, rotation, flip, color_shift, input_grid, noised_output]
         sequence = torch.cat([
-            task_token,    # [batch_size, 1, d_model]
-            time_token,    # [batch_size, 1, d_model]
-            input_emb,     # [batch_size, max_size^2, d_model]
+            task_token,         # [batch_size, 1, d_model]
+            time_token,         # [batch_size, 1, d_model]
+            rotation_token,     # [batch_size, 1, d_model]
+            flip_token,         # [batch_size, 1, d_model]
+            color_shift_token,  # [batch_size, 1, d_model]
+            input_emb,          # [batch_size, max_size^2, d_model]
             xt_emb         # [batch_size, max_size^2, d_model]
-        ], dim=1)  # [batch_size, 2 + 2*max_size^2, d_model]
+        ], dim=1)  # [batch_size, 5 + 2*max_size^2, d_model]
 
         # Single transformer processes the entire sequence
-        output = self.transformer(sequence)  # [batch_size, 2 + 2*max_size^2, d_model]
+        output = self.transformer(sequence)  # [batch_size, 5 + 2*max_size^2, d_model]
 
-        # Extract predictions for noised output positions (skip task + time + input)
-        output_start_idx = 2 + self.max_size * self.max_size
+        # Extract predictions for noised output positions (skip task + time + rotation + flip + color_shift + input)
+        output_start_idx = 5 + self.max_size * self.max_size
         output_preds = output[:, output_start_idx:, :]  # [batch_size, max_size^2, d_model]
 
         # Predict logits for each cell (only for colors 0-9)
@@ -266,12 +289,15 @@ class ARCDiffusionModel(nn.Module):
         input_grid: torch.Tensor,
         task_ids: torch.Tensor,
         timesteps: torch.Tensor,
+        rotation: Optional[torch.Tensor] = None,
+        flip: Optional[torch.Tensor] = None,
+        color_shift: Optional[torch.Tensor] = None,
         masks: Optional[torch.Tensor] = None,
         sc_p0: Optional[torch.Tensor] = None,
         sc_gain: float = 1.0,
     ) -> torch.Tensor:
         """Forward pass - predict x0 given xt."""
-        return self.denoiser(xt, input_grid, task_ids, timesteps, masks, sc_p0, sc_gain)
+        return self.denoiser(xt, input_grid, task_ids, timesteps, rotation, flip, color_shift, masks, sc_p0, sc_gain)
 
     def _compute_bucket_metrics(
         self,
@@ -322,6 +348,9 @@ class ARCDiffusionModel(nn.Module):
         task_ids: torch.Tensor,  # [batch_size] - task IDs
         xt: torch.Tensor,  # [batch_size, max_size, max_size] - noisy tokens
         timesteps: torch.Tensor,  # [batch_size] - timesteps
+        rotation: Optional[torch.Tensor] = None,  # [batch_size] - rotation indices
+        flip: Optional[torch.Tensor] = None,  # [batch_size] - flip indices
+        color_shift: Optional[torch.Tensor] = None,  # [batch_size] - color shift
         heights: Optional[torch.Tensor] = None,  # [batch_size] - grid heights
         widths: Optional[torch.Tensor] = None,   # [batch_size] - grid widths
         auxiliary_size_loss_weight: float = 0.1,  # Weight for auxiliary size loss
@@ -341,7 +370,18 @@ class ARCDiffusionModel(nn.Module):
                 masks[i, :h, :w] = 1.0
 
         # Forward pass with masks and self-conditioning
-        logits = self.forward(xt, input_grid, task_ids, timesteps, masks, sc_p0, sc_gain)
+        logits = self.forward(
+            xt=xt,
+            input_grid=input_grid,
+            task_ids=task_ids,
+            timesteps=timesteps,
+            rotation=rotation,
+            flip=flip,
+            color_shift=color_shift,
+            masks=masks,
+            sc_p0=sc_p0,
+            sc_gain=sc_gain
+        )
 
         # Create mask for valid positions if heights/widths provided
         if heights is not None and widths is not None:

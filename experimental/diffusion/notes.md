@@ -84,13 +84,15 @@ smol:
 Note: Kind of makes sense based on the HRM uplift at 40x sampling.
 
 mediom - 32 steps:
-- simple: 
-- sample-40x-augs: 
+- simple: 7.4%
+- sample-40x-augs: 10.4%
 
 mediom - 128 steps:
+- simple: ... todo
 
-
-uv run python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/mediom_config.json --stats --maj && uv run python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/mediom_config.json --stats
+```bash
+uv run python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/mediom_config.json --num-steps 32 --stats --maj && uv run python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/mediom_config.json --num-steps 32 --stats
+```
 
 Possible improvements:
 - Roll forward on two top grid size predictions. Maybe give a little boost, although grid accuracy is already good.
