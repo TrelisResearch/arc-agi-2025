@@ -67,7 +67,7 @@ class ARCDataset(Dataset):
         task_counter = 0
 
         # Load training solutions to get outputs for training test examples
-        training_solutions = self._load_solutions("data/arc-prize-2024/arc-agi_training_solutions.json")
+        training_solutions = self._load_solutions("data/arc-prize-2025/arc-agi_training_solutions.json")
 
         for data_path in data_paths:
             print(f"Loading data from {data_path}")
@@ -298,7 +298,7 @@ class ARCDataLoader:
         )
 
 
-def load_arc_data_paths(data_dir: str = "data/arc-prize-2024", datasets: List[str] = None) -> Dict[str, List[str]]:
+def load_arc_data_paths(data_dir: str = "data/arc-prize-2025", datasets: List[str] = None) -> Dict[str, List[str]]:
     """
     Get ARC data paths for training.
 

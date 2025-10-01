@@ -616,7 +616,7 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
 
     # Load data paths
     data_paths = load_arc_data_paths(
-        data_dir=config.get('data_dir', 'data/arc-prize-2024'),
+        data_dir=config.get('data_dir', 'data/arc-prize-2025'),
         datasets=config.get('datasets', None)
     )
 

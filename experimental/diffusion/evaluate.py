@@ -11,7 +11,7 @@ Evaluates trained diffusion models with pass@2 scoring and detailed statistics:
 Usage:
     uv run python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/smol_config.json
     uv run python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/smol_config.json --limit 10
-    uv run python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/smol_config.json --dataset arc-prize-2024 --subset evaluation
+    uv run python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/smol_config.json --dataset arc-prize-2025 --subset evaluation
 """
 import json
 import argparse
@@ -221,7 +221,7 @@ class DiffusionInference:
 
         # Create dataset for task indexing
         data_paths = load_arc_data_paths(
-            data_dir="data/arc-prize-2024",
+            data_dir="data/arc-prize-2025",
             datasets=["training_challenges", "evaluation_challenges"]
         )
         self.dataset = ARCDataset(
@@ -476,9 +476,9 @@ class DiffusionInference:
     def _load_solutions(self, dataset: str) -> Dict[str, List[List[List[int]]]]:
         """Load solutions from appropriate solutions file."""
         if 'training' in dataset:
-            solutions_path = "data/arc-prize-2024/arc-agi_training_solutions.json"
+            solutions_path = "data/arc-prize-2025/arc-agi_training_solutions.json"
         elif 'evaluation' in dataset:
-            solutions_path = "data/arc-prize-2024/arc-agi_evaluation_solutions.json"
+            solutions_path = "data/arc-prize-2025/arc-agi_evaluation_solutions.json"
         else:
             return {}  # No solutions for test set
 
@@ -1215,7 +1215,7 @@ def main():
     parser.add_argument("--num-steps", type=int, help="Number of inference steps (default: use training steps)")
 
     # Data settings with defaults
-    parser.add_argument("--dataset", default="arc-prize-2024", help="Dataset to use (default: arc-prize-2024)")
+    parser.add_argument("--dataset", default="arc-prize-2025", help="Dataset to use (default: arc-prize-2025)")
     parser.add_argument("--subset", default="evaluation", help="Subset to use (default: evaluation)")
     parser.add_argument("--limit", type=int, default=0, help="Limit number of tasks to run (default: 0 for all)")
 
@@ -1296,8 +1296,8 @@ def main():
 
         # Map dataset/subset to file paths
         data_file_map = {
-            "arc-prize-2024/evaluation": "data/arc-prize-2024/arc-agi_evaluation_challenges.json",
-            "arc-prize-2024/training": "data/arc-prize-2024/arc-agi_training_challenges.json"
+            "arc-prize-2025/evaluation": "data/arc-prize-2025/arc-agi_evaluation_challenges.json",
+            "arc-prize-2025/training": "data/arc-prize-2025/arc-agi_training_challenges.json"
         }
 
         dataset_key = f"{args.dataset}/{args.subset}"
