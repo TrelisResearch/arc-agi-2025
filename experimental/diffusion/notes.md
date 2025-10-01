@@ -90,7 +90,7 @@ mediom 496 mins training time on H200:
 
 lorge (still training)...
 
-#### Majority Voting Stats (now grading, with partial credit, on all output test grids)
+#### Majority Voting Stats on v9 model (now grading, with partial credit, on all output test grids)
 smol:
 - simple: 3.5%
 - sample-40x-augs: 4.5%
@@ -110,3 +110,15 @@ lorge - 128 steps:
 ```bash
 uv run python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/smol_config.json --num-steps 32 --stats --maj && uv run python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/smol_config.json --num-steps 32
 ```
+
+#### AA1 Eval results on v1 model (separate augmentation inputs)
+
+smol - 32 steps (best model, according to val. loss):
+- simple: 8.6%
+- sample-40x-augs: 10.7%
+
+smol - 32 steps (final model, not best):
+- sample-40x-augs:  20.2%
+
+smol - 128 steps:
+- sample-40x-augs: 19.5%
