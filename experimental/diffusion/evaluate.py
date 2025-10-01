@@ -788,7 +788,7 @@ class DiffusionInference:
             error_msg = f"Prediction failed: {str(e)}"
             if self.debug:
                 error_msg += f"\n{traceback.format_exc()}"
-            return np.array([]), error_msg, "ground_truth"
+            return np.array([]), error_msg, "ground_truth", None, None
 
     def run_task(self, task_id: str, task_data: Dict[str, Any], dataset: str, visualize: bool = False, use_majority_voting: bool = False, n_augment: int = 40, print_stats: bool = False) -> TaskResult:
         """
@@ -972,6 +972,9 @@ def calculate_metrics(results: List[TaskResult]) -> Dict[str, Any]:
     failed_tasks = sum(1 for r in results if r["task_score"] == 0.0)
     partial_tasks = sum(1 for r in results if 0.0 < r["task_score"] < 1.0)
 
+    # Task-level Pass@2 (strict): task passes only if ALL test examples pass
+    task_pass_at_2_count = perfect_tasks  # Same as perfect_tasks since all test examples must pass
+
     # Test example-level metrics
     all_test_results = [test_result for r in results for test_result in r["test_results"]]
     total_test_examples = len(all_test_results)
@@ -986,16 +989,20 @@ def calculate_metrics(results: List[TaskResult]) -> Dict[str, Any]:
     test_attempt_2_errors = sum(1 for tr in all_test_results if tr["attempt_2"]["error"] is not None)
 
     # Size accuracy (from attempt 1 only, comparing predicted size to expected size)
+    # Include ALL test examples with valid expected output (including those with errors)
     size_correct_count = 0
+    size_mismatch_count = 0
     size_total_count = 0
     for tr in all_test_results:
-        if tr["attempt_1"]["error"] is None and len(tr["attempt_1"]["expected"]) > 0:
+        if len(tr["attempt_1"]["expected"]) > 0:
             pred_h = tr["attempt_1"]["pred_height"]
             pred_w = tr["attempt_1"]["pred_width"]
             expected_h = len(tr["attempt_1"]["expected"])
             expected_w = len(tr["attempt_1"]["expected"][0]) if expected_h > 0 else 0
             if pred_h == expected_h and pred_w == expected_w:
                 size_correct_count += 1
+            else:
+                size_mismatch_count += 1
             size_total_count += 1
 
     # Aggregate copy statistics (from attempt 1 of all test examples)
@@ -1030,6 +1037,8 @@ def calculate_metrics(results: List[TaskResult]) -> Dict[str, Any]:
     metrics = {
         # Task-level metrics (partial credit)
         "total_tasks": total_tasks,
+        "task_pass_at_2": task_pass_at_2_count,
+        "task_pass_at_2_rate": task_pass_at_2_count / total_tasks if total_tasks > 0 else 0.0,
         "avg_task_score": avg_task_score,
         "perfect_tasks": perfect_tasks,
         "partial_tasks": partial_tasks,
@@ -1053,6 +1062,7 @@ def calculate_metrics(results: List[TaskResult]) -> Dict[str, Any]:
 
         # Size prediction accuracy
         "size_correct": size_correct_count,
+        "size_mismatch": size_mismatch_count,
         "size_total": size_total_count,
         "size_accuracy": size_correct_count / size_total_count if size_total_count > 0 else 0.0,
 
@@ -1094,7 +1104,8 @@ def print_metrics_report(metrics: Dict[str, Any], dataset: str, subset: str):
     # Task-level metrics (partial credit with pass@2)
     print(f"\n🎯 TASK-LEVEL METRICS (Pass@2 with Partial Credit):")
     print(f"  Total Tasks: {total_tasks}")
-    print(f"  Average Task Score: {metrics['avg_task_score']:.1%} (fraction of test examples passed)")
+    print(f"  Task Pass@2 Score (Partial Credit): {metrics['avg_task_score']:.1%} - average pass@2 score across all tasks")
+    print(f"  Task Pass@2 (Strict): {metrics['task_pass_at_2']}/{total_tasks} ({metrics['task_pass_at_2_rate']:.1%}) - tasks where ALL test examples passed")
     print(f"  Perfect Tasks (100%): {metrics['perfect_tasks']}/{total_tasks} ({metrics['perfect_task_rate']:.1%}) - all test examples passed")
     print(f"  Partial Credit Tasks: {metrics['partial_tasks']}/{total_tasks} ({metrics['partial_tasks']/total_tasks:.1%}) - some test examples passed")
     print(f"  Failed Tasks (0%): {metrics['failed_tasks']}/{total_tasks} ({metrics['failed_tasks']/total_tasks:.1%}) - no test examples passed")

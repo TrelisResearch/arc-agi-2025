@@ -80,9 +80,17 @@ lorge (still training)...
 #### Majority Voting Stats (now grading, with partial credit, on all output test grids)
 smol:
 - simple: 3.5%
-- sample-40x-augs: 
+- sample-40x-augs: 4.5%
+Note: Kind of makes sense based on the HRM uplift at 40x sampling.
 
-mediom:
+mediom - 32 steps:
 - simple: 
 - sample-40x-augs: 
 
+mediom - 128 steps:
+
+
+uv run python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/mediom_config.json --stats --maj && uv run python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/mediom_config.json --stats
+
+Possible improvements:
+- Roll forward on two top grid size predictions. Maybe give a little boost, although grid accuracy is already good.
