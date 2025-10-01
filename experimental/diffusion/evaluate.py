@@ -833,7 +833,7 @@ def main():
     # Data settings with defaults
     parser.add_argument("--dataset", default="arc-prize-2024", help="Dataset to use (default: arc-prize-2024)")
     parser.add_argument("--subset", default="evaluation", help="Subset to use (default: evaluation)")
-    parser.add_argument("--limit", type=int, default=5, help="Limit number of tasks to run (default: 5, use 0 for all)")
+    parser.add_argument("--limit", type=int, default=0, help="Limit number of tasks to run (default: 0 for all)")
 
     # Output and debugging
     parser.add_argument("--output", help="Override output file path (defaults to config output dir)")
