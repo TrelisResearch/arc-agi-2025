@@ -166,7 +166,7 @@ class DiffusionInference:
         if not Path(self.model_path).exists():
             raise FileNotFoundError(f"Model not found: {self.model_path}")
 
-        checkpoint = torch.load(self.model_path, map_location=self.device)
+        checkpoint = torch.load(self.model_path, map_location=self.device, weights_only=False)
         config = checkpoint['config']
         dataset_info = checkpoint['dataset_info']
 
