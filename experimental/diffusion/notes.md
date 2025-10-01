@@ -57,10 +57,18 @@ Uniform is mroe robust and simpler.
 Correct!
 
 ## Possible Ablations
-- Simplify: Remove input_grid_dropout and pixel noise.
+
+**Training:**
+[ ] Set lorge aux loss to 0.07 or 0.08 (up from 0.05).
+- Simplify:
+ [ ] Remove input_grid_dropout.
+ [x] Remove pixel noise.
 - Increase LR. Grad norm is stable and <1. In the past, this likely helped performance.
-- Use separate encodings for task augmentations (rotate, flip, recolor).
 - One-hot encode train vs test examples.
+[x] Use separate encodings for task augmentations (rotate, flip, recolor).
+
+**Inference**
+- Roll forward on two top grid size predictions. Maybe give a little boost, although grid accuracy is already good.
 
 ## Daily Notes
 ### Oct 1st 2025
@@ -92,12 +100,13 @@ mediom - 32 steps:
 - simple: 7.4%
 - sample-40x-augs: 10.4%
 
-mediom - 128 steps:
-- simple: ... todo
+lorge - 32 steps:
+- simple: ...
+- sample-40x-augs: 
+
+lorge - 128 steps:
+- sample-40x-augs: 
 
 ```bash
-uv run python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/mediom_config.json --num-steps 32 --stats --maj && uv run python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/mediom_config.json --num-steps 32 --stats
+uv run python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/smol_config.json --num-steps 32 --stats --maj && uv run python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/smol_config.json --num-steps 32
 ```
-
-Possible improvements:
-- Roll forward on two top grid size predictions. Maybe give a little boost, although grid accuracy is already good.

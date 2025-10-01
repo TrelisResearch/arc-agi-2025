@@ -282,8 +282,10 @@ class DiffusionInference:
             size_head_hidden_dim=size_head_hidden_dim
         )
 
-        # Load weights
-        model.load_state_dict(checkpoint['model_state_dict'])
+        # Load weights (strip _orig_mod prefix from torch.compile)
+        state_dict = checkpoint['model_state_dict']
+        state_dict = {k.replace('_orig_mod.', ''): v for k, v in state_dict.items()}
+        model.load_state_dict(state_dict)
         model.to(self.device)
         model.eval()
 
