@@ -322,10 +322,16 @@ class DiffusionInference:
         """
         size_predictions = []
 
+        # Mapping for augmentation parameters to indices
+        flip_to_idx = {'none': 0, 'horizontal': 1, 'vertical': 2, 'diagonal': 3}
+
         # Process augmentations in batches
         for batch_start in range(0, len(augmentations), batch_size):
             batch_augs = augmentations[batch_start:batch_start + batch_size]
             batch_inputs = []
+            batch_rotations = []
+            batch_flips = []
+            batch_color_shifts = []
 
             # Apply augmentations to create batch
             for aug_params in batch_augs:
@@ -333,13 +339,27 @@ class DiffusionInference:
                 input_tokens, _, _ = grid_to_tokens(aug_input, max_size=self.config['max_size'])
                 batch_inputs.append(input_tokens)
 
+                # Convert augmentation params to indices
+                rotation_idx = aug_params['rotation'] // 90  # 0,90,180,270 -> 0,1,2,3
+                flip_idx = flip_to_idx[aug_params['flip_type']]
+                color_shift_idx = aug_params['color_cycle']
+
+                batch_rotations.append(rotation_idx)
+                batch_flips.append(flip_idx)
+                batch_color_shifts.append(color_shift_idx)
+
             # Stack into batch
             input_batch = torch.stack(batch_inputs).to(self.device)
             task_ids = torch.tensor([task_idx] * len(batch_augs)).to(self.device)
+            rotation_batch = torch.tensor(batch_rotations, dtype=torch.long).to(self.device)
+            flip_batch = torch.tensor(batch_flips, dtype=torch.long).to(self.device)
+            color_shift_batch = torch.tensor(batch_color_shifts, dtype=torch.long).to(self.device)
 
-            # Get size predictions for batch
+            # Get size predictions for batch with augmentation parameters
             with torch.no_grad():
-                pred_heights, pred_widths = self.model.predict_sizes(input_batch, task_ids)
+                pred_heights, pred_widths = self.model.predict_sizes(
+                    input_batch, task_ids, rotation_batch, flip_batch, color_shift_batch
+                )
 
             # De-augment each size prediction
             for i, aug_params in enumerate(batch_augs):

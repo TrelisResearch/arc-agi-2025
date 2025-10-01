@@ -126,9 +126,8 @@ class ARCDataset(Dataset):
 
         if self.augment:
             print(f"Applying task-level augmentation with {self.n_augment} augmentations per task")
-            augmented_tasks = self._apply_task_augmentation(all_tasks)
-            all_tasks.update(augmented_tasks)
-            print(f"Total tasks after augmentation: {len(all_tasks)}")
+            self._apply_task_augmentation(all_tasks)  # Modifies all_tasks in-place
+            print(f"Tasks after augmentation: {len(all_tasks)}")
 
 
         # Convert tasks to examples
@@ -154,17 +153,17 @@ class ARCDataset(Dataset):
                         'color_shift': example.get('color_shift', 0)
                     })
 
-    def _apply_task_augmentation(self, tasks: Dict[str, Dict]) -> Dict[str, Dict]:
-        """Apply task-level augmentation by adding augmentation parameters to examples."""
-        augmented_examples = {}
-
+    def _apply_task_augmentation(self, tasks: Dict[str, Dict]):
+        """Apply task-level augmentation by adding augmentation parameters to examples in-place."""
         # Mapping for flip types to indices
         flip_to_idx = {'none': 0, 'horizontal': 1, 'vertical': 2, 'diagonal': 3}
 
         for task_id, task_data in tasks.items():
-            # Store augmented versions under the same task_id
-            if task_id not in augmented_examples:
-                augmented_examples[task_id] = {'train': [], 'test': []}
+            # Store original examples separately to avoid augmenting augmented examples
+            original_examples = {
+                'train': list(task_data['train']),
+                'test': list(task_data['test'])
+            }
 
             for aug_idx in range(self.n_augment):
                 # Generate random augmentation parameters
@@ -181,9 +180,9 @@ class ARCDataset(Dataset):
                 rotation_idx = rotation // 90
                 flip_idx = flip_to_idx[flip_type]
 
-                # Apply augmentation to all examples in this task
+                # Apply augmentation to all ORIGINAL examples in this task
                 for split in ['train', 'test']:
-                    for example in task_data[split]:
+                    for example in original_examples[split]:
                         # Augment grids
                         input_grid = TaskAugmentation.apply_flip_augmentation(example['input'], flip_type)
                         input_grid = TaskAugmentation.apply_rotation_augmentation(input_grid, rotation)
@@ -193,15 +192,14 @@ class ARCDataset(Dataset):
                         output_grid = TaskAugmentation.apply_rotation_augmentation(output_grid, rotation)
                         output_grid = TaskAugmentation.apply_color_cycle_augmentation(output_grid, color_shift)
 
-                        augmented_examples[task_id][split].append({
+                        # Append to existing task_data
+                        task_data[split].append({
                             'input': input_grid,
                             'output': output_grid,
                             'rotation': rotation_idx,
                             'flip': flip_idx,
                             'color_shift': color_shift
                         })
-
-        return augmented_examples
 
 
     def _load_solutions(self, solutions_path: str) -> Dict[str, List[List[List[int]]]]:

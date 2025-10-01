@@ -497,7 +497,10 @@ class ARCDiffusionModel(nn.Module):
     def predict_size(
         self,
         input_grid: torch.Tensor,
-        task_ids: torch.Tensor
+        task_ids: torch.Tensor,
+        rotation: Optional[torch.Tensor] = None,
+        flip: Optional[torch.Tensor] = None,
+        color_shift: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Predict output grid size using integrated size head.
@@ -510,6 +513,7 @@ class ARCDiffusionModel(nn.Module):
             raise ValueError("Size head not included in model")
 
         batch_size = input_grid.shape[0]
+        device = input_grid.device
 
         # Flatten input grid
         input_flat = input_grid.view(batch_size, -1)  # [batch_size, max_size^2]
@@ -531,18 +535,33 @@ class ARCDiffusionModel(nn.Module):
         # Create dummy time token (zeros for size prediction)
         time_token = torch.zeros_like(task_token)
 
-        # Create sequence similar to main forward but simpler for size prediction
+        # Add augmentation tokens if provided, otherwise use zeros (no augmentation)
+        if rotation is None:
+            rotation = torch.zeros(batch_size, dtype=torch.long, device=device)
+        if flip is None:
+            flip = torch.zeros(batch_size, dtype=torch.long, device=device)
+        if color_shift is None:
+            color_shift = torch.zeros(batch_size, dtype=torch.long, device=device)
+
+        rotation_token = self.denoiser.rotation_embedding(rotation).unsqueeze(1)  # [batch_size, 1, d_model]
+        flip_token = self.denoiser.flip_embedding(flip).unsqueeze(1)  # [batch_size, 1, d_model]
+        color_shift_token = self.denoiser.color_shift_embedding(color_shift).unsqueeze(1)  # [batch_size, 1, d_model]
+
+        # Create sequence matching the main forward pass structure
         sequence = torch.cat([
-            task_token,     # [batch_size, 1, d_model]
-            time_token,     # [batch_size, 1, d_model]
-            input_emb,      # [batch_size, max_size^2, d_model]
+            task_token,         # [batch_size, 1, d_model]
+            time_token,         # [batch_size, 1, d_model]
+            rotation_token,     # [batch_size, 1, d_model]
+            flip_token,         # [batch_size, 1, d_model]
+            color_shift_token,  # [batch_size, 1, d_model]
+            input_emb,          # [batch_size, max_size^2, d_model]
         ], dim=1)
 
         # Process through transformer
         encoded_features = self.denoiser.transformer(sequence)
 
-        # Extract features from input positions (skip task and time)
-        input_features = encoded_features[:, 2:2+self.max_size*self.max_size, :]
+        # Extract features from input positions (skip task, time, rotation, flip, color_shift)
+        input_features = encoded_features[:, 5:5+self.max_size*self.max_size, :]
 
         # Global average pooling
         pooled_features = input_features.mean(dim=1)  # [batch_size, d_model]
@@ -559,7 +578,10 @@ class ARCDiffusionModel(nn.Module):
     def predict_sizes(
         self,
         input_grid: torch.Tensor,
-        task_ids: torch.Tensor
+        task_ids: torch.Tensor,
+        rotation: Optional[torch.Tensor] = None,
+        flip: Optional[torch.Tensor] = None,
+        color_shift: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Predict grid sizes (returns actual height/width values, not logits).
@@ -568,7 +590,7 @@ class ARCDiffusionModel(nn.Module):
             heights: [batch_size] - predicted heights (1-indexed)
             widths: [batch_size] - predicted widths (1-indexed)
         """
-        height_logits, width_logits = self.predict_size(input_grid, task_ids)
+        height_logits, width_logits = self.predict_size(input_grid, task_ids, rotation, flip, color_shift)
 
         # Get predictions
         predicted_heights = torch.argmax(height_logits, dim=-1) + 1
