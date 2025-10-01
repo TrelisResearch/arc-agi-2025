@@ -928,6 +928,7 @@ class DiffusionInference:
             error = "No valid region extracted from prediction"
 
         # Get predicted grid dimensions (default to 30x30 if extraction failed)
+        # The predicted_grid is always cropped to the predicted size, so shape = predicted size
         pred_height = predicted_grid.shape[0] if len(predicted_grid) > 0 else 30
         pred_width = predicted_grid.shape[1] if len(predicted_grid) > 0 else 30
 
@@ -984,6 +985,19 @@ def calculate_metrics(results: List[TaskResult]) -> Dict[str, Any]:
     test_attempt_1_errors = sum(1 for tr in all_test_results if tr["attempt_1"]["error"] is not None)
     test_attempt_2_errors = sum(1 for tr in all_test_results if tr["attempt_2"]["error"] is not None)
 
+    # Size accuracy (from attempt 1 only, comparing predicted size to expected size)
+    size_correct_count = 0
+    size_total_count = 0
+    for tr in all_test_results:
+        if tr["attempt_1"]["error"] is None and len(tr["attempt_1"]["expected"]) > 0:
+            pred_h = tr["attempt_1"]["pred_height"]
+            pred_w = tr["attempt_1"]["pred_width"]
+            expected_h = len(tr["attempt_1"]["expected"])
+            expected_w = len(tr["attempt_1"]["expected"][0]) if expected_h > 0 else 0
+            if pred_h == expected_h and pred_w == expected_w:
+                size_correct_count += 1
+            size_total_count += 1
+
     # Aggregate copy statistics (from attempt 1 of all test examples)
     copy_stats_list = [tr["attempt_1"]["copy_stats"] for tr in all_test_results if tr["attempt_1"]["copy_stats"] is not None]
     if copy_stats_list:
@@ -1037,6 +1051,11 @@ def calculate_metrics(results: List[TaskResult]) -> Dict[str, Any]:
         "test_attempt_1_error_rate": test_attempt_1_errors / total_test_examples if total_test_examples > 0 else 0.0,
         "test_attempt_2_error_rate": test_attempt_2_errors / total_test_examples if total_test_examples > 0 else 0.0,
 
+        # Size prediction accuracy
+        "size_correct": size_correct_count,
+        "size_total": size_total_count,
+        "size_accuracy": size_correct_count / size_total_count if size_total_count > 0 else 0.0,
+
         # Per-task breakdown
         "avg_test_examples_per_task": avg_test_examples_per_task,
         "avg_test_examples_passed_per_task": avg_test_examples_passed_per_task,
@@ -1072,13 +1091,13 @@ def print_metrics_report(metrics: Dict[str, Any], dataset: str, subset: str):
         print("❌ No tasks processed")
         return
 
-    # Task-level metrics (partial credit)
-    print(f"\n🎯 TASK-LEVEL METRICS (Partial Credit):")
+    # Task-level metrics (partial credit with pass@2)
+    print(f"\n🎯 TASK-LEVEL METRICS (Pass@2 with Partial Credit):")
     print(f"  Total Tasks: {total_tasks}")
-    print(f"  Average Task Score: {metrics['avg_task_score']:.1%}")
-    print(f"  Perfect Tasks (100%): {metrics['perfect_tasks']}/{total_tasks} ({metrics['perfect_task_rate']:.1%})")
-    print(f"  Partial Credit Tasks: {metrics['partial_tasks']}/{total_tasks} ({metrics['partial_tasks']/total_tasks:.1%})")
-    print(f"  Failed Tasks (0%): {metrics['failed_tasks']}/{total_tasks} ({metrics['failed_tasks']/total_tasks:.1%})")
+    print(f"  Average Task Score: {metrics['avg_task_score']:.1%} (fraction of test examples passed)")
+    print(f"  Perfect Tasks (100%): {metrics['perfect_tasks']}/{total_tasks} ({metrics['perfect_task_rate']:.1%}) - all test examples passed")
+    print(f"  Partial Credit Tasks: {metrics['partial_tasks']}/{total_tasks} ({metrics['partial_tasks']/total_tasks:.1%}) - some test examples passed")
+    print(f"  Failed Tasks (0%): {metrics['failed_tasks']}/{total_tasks} ({metrics['failed_tasks']/total_tasks:.1%}) - no test examples passed")
 
     # Test example-level metrics
     print(f"\n📊 TEST EXAMPLE-LEVEL METRICS:")
@@ -1087,6 +1106,10 @@ def print_metrics_report(metrics: Dict[str, Any], dataset: str, subset: str):
     print(f"  Both Correct Rate: {metrics['test_both_correct']}/{total_test_examples} ({metrics['test_both_correct_rate']:.1%})")
     print(f"  Attempt 1 Accuracy: {metrics['test_attempt_1_correct']}/{total_test_examples} ({metrics['test_attempt_1_accuracy']:.1%})")
     print(f"  Attempt 2 Accuracy: {metrics['test_attempt_2_correct']}/{total_test_examples} ({metrics['test_attempt_2_accuracy']:.1%})")
+
+    # Size prediction accuracy
+    print(f"\n📏 SIZE PREDICTION ACCURACY:")
+    print(f"  Correct Sizes: {metrics['size_correct']}/{metrics['size_total']} ({metrics['size_accuracy']:.1%})")
 
     # Per-task breakdown
     print(f"\n📈 PER-TASK BREAKDOWN:")

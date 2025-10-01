@@ -78,3 +78,11 @@ mediom 496 mins training time on H200:
 lorge (still training)...
 
 #### Majority Voting Stats (now grading, with partial credit, on all output test grids)
+smol:
+- simple: 3.5%
+- sample-40x-augs: 
+
+mediom:
+- simple: 
+- sample-40x-augs: 
+
