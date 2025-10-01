@@ -73,12 +73,16 @@ class ARCDiffusionTrainer:
         self.model.to(device)
         self.model.float()  # Always keep parameters in fp32
 
-        # Optimizer
+        # Optimizer with fused kernels for CUDA
+        use_fused = device.type == 'cuda'
         self.optimizer = torch.optim.AdamW(
             model.parameters(),
             lr=learning_rate,
-            weight_decay=weight_decay
+            weight_decay=weight_decay,
+            fused=use_fused
         )
+        if use_fused:
+            print("Using fused AdamW optimizer")
 
         # Learning rate scheduler with linear warmup
         warmup_steps = int(0.05 * total_steps)  # 5% warmup
@@ -567,6 +571,13 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
     # Set up device (prioritize CUDA > MPS > CPU)
     if torch.cuda.is_available():
         device = torch.device('cuda')
+        # Enable PyTorch optimizations for CUDA
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.set_float32_matmul_precision("high")
+        torch.backends.cuda.enable_flash_sdp(True)
+        torch.backends.cuda.enable_mem_efficient_sdp(True)
+        torch.backends.cuda.enable_math_sdp(False)
+        print("Enabled CUDA optimizations: TF32, Flash Attention, Memory-Efficient SDPA")
     elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
         device = torch.device('mps')
         # MPS memory optimization
@@ -616,15 +627,19 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         generator=torch.Generator().manual_seed(42)  # Reproducible split
     )
 
-    # Create data loaders
+    # Create data loaders with optimized settings
     # Disable pin_memory for MPS to avoid warnings and reduce memory usage
     use_pin_memory = device.type == 'cuda'
+    num_workers = 4 if device.type == 'cuda' else 0
+    use_persistent_workers = num_workers > 0
 
     train_loader = DataLoader(
         train_dataset,
         batch_size=config['batch_size'],
         shuffle=True,
-        num_workers=0,
+        num_workers=num_workers,
+        persistent_workers=use_persistent_workers,
+        prefetch_factor=4 if num_workers > 0 else None,
         pin_memory=use_pin_memory,
         drop_last=True,
         collate_fn=collate_fn
@@ -634,7 +649,9 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         val_dataset,
         batch_size=config['batch_size'] // 2,
         shuffle=False,
-        num_workers=0,
+        num_workers=num_workers,
+        persistent_workers=use_persistent_workers,
+        prefetch_factor=4 if num_workers > 0 else None,
         pin_memory=use_pin_memory,
         collate_fn=collate_fn
     )
@@ -664,6 +681,12 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         include_size_head=include_size_head,
         size_head_hidden_dim=size_head_hidden_dim
     )
+
+    # Compile model with torch.compile for CUDA optimization
+    if device.type == 'cuda':
+        print("Compiling model with torch.compile(mode='max-autotune')...")
+        model = torch.compile(model, mode="max-autotune")
+        print("Model compiled successfully")
 
     # Create noise scheduler
     noise_scheduler = DiscreteNoiseScheduler(
