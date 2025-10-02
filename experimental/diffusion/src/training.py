@@ -784,6 +784,10 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
     # Progress bar for optimizer steps
     progress_bar = tqdm(range(optimizer_steps), desc="Training")
 
+    # Track halfway checkpoint
+    halfway_step = optimizer_steps // 2
+    halfway_saved = False
+
     # Track epoch losses for validation
     epoch_losses = {
         'total_loss': 0.0,
@@ -873,6 +877,22 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
                     save_dict['ema_state_dict'] = trainer.ema.state_dict()
                 torch.save(save_dict, output_dir / 'best_model.pt')
                 print(f"Saved best model with val loss: {best_val_loss:.4f}")
+
+            # Save halfway checkpoint
+            if step >= halfway_step and not halfway_saved:
+                halfway_saved = True
+                model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
+                save_dict = {
+                    'model_state_dict': model_state_dict_bf16,
+                    'config': config,
+                    'dataset_info': dataset_info,
+                    'step': step
+                }
+                # Save EMA state if available
+                if trainer.ema is not None:
+                    save_dict['ema_state_dict'] = trainer.ema.state_dict()
+                torch.save(save_dict, output_dir / 'halfway_model.pt')
+                print(f"Saved halfway checkpoint at step {step} ({step/optimizer_steps:.0%} of training)")
 
             # Create denoising progression visualization
             vis_every_steps = config.get('vis_every_steps', val_every_steps)  # Default to same as validation

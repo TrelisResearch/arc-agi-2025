@@ -91,19 +91,32 @@ mediom 496 mins training time on H200:
 lorge (still training)...
 
 #### Majority Voting Stats on v0 model (now grading, with partial credit, on all output test grids)
+BEST MODEL RESULTS:
 smol:
-- simple: 3.5%
-- sample-40x-augs: 4.5%
-Note: Kind of makes sense based on the HRM uplift at 40x sampling.
+- simple (best model): 3.5%
+- sample-40x-augs (best model): 4.5%
 
 mediom - 32 steps:
-- simple: 7.4%
-- sample-40x-augs: 10.4%
+- simple (best model): 7.4%
+- sample-40x-augs (best model): 10.4%
 
 lorge - 32 steps:
 - sample (best model): 35/303 (11.6%)
+
+FINAL MODEL RESULTS:
+smol - 32 steps:
+- simple (final model): 
+- sample-40x-augs (final model): 
+
+mediom - 32 steps:
+- simple (final model): 
+- sample-40x-augs (final model): 
+
+lorge - 32 steps:
 - simple (final model): 45/303 (14.9%)
-- sample-40x-augs (final model): ...
+- sample-40x-augs (final model): 49/303 (16.2%)
+
+Note: Kind of makes sense based on the HRM uplift at 40x sampling.
 
 ```bash
 uv run python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/lorge_config.json --num-steps 32 --model-path experimental/diffusion/outputs/lorge/final_model.pt --maj --stats
