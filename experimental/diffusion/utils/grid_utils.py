@@ -93,7 +93,7 @@ def clamp_outside_mask(grid: torch.Tensor, mask: torch.Tensor, pad_value: int = 
     Returns:
         Grid with tokens outside mask set to pad_value
     """
-    return torch.where(mask.bool(), grid, torch.zeros_like(grid) if pad_value == 0 else torch.full_like(grid, pad_value))
+    return torch.where(mask.bool(), grid, 0 if pad_value == 0 else pad_value)
 
 
 def extract_valid_region(grid: torch.Tensor, height: int, width: int) -> torch.Tensor:

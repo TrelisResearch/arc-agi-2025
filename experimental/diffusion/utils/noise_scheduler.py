@@ -93,7 +93,7 @@ class DiscreteNoiseScheduler:
         # If masks provided, ensure x0 doesn't have PAD tokens outside valid region
         # (convert any PAD/10 to 0/black outside the mask)
         if masks is not None:
-            x0 = torch.where(masks.bool(), x0, torch.zeros_like(x0))
+            x0 = torch.where(masks.bool(), x0, 0)
 
         # Get alpha_bar for each sample in the batch
         alpha_bars_t = self.alpha_bars[t].to(device)  # [batch_size]
@@ -109,7 +109,7 @@ class DiscreteNoiseScheduler:
 
         # If masks provided, clamp invalid regions to 0 (black)
         if masks is not None:
-            xt = torch.where(masks.bool(), xt, torch.zeros_like(xt))
+            xt = torch.where(masks.bool(), xt, 0)
 
         return xt
 

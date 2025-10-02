@@ -470,7 +470,7 @@ class ARCDiffusionSampler:
 
         # Apply mask to keep invalid regions fixed at 0
         if mask is not None:
-            x_tm1 = torch.where(mask, x_tm1, torch.zeros_like(x_tm1))
+            x_tm1 = torch.where(mask, x_tm1, 0)
 
         return x_tm1
 
@@ -528,7 +528,7 @@ class ARCDiffusionSampler:
             (batch_size, max_size, max_size),
             device=self.device
         )
-        x_t = torch.where(mask, x_t, torch.zeros_like(x_t))
+        x_t = torch.where(mask, x_t, 0)
 
         # Initialize self-conditioning buffer
         sc_p0 = None
