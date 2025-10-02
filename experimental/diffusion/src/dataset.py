@@ -89,8 +89,10 @@ class ARCDataset(Dataset):
             for task_id, task_data in data.items():
                 self.total_tasks += 1
 
-                # Skip if not in subset (if subset is specified)
-                if self.subset_task_ids and task_id not in self.subset_task_ids:
+                # Skip if not in subset (if subset is specified AND this is training_challenges)
+                # Don't apply subset filtering to evaluation_challenges
+                is_training_challenges = "training_challenges" in data_path
+                if self.subset_task_ids and is_training_challenges and task_id not in self.subset_task_ids:
                     continue
 
                 # Create task structure for augmentation
