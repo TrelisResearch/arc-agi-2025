@@ -71,8 +71,8 @@ def benchmark_step(config_path: str, num_iterations: int = 10):
     dataset = ARCDataset(
         data_paths=data_paths['train'][:100],  # Just 100 tasks
         max_size=config['max_size'],
-        augment=False,  # No augmentation for benchmarking
-        n_augment=1
+        augment=True,  # Need augmentation for rotation/flip/color_shift fields
+        n_augment=1  # Just one augmentation variant
     )
 
     dataloader = DataLoader(
