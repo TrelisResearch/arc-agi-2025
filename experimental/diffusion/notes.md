@@ -76,7 +76,12 @@ Correct!
 
 Baseline is 150s.
 
-speedups-i gets to ...
+speedups-i (vectorize masks) gets to 135s.
+
+inspection reveals:
+- 
+
+speedups-ii
 
 ### Oct 1st 2025
 #### Testing splitting up inputs instead of creating new task embeddings
