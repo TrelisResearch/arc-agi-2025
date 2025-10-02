@@ -86,6 +86,11 @@ export HF_TOKEN=
 nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/lorge_config.json > lorge-v1_training-hard.log 2>&1' &
 ```
 
+v1 model still getting zero correct when using the final model with 32 steps, even with --maj.
+
+Try 128 steps:
+
+
 ### AA2 4X LR Ablation
 Aiming to train 4x longer to see if it helps results.
 
