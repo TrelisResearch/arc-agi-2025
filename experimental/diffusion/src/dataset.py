@@ -26,6 +26,7 @@ class ARCDataset(Dataset):
         augment: bool = True,
         n_augment: int = 3,
         include_training_test_examples: bool = True,
+        subset_file: str = None,
     ):
         """
         Args:
@@ -34,11 +35,19 @@ class ARCDataset(Dataset):
             augment: Whether to apply task-level data augmentation
             n_augment: Number of augmented versions per task (if augment=True)
             include_training_test_examples: Whether to include test examples from training_challenges.json as training data
+            subset_file: Optional path to text file containing task IDs to include (one per line)
         """
         self.max_size = max_size
         self.augment = augment
         self.n_augment = n_augment
         self.include_training_test_examples = include_training_test_examples
+
+        # Load subset task IDs if provided
+        self.subset_task_ids = None
+        if subset_file:
+            with open(subset_file, 'r') as f:
+                self.subset_task_ids = set(line.strip() for line in f if line.strip())
+            print(f"📋 Using subset from {subset_file}: {len(self.subset_task_ids)} tasks")
 
         # Load all data
         self.examples = []
@@ -79,6 +88,10 @@ class ARCDataset(Dataset):
 
             for task_id, task_data in data.items():
                 self.total_tasks += 1
+
+                # Skip if not in subset (if subset is specified)
+                if self.subset_task_ids and task_id not in self.subset_task_ids:
+                    continue
 
                 # Create task structure for augmentation
                 task_examples = {
