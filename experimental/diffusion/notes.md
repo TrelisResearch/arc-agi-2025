@@ -72,6 +72,20 @@ Correct!
 
 ## Daily Notes
 ### Oct 2nd 2025
+### Go back to original LR and restrict training data to training-hard subset
+```bash
+nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config.json > smol-v1_training-hard.log 2>&1' &
+```
+
+```bash
+nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/mediom_config.json > mediom-v1_training-hard.log 2>&1' &
+```
+
+```bash
+export HF_TOKEN=
+nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/lorge_config.json > lorge-v1_training-hard.log 2>&1' &
+
+
 ### AA2 4X LR Ablation
 Aiming to train 4x longer to see if it helps results.
 
@@ -87,6 +101,8 @@ nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --co
 export HF_TOKEN=
 nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/lorge_config.json > lorge-v1_4x-lr.log 2>&1' &
 ```
+
+This was very unstable so I stopped the run.
 
 #### Testing speedups
 
