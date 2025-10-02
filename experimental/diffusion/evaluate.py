@@ -1319,11 +1319,43 @@ def main():
         with open(data_path, 'r') as f:
             all_task_data = json.load(f)
 
-        # Convert to list of (task_id, task_data) tuples
+        # Apply subset filtering BEFORE limit (subset takes precedence)
+        subset_task_ids = None
+        eval_subset_task_ids = None
+
+        # Load training subset if specified (check both flattened and nested config)
+        subset_file = config.get('subset_file') or config.get('data', {}).get('subset_file')
+        if subset_file:
+            with open(subset_file, 'r') as f:
+                subset_task_ids = set(line.strip() for line in f if line.strip())
+            print(f"📋 Using training subset from {subset_file}: {len(subset_task_ids)} tasks")
+
+        # Load evaluation subset if specified (check both flattened and nested config)
+        eval_subset_file = config.get('eval_subset_file') or config.get('data', {}).get('eval_subset_file')
+        if eval_subset_file:
+            with open(eval_subset_file, 'r') as f:
+                eval_subset_task_ids = set(line.strip() for line in f if line.strip())
+            print(f"📋 Using evaluation subset from {eval_subset_file}: {len(eval_subset_task_ids)} tasks")
+
+        # Filter based on subset BEFORE applying limit
+        is_evaluation = "evaluation" in data_path
+        if is_evaluation and eval_subset_task_ids:
+            # Filter evaluation tasks by eval_subset_file
+            all_task_data = {task_id: task_data for task_id, task_data in all_task_data.items()
+                           if task_id in eval_subset_task_ids}
+            print(f"📋 Filtered to {len(all_task_data)} tasks from evaluation subset")
+        elif not is_evaluation and subset_task_ids:
+            # Filter training tasks by subset_file
+            all_task_data = {task_id: task_data for task_id, task_data in all_task_data.items()
+                           if task_id in subset_task_ids}
+            print(f"📋 Filtered to {len(all_task_data)} tasks from training subset")
+
+        # Convert to list of (task_id, task_data) tuples AFTER subset filtering
         all_tasks_list = [(task_id, task_data) for task_id, task_data in all_task_data.items()]
 
-        # Apply limit if specified
-        if limit:
+        # Apply limit if specified (limit applies AFTER subset filtering, so you can still limit within subset)
+        if limit and limit < len(all_tasks_list):
+            print(f"📋 Applying limit: {limit} tasks (from {len(all_tasks_list)} in subset)")
             all_tasks_list = all_tasks_list[:limit]
 
         # Convert to dict for filtering
