@@ -84,7 +84,7 @@ nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --co
 ```bash
 export HF_TOKEN=
 nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/lorge_config.json > lorge-v1_training-hard.log 2>&1' &
-
+```
 
 ### AA2 4X LR Ablation
 Aiming to train 4x longer to see if it helps results.

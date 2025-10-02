@@ -27,6 +27,7 @@ class ARCDataset(Dataset):
         n_augment: int = 3,
         include_training_test_examples: bool = True,
         subset_file: str = None,
+        eval_subset_file: str = None,
     ):
         """
         Args:
@@ -35,19 +36,27 @@ class ARCDataset(Dataset):
             augment: Whether to apply task-level data augmentation
             n_augment: Number of augmented versions per task (if augment=True)
             include_training_test_examples: Whether to include test examples from training_challenges.json as training data
-            subset_file: Optional path to text file containing task IDs to include (one per line)
+            subset_file: Optional path to text file containing training_challenges task IDs to include (one per line)
+            eval_subset_file: Optional path to text file containing evaluation_challenges task IDs to include (one per line)
         """
         self.max_size = max_size
         self.augment = augment
         self.n_augment = n_augment
         self.include_training_test_examples = include_training_test_examples
 
-        # Load subset task IDs if provided
+        # Load training subset task IDs if provided
         self.subset_task_ids = None
         if subset_file:
             with open(subset_file, 'r') as f:
                 self.subset_task_ids = set(line.strip() for line in f if line.strip())
-            print(f"📋 Using subset from {subset_file}: {len(self.subset_task_ids)} tasks")
+            print(f"📋 Using training subset from {subset_file}: {len(self.subset_task_ids)} tasks")
+
+        # Load evaluation subset task IDs if provided
+        self.eval_subset_task_ids = None
+        if eval_subset_file:
+            with open(eval_subset_file, 'r') as f:
+                self.eval_subset_task_ids = set(line.strip() for line in f if line.strip())
+            print(f"📋 Using evaluation subset from {eval_subset_file}: {len(self.eval_subset_task_ids)} tasks")
 
         # Load all data
         self.examples = []
@@ -89,10 +98,15 @@ class ARCDataset(Dataset):
             for task_id, task_data in data.items():
                 self.total_tasks += 1
 
-                # Skip if not in subset (if subset is specified AND this is training_challenges)
-                # Don't apply subset filtering to evaluation_challenges
+                # Apply subset filtering based on dataset type
                 is_training_challenges = "training_challenges" in data_path
+
+                # Skip if not in training subset (if specified and this is training_challenges)
                 if self.subset_task_ids and is_training_challenges and task_id not in self.subset_task_ids:
+                    continue
+
+                # Skip if not in evaluation subset (if specified and this is evaluation_challenges)
+                if self.eval_subset_task_ids and is_evaluation_challenges and task_id not in self.eval_subset_task_ids:
                     continue
 
                 # Create task structure for augmentation
