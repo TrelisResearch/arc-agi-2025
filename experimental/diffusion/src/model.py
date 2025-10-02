@@ -156,7 +156,7 @@ class TransformerDenoiser(nn.Module):
 
             # Add to xt embeddings with gain factor
             xt_emb = xt_emb + sc_gain * sc_features
-        elif self.training and torch.rand(1).item() > self.sc_dropout_prob:
+        elif self.training and torch.rand(1, device=device) > self.sc_dropout_prob:
             # During training without sc_p0, randomly apply zero self-conditioning
             # to train the model to work without self-conditioning
             zero_sc = torch.zeros(batch_size, self.max_size * self.max_size, 10, device=device)

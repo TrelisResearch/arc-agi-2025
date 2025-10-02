@@ -781,6 +781,42 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
 
     data_iter = infinite_dataloader(train_loader)
 
+    # Check if profiling mode is enabled
+    if config.get('profile_mode', False):
+        print("\n🔬 Starting profiling mode (20 steps)...")
+        from torch.profiler import profile, record_function, ProfilerActivity
+
+        profile_steps = 20
+        activities = [ProfilerActivity.CPU]
+        if torch.cuda.is_available():
+            activities.append(ProfilerActivity.CUDA)
+
+        with profile(
+            activities=activities,
+            record_shapes=True,
+            profile_memory=True,
+            with_stack=True
+        ) as prof:
+            with record_function("training_loop"):
+                for step_idx in range(profile_steps):
+                    batch = next(data_iter)
+                    losses = trainer.train_step(batch)
+                    print(f"Step {step_idx + 1}/{profile_steps}: loss={losses['total_loss']:.4f}")
+
+        # Save and print results
+        trace_path = output_dir / "profile_trace.json"
+        prof.export_chrome_trace(str(trace_path))
+        print(f"\n📊 Chrome trace saved to: {trace_path}")
+        print("   View in Chrome at: chrome://tracing\n")
+
+        # Print table sorted by CUDA time (or CPU if no CUDA)
+        sort_key = "cuda_time_total" if torch.cuda.is_available() else "cpu_time_total"
+        print(f"Top operations by {sort_key}:")
+        print(prof.key_averages().table(sort_by=sort_key, row_limit=25))
+
+        print("\n✅ Profiling complete! Exiting...")
+        return model
+
     # Progress bar for optimizer steps
     progress_bar = tqdm(range(optimizer_steps), desc="Training")
 

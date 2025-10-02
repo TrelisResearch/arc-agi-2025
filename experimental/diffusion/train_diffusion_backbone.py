@@ -74,6 +74,11 @@ def main():
         action="store_true",
         help="Disable wandb logging (overrides config)"
     )
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        help="Run profiling mode: execute 20 steps with PyTorch profiler and output timing breakdown"
+    )
 
     args = parser.parse_args()
 
@@ -94,11 +99,16 @@ def main():
     if args.no_wandb:
         config['use_wandb'] = False
 
+    # Add profiling flag to config
+    config['profile_mode'] = args.profile
+
     print(f"✨ Training ARC Diffusion Model")
     print(f"📁 Config: {args.config}")
     print(f"📊 Model: {config['d_model']}d, {config['num_layers']} layers")
     print(f"🎯 Training: {config['optimizer_steps']} steps, batch_size={config['batch_size']}")
     print(f"💾 Output: {config['output_dir']}")
+    if args.profile:
+        print(f"🔬 Profiling mode: Will run 20 steps with PyTorch profiler")
 
     # Train model
     try:
