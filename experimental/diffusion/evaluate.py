@@ -875,6 +875,11 @@ class DiffusionInference:
                 # Fallback if solutions not found but output is in test data
                 expected_output = np.array(test_example["output"])
             else:
+                print(f"❌ No solution found for task {task_id}, test example {test_idx}")
+                print(f"   - Solutions loaded: {len(solutions)} tasks")
+                print(f"   - Task in solutions: {task_id in solutions}")
+                print(f"   - Output in test_example: {'output' in test_example}")
+                print(f"   - Dataset: {dataset}")
                 raise ValueError(f"No solution found for task {task_id}, test example {test_idx}")
 
             # Run two attempts for pass@2
@@ -1144,7 +1149,7 @@ def print_metrics_report(metrics: Dict[str, Any], dataset: str, subset: str):
     print(f"{'='*80}")
 
     if total_tasks == 0:
-        print("❌ No tasks processed")
+        print("❌ No tasks saved as all returned errors.")
         return
 
     # Task-level metrics (partial credit with pass@2)
