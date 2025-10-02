@@ -105,7 +105,7 @@ lorge - 32 steps:
 
 FINAL MODEL RESULTS:
 smol - 32 steps:
-- simple (final model): 
+- simple (final model): 4.9%
 - sample-40x-augs (final model): 
 
 mediom - 32 steps:

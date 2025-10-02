@@ -1247,8 +1247,19 @@ def main():
     if args.model_path:
         model_path = args.model_path
     else:
-        model_path = str(output_dir / 'best_model.pt')
-        print(f"Using default model path: {model_path}")
+        # Default to final_model.pt, fallback to best_model.pt if not found
+        final_model_path = output_dir / 'final_model.pt'
+        best_model_path = output_dir / 'best_model.pt'
+
+        if final_model_path.exists():
+            model_path = str(final_model_path)
+            print(f"Using default model path: {model_path}")
+        elif best_model_path.exists():
+            model_path = str(best_model_path)
+            print(f"Using fallback model path: {model_path} (final_model.pt not found)")
+        else:
+            model_path = str(final_model_path)
+            print(f"Using default model path: {model_path}")
 
     # Determine output file path
     if args.output:
