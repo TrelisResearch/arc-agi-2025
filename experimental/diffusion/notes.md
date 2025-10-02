@@ -122,7 +122,7 @@ smol - 32 steps:
 
 mediom - 32 steps:
 - simple (final model): 8.1%
-- sample-40x-augs (final model): 
+- sample-40x-augs (final model): 10.6%
 
 lorge - 32 steps:
 - simple (final model): 45/303 (14.9%)

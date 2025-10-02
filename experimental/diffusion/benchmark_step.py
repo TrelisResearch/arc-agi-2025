@@ -123,6 +123,9 @@ def benchmark_step(config_path: str, num_iterations: int = 10):
         task_indices = batch['task_idx'].to(device)
         heights = batch['height'].to(device)
         widths = batch['width'].to(device)
+        rotations = batch['rotation'].to(device)
+        flips = batch['flip'].to(device)
+        color_shifts = batch['color_shift'].to(device)
 
         timesteps = torch.randint(0, noise_scheduler.num_timesteps, (input_grids.shape[0],), device=device)
         from experimental.diffusion.utils.grid_utils import batch_create_masks
@@ -137,6 +140,9 @@ def benchmark_step(config_path: str, num_iterations: int = 10):
                     task_ids=task_indices,
                     xt=noisy_grids,
                     timesteps=timesteps,
+                    rotation=rotations,
+                    flip=flips,
+                    color_shift=color_shifts,
                     heights=heights,
                     widths=widths,
                     auxiliary_size_loss_weight=0.1
@@ -148,6 +154,9 @@ def benchmark_step(config_path: str, num_iterations: int = 10):
                 task_ids=task_indices,
                 xt=noisy_grids,
                 timesteps=timesteps,
+                rotation=rotations,
+                flip=flips,
+                color_shift=color_shifts,
                 heights=heights,
                 widths=widths,
                 auxiliary_size_loss_weight=0.1
@@ -171,6 +180,9 @@ def benchmark_step(config_path: str, num_iterations: int = 10):
             task_indices = batch['task_idx'].to(device)
             heights = batch['height'].to(device)
             widths = batch['width'].to(device)
+            rotations = batch['rotation'].to(device)
+            flips = batch['flip'].to(device)
+            color_shifts = batch['color_shift'].to(device)
 
         with timer("2_noise_setup", timings):
             timesteps = torch.randint(0, noise_scheduler.num_timesteps, (input_grids.shape[0],), device=device)
@@ -187,6 +199,9 @@ def benchmark_step(config_path: str, num_iterations: int = 10):
                         task_ids=task_indices,
                         xt=noisy_grids,
                         timesteps=timesteps,
+                        rotation=rotations,
+                        flip=flips,
+                        color_shift=color_shifts,
                         heights=heights,
                         widths=widths,
                         auxiliary_size_loss_weight=0.1
@@ -198,6 +213,9 @@ def benchmark_step(config_path: str, num_iterations: int = 10):
                     task_ids=task_indices,
                     xt=noisy_grids,
                     timesteps=timesteps,
+                    rotation=rotations,
+                    flip=flips,
+                    color_shift=color_shifts,
                     heights=heights,
                     widths=widths,
                     auxiliary_size_loss_weight=0.1
