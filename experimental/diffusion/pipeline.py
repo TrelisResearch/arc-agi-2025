@@ -76,7 +76,7 @@ Examples:
     parser.add_argument("--config", required=True, help="Path to config JSON file")
     parser.add_argument("--skip-training", action="store_true", help="Skip diffusion model training")
     parser.add_argument("--skip-evaluation", action="store_true", help="Skip evaluation")
-    parser.add_argument("--eval-limit", type=int, default=5, help="Limit evaluation to N tasks (default: 5)")
+    parser.add_argument("--eval-limit", type=int, default=0, help="Limit evaluation to N tasks (default: 5)")
 
     args = parser.parse_args()
 
@@ -158,6 +158,14 @@ Examples:
             sys.exit(1)
     else:
         print("\n⏭️ Skipping evaluation")
+
+    # Step 3: Upload to Hugging Face Hub
+    if not run_command(
+        ["uv", "run", "python", "experimental/diffusion/hf.py", "--push", "--config", str(config_path)],
+        "Upload to Hugging Face Hub",
+        cwd=str(project_root)
+    ):
+        print("⚠️ HF upload failed (continuing anyway)")
 
     # Pipeline completed
     total_time = time.time()

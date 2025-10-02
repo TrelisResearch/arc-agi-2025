@@ -606,10 +606,23 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
     output_dir = Path(config['output_dir'])
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Save config to output directory
+    import json
+    config_save_path = output_dir / 'config.json'
+    with open(config_save_path, 'w') as f:
+        json.dump(config, f, indent=2)
+    print(f"Saved config to {config_save_path}")
+
+    # Construct wandb run name from model_version and tag
+    model_version = config.get('model_version', 'unknown')
+    tag = config.get('tag', 'default')
+    wandb_run_name = f"{model_version}_{tag}"
+
     # Initialize W&B if enabled
     if config.get('use_wandb', False):
         wandb.init(
             project="arc-prize-2025-diffusion",
+            name=wandb_run_name,
             config=config,
             save_code=True
         )

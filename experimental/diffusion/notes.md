@@ -90,7 +90,7 @@ mediom 496 mins training time on H200:
 
 lorge (still training)...
 
-#### Majority Voting Stats on v9 model (now grading, with partial credit, on all output test grids)
+#### Majority Voting Stats on v0 model (now grading, with partial credit, on all output test grids)
 smol:
 - simple: 3.5%
 - sample-40x-augs: 4.5%
@@ -101,17 +101,15 @@ mediom - 32 steps:
 - sample-40x-augs: 10.4%
 
 lorge - 32 steps:
-- simple: ...
-- sample-40x-augs: 
-
-lorge - 128 steps:
-- sample-40x-augs: 
+- sample (best model): 35/303 (11.6%)
+- simple (final model): 45/303 (14.9%)
+- sample-40x-augs (final model): ...
 
 ```bash
-uv run python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/smol_config.json --num-steps 32 --stats --maj && uv run python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/smol_config.json --num-steps 32
+uv run python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/lorge_config.json --num-steps 32 --model-path experimental/diffusion/outputs/lorge/final_model.pt --maj --stats
 ```
 
-#### AA1 Eval results on v1 model (separate augmentation inputs)
+#### AA1 Eval results on v1 model baseline (separate augmentation inputs)
 
 smol - 32 steps (best model, according to val. loss):
 - simple: 8.6%
@@ -122,3 +120,25 @@ smol - 32 steps (final model, not best):
 
 smol - 128 steps:
 - sample-40x-augs: 19.5%
+
+### AA2 Eval results on v1 model baseline
+Note: I had intended in increase bsz to 128 and to increase gradient steps, but forgot to pull the update.
+
+```bash
+nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config.json --eval-limit 0 > smol-v1.log 2>&1 ; \
+PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/mediom_config.json --eval-limit 0 > mediom-v1.log 2>&1' &
+```
+
+```bash
+uv run python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/smol_config.json --num-steps 32 --maj --model-path experimental/diffusion/outputs/smol/final_model.pt
+```
+smol - 32 steps (final model, not best):
+- simple: 
+- sample-40x-augs: 
+
+```bash
+uv run python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/mediom_config.json --num-steps 32 --maj --model-path experimental/diffusion/outputs/mediom/final_model.pt
+```
+mediom - 32 steps (final model, not best):
+- simple: 
+- sample-40x-augs: Correct Sizes: 125/172 (72.7%)
