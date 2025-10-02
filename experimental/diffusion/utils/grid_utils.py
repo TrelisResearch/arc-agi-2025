@@ -53,7 +53,7 @@ def create_mask(height: int, width: int, max_size: int = 30) -> torch.Tensor:
 
 def batch_create_masks(heights: torch.Tensor, widths: torch.Tensor, max_size: int = 30) -> torch.Tensor:
     """
-    Create masks for a batch of grids.
+    Create masks for a batch of grids (vectorized, no Python loops).
 
     Args:
         heights: Heights for each item in batch [batch_size]
@@ -63,13 +63,22 @@ def batch_create_masks(heights: torch.Tensor, widths: torch.Tensor, max_size: in
     Returns:
         Masks [batch_size, max_size, max_size]
     """
-    batch_size = len(heights)
-    masks = torch.zeros(batch_size, max_size, max_size, dtype=torch.float32)
+    batch_size = heights.shape[0]
+    device = heights.device
 
-    for i, (h, w) in enumerate(zip(heights, widths)):
-        masks[i, :h, :w] = 1.0
+    # Create coordinate grids: [max_size, max_size]
+    row_indices = torch.arange(max_size, device=device).view(1, max_size, 1)
+    col_indices = torch.arange(max_size, device=device).view(1, 1, max_size)
 
-    return masks
+    # Broadcast heights and widths: [batch_size, 1, 1]
+    heights_expanded = heights.view(batch_size, 1, 1)
+    widths_expanded = widths.view(batch_size, 1, 1)
+
+    # Create masks: [batch_size, max_size, max_size]
+    # True where row < height AND col < width
+    masks = (row_indices < heights_expanded) & (col_indices < widths_expanded)
+
+    return masks.float()
 
 
 def clamp_outside_mask(grid: torch.Tensor, mask: torch.Tensor, pad_value: int = 10) -> torch.Tensor:

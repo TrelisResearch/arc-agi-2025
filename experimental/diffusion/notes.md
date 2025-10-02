@@ -71,6 +71,13 @@ Correct!
 - Roll forward on two top grid size predictions. Maybe give a little boost, although grid accuracy is already good.
 
 ## Daily Notes
+### Oct 2nd 2025
+#### Testing speedups
+
+Baseline is 150s.
+
+speedups-i gets to ...
+
 ### Oct 1st 2025
 #### Testing splitting up inputs instead of creating new task embeddings
 ```bash

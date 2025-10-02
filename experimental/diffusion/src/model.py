@@ -361,13 +361,13 @@ class ARCDiffusionModel(nn.Module):
         batch_size = x0.shape[0]
         max_size = x0.shape[1]
 
-        # Create masks for valid positions if heights/widths provided
+        # Create masks for valid positions if heights/widths provided (vectorized)
         masks = None
+        mask_bool = None
         if heights is not None and widths is not None:
-            masks = torch.zeros(batch_size, max_size, max_size, dtype=torch.float32, device=x0.device)
-            for i in range(batch_size):
-                h, w = heights[i].item(), widths[i].item()
-                masks[i, :h, :w] = 1.0
+            from ..utils.grid_utils import batch_create_masks
+            masks = batch_create_masks(heights, widths, max_size).to(x0.device)
+            mask_bool = masks.bool()  # Reuse same mask as bool for indexing
 
         # Forward pass with masks and self-conditioning
         logits = self.forward(
@@ -383,38 +383,24 @@ class ARCDiffusionModel(nn.Module):
             sc_gain=sc_gain
         )
 
-        # Create mask for valid positions if heights/widths provided
-        if heights is not None and widths is not None:
-            # Create mask [batch_size, max_size, max_size] - True for valid positions
-            mask = torch.zeros(batch_size, max_size, max_size, dtype=torch.bool, device=x0.device)
-            for i in range(batch_size):
-                h, w = heights[i].item(), widths[i].item()
-                mask[i, :h, :w] = True
-
+        # Apply mask for loss computation if provided
+        if mask_bool is not None:
             # Apply mask to flatten only valid positions
-            valid_logits = logits[mask]  # [num_valid_positions, vocab_size]
-            valid_targets = x0[mask]     # [num_valid_positions]
+            valid_logits = logits[mask_bool]  # [num_valid_positions, vocab_size]
+            valid_targets = x0[mask_bool]     # [num_valid_positions]
 
             # Compute loss only on valid positions
             grid_loss = F.cross_entropy(valid_logits, valid_targets, reduction='mean')
 
-            # Compute accuracy metrics on valid positions only
+            # Compute simple accuracy only (detailed metrics moved to validation)
             with torch.no_grad():
                 predictions = torch.argmax(valid_logits, dim=-1)
-                correct = (predictions == valid_targets).float()
-                accuracy = correct.mean().item()
+                accuracy = (predictions == valid_targets).float().mean().item()
 
-                # Expand timesteps to match mask shape for per-timestep metrics
-                timesteps_expanded = timesteps.unsqueeze(1).unsqueeze(2).expand_as(mask)
-                valid_timesteps = timesteps_expanded[mask]  # [num_valid_positions]
-
-                # Normalize timesteps to [0, 1] range (timesteps are 0-indexed)
-                timesteps_norm = valid_timesteps.float() / 127.0  # 128 timesteps: 0-127
-
-                # Compute metrics for each bucket
-                low_metrics = self._compute_bucket_metrics(correct, valid_logits, valid_targets, timesteps_norm, 'low_noise')
-                mid_metrics = self._compute_bucket_metrics(correct, valid_logits, valid_targets, timesteps_norm, 'mid_noise')
-                high_metrics = self._compute_bucket_metrics(correct, valid_logits, valid_targets, timesteps_norm, 'high_noise')
+            # Return minimal metrics for training speed
+            low_metrics = {}
+            mid_metrics = {}
+            high_metrics = {}
         else:
             # Fallback to original behavior (all positions)
             grid_loss = F.cross_entropy(
@@ -423,25 +409,15 @@ class ARCDiffusionModel(nn.Module):
                 reduction='mean'
             )
 
-            # Compute accuracy metrics on all positions
+            # Compute simple accuracy only (detailed metrics moved to validation)
             with torch.no_grad():
                 predictions = torch.argmax(logits, dim=-1)
-                correct = (predictions == x0).float()
-                accuracy = correct.mean().item()
+                accuracy = (predictions == x0).float().mean().item()
 
-                # Flatten for per-timestep metrics
-                correct_flat = correct.view(-1)
-                logits_flat = logits.view(-1, 10)  # Model outputs 10 classes
-                targets_flat = x0.view(-1)
-
-                # Expand timesteps to match flattened shape
-                timesteps_flat = timesteps.unsqueeze(1).unsqueeze(2).expand_as(x0).reshape(-1)
-                timesteps_norm = timesteps_flat.float() / 127.0  # 128 timesteps: 0-127
-
-                # Compute metrics for each bucket
-                low_metrics = self._compute_bucket_metrics(correct_flat, logits_flat, targets_flat, timesteps_norm, 'low_noise')
-                mid_metrics = self._compute_bucket_metrics(correct_flat, logits_flat, targets_flat, timesteps_norm, 'mid_noise')
-                high_metrics = self._compute_bucket_metrics(correct_flat, logits_flat, targets_flat, timesteps_norm, 'high_noise')
+            # Return minimal metrics for training speed
+            low_metrics = {}
+            mid_metrics = {}
+            high_metrics = {}
 
         # Compute auxiliary size loss if size head is included
         size_loss = torch.tensor(0.0, device=x0.device)
