@@ -1274,6 +1274,21 @@ def main():
         print(f"❌ Model not found: {model_path}")
         sys.exit(1)
 
+    # Determine dataset/subset early: command-line args override config, config overrides defaults
+    # Priority: explicit command-line args > config > defaults
+    data_config = config.get('data', {})
+    config_data_dir = data_config.get('data_dir', config.get('data_dir'))
+
+    # Extract dataset name from config's data_dir if it exists
+    if config_data_dir:
+        dataset_from_config = config_data_dir.split('/')[-1] if '/' in config_data_dir else config_data_dir
+    else:
+        dataset_from_config = None
+
+    # Use command-line args if provided, otherwise config, otherwise defaults
+    dataset = args.dataset if args.dataset else (dataset_from_config if dataset_from_config else "arc-prize-2025")
+    subset = args.subset if args.subset else "evaluation"
+
     # Handle limit parameter (0 means no limit)
     limit = args.limit if args.limit > 0 else None
 
@@ -1287,7 +1302,7 @@ def main():
     print(f"🚀 ARC Diffusion Model Inference")
     print(f"📅 Started at: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"📁 Config: {args.config}")
-    print(f"🎲 Dataset: {args.dataset}/{args.subset}")
+    print(f"🎲 Dataset: {dataset}/{subset}")
     if limit:
         print(f"⚡ Task limit: {limit}")
     else:
@@ -1301,21 +1316,6 @@ def main():
             num_inference_steps=args.num_steps,
             debug=args.debug
         )
-
-        # Determine dataset/subset: command-line args override config, config overrides defaults
-        # Priority: explicit command-line args > config > defaults
-        data_config = config.get('data', {})
-        config_data_dir = data_config.get('data_dir', config.get('data_dir'))
-
-        # Extract dataset name from config's data_dir if it exists
-        if config_data_dir:
-            dataset_from_config = config_data_dir.split('/')[-1] if '/' in config_data_dir else config_data_dir
-        else:
-            dataset_from_config = None
-
-        # Use command-line args if provided, otherwise config, otherwise defaults
-        dataset = args.dataset if args.dataset else (dataset_from_config if dataset_from_config else "arc-prize-2025")
-        subset = args.subset if args.subset else "evaluation"
 
         # Load tasks directly from JSON files
         print(f"\n📂 Loading tasks from {dataset}/{subset}...")
