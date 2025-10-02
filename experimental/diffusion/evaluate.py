@@ -475,10 +475,13 @@ class DiffusionInference:
 
     def _load_solutions(self, dataset: str) -> Dict[str, List[List[List[int]]]]:
         """Load solutions from appropriate solutions file."""
+        # Extract dataset name from path like "arc-prize-2024/evaluation"
+        dataset_name = dataset.split('/')[0] if '/' in dataset else "arc-prize-2025"
+
         if 'training' in dataset:
-            solutions_path = "data/arc-prize-2025/arc-agi_training_solutions.json"
+            solutions_path = f"data/{dataset_name}/arc-agi_training_solutions.json"
         elif 'evaluation' in dataset:
-            solutions_path = "data/arc-prize-2025/arc-agi_evaluation_solutions.json"
+            solutions_path = f"data/{dataset_name}/arc-agi_evaluation_solutions.json"
         else:
             return {}  # No solutions for test set
 
