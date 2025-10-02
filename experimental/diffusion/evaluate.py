@@ -1261,20 +1261,7 @@ def main():
             model_path = str(final_model_path)
             print(f"Using default model path: {model_path}")
 
-    # Determine output file path
-    if args.output:
-        output_file = args.output
-    else:
-        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-        output_file = str(output_dir / f"evaluation_{args.dataset}_{args.subset}_{timestamp}.json")
-        print(f"Using default output path: {output_file}")
-
-    # Validate model path
-    if not Path(model_path).exists():
-        print(f"❌ Model not found: {model_path}")
-        sys.exit(1)
-
-    # Determine dataset/subset early: command-line args override config, config overrides defaults
+    # Determine dataset/subset early (needed for output path): command-line args override config, config overrides defaults
     # Priority: explicit command-line args > config > defaults
     data_config = config.get('data', {})
     config_data_dir = data_config.get('data_dir', config.get('data_dir'))
@@ -1288,6 +1275,19 @@ def main():
     # Use command-line args if provided, otherwise config, otherwise defaults
     dataset = args.dataset if args.dataset else (dataset_from_config if dataset_from_config else "arc-prize-2025")
     subset = args.subset if args.subset else "evaluation"
+
+    # Determine output file path
+    if args.output:
+        output_file = args.output
+    else:
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        output_file = str(output_dir / f"evaluation_{dataset}_{subset}_{timestamp}.json")
+        print(f"Using default output path: {output_file}")
+
+    # Validate model path
+    if not Path(model_path).exists():
+        print(f"❌ Model not found: {model_path}")
+        sys.exit(1)
 
     # Handle limit parameter (0 means no limit)
     limit = args.limit if args.limit > 0 else None
@@ -1410,7 +1410,7 @@ def main():
                 result = inference.run_task(
                     task_id,
                     task_data,
-                    f"{args.dataset}/{args.subset}",
+                    f"{dataset}/{subset}",
                     visualize=visualize,
                     use_majority_voting=args.maj,
                     n_augment=args.n_augment,
@@ -1435,15 +1435,15 @@ def main():
 
         # Calculate and display metrics
         metrics = calculate_metrics(results)
-        print_metrics_report(metrics, args.dataset, args.subset)
+        print_metrics_report(metrics, dataset, subset)
 
         # Save results
         output_data = {
             "metadata": {
                 "timestamp": datetime.datetime.now().isoformat(),
                 "config_path": args.config,
-                "dataset": args.dataset,
-                "subset": args.subset,
+                "dataset": dataset,
+                "subset": subset,
                 "model_path": model_path,
                 "num_inference_steps": args.num_steps or inference.config['num_timesteps'],
                 "device": str(inference.device),
