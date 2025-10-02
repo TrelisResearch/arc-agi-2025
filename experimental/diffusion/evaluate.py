@@ -1007,7 +1007,7 @@ class DiffusionInference:
 def calculate_metrics(results: List[TaskResult]) -> Dict[str, Any]:
     """Calculate pass@2 and other metrics from results with partial credit scoring"""
     if not results:
-        return {}
+        return {"total_tasks": 0, "total_test_examples": 0}
 
     total_tasks = len(results)
 
