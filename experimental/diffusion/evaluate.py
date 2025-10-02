@@ -1218,7 +1218,8 @@ def main():
     parser.add_argument("--config", required=True, help="Path to config file (contains model paths and output directory)")
 
     # Optional overrides
-    parser.add_argument("--model-path", help="Override model path (defaults to best model in config output dir)")
+    parser.add_argument("--model-path", help="Override model path (defaults to final_model.pt in config output dir)")
+    parser.add_argument("--prefer-best", action="store_true", help="Use best_model.pt instead of final_model.pt as default")
     parser.add_argument("--device", choices=["cpu", "cuda", "mps", "auto"], default="auto", help="Device to use (default: auto)")
     parser.add_argument("--num-steps", type=int, help="Number of inference steps (default: use training steps)")
 
@@ -1255,19 +1256,32 @@ def main():
     if args.model_path:
         model_path = args.model_path
     else:
-        # Default to final_model.pt, fallback to best_model.pt if not found
         final_model_path = output_dir / 'final_model.pt'
         best_model_path = output_dir / 'best_model.pt'
 
-        if final_model_path.exists():
-            model_path = str(final_model_path)
-            print(f"Using default model path: {model_path}")
-        elif best_model_path.exists():
-            model_path = str(best_model_path)
-            print(f"Using fallback model path: {model_path} (final_model.pt not found)")
+        # Choose model based on --prefer-best flag
+        if args.prefer_best:
+            # Prefer best_model.pt, fallback to final_model.pt
+            if best_model_path.exists():
+                model_path = str(best_model_path)
+                print(f"Using best model: {model_path}")
+            elif final_model_path.exists():
+                model_path = str(final_model_path)
+                print(f"Using final model (best_model.pt not found): {model_path}")
+            else:
+                model_path = str(best_model_path)
+                print(f"Using default model path: {model_path}")
         else:
-            model_path = str(final_model_path)
-            print(f"Using default model path: {model_path}")
+            # Default: prefer final_model.pt, fallback to best_model.pt
+            if final_model_path.exists():
+                model_path = str(final_model_path)
+                print(f"Using final model: {model_path}")
+            elif best_model_path.exists():
+                model_path = str(best_model_path)
+                print(f"Using best model (final_model.pt not found): {model_path}")
+            else:
+                model_path = str(final_model_path)
+                print(f"Using default model path: {model_path}")
 
     # Determine dataset/subset early (needed for output path): command-line args override config, config overrides defaults
     # Priority: explicit command-line args > config > defaults

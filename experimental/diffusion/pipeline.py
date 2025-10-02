@@ -76,7 +76,8 @@ Examples:
     parser.add_argument("--config", required=True, help="Path to config JSON file")
     parser.add_argument("--skip-training", action="store_true", help="Skip diffusion model training")
     parser.add_argument("--skip-evaluation", action="store_true", help="Skip evaluation")
-    parser.add_argument("--eval-limit", type=int, default=0, help="Limit evaluation to N tasks (default: 5)")
+    parser.add_argument("--eval-limit", type=int, default=0, help="Limit evaluation to N tasks (default: 0 for all)")
+    parser.add_argument("--prefer-best", action="store_true", help="Use best_model.pt for evaluation instead of final_model.pt")
 
     args = parser.parse_args()
 
@@ -129,18 +130,29 @@ Examples:
 
     # Step 2: Evaluation
     if not args.skip_evaluation:
-        # Check if backbone model exists
+        # Check if model exists
         best_model_path = output_dir / "best_model.pt"
         final_model_path = output_dir / "final_model.pt"
 
-        if best_model_path.exists():
-            print(f"✓ Using best model for evaluation: {best_model_path}")
-        elif final_model_path.exists():
-            print(f"⚠️ Using final model for evaluation (no best model found): {final_model_path}")
+        # Determine which model will be used based on --prefer-best flag
+        if args.prefer_best:
+            if best_model_path.exists():
+                print(f"✓ Using best model for evaluation: {best_model_path}")
+            elif final_model_path.exists():
+                print(f"⚠️ Using final model for evaluation (best model not found): {final_model_path}")
+            else:
+                print(f"❌ No model found: tried {best_model_path} and {final_model_path}")
+                print("   Cannot run evaluation without trained model")
+                sys.exit(1)
         else:
-            print(f"❌ No backbone model found: tried {best_model_path} and {final_model_path}")
-            print("   Cannot run evaluation without trained model")
-            sys.exit(1)
+            if final_model_path.exists():
+                print(f"✓ Using final model for evaluation: {final_model_path}")
+            elif best_model_path.exists():
+                print(f"⚠️ Using best model for evaluation (final model not found): {best_model_path}")
+            else:
+                print(f"❌ No model found: tried {final_model_path} and {best_model_path}")
+                print("   Cannot run evaluation without trained model")
+                sys.exit(1)
 
         # Run evaluation
         eval_command = [
@@ -148,6 +160,10 @@ Examples:
             "--config", str(config_path),
             "--limit", str(args.eval_limit)
         ]
+
+        # Add --prefer-best flag if specified
+        if args.prefer_best:
+            eval_command.append("--prefer-best")
 
         if not run_command(
             eval_command,

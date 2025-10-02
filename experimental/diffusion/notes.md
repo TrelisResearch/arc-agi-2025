@@ -72,6 +72,15 @@ Correct!
 
 ## Daily Notes
 ### Oct 2nd 2025
+### Restrict to 20x20 grids and train on training-hard + evaluation from aa2.
+
+Run all of those commands in series on the same gpu:
+```bash
+nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config.json > smol-v1_20x20.log 2>&1 ; \
+PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/mediom_config.json > mediom-v1__20x20.log 2>&1 ; \
+PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/lorge_config.json > lorge-v1_20x20.log 2>&1' &
+```
+
 ### Go back to original LR and restrict training data to training-hard subset
 ```bash
 nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config.json > smol-v1_training-hard.log 2>&1' &
