@@ -1214,9 +1214,9 @@ def main():
     parser.add_argument("--device", choices=["cpu", "cuda", "mps", "auto"], default="auto", help="Device to use (default: auto)")
     parser.add_argument("--num-steps", type=int, help="Number of inference steps (default: use training steps)")
 
-    # Data settings with defaults
-    parser.add_argument("--dataset", default="arc-prize-2025", help="Dataset to use (default: arc-prize-2025)")
-    parser.add_argument("--subset", default="evaluation", help="Subset to use (default: evaluation)")
+    # Data settings with defaults (config takes precedence if specified)
+    parser.add_argument("--dataset", help="Dataset to use (overrides config if specified)")
+    parser.add_argument("--subset", help="Subset to use (overrides config if specified)")
     parser.add_argument("--limit", type=int, default=0, help="Limit number of tasks to run (default: 0 for all)")
 
     # Majority voting ensemble
@@ -1302,16 +1302,33 @@ def main():
             debug=args.debug
         )
 
+        # Determine dataset/subset: command-line args override config, config overrides defaults
+        # Priority: explicit command-line args > config > defaults
+        data_config = config.get('data', {})
+        config_data_dir = data_config.get('data_dir', config.get('data_dir'))
+
+        # Extract dataset name from config's data_dir if it exists
+        if config_data_dir:
+            dataset_from_config = config_data_dir.split('/')[-1] if '/' in config_data_dir else config_data_dir
+        else:
+            dataset_from_config = None
+
+        # Use command-line args if provided, otherwise config, otherwise defaults
+        dataset = args.dataset if args.dataset else (dataset_from_config if dataset_from_config else "arc-prize-2025")
+        subset = args.subset if args.subset else "evaluation"
+
         # Load tasks directly from JSON files
-        print(f"\n📂 Loading tasks from {args.dataset}/{args.subset}...")
+        print(f"\n📂 Loading tasks from {dataset}/{subset}...")
 
         # Map dataset/subset to file paths
         data_file_map = {
             "arc-prize-2025/evaluation": "data/arc-prize-2025/arc-agi_evaluation_challenges.json",
-            "arc-prize-2025/training": "data/arc-prize-2025/arc-agi_training_challenges.json"
+            "arc-prize-2025/training": "data/arc-prize-2025/arc-agi_training_challenges.json",
+            "arc-prize-2024/evaluation": "data/arc-prize-2024/arc-agi_evaluation_challenges.json",
+            "arc-prize-2024/training": "data/arc-prize-2024/arc-agi_training_challenges.json"
         }
 
-        dataset_key = f"{args.dataset}/{args.subset}"
+        dataset_key = f"{dataset}/{subset}"
         if dataset_key not in data_file_map:
             raise ValueError(f"Unknown dataset/subset: {dataset_key}")
 
