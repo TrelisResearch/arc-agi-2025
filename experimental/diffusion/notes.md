@@ -72,16 +72,24 @@ Correct!
 
 ## Daily Notes
 ### Oct 2nd 2025
+### AA2 4X LR Ablation
+Aiming to train 4x longer to see if it helps results.
+
+```bash
+nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config.json > smol-v1_4x-lr.log 2>&1' &
+```
+
+```bash
+nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/mediom_config.json > mediom-v1_4x-lr.log 2>&1' &
+```
+
 #### Testing speedups
 
 Baseline is 150s.
 
 speedups-i (vectorize masks) gets to 135s.
 
-inspection reveals:
-- 
-
-speedups-ii
+Can add --profile to a training run to get the profile. I reduced creating lots of zero tensors and also some tensor copies by moving device. Hard to know what speedup that gave, if anything.
 
 ### Oct 1st 2025
 #### Testing splitting up inputs instead of creating new task embeddings
