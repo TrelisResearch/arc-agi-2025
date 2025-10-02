@@ -191,7 +191,7 @@ class ARCDiffusionTrainer:
 
         # Create masks for valid regions
         from experimental.diffusion.utils.grid_utils import batch_create_masks
-        masks = batch_create_masks(heights, widths, self.model.max_size).to(self.device)
+        masks = batch_create_masks(heights, widths, self.model.max_size)
 
         # Add noise to clean output grids using uniform distribution over {0..9}
         # Only noise valid regions, clamp invalid regions to 0
@@ -341,7 +341,7 @@ class ARCDiffusionTrainer:
 
                 # Create masks for valid regions
                 from experimental.diffusion.utils.grid_utils import batch_create_masks
-                masks = batch_create_masks(heights, widths, self.model.max_size).to(self.device)
+                masks = batch_create_masks(heights, widths, self.model.max_size)
 
                 # Add noise using uniform distribution over {0..9}
                 # Only noise valid regions, clamp invalid regions to 0

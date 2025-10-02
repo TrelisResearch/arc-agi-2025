@@ -181,7 +181,7 @@ class TransformerDenoiser(nn.Module):
         # Create separate conditioning tokens
         task_token = self.task_embedding(task_ids).unsqueeze(1)  # [batch_size, 1, d_model]
 
-        time_emb = create_timestep_embedding(timesteps, self.d_model).to(device)
+        time_emb = create_timestep_embedding(timesteps, self.d_model)
         time_token = self.time_projection(time_emb).unsqueeze(1)  # [batch_size, 1, d_model]
 
         # Add augmentation tokens if provided, otherwise use zeros (no augmentation)
@@ -359,7 +359,7 @@ class ARCDiffusionModel(nn.Module):
         mask_bool = None
         if heights is not None and widths is not None:
             from ..utils.grid_utils import batch_create_masks
-            masks = batch_create_masks(heights, widths, max_size).to(x0.device)
+            masks = batch_create_masks(heights, widths, max_size)
             mask_bool = masks.bool()  # Reuse same mask as bool for indexing
 
         # Forward pass with masks and self-conditioning
