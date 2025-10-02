@@ -128,13 +128,6 @@ class TransformerDenoiser(nn.Module):
         Returns:
             logits: [batch_size, max_size, max_size, 10] - predicted logits for colors 0-9
         """
-        # Verify tokens are valid
-        # xt contains only 0-9 (uses 0/black for invalid regions)
-        # input_grid can contain 0-10 (uses 10/PAD for invalid regions)
-        assert xt.max().item() <= 9, f"xt must contain tokens 0-9, got max {xt.max().item()}"
-        assert xt.min().item() >= 0, f"xt must contain only non-negative values, got min {xt.min().item()}"
-        assert input_grid.max().item() <= 10, f"input_grid must contain tokens 0-10, got max {input_grid.max().item()}"
-
         batch_size = xt.shape[0]
         device = xt.device
 
