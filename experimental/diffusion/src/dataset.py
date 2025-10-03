@@ -84,8 +84,18 @@ class ARCDataset(Dataset):
         all_tasks = {}
         task_counter = 0
 
+        # Infer dataset from data_paths (extract arc-prize-YYYY from first path)
+        dataset_name = "arc-prize-2025"  # default
+        if data_paths:
+            # Extract dataset name from path like "data/arc-prize-2024/..."
+            parts = data_paths[0].split('/')
+            for part in parts:
+                if part.startswith('arc-prize-'):
+                    dataset_name = part
+                    break
+
         # Load training solutions to get outputs for training test examples
-        training_solutions = self._load_solutions("data/arc-prize-2025/arc-agi_training_solutions.json")
+        training_solutions = self._load_solutions(f"data/{dataset_name}/arc-agi_training_solutions.json")
 
         for data_path in data_paths:
             print(f"Loading data from {data_path}")

@@ -191,7 +191,8 @@ class DiffusionInference:
         model_path: str,
         device: str = "auto",
         num_inference_steps: Optional[int] = None,
-        debug: bool = False
+        debug: bool = False,
+        dataset: str = "arc-prize-2025"
     ):
         self.model_path = model_path
         # Set up device (prioritize CUDA > MPS > CPU)
@@ -219,9 +220,9 @@ class DiffusionInference:
         )
         self.noise_scheduler.to(self.device)
 
-        # Create dataset for task indexing
+        # Create dataset for task indexing (use the dataset being evaluated)
         data_paths = load_arc_data_paths(
-            data_dir="data/arc-prize-2025",
+            data_dir=f"data/{dataset}",
             datasets=["training_challenges", "evaluation_challenges"]
         )
         self.dataset = ARCDataset(
@@ -1331,12 +1332,13 @@ def main():
         print(f"⚡ Task limit: All tasks")
 
     try:
-        # Initialize inference
+        # Initialize inference (pass dataset for correct task indexing)
         inference = DiffusionInference(
             model_path=model_path,
             device=args.device,
             num_inference_steps=args.num_steps,
-            debug=args.debug
+            debug=args.debug,
+            dataset=dataset
         )
 
         # Load tasks directly from JSON files
