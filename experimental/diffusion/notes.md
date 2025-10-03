@@ -47,6 +47,13 @@ PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experiment
 PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/huoge_config.json > huoge-v1-boost.log 2>&1' &
 ```
 
+```bash
+nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config_aa1.json > smol-v1-aa1.log 2>&1 ; \
+PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/mediom_config_aa1.json > mediom-v1-aa1.log 2>&1 ; \
+PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/lorge_config_aa1.json > lorge-v1-aa1.log 2>&1 ; \
+PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/huoge_config_aa1.json > huoge-v1-aa1.log 2>&1' &
+```
+
 ### Oct 3rd 2025
 Have started some runs on aa1 and aa2 although they are running for cst forward pass steps, not optimizer steps. Still it can give some sense of performance.
 
