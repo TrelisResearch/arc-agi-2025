@@ -35,7 +35,8 @@ class ARCDiffusionTrainer:
         auxiliary_size_loss_weight: float = 0.1,
         use_ema: bool = True,
         ema_decay: float = 0.9995,
-        ema_warmup_steps: int = 1000
+        ema_warmup_steps: int = 1000,
+        gradient_accumulation_steps: int = 1
     ):
         self.model = model
         self.noise_scheduler = noise_scheduler
@@ -46,6 +47,7 @@ class ARCDiffusionTrainer:
         self.pixel_noise_rate = pixel_noise_rate
         self.auxiliary_size_loss_weight = auxiliary_size_loss_weight
         self.use_ema = use_ema
+        self.gradient_accumulation_steps = gradient_accumulation_steps
 
         # Set up mixed precision
         if use_mixed_precision and device.type in ['cuda', 'mps']:
@@ -125,6 +127,10 @@ class ARCDiffusionTrainer:
         # Initialize global step counter for self-conditioning gain scheduling
         self.global_step = 0
         self.optimizer_steps = total_steps
+        self.accumulation_step = 0  # Track steps within accumulation cycle
+
+        if gradient_accumulation_steps > 1:
+            print(f"Using gradient accumulation: {gradient_accumulation_steps} steps")
 
     def apply_pixel_noise(self, grids: torch.Tensor) -> torch.Tensor:
         """
@@ -270,40 +276,55 @@ class ARCDiffusionTrainer:
                 sc_gain=sc_gain
             )
 
-        # Backward pass with mixed precision
+        # Backward pass with mixed precision and gradient accumulation
         total_loss = losses['total_loss']
-        self.optimizer.zero_grad()
+
+        # Scale loss by accumulation steps for correct gradient magnitude
+        scaled_loss = total_loss / self.gradient_accumulation_steps
+
+        # Zero gradients only at the start of accumulation cycle
+        if self.accumulation_step == 0:
+            self.optimizer.zero_grad()
 
         if self.scaler is not None:
             # CUDA with float16 and gradient scaling
-            self.scaler.scale(total_loss).backward()
-            self.scaler.unscale_(self.optimizer)
-
-            # Compute gradient norm and clip
-            grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
+            self.scaler.scale(scaled_loss).backward()
         else:
             # MPS, CPU, or bfloat16 without gradient scaling
-            total_loss.backward()
+            scaled_loss.backward()
+
+        # Increment accumulation step
+        self.accumulation_step += 1
+
+        # Only update weights after accumulating gradients
+        grad_norm = 0.0
+        if self.accumulation_step >= self.gradient_accumulation_steps:
+            if self.scaler is not None:
+                self.scaler.unscale_(self.optimizer)
 
             # Compute gradient norm and clip
             grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
 
-            self.optimizer.step()
+            if self.scaler is not None:
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+            else:
+                self.optimizer.step()
 
-        self.scheduler.step()
+            self.scheduler.step()
 
-        # Update EMA after optimizer step
-        if self.ema is not None:
-            self.ema.update(self.model)
+            # Update EMA after optimizer step
+            if self.ema is not None:
+                self.ema.update(self.model)
 
-        # Increment global step counter
-        self.global_step += 1
+            # Increment global step counter
+            self.global_step += 1
+
+            # Reset accumulation counter
+            self.accumulation_step = 0
 
         # Return losses and grad norm as Python floats
-        losses['grad_norm'] = grad_norm.item()
+        losses['grad_norm'] = grad_norm.item() if isinstance(grad_norm, torch.Tensor) else grad_norm
         return {key: value.item() if hasattr(value, 'item') else value for key, value in losses.items()}
 
     def validate(self, val_loader: torch.utils.data.DataLoader, num_batches: int = 10, use_ema: bool = True) -> Dict[str, float]:
@@ -917,7 +938,8 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         auxiliary_size_loss_weight=aux_config.get('auxiliary_size_loss_weight', 0.1),
         use_ema=config.get('use_ema', True),
         ema_decay=config.get('ema_decay', 0.9995),
-        ema_warmup_steps=config.get('ema_warmup_steps', 1000)
+        ema_warmup_steps=config.get('ema_warmup_steps', 1000),
+        gradient_accumulation_steps=config.get('gradient_accumulation_steps', 1)
     )
 
     print(f"Model has {sum(p.numel() for p in model.parameters()):,} parameters")
