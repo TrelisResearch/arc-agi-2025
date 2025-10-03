@@ -38,6 +38,16 @@ Correct!
 
 ## Daily Notes
 ### Oct 3rd 2025
+#### Training giont on aa2 and aa1
+
+```bash
+nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/giont_config.json > giont-v1-boost.log 2>&1' &
+```
+
+```bash
+nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/giont_aa1_config.json > giont-v1-boost.log 2>&1' &
+```
+
 #### Training huoge on aa2 boost strategy
 Moving to train a 270M model.
 
