@@ -42,8 +42,8 @@ def load_and_flatten_config(config_path: str) -> dict:
     # Flatten nested config sections
     flat_config = {}
 
-    # Copy top-level fields (model_version, tag, etc.)
-    for key in ['model_version', 'tag']:
+    # Copy top-level fields (model_version, tag, pretrained_model_path, etc.)
+    for key in ['model_version', 'tag', 'pretrained_model_path']:
         if key in config:
             flat_config[key] = config[key]
 

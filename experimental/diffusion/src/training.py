@@ -699,19 +699,50 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
     include_size_head = aux_config.get('include_size_head', True)
     size_head_hidden_dim = aux_config.get('size_head_hidden_dim', None)
 
-    # Create model
-    model = ARCDiffusionModel(
-        vocab_size=config['vocab_size'],
-        d_model=config['d_model'],
-        nhead=config['nhead'],
-        num_layers=config['num_layers'],
-        max_size=config['max_size'],
-        max_tasks=dataset_info['num_tasks'],
-        embedding_dropout=config.get('embedding_dropout', 0.1),
-        input_grid_dropout=config.get('input_grid_dropout', 0.0),
-        include_size_head=include_size_head,
-        size_head_hidden_dim=size_head_hidden_dim
-    )
+    # Check if loading from pretrained model
+    pretrained_path = config.get('pretrained_model_path', None)
+
+    if pretrained_path:
+        print(f"Loading pretrained model from: {pretrained_path}")
+        checkpoint = torch.load(pretrained_path, map_location='cpu')
+
+        # Extract model state dict
+        if 'model_state_dict' in checkpoint:
+            model_state_dict = checkpoint['model_state_dict']
+        else:
+            model_state_dict = checkpoint
+
+        # Create model with same architecture
+        model = ARCDiffusionModel(
+            vocab_size=config['vocab_size'],
+            d_model=config['d_model'],
+            nhead=config['nhead'],
+            num_layers=config['num_layers'],
+            max_size=config['max_size'],
+            max_tasks=dataset_info['num_tasks'],
+            embedding_dropout=config.get('embedding_dropout', 0.1),
+            input_grid_dropout=config.get('input_grid_dropout', 0.0),
+            include_size_head=include_size_head,
+            size_head_hidden_dim=size_head_hidden_dim
+        )
+
+        # Load pretrained weights
+        model.load_state_dict(model_state_dict)
+        print(f"Successfully loaded pretrained weights")
+    else:
+        # Create model from scratch
+        model = ARCDiffusionModel(
+            vocab_size=config['vocab_size'],
+            d_model=config['d_model'],
+            nhead=config['nhead'],
+            num_layers=config['num_layers'],
+            max_size=config['max_size'],
+            max_tasks=dataset_info['num_tasks'],
+            embedding_dropout=config.get('embedding_dropout', 0.1),
+            input_grid_dropout=config.get('input_grid_dropout', 0.0),
+            include_size_head=include_size_head,
+            size_head_hidden_dim=size_head_hidden_dim
+        )
 
     # Compile model with torch.compile for CUDA optimization
     if device.type == 'cuda':

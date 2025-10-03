@@ -71,6 +71,78 @@ Correct!
 - Roll forward on two top grid size predictions. Maybe give a little boost, although grid accuracy is already good.
 
 ## Daily Notes
+### Oct 3rd 2025
+#### AA2-hard Results
+Trained on training-hard + evaluation.
+
+smol:
+Scores zeros.
+
+mediom:
+- simple (halfway model, 32 steps): ?/120
+- simple (best model, 32 steps): ?/120
+- simple (final model, 128 steps): 1/120
+- simple (final model, 32 steps): ?/120
+- sample-40x-augs (final model, 32 steps): ?/120
+
+```bash
+uv run experimental/diffusion/evaluate.py --config experimental/diffusion/configs/mediom_config.json --num-steps 32 --model-path experimental/diffusion/outputs/mediom/halfway_model.pt --stats && \
+uv run experimental/diffusion/evaluate.py --config experimental/diffusion/configs/mediom_config.json --num-steps 32 --model-path experimental/diffusion/outputs/mediom/best_model.pt && \
+uv run experimental/diffusion/evaluate.py --config experimental/diffusion/configs/mediom_config.json --num-steps 32 --model-path experimental/diffusion/outputs/mediom/final_model.pt && \
+uv run experimental/diffusion/evaluate.py --config experimental/diffusion/configs/mediom_config.json --num-steps 32 --maj --model-path experimental/diffusion/outputs/mediom/final_model.pt
+```
+
+hard:
+mediom:
+- simple (halfway model, 32 steps): ?/120
+- simple (best model, 32 steps): ?/120
+- simple (final model, 128 steps): 0/120
+- simple (final model, 32 steps): ?/120
+- sample-40x-augs (final model, 32 steps): ?/120
+
+```bash
+uv run experimental/diffusion/evaluate.py --config experimental/diffusion/configs/lorge_config.json --num-steps 32 --model-path experimental/diffusion/outputs/lorge/halfway_model.pt --stats && \
+uv run experimental/diffusion/evaluate.py --config experimental/diffusion/configs/lorge_config.json --num-steps 32 --model-path experimental/diffusion/outputs/lorge/best_model.pt && \
+uv run experimental/diffusion/evaluate.py --config experimental/diffusion/configs/lorge_config.json --num-steps 32 --model-path experimental/diffusion/outputs/lorge/final_model.pt && \
+uv run experimental/diffusion/evaluate.py --config experimental/diffusion/configs/lorge_config.json --num-steps 32 --maj --model-path experimental/diffusion/outputs/lorge/final_model.pt
+```
+
+### AA2-hard 20x20 Results
+Trained on training-hard + evaluation, but only 20x20 grids.
+
+smol:
+Scores zeros.
+
+mediom:
+Scores zeros on simple final model 128 steps.
+
+- simple (halfway model, 32 steps): ?/120
+- simple (best model, 32 steps): ?/120
+- simple (final model, 128 steps): 0/120
+- simple (final model, 32 steps): ?/120
+- sample-40x-augs (final model, 32 steps): ?/120
+
+```bash
+uv run experimental/diffusion/evaluate.py --config experimental/diffusion/configs/mediom_config.json --num-steps 32 --model-path experimental/diffusion/outputs/mediom/halfway_model.pt --stats && \
+uv run experimental/diffusion/evaluate.py --config experimental/diffusion/configs/mediom_config.json --num-steps 32 --model-path experimental/diffusion/outputs/mediom/best_model.pt && \
+uv run experimental/diffusion/evaluate.py --config experimental/diffusion/configs/mediom_config.json --num-steps 32 --model-path experimental/diffusion/outputs/mediom/final_model.pt && \
+uv run experimental/diffusion/evaluate.py --config experimental/diffusion/configs/mediom_config.json --num-steps 32 --maj --model-path experimental/diffusion/outputs/mediom/final_model.pt
+```
+
+hard:
+- simple (halfway model, 32 steps): ?/120
+- simple (best model, 32 steps): ?/120
+- simple (final model, 128 steps): ?/120
+- simple (final model, 32 steps): ?/120
+- sample-40x-augs (final model, 32 steps): ?/120
+
+```bash
+uv run experimental/diffusion/evaluate.py --config experimental/diffusion/configs/lorge_config.json --num-steps 32 --model-path experimental/diffusion/outputs/lorge/halfway_model.pt --stats && \
+uv run experimental/diffusion/evaluate.py --config experimental/diffusion/configs/lorge_config.json --num-steps 32 --model-path experimental/diffusion/outputs/lorge/best_model.pt && \
+uv run experimental/diffusion/evaluate.py --config experimental/diffusion/configs/lorge_config.json --num-steps 32 --model-path experimental/diffusion/outputs/lorge/final_model.pt && \
+uv run experimental/diffusion/evaluate.py --config experimental/diffusion/configs/lorge_config.json --num-steps 32 --maj --model-path experimental/diffusion/outputs/lorge/final_model.pt
+```
+
 ### Oct 2nd 2025
 ### Restrict to 20x20 grids and train on training-hard + evaluation from aa2.
 
