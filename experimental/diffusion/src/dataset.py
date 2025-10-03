@@ -28,6 +28,7 @@ class ARCDataset(Dataset):
         include_training_test_examples: bool = True,
         subset_file: str = None,
         eval_subset_file: str = None,
+        eval_augment_boost: float = 1.0,
     ):
         """
         Args:
@@ -38,11 +39,13 @@ class ARCDataset(Dataset):
             include_training_test_examples: Whether to include test examples from training_challenges.json as training data
             subset_file: Optional path to text file containing training_challenges task IDs to include (one per line)
             eval_subset_file: Optional path to text file containing evaluation_challenges task IDs to include (one per line)
+            eval_augment_boost: Multiplier for number of augmentations applied to evaluation_challenges tasks
         """
         self.max_size = max_size
         self.augment = augment
         self.n_augment = n_augment
         self.include_training_test_examples = include_training_test_examples
+        self.eval_augment_boost = eval_augment_boost
 
         # Load training subset task IDs if provided
         self.subset_task_ids = None
@@ -82,6 +85,7 @@ class ARCDataset(Dataset):
         """Load data from JSON files and apply task-level augmentation."""
         # First collect all tasks
         all_tasks = {}
+        eval_task_ids = set()  # Track which tasks are from evaluation_challenges
         task_counter = 0
 
         # Infer dataset from data_paths (extract arc-prize-YYYY from first path)
@@ -159,13 +163,18 @@ class ARCDataset(Dataset):
                     continue  # Skip this task
 
                 all_tasks[task_id] = task_examples
+                if is_evaluation_challenges:
+                    eval_task_ids.add(task_id)
 
         # Now apply task-level augmentation and convert to examples
         print(f"Loaded {len(all_tasks)} tasks")
 
         if self.augment:
-            print(f"Applying task-level augmentation with {self.n_augment} augmentations per task")
-            self._apply_task_augmentation(all_tasks)  # Modifies all_tasks in-place
+            if self.eval_augment_boost != 1.0:
+                print(f"Applying task-level augmentation: {self.n_augment} per training task, {int(self.n_augment * self.eval_augment_boost)} per evaluation task")
+            else:
+                print(f"Applying task-level augmentation with {self.n_augment} augmentations per task")
+            self._apply_task_augmentation(all_tasks, eval_task_ids)  # Modifies all_tasks in-place
             print(f"Tasks after augmentation: {len(all_tasks)}")
 
 
@@ -192,7 +201,7 @@ class ARCDataset(Dataset):
                         'color_shift': example.get('color_shift', 0)
                     })
 
-    def _apply_task_augmentation(self, tasks: Dict[str, Dict]):
+    def _apply_task_augmentation(self, tasks: Dict[str, Dict], eval_task_ids: set):
         """Apply task-level augmentation by adding augmentation parameters to examples in-place."""
         # Mapping for flip types to indices
         flip_to_idx = {'none': 0, 'horizontal': 1, 'vertical': 2, 'diagonal': 3}
@@ -204,7 +213,11 @@ class ARCDataset(Dataset):
                 'test': list(task_data['test'])
             }
 
-            for aug_idx in range(self.n_augment):
+            # Determine number of augmentations for this task
+            is_eval_task = task_id in eval_task_ids
+            n_aug = int(self.n_augment * self.eval_augment_boost) if is_eval_task else self.n_augment
+
+            for aug_idx in range(n_aug):
                 # Generate random augmentation parameters
                 flip_type = random.choice(['none', 'none', 'horizontal', 'vertical'])  # 'none' has 2x weight
                 rotation = random.choice([0, 90, 180, 270])

@@ -662,7 +662,8 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         n_augment=config.get('n_augment', 3),
         include_training_test_examples=config.get('include_training_test_examples', True),
         subset_file=config.get('subset_file', None),
-        eval_subset_file=config.get('eval_subset_file', None)
+        eval_subset_file=config.get('eval_subset_file', None),
+        eval_augment_boost=config.get('eval_augment_boost', 1.0)
     )
 
     # Split into train and validation
