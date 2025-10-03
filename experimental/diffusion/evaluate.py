@@ -394,6 +394,166 @@ class DiffusionInference:
 
         return majority_size
 
+    def predict_with_confidence_split_voting(
+        self,
+        input_grid: np.ndarray,
+        task_idx: int,
+        augmentations: List[AugmentationParams],
+        batch_size: int,
+        print_stats: bool = False
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Smart majority voting that:
+        1. Predicts sizes with all augmentations
+        2. Takes top-2 size predictions
+        3. Splits augmentations proportionally to confidence
+        4. Generates outputs for each size
+        5. Pools all predictions and returns top-2 distinct outputs
+
+        Returns:
+            (prediction_1, prediction_2): Top 2 distinct predictions
+        """
+        # Step 1: Get size predictions with majority voting
+        size_predictions = []
+        flip_to_idx = {'none': 0, 'horizontal': 1, 'vertical': 2, 'diagonal': 3}
+
+        for batch_start in range(0, len(augmentations), batch_size):
+            batch_augs = augmentations[batch_start:batch_start + batch_size]
+            batch_inputs = []
+            batch_rotations = []
+            batch_flips = []
+            batch_color_shifts = []
+
+            for aug_params in batch_augs:
+                aug_input = apply_augmentation(input_grid, aug_params)
+                input_tokens, _, _ = grid_to_tokens(aug_input, max_size=self.config['max_size'])
+                batch_inputs.append(input_tokens)
+
+                rotation_idx = aug_params['rotation'] // 90
+                flip_idx = flip_to_idx[aug_params['flip_type']]
+                color_shift_idx = aug_params['color_cycle']
+
+                batch_rotations.append(rotation_idx)
+                batch_flips.append(flip_idx)
+                batch_color_shifts.append(color_shift_idx)
+
+            input_batch = torch.stack(batch_inputs).to(self.device)
+            task_ids = torch.tensor([task_idx] * len(batch_augs)).to(self.device)
+            rotation_batch = torch.tensor(batch_rotations, dtype=torch.long).to(self.device)
+            flip_batch = torch.tensor(batch_flips, dtype=torch.long).to(self.device)
+            color_shift_batch = torch.tensor(batch_color_shifts, dtype=torch.long).to(self.device)
+
+            with torch.no_grad():
+                pred_heights, pred_widths = self.model.predict_sizes(
+                    input_batch, task_ids, rotation_batch, flip_batch, color_shift_batch
+                )
+
+            for i, aug_params in enumerate(batch_augs):
+                pred_height = pred_heights[i].item()
+                pred_width = pred_widths[i].item()
+                deaug_height, deaug_width = deaugment_size(pred_height, pred_width, aug_params)
+                size_predictions.append((deaug_height, deaug_width))
+
+        # Step 2: Get top-2 size predictions and their counts
+        size_counter = Counter(size_predictions)
+        top_2_sizes = size_counter.most_common(2)
+
+        if print_stats:
+            print(f"  Size prediction histogram (n={len(augmentations)}):")
+            for size, cnt in size_counter.most_common(5):
+                print(f"    {size[0]}×{size[1]}: {cnt} ({cnt/len(augmentations):.1%})")
+
+        # Handle case where there's only 1 unique size
+        if len(top_2_sizes) == 1:
+            size1, count1 = top_2_sizes[0]
+            size2, count2 = size1, 0  # Duplicate the only size
+        else:
+            size1, count1 = top_2_sizes[0]
+            size2, count2 = top_2_sizes[1]
+
+        # Step 3: Split augmentations proportionally
+        # Assign each augmentation to size1 or size2 based on their relative confidence
+        size1_augmentations = []
+        size2_augmentations = []
+
+        for i, (aug, size_pred) in enumerate(zip(augmentations, size_predictions)):
+            if size_pred == size1:
+                size1_augmentations.append(aug)
+            elif size_pred == size2:
+                size2_augmentations.append(aug)
+            else:
+                # For other sizes, assign proportionally to top-2
+                if len(size1_augmentations) < count1:
+                    size1_augmentations.append(aug)
+                else:
+                    size2_augmentations.append(aug)
+
+        if print_stats:
+            print(f"  Split: {len(size1_augmentations)} augs for {size1[0]}×{size1[1]}, {len(size2_augmentations)} augs for {size2[0]}×{size2[1]}")
+
+        # Step 4: Generate outputs for each size
+        all_predictions = []
+
+        for target_size, size_augs in [(size1, size1_augmentations), (size2, size2_augmentations)]:
+            if not size_augs:
+                continue
+
+            pred_height, pred_width = target_size
+
+            for batch_start in range(0, len(size_augs), batch_size):
+                batch_augs = size_augs[batch_start:batch_start + batch_size]
+                batch_inputs = []
+                batch_rotations = []
+                batch_flips = []
+                batch_color_shifts = []
+
+                for aug_params in batch_augs:
+                    aug_input = apply_augmentation(input_grid, aug_params)
+                    input_tokens, _, _ = grid_to_tokens(aug_input, max_size=self.config['max_size'])
+                    batch_inputs.append(input_tokens)
+
+                    rotation_idx = aug_params['rotation'] // 90
+                    flip_idx = flip_to_idx[aug_params['flip_type']]
+                    color_shift_idx = aug_params['color_cycle']
+
+                    batch_rotations.append(rotation_idx)
+                    batch_flips.append(flip_idx)
+                    batch_color_shifts.append(color_shift_idx)
+
+                input_batch = torch.stack(batch_inputs).to(self.device)
+                task_ids = torch.tensor([task_idx] * len(batch_augs)).to(self.device)
+                rotation_batch = torch.tensor(batch_rotations, dtype=torch.long).to(self.device)
+                flip_batch = torch.tensor(batch_flips, dtype=torch.long).to(self.device)
+                color_shift_batch = torch.tensor(batch_color_shifts, dtype=torch.long).to(self.device)
+
+                predicted_grids, _, _ = self.sample_with_steps(
+                    input_batch, task_ids, pred_height, pred_width,
+                    rotation=rotation_batch, flip=flip_batch, color_shift=color_shift_batch
+                )
+
+                for i, aug_params in enumerate(batch_augs):
+                    pred_grid = predicted_grids[i].cpu().numpy()
+                    pred_grid = pred_grid[:pred_height, :pred_width]
+                    deaug_pred = reverse_augmentation(pred_grid, aug_params)
+                    all_predictions.append(deaug_pred)
+
+        # Step 5: Pool and get top-2 distinct predictions
+        pred_tuples = [tuple(map(tuple, pred)) for pred in all_predictions]
+        pred_counter = Counter(pred_tuples)
+
+        if print_stats:
+            unique_preds = len(pred_counter)
+            print(f"  Output prediction histogram (n={len(all_predictions)}, unique={unique_preds}):")
+            for i, (pred_tuple, cnt) in enumerate(pred_counter.most_common(min(5, unique_preds))):
+                print(f"    Prediction {i+1}: {cnt} ({cnt/len(all_predictions):.1%})")
+
+        # Get top 2 distinct predictions
+        top_preds = pred_counter.most_common(2)
+        pred1 = np.array(top_preds[0][0])
+        pred2 = np.array(top_preds[1][0]) if len(top_preds) > 1 else pred1
+
+        return pred1, pred2
+
     def predict_with_majority_voting(
         self,
         input_grid: np.ndarray,
@@ -898,27 +1058,36 @@ class DiffusionInference:
                 print(f"   - Dataset: {dataset}")
                 raise ValueError(f"No solution found for task {task_id}, test example {test_idx}")
 
-            # Run two attempts for pass@2
-            # Only visualize the first test example if requested (and not using majority voting)
-            if visualize and test_idx == 0 and not use_majority_voting:
-                attempt_1_result = self._run_attempt(input_grid, expected_output, test_idx=test_idx, task_idx=task_idx, task_id=task_id, capture_steps=True, use_majority_voting=use_majority_voting, n_augment=n_augment, print_stats=print_stats)
-                attempt_1, intermediate_steps = attempt_1_result
-
-                # Create visualization
-                output_dir = Path(self.config.get('output_dir', 'experimental/diffusion/outputs'))
-                output_dir.mkdir(parents=True, exist_ok=True)
-                vis_path = output_dir / f"denoising_progression_{task_id}_test{test_idx}.png"
-                self.visualize_denoising_progression(
-                    input_grid,
-                    expected_output,
-                    intermediate_steps,
-                    f"{task_id}_test{test_idx}",
-                    save_path=str(vis_path)
+            # Run attempts for pass@2
+            if use_majority_voting:
+                # Use smart voting: one call generates both attempts via confidence splitting
+                attempt_1, attempt_2 = self._run_smart_voting(
+                    input_grid, expected_output, test_idx=test_idx, task_idx=task_idx,
+                    task_id=task_id, n_augment=n_augment, print_stats=print_stats
                 )
             else:
-                attempt_1 = self._run_attempt(input_grid, expected_output, test_idx=test_idx, task_idx=task_idx, task_id=task_id, capture_steps=False, use_majority_voting=use_majority_voting, n_augment=n_augment, print_stats=print_stats)
+                # Run two independent attempts
+                # Only visualize the first test example if requested
+                if visualize and test_idx == 0:
+                    attempt_1_result = self._run_attempt(input_grid, expected_output, test_idx=test_idx, task_idx=task_idx, task_id=task_id, capture_steps=True, use_majority_voting=False, n_augment=n_augment, print_stats=print_stats)
+                    attempt_1, intermediate_steps = attempt_1_result
 
-            attempt_2 = self._run_attempt(input_grid, expected_output, test_idx=test_idx, task_idx=task_idx, task_id=task_id, capture_steps=False, use_majority_voting=use_majority_voting, n_augment=n_augment, print_stats=print_stats)
+                    # Create visualization
+                    output_dir = Path(self.config.get('output_dir', 'experimental/diffusion/outputs'))
+                    output_dir.mkdir(parents=True, exist_ok=True)
+                    vis_path = output_dir / f"denoising_progression_{task_id}_test{test_idx}.png"
+                    self.visualize_denoising_progression(
+                        input_grid,
+                        expected_output,
+                        intermediate_steps,
+                        f"{task_id}_test{test_idx}",
+                        save_path=str(vis_path)
+                    )
+                else:
+                    attempt_1 = self._run_attempt(input_grid, expected_output, test_idx=test_idx, task_idx=task_idx, task_id=task_id, capture_steps=False, use_majority_voting=False, n_augment=n_augment, print_stats=print_stats)
+
+                # For attempt 2, don't print stats to avoid duplicate output
+                attempt_2 = self._run_attempt(input_grid, expected_output, test_idx=test_idx, task_idx=task_idx, task_id=task_id, capture_steps=False, use_majority_voting=False, n_augment=n_augment, print_stats=False)
 
             # Calculate pass@2 for this test example
             pass_at_2 = attempt_1["correct"] or attempt_2["correct"]
@@ -948,6 +1117,59 @@ class DiffusionInference:
             task_score=task_score,
             num_train_examples=len(task_data["train"])
         )
+
+    def _run_smart_voting(self, input_grid: np.ndarray, expected_output: np.ndarray, test_idx: int, task_idx: int, task_id: str = None, n_augment: int = 40, print_stats: bool = False) -> tuple[DiffusionResult, DiffusionResult]:
+        """
+        Run smart confidence-split majority voting that returns top-2 predictions.
+        Uses only n_augment total predictions (not 2*n_augment).
+        """
+        # Generate augmentations once
+        augmentations = generate_augmentations(n_augment)
+
+        if print_stats:
+            print(f"\n🔮 Smart majority voting for {task_id} test {test_idx}:")
+
+        # Get top-2 predictions using confidence-split voting
+        pred1, pred2 = self.predict_with_confidence_split_voting(
+            input_grid, task_idx, augmentations, batch_size=n_augment, print_stats=print_stats
+        )
+
+        # Check correctness for both predictions
+        def check_prediction(predicted_grid):
+            correct = False
+            error = None
+            if len(expected_output) > 0 and len(predicted_grid) > 0:
+                try:
+                    if predicted_grid.shape == expected_output.shape:
+                        correct = np.array_equal(predicted_grid, expected_output)
+                    else:
+                        error = f"Shape mismatch: predicted {predicted_grid.shape} vs expected {expected_output.shape}"
+                except Exception as e:
+                    error = f"Comparison failed: {str(e)}"
+            elif len(predicted_grid) == 0:
+                error = "No valid region extracted from prediction"
+
+            # Compute copy statistics
+            copy_stats = None
+            if error is None and len(predicted_grid) > 0 and len(expected_output) > 0:
+                copy_stats = self.compute_copy_stats(predicted_grid, input_grid, expected_output)
+
+            return {
+                "predicted_grid": predicted_grid.tolist() if len(predicted_grid) > 0 else [],
+                "expected": expected_output.tolist(),
+                "correct": correct,
+                "error": error,
+                "pred_height": predicted_grid.shape[0] if len(predicted_grid) > 0 else 0,
+                "pred_width": predicted_grid.shape[1] if len(predicted_grid) > 0 else 0,
+                "size_source": "confidence_split_voting",
+                "copy_stats": copy_stats,
+                "trajectory_stats": None
+            }
+
+        result1 = check_prediction(pred1)
+        result2 = check_prediction(pred2)
+
+        return result1, result2
 
     def _run_attempt(self, input_grid: np.ndarray, expected_output: np.ndarray, test_idx: int, task_idx: int, task_id: str = None, capture_steps: bool = False, use_majority_voting: bool = False, n_augment: int = 40, print_stats: bool = False) -> DiffusionResult:
         """Run a single diffusion attempt with copy and trajectory statistics"""
