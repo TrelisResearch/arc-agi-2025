@@ -1012,7 +1012,9 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         return model
 
     # Progress bar for optimizer steps
-    progress_bar = tqdm(range(optimizer_steps), desc="Training")
+    gradient_accumulation_steps = config.get('gradient_accumulation_steps', 1)
+    total_train_steps = optimizer_steps * gradient_accumulation_steps
+    progress_bar = tqdm(range(total_train_steps), desc="Training")
 
     # Track halfway checkpoint
     halfway_step = optimizer_steps // 2
@@ -1035,7 +1037,9 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             if key in losses:
                 epoch_losses[key] += losses[key]
         num_batches_this_epoch += 1
-        step = step_idx + 1
+
+        # Use actual optimizer step count from trainer
+        step = trainer.global_step
 
         # Update progress bar
         current_epoch_approx = step / steps_per_epoch
@@ -1044,113 +1048,116 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             'grid': f"{losses['grid_loss']:.4f}",
             'acc': f"{losses.get('accuracy', 0.0):.3f}",
             'grad': f"{losses['grad_norm']:.2f}",
-            'epoch': f"{current_epoch_approx:.1f}"
+            'epoch': f"{current_epoch_approx:.1f}",
+            'opt_step': step
         })
 
-        # Log to wandb
-        if config.get('use_wandb', False) and step % config.get('log_every', 50) == 0:
-            log_dict = {f"train/{key}": value for key, value in losses.items()}
-            log_dict["train/learning_rate"] = trainer.scheduler.get_last_lr()[0]
-            log_dict["train/step"] = step
-            log_dict["train/epoch"] = current_epoch_approx
-            wandb.log(log_dict, step=step)
+        # Only log/validate/checkpoint when optimizer actually stepped
+        if trainer.accumulation_step == 0:
+            # Log to wandb
+            if config.get('use_wandb', False) and step % config.get('log_every', 50) == 0:
+                log_dict = {f"train/{key}": value for key, value in losses.items()}
+                log_dict["train/learning_rate"] = trainer.scheduler.get_last_lr()[0]
+                log_dict["train/step"] = step
+                log_dict["train/epoch"] = current_epoch_approx
+                wandb.log(log_dict, step=step)
 
-        # Check if we've completed an epoch for printing
-        if step % steps_per_epoch == 0:
-            current_epoch = step // steps_per_epoch
-            print(f"\nCompleted epoch {current_epoch} (step {step})")
+            # Check if we've completed an epoch for printing
+            if step % steps_per_epoch == 0:
+                current_epoch = step // steps_per_epoch
+                print(f"\nCompleted epoch {current_epoch} (step {step})")
 
-        # Validation based on step intervals (not epoch boundaries)
-        val_every_steps = config.get('val_every_steps', steps_per_epoch)  # Default to every epoch
-        if step % val_every_steps == 0:
-            # Calculate average training losses for this validation period
-            avg_train_losses = {key: total / num_batches_this_epoch for key, total in epoch_losses.items()}
+            # Validation based on step intervals (not epoch boundaries)
+            val_every_steps = config.get('val_every_steps', steps_per_epoch)  # Default to every epoch
+            if step > 0 and step % val_every_steps == 0:
+                # Calculate average training losses for this validation period
+                avg_train_losses = {key: total / num_batches_this_epoch for key, total in epoch_losses.items()}
 
-            print("Running validation...")
-            val_losses = trainer.validate(val_loader, num_batches=config.get('max_val_batches', 10))
+                print("Running validation...")
+                val_losses = trainer.validate(val_loader, num_batches=config.get('max_val_batches', 10))
 
-            # Print key validation metrics in a readable format
-            print(f"Validation losses: {val_losses}")
+                # Print key validation metrics in a readable format
+                print(f"Validation losses: {val_losses}")
 
-            # Print timestep bucket summary if available
-            if any(key.endswith('_count') for key in val_losses.keys()):
-                print("Timestep bucket breakdown:")
-                for bucket in ['low_noise', 'mid_noise', 'high_noise']:
-                    if f'{bucket}_count' in val_losses:
-                        acc = val_losses.get(f'{bucket}_accuracy', 0.0)
-                        count = val_losses.get(f'{bucket}_count', 0)
-                        print(f"  {bucket:10s}: acc={acc:.3f}, count={count:4.0f}")
+                # Print timestep bucket summary if available
+                if any(key.endswith('_count') for key in val_losses.keys()):
+                    print("Timestep bucket breakdown:")
+                    for bucket in ['low_noise', 'mid_noise', 'high_noise']:
+                        if f'{bucket}_count' in val_losses:
+                            acc = val_losses.get(f'{bucket}_accuracy', 0.0)
+                            count = val_losses.get(f'{bucket}_count', 0)
+                            print(f"  {bucket:10s}: acc={acc:.3f}, count={count:4.0f}")
 
-            overall_acc = val_losses.get('accuracy', 0.0)
-            print(f"Overall: acc={overall_acc:.3f}")
+                overall_acc = val_losses.get('accuracy', 0.0)
+                print(f"Overall: acc={overall_acc:.3f}")
 
-            # Log validation losses
-            if config.get('use_wandb', False):
-                val_log_dict = {f"val/{key}": value for key, value in val_losses.items()}
-                val_log_dict["val/learning_rate"] = trainer.scheduler.get_last_lr()[0]
-                val_log_dict["val/step"] = step
-                val_log_dict["val/epoch"] = current_epoch_approx
-                wandb.log(val_log_dict, step=step)
+                # Log validation losses
+                if config.get('use_wandb', False):
+                    val_log_dict = {f"val/{key}": value for key, value in val_losses.items()}
+                    val_log_dict["val/learning_rate"] = trainer.scheduler.get_last_lr()[0]
+                    val_log_dict["val/step"] = step
+                    val_log_dict["val/epoch"] = current_epoch_approx
+                    wandb.log(val_log_dict, step=step)
 
-            # Save best model (weights only to save space)
-            if val_losses['total_loss'] < best_val_loss:
-                best_val_loss = val_losses['total_loss']
-                # Save model in bfloat16 without modifying the original
-                model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
-                save_dict = {
-                    'model_state_dict': model_state_dict_bf16,
-                    'config': config,
-                    'dataset_info': dataset_info
+                # Save best model (weights only to save space)
+                if val_losses['total_loss'] < best_val_loss:
+                    best_val_loss = val_losses['total_loss']
+                    # Save model in bfloat16 without modifying the original
+                    model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
+                    save_dict = {
+                        'model_state_dict': model_state_dict_bf16,
+                        'config': config,
+                        'dataset_info': dataset_info
+                    }
+                    # Save EMA state if available
+                    if trainer.ema is not None:
+                        save_dict['ema_state_dict'] = trainer.ema.state_dict()
+                    torch.save(save_dict, output_dir / 'best_model.pt')
+                    print(f"Saved best model with val loss: {best_val_loss:.4f}")
+
+                # Save halfway checkpoint
+                if step >= halfway_step and not halfway_saved:
+                    halfway_saved = True
+                    model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
+                    save_dict = {
+                        'model_state_dict': model_state_dict_bf16,
+                        'config': config,
+                        'dataset_info': dataset_info,
+                        'step': step
+                    }
+                    # Save EMA state if available
+                    if trainer.ema is not None:
+                        save_dict['ema_state_dict'] = trainer.ema.state_dict()
+                    torch.save(save_dict, output_dir / 'halfway_model.pt')
+                    print(f"Saved halfway checkpoint at step {step} ({step/optimizer_steps:.0%} of training)")
+
+                # Create denoising progression visualization
+                vis_every_steps = config.get('vis_every_steps', val_every_steps)  # Default to same as validation
+                if step % vis_every_steps == 0:
+                    try:
+                        create_denoising_progression_visualization(
+                            model=model,
+                            noise_scheduler=noise_scheduler,
+                            val_dataset=val_dataset,
+                            device=device,
+                            output_dir=output_dir,
+                            step=step,
+                            config=config
+                        )
+                    except Exception as e:
+                        print(f"⚠️ Failed to create denoising visualization: {e}")
+
+                # Print validation summary
+                current_lr = trainer.scheduler.get_last_lr()[0]
+                print(f"Step {step} - Train Loss: {avg_train_losses['total_loss']:.4f}, Grad Norm: {avg_train_losses['grad_norm']:.3f}, LR: {current_lr:.6f}")
+
+                # Reset validation period tracking
+                epoch_losses = {
+                    'total_loss': 0.0,
+                    'grid_loss': 0.0,
+                    'grad_norm': 0.0
                 }
-                # Save EMA state if available
-                if trainer.ema is not None:
-                    save_dict['ema_state_dict'] = trainer.ema.state_dict()
-                torch.save(save_dict, output_dir / 'best_model.pt')
-                print(f"Saved best model with val loss: {best_val_loss:.4f}")
-
-            # Save halfway checkpoint
-            if step >= halfway_step and not halfway_saved:
-                halfway_saved = True
-                model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
-                save_dict = {
-                    'model_state_dict': model_state_dict_bf16,
-                    'config': config,
-                    'dataset_info': dataset_info,
-                    'step': step
-                }
-                # Save EMA state if available
-                if trainer.ema is not None:
-                    save_dict['ema_state_dict'] = trainer.ema.state_dict()
-                torch.save(save_dict, output_dir / 'halfway_model.pt')
-                print(f"Saved halfway checkpoint at step {step} ({step/optimizer_steps:.0%} of training)")
-
-            # Create denoising progression visualization
-            vis_every_steps = config.get('vis_every_steps', val_every_steps)  # Default to same as validation
-            if step % vis_every_steps == 0:
-                try:
-                    create_denoising_progression_visualization(
-                        model=model,
-                        noise_scheduler=noise_scheduler,
-                        val_dataset=val_dataset,
-                        device=device,
-                        output_dir=output_dir,
-                        step=step,
-                        config=config
-                    )
-                except Exception as e:
-                    print(f"⚠️ Failed to create denoising visualization: {e}")
-
-            # Print validation summary
-            current_lr = trainer.scheduler.get_last_lr()[0]
-            print(f"Step {step} - Train Loss: {avg_train_losses['total_loss']:.4f}, Grad Norm: {avg_train_losses['grad_norm']:.3f}, LR: {current_lr:.6f}")
-
-            # Reset validation period tracking
-            epoch_losses = {
-                'total_loss': 0.0,
-                'grid_loss': 0.0,
-                'grad_norm': 0.0
-            }
-            num_batches_this_epoch = 0
+                num_batches_this_epoch = 0
 
         # Early stopping based on steps if configured
         if config.get('early_stop_steps') and step >= config['early_stop_steps']:
