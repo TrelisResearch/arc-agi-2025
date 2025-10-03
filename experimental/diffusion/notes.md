@@ -82,11 +82,11 @@ smol:
 Scores zeros.
 
 mediom:
-- simple (halfway model, 32 steps): 0/120
-- simple (best model, 32 steps): 1/120
-- simple (final model, 128 steps): 1/120
-- simple (final model, 32 steps): 1/120
-- sample-40x-augs (final model, 32 steps): 1/120
+- simple (halfway model, 32 steps): 0%
+- simple (best model, 32 steps): 0.83%
+- simple (final model, 128 steps): 0.83%
+- simple (final model, 32 steps): 0.83%
+- sample-40x-augs (final model, 32 steps): 0.83%
 
 ```bash
 uv run experimental/diffusion/evaluate.py --config experimental/diffusion/configs/mediom_config.json --num-steps 32 --model-path experimental/diffusion/outputs/mediom/halfway_model.pt --stats && \
@@ -96,12 +96,11 @@ uv run experimental/diffusion/evaluate.py --config experimental/diffusion/config
 ```
 
 hard:
-mediom:
-- simple (halfway model, 32 steps): ?/120
-- simple (best model, 32 steps): ?/120
-- simple (final model, 128 steps): 0/120
-- simple (final model, 32 steps): ?/120
-- sample-40x-augs (final model, 32 steps): ?/120
+- simple (halfway model, 32 steps): 0%
+- simple (best model, 32 steps): 0.42%
+- simple (final model, 128 steps): 0%
+- simple (final model, 32 steps): 0.83%
+- sample-40x-augs (final model, 32 steps): 1.2%but 
 
 ```bash
 uv run experimental/diffusion/evaluate.py --config experimental/diffusion/configs/lorge_config.json --num-steps 32 --model-path experimental/diffusion/outputs/lorge/halfway_model.pt --stats && \

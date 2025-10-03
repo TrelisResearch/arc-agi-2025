@@ -718,6 +718,30 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             print("Detected torch.compile checkpoint - stripping _orig_mod. prefix")
             model_state_dict = {k.replace('_orig_mod.', ''): v for k, v in model_state_dict.items()}
 
+        # Determine max_tasks: need to accommodate both pretrained tasks AND new tasks
+        pretrained_max_tasks = 0
+        pretrained_task_ids = set()
+        if 'dataset_info' in checkpoint and 'num_tasks' in checkpoint['dataset_info']:
+            pretrained_max_tasks = checkpoint['dataset_info']['num_tasks']
+            # Get pretrained task IDs if available
+            if 'task_id_to_idx' in checkpoint['dataset_info']:
+                pretrained_task_ids = set(checkpoint['dataset_info']['task_id_to_idx'].keys())
+
+        current_task_ids = set(dataset_info['task_id_to_idx'].keys())
+        new_task_ids = current_task_ids - pretrained_task_ids
+
+        # max_tasks = max of pretrained tasks OR current tasks (whichever is larger)
+        # This handles: 1) fine-tuning on subset, 2) adding new tasks, 3) combination
+        max_tasks = max(pretrained_max_tasks, dataset_info['num_tasks'])
+
+        if pretrained_max_tasks > 0:
+            print(f"Pretrained model: {pretrained_max_tasks} tasks")
+            print(f"Current dataset: {dataset_info['num_tasks']} tasks")
+            if new_task_ids:
+                print(f"New tasks detected: {len(new_task_ids)} tasks will get fresh embeddings")
+                print(f"  New task IDs: {list(new_task_ids)[:5]}{'...' if len(new_task_ids) > 5 else ''}")
+            print(f"Using max_tasks={max_tasks}")
+
         # Create model with same architecture
         model = ARCDiffusionModel(
             vocab_size=config['vocab_size'],
@@ -725,25 +749,60 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             nhead=config['nhead'],
             num_layers=config['num_layers'],
             max_size=config['max_size'],
-            max_tasks=dataset_info['num_tasks'],
+            max_tasks=max_tasks,
             embedding_dropout=config.get('embedding_dropout', 0.1),
             input_grid_dropout=config.get('input_grid_dropout', 0.0),
             include_size_head=include_size_head,
             size_head_hidden_dim=size_head_hidden_dim
         )
 
-        # Load pretrained weights (with strict=False to handle size mismatches)
-        incompatible_keys = model.load_state_dict(model_state_dict, strict=False)
+        # Filter out incompatible keys (size mismatches) and handle partial task embedding loading
+        model_state = model.state_dict()
+        filtered_state_dict = {}
+        skipped_keys = []
+        partially_loaded_keys = []
+
+        for key, value in model_state_dict.items():
+            if key in model_state:
+                # Check if shapes match
+                if model_state[key].shape == value.shape:
+                    filtered_state_dict[key] = value
+                elif key == 'denoiser.task_embedding.weight' and value.shape[0] <= model_state[key].shape[0]:
+                    # Partial load: pretrained task embedding is smaller than or equal to new model
+                    # Copy pretrained embeddings, leave new task embeddings randomly initialized
+                    print(f"Partially loading task_embedding: copying {value.shape[0]} embeddings, leaving {model_state[key].shape[0] - value.shape[0]} new embeddings")
+                    filtered_state_dict[key] = model_state[key].clone()
+                    filtered_state_dict[key][:value.shape[0]] = value
+                    partially_loaded_keys.append(f"{key} (partial: {value.shape[0]}/{model_state[key].shape[0]})")
+                else:
+                    # Skip keys with shape mismatch
+                    skipped_keys.append(f"{key} (shape mismatch: {value.shape} vs {model_state[key].shape})")
+            else:
+                # Key not in model (shouldn't happen after _orig_mod stripping, but handle it)
+                skipped_keys.append(f"{key} (not in model)")
+
+        # Load compatible weights
+        incompatible_keys = model.load_state_dict(filtered_state_dict, strict=False)
 
         # Report what was loaded vs skipped
-        if incompatible_keys.missing_keys or incompatible_keys.unexpected_keys:
-            print(f"Successfully loaded pretrained weights with some incompatibilities:")
-            if incompatible_keys.missing_keys:
-                print(f"  Missing keys (will be randomly initialized): {incompatible_keys.missing_keys}")
-            if incompatible_keys.unexpected_keys:
-                print(f"  Unexpected keys (ignored): {incompatible_keys.unexpected_keys}")
-        else:
-            print(f"Successfully loaded pretrained weights")
+        print(f"Successfully loaded pretrained weights:")
+        print(f"  Loaded: {len(filtered_state_dict)}/{len(model_state_dict)} parameters")
+        if partially_loaded_keys:
+            print(f"  Partially loaded {len(partially_loaded_keys)} parameters:")
+            for key in partially_loaded_keys:
+                print(f"    - {key}")
+        if skipped_keys:
+            print(f"  Skipped {len(skipped_keys)} parameters (will be randomly initialized):")
+            for key in skipped_keys[:5]:  # Show first 5
+                print(f"    - {key}")
+            if len(skipped_keys) > 5:
+                print(f"    ... and {len(skipped_keys) - 5} more")
+        if incompatible_keys.missing_keys:
+            print(f"  Missing keys (randomly initialized): {len(incompatible_keys.missing_keys)}")
+            for key in list(incompatible_keys.missing_keys)[:5]:
+                print(f"    - {key}")
+            if len(incompatible_keys.missing_keys) > 5:
+                print(f"    ... and {len(incompatible_keys.missing_keys) - 5} more")
     else:
         # Create model from scratch
         model = ARCDiffusionModel(
