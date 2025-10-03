@@ -72,6 +72,9 @@ Correct!
 
 ## Daily Notes
 ### Oct 3rd 2025
+#### Support pre-training and LoRA
+
+
 #### AA2-hard Results
 Trained on training-hard + evaluation.
 
@@ -79,11 +82,11 @@ smol:
 Scores zeros.
 
 mediom:
-- simple (halfway model, 32 steps): ?/120
-- simple (best model, 32 steps): ?/120
+- simple (halfway model, 32 steps): 0/120
+- simple (best model, 32 steps): 1/120
 - simple (final model, 128 steps): 1/120
-- simple (final model, 32 steps): ?/120
-- sample-40x-augs (final model, 32 steps): ?/120
+- simple (final model, 32 steps): 1/120
+- sample-40x-augs (final model, 32 steps): 1/120
 
 ```bash
 uv run experimental/diffusion/evaluate.py --config experimental/diffusion/configs/mediom_config.json --num-steps 32 --model-path experimental/diffusion/outputs/mediom/halfway_model.pt --stats && \

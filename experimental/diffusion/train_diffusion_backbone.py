@@ -52,9 +52,11 @@ def load_and_flatten_config(config_path: str) -> dict:
         if section in config:
             flat_config.update(config[section])
 
-    # Keep auxiliary_loss as nested dict (expected by training.py)
+    # Keep auxiliary_loss and lora as nested dicts (expected by training.py)
     if 'auxiliary_loss' in config:
         flat_config['auxiliary_loss'] = config['auxiliary_loss']
+    if 'lora' in config:
+        flat_config['lora'] = config['lora']
 
     return flat_config
 

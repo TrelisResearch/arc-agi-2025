@@ -744,6 +744,53 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             size_head_hidden_dim=size_head_hidden_dim
         )
 
+    # Apply LoRA if configured
+    use_lora = config.get('lora', {}).get('enabled', False)
+    if use_lora:
+        from experimental.diffusion.utils.lora import (
+            replace_linear_with_lora,
+            mark_only_lora_as_trainable,
+            print_lora_info
+        )
+
+        lora_config = config['lora']
+        rank = lora_config.get('rank', 8)
+        lora_alpha = lora_config.get('alpha', 16.0)
+        lora_dropout = lora_config.get('dropout', 0.0)
+
+        # Target attention out_proj and MLP (linear1, linear2) in all transformer layers
+        # Also target size head if present
+        # Based on actual model structure:
+        #   - denoiser.transformer.layers.*.self_attn.out_proj (attention output projection)
+        #   - denoiser.transformer.layers.*.linear1 (MLP first layer)
+        #   - denoiser.transformer.layers.*.linear2 (MLP second layer)
+        #   - size_head.* (size prediction head layers)
+        #   - height_head, width_head (size output heads)
+        target_modules = ['self_attn.out_proj', 'linear1', 'linear2']
+
+        if include_size_head:
+            target_modules.extend(['size_head', 'height_head', 'width_head'])
+
+        print(f"\n🔧 Applying LoRA with rank={rank}, alpha={lora_alpha}, dropout={lora_dropout}")
+        print(f"🎯 Target modules: {target_modules}")
+
+        # Replace linear layers with LoRA versions
+        replaced = replace_linear_with_lora(
+            model,
+            rank=rank,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+            target_modules=target_modules
+        )
+
+        # Freeze all non-LoRA parameters
+        trainable_params = mark_only_lora_as_trainable(model)
+
+        # Print LoRA info
+        print_lora_info(model)
+        print(f"  Total trainable parameters: {trainable_params:,}")
+        print(f"  Replaced {len(replaced)} modules with LoRA")
+
     # Compile model with torch.compile for CUDA optimization
     if device.type == 'cuda':
         print("Compiling model with torch.compile(mode='max-autotune')...")
@@ -996,8 +1043,26 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             print(f"Early stopping after {step} steps")
             break
 
-    # Save final model (weights only to save space)
-    model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
+    # Merge LoRA weights if using LoRA
+    if config.get('lora', {}).get('enabled', False):
+        from experimental.diffusion.utils.lora import merge_lora_weights
+        print("\n🔧 Merging LoRA weights into base model...")
+        merge_lora_weights(model)
+        print("✅ LoRA weights merged successfully")
+
+        # Extract clean state dict (only base weights, not LoRA parameters)
+        state_dict = model.state_dict()
+        clean_state_dict = {}
+        for key, value in state_dict.items():
+            # Skip LoRA-specific parameters (lora_A, lora_B)
+            if 'lora_A' in key or 'lora_B' in key:
+                continue
+            clean_state_dict[key] = value
+
+        model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in clean_state_dict.items()}
+    else:
+        # Save final model (weights only to save space)
+        model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
     save_dict = {
         'model_state_dict': model_state_dict_bf16,
         'config': config,
