@@ -732,9 +732,18 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             size_head_hidden_dim=size_head_hidden_dim
         )
 
-        # Load pretrained weights
-        model.load_state_dict(model_state_dict)
-        print(f"Successfully loaded pretrained weights")
+        # Load pretrained weights (with strict=False to handle size mismatches)
+        incompatible_keys = model.load_state_dict(model_state_dict, strict=False)
+
+        # Report what was loaded vs skipped
+        if incompatible_keys.missing_keys or incompatible_keys.unexpected_keys:
+            print(f"Successfully loaded pretrained weights with some incompatibilities:")
+            if incompatible_keys.missing_keys:
+                print(f"  Missing keys (will be randomly initialized): {incompatible_keys.missing_keys}")
+            if incompatible_keys.unexpected_keys:
+                print(f"  Unexpected keys (ignored): {incompatible_keys.unexpected_keys}")
+        else:
+            print(f"Successfully loaded pretrained weights")
     else:
         # Create model from scratch
         model = ARCDiffusionModel(
