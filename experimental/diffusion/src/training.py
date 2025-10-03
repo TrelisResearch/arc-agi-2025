@@ -36,7 +36,8 @@ class ARCDiffusionTrainer:
         use_ema: bool = True,
         ema_decay: float = 0.9995,
         ema_warmup_steps: int = 1000,
-        gradient_accumulation_steps: int = 1
+        gradient_accumulation_steps: int = 1,
+        lr_warmup_steps: int = None
     ):
         self.model = model
         self.noise_scheduler = noise_scheduler
@@ -87,7 +88,10 @@ class ARCDiffusionTrainer:
             print("Using fused AdamW optimizer")
 
         # Learning rate scheduler with linear warmup
-        warmup_steps = int(0.05 * total_steps)  # 5% warmup
+        if lr_warmup_steps is None:
+            warmup_steps = int(0.05 * total_steps)  # 5% warmup (fallback)
+        else:
+            warmup_steps = lr_warmup_steps
 
         # Create warmup scheduler (linear from 0 to max_lr)
         warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
@@ -940,7 +944,8 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         use_ema=config.get('use_ema', True),
         ema_decay=config.get('ema_decay', 0.9995),
         ema_warmup_steps=config.get('ema_warmup_steps', 1000),
-        gradient_accumulation_steps=config.get('gradient_accumulation_steps', 1)
+        gradient_accumulation_steps=config.get('gradient_accumulation_steps', 1),
+        lr_warmup_steps=config.get('lr_warmup_steps', None)
     )
 
     print(f"Model has {sum(p.numel() for p in model.parameters()):,} parameters")
