@@ -1456,7 +1456,7 @@ def main():
     parser.add_argument("--model-path", help="Override model path (defaults to final_model.pt in config output dir)")
     parser.add_argument("--prefer-best", action="store_true", help="Use best_model.pt instead of final_model.pt as default")
     parser.add_argument("--device", choices=["cpu", "cuda", "mps", "auto"], default="auto", help="Device to use (default: auto)")
-    parser.add_argument("--num-steps", type=int, help="Number of inference steps (default: use training steps)")
+    parser.add_argument("--num-steps", type=int, default=32, help="Number of inference steps (default: 32)")
 
     # Data settings with defaults (config takes precedence if specified)
     parser.add_argument("--dataset", help="Dataset to use (overrides config if specified)")

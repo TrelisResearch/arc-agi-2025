@@ -38,10 +38,15 @@ Correct!
 
 ## Daily Notes
 ### Oct 3rd 2025
-#### Training huoge
+#### Training huoge on aa2 boost strategy
 Moving to train a 270M model.
 
 The training data will have 39 augmentations for aa2 training tasks and 390 augmentations for each evaluation task (where only train, not test grids are included).
+
+Note that we are now seeing three tasks at least partially solved:
+- 981571dc solved fully by mediom and lorge
+- 269e22fb partially solved by lorge
+- 71e489b6 partially solved by smol boost
 
 Run all of those commands in series on the same gpu:
 ```bash
