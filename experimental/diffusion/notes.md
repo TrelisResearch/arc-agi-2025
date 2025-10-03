@@ -14,65 +14,34 @@ PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experiment
 PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/lorge_config.json > lorge-v1.log 2>&1' &
 ```
 
-**Results at 7M params with separate diffusion head training**
-- Adding noise to the inputs seems to hurt diffusion performance but help grid size prediction.
-- Going from 0->9 augmentations helps diffusion and grid size. Going to 39 augmentations hurts diffusion but helps grid size.
-
-**Results at 7M params with integrated diffusion head training**
-- Size prediction is much better.
-- Adding noise to inputs seems to hurt size and diffusion performance.
-- Integrating the size head seems to hurt diffusion performance. Makes sense as this is now multi-objective.
-
-**Results at 90M params with integrated diffusion head**
-- ...
-
-**Things to consider adding:**
-- Self-conditioning. The idea is to pass previous logits as an additional input 50% of the time during training.
-- Classifier-free guidance.
-
-Things still to understand:
-- EMA
-- Label smoothing
-
 **Clarifying Questions**
 - Alpha and beta
 Beta is the chance a cell gets repainted at step t. Alpha is the chance a cell stays the same! alpha_bar is the chance a cell survives without any change from start to finish.
 
-- What is the interpertation of cross entropy? Would it be useful to also plot some kind of pixel accuracy metric? If so what and how?
-Yes we plot by noise bucket and also total.
+- What is the interpretation of cross entropy? Would it be useful to also plot some kind of pixel accuracy metric? If so what and how?
+Yes we plot by noise bucket and also total. And we now record accuracy as well in wandb.
 
 - During training and forward passing on one batch, will each datapoint in a batch get a different randomly sampled timestamp? Are timestamps sampled uniformly?
 Yes! and uniform should be fine.
 
 - How many timesteps to use?
-It's a bit unclear, empirically people seem to use 64-1000. Perhaps lower vocab leads to lower required steps for training.
+It's a bit unclear, empirically people seem to use 64-1000. Perhaps lower vocab leads to lower required steps for training. WE USE 128.
 
 - How many epochs or gradient updates to use?
-The logic seems to be, bigger model, more gradient updates, U. And you adjust learning rate linearly with batch size, as a larger batch size smooths gradient updates. The rough numbers seem to be: 10k updates for 100M params, 100k updates for 1B params. Perhaps for a 2M param model, use 3k updates, for 20M use 7k updates.
+The logic seems to be, bigger model, more gradient updates, U. And you adjust learning rate linearly with batch size, as a larger batch size smooths gradient updates. The rough numbers seem to be: 10k updates for 100M params, 100k updates for 1B params. Perhaps for a 2M param model, use 3k updates, for 20M use 7k updates. ACTUALLY WE JUST USE 96K EVERYWHERE FOR NOW.
 
 - What noise distribution should I use? Uniform? OR matching typical arc tasks?
-Uniform is mroe robust and simpler.
+Uniform is more robust and simpler.
 
 - During inference, what normally happens? We start with a noised input and denoise repeatedly? We don't add any intermediate noise do we?
 Correct!
 
-## Possible Ablations
-
-**Training:**
-[ ] Set lorge aux loss to 0.07 or 0.08 (up from 0.05).
-- Simplify:
- [ ] Remove input_grid_dropout.
- [x] Remove pixel noise.
-- Increase LR. Grad norm is stable and <1. In the past, this likely helped performance.
-- One-hot encode train vs test examples.
-[x] Use separate encodings for task augmentations (rotate, flip, recolor).
-
-**Inference**
-- Roll forward on two top grid size predictions. Maybe give a little boost, although grid accuracy is already good.
-
 ## Daily Notes
 ### Oct 3rd 2025
 #### Training huoge
+Moving to train a 270M model.
+
+The training data will have 39 augmentations for aa2 training tasks and 390 augmentations for each evaluation task (where only train, not test grids are included).
 
 Run all of those commands in series on the same gpu:
 ```bash
