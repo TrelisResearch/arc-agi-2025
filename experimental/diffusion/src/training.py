@@ -712,6 +712,12 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         else:
             model_state_dict = checkpoint
 
+        # Strip _orig_mod. prefix if present (from torch.compile)
+        # This happens when a compiled model's state dict is saved
+        if any(k.startswith('_orig_mod.') for k in model_state_dict.keys()):
+            print("Detected torch.compile checkpoint - stripping _orig_mod. prefix")
+            model_state_dict = {k.replace('_orig_mod.', ''): v for k, v in model_state_dict.items()}
+
         # Create model with same architecture
         model = ARCDiffusionModel(
             vocab_size=config['vocab_size'],
@@ -1057,12 +1063,17 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             # Skip LoRA-specific parameters (lora_A, lora_B)
             if 'lora_A' in key or 'lora_B' in key:
                 continue
-            clean_state_dict[key] = value
+            # Strip _orig_mod. prefix from torch.compile if present
+            clean_key = key.replace('_orig_mod.', '')
+            clean_state_dict[clean_key] = value
 
         model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in clean_state_dict.items()}
     else:
         # Save final model (weights only to save space)
-        model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
+        state_dict = model.state_dict()
+        # Strip _orig_mod. prefix from torch.compile if present
+        clean_state_dict = {k.replace('_orig_mod.', ''): v for k, v in state_dict.items()}
+        model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in clean_state_dict.items()}
     save_dict = {
         'model_state_dict': model_state_dict_bf16,
         'config': config,
