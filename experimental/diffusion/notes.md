@@ -72,8 +72,16 @@ Correct!
 
 ## Daily Notes
 ### Oct 3rd 2025
-#### Support pre-training and LoRA
+#### Training huoge
 
+Run all of those commands in series on the same gpu:
+```bash
+nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config.json > smol-v1-boost.log 2>&1 ; \
+PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/huoge_config.json > huoge-v1-boost.log 2>&1' &
+```
+
+#### Support pre-training and LoRA
+LoRA tuning on 1 or 10 tasks on a pre-trained model seems not to work, at least yet.
 
 #### AA2-hard Results
 Trained on training-hard + evaluation.
