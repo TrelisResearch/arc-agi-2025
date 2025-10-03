@@ -720,26 +720,38 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
 
         # Determine max_tasks: need to accommodate both pretrained tasks AND new tasks
         pretrained_max_tasks = 0
-        pretrained_task_ids = set()
-        if 'dataset_info' in checkpoint and 'num_tasks' in checkpoint['dataset_info']:
-            pretrained_max_tasks = checkpoint['dataset_info']['num_tasks']
-            # Get pretrained task IDs if available
+        pretrained_task_id_to_idx = {}
+        if 'dataset_info' in checkpoint:
+            if 'num_tasks' in checkpoint['dataset_info']:
+                pretrained_max_tasks = checkpoint['dataset_info']['num_tasks']
             if 'task_id_to_idx' in checkpoint['dataset_info']:
-                pretrained_task_ids = set(checkpoint['dataset_info']['task_id_to_idx'].keys())
+                pretrained_task_id_to_idx = checkpoint['dataset_info']['task_id_to_idx']
 
+        pretrained_task_ids = set(pretrained_task_id_to_idx.keys())
         current_task_ids = set(dataset_info['task_id_to_idx'].keys())
         new_task_ids = current_task_ids - pretrained_task_ids
 
-        # max_tasks = max of pretrained tasks OR current tasks (whichever is larger)
-        # This handles: 1) fine-tuning on subset, 2) adding new tasks, 3) combination
-        max_tasks = max(pretrained_max_tasks, dataset_info['num_tasks'])
+        # Merge task mappings: keep all pretrained mappings + add new tasks
+        merged_task_id_to_idx = pretrained_task_id_to_idx.copy()
+        if new_task_ids:
+            # Assign new indices starting from the max of pretrained indices
+            next_idx = max(pretrained_task_id_to_idx.values()) + 1 if pretrained_task_id_to_idx else 0
+            for task_id in new_task_ids:
+                merged_task_id_to_idx[task_id] = next_idx
+                next_idx += 1
+
+        # Update dataset_info with merged mapping
+        dataset_info['task_id_to_idx'] = merged_task_id_to_idx
+        dataset_info['num_tasks'] = len(merged_task_id_to_idx)
+        max_tasks = dataset_info['num_tasks']
 
         if pretrained_max_tasks > 0:
             print(f"Pretrained model: {pretrained_max_tasks} tasks")
-            print(f"Current dataset: {dataset_info['num_tasks']} tasks")
+            print(f"Current dataset: {len(current_task_ids)} tasks")
             if new_task_ids:
                 print(f"New tasks detected: {len(new_task_ids)} tasks will get fresh embeddings")
                 print(f"  New task IDs: {list(new_task_ids)[:5]}{'...' if len(new_task_ids) > 5 else ''}")
+            print(f"Merged mapping: {len(merged_task_id_to_idx)} total tasks")
             print(f"Using max_tasks={max_tasks}")
 
         # Create model with same architecture

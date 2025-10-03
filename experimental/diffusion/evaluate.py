@@ -263,29 +263,41 @@ class DiffusionInference:
 
         # Store task mapping for inference
         self.task_id_to_idx = dataset_info.get('task_id_to_idx', {})
-        self.max_tasks = dataset_info['num_tasks']
+
+        # Infer max_tasks from the actual model state_dict, not from dataset_info
+        # The checkpoint's dataset_info might reflect a training subset, not the full model size
+        state_dict = checkpoint['model_state_dict']
+        state_dict = {k.replace('_orig_mod.', ''): v for k, v in state_dict.items()}
+
+        # Extract max_tasks from task_embedding shape in checkpoint
+        if 'denoiser.task_embedding.weight' in state_dict:
+            max_tasks = state_dict['denoiser.task_embedding.weight'].shape[0]
+            print(f"Inferred max_tasks={max_tasks} from checkpoint task_embedding shape")
+        else:
+            max_tasks = dataset_info['num_tasks']
+            print(f"Using max_tasks={max_tasks} from dataset_info (no task_embedding found)")
+
+        self.max_tasks = max_tasks
 
         # Get auxiliary loss config for size head parameters
         aux_config = config.get('auxiliary_loss', {})
         include_size_head = aux_config.get('include_size_head', True)
         size_head_hidden_dim = aux_config.get('size_head_hidden_dim', None)
 
-        # Recreate model with size head parameters
+        # Recreate model with correct max_tasks
         model = ARCDiffusionModel(
             vocab_size=config['vocab_size'],
             d_model=config['d_model'],
             nhead=config['nhead'],
             num_layers=config['num_layers'],
             max_size=config['max_size'],
-            max_tasks=dataset_info['num_tasks'],
+            max_tasks=max_tasks,
             embedding_dropout=config.get('embedding_dropout', 0.1),
             include_size_head=include_size_head,
             size_head_hidden_dim=size_head_hidden_dim
         )
 
-        # Load weights (strip _orig_mod prefix from torch.compile)
-        state_dict = checkpoint['model_state_dict']
-        state_dict = {k.replace('_orig_mod.', ''): v for k, v in state_dict.items()}
+        # Load weights
         model.load_state_dict(state_dict)
         model.to(self.device)
         model.eval()
