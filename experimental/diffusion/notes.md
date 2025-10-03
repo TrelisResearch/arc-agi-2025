@@ -95,12 +95,17 @@ uv run experimental/diffusion/evaluate.py --config experimental/diffusion/config
 uv run experimental/diffusion/evaluate.py --config experimental/diffusion/configs/mediom_config.json --num-steps 32 --maj --model-path experimental/diffusion/outputs/mediom/final_model.pt
 ```
 
+We did get one aa2 eval task correct on mediom (still running more evals): https://arcprize.org/play?task=981571dc
+
 hard:
 - simple (halfway model, 32 steps): 0%
 - simple (best model, 32 steps): 0.42%
 - simple (final model, 128 steps): 0%
 - simple (final model, 32 steps): 0.83%
-- sample-40x-augs (final model, 32 steps): 1.2%but 
+- sample-40x-augs (final model, 32 steps): 1.2%
+
+
+This is the task that our lorge aa2-hard (30x30) model is getting partially correct: https://arcprize.org/play?task=269e22fb
 
 ```bash
 uv run experimental/diffusion/evaluate.py --config experimental/diffusion/configs/lorge_config.json --num-steps 32 --model-path experimental/diffusion/outputs/lorge/halfway_model.pt --stats && \
@@ -131,20 +136,10 @@ smol:
 Scores zeros.
 
 mediom:
-Scores zeros on simple final model 128 steps.
-
-- simple (halfway model, 32 steps): ?/120
-- simple (best model, 32 steps): ?/120
-- simple (final model, 128 steps): 0/120
-- simple (final model, 32 steps): ?/120
-- sample-40x-augs (final model, 32 steps): ?/120
+Scores zeros.
 
 hard:
-- simple (halfway model, 32 steps): ?/120
-- simple (best model, 32 steps): ?/120
-- simple (final model, 128 steps): ?/120
-- simple (final model, 32 steps): ?/120
-- sample-40x-augs (final model, 32 steps): ?/120
+Scores zeros.
 
 ### Oct 2nd 2025
 ### Restrict to 20x20 grids and train on training-hard + evaluation from aa2.
