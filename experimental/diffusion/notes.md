@@ -38,7 +38,12 @@ Correct!
 
 ## Daily Notes
 ### Oct 4th 2025
-Running properly calibrated model.
+#### Running huoge on B200
+```bash
+nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/huoge_config.json > huoge-v1-boost-b200.log 2>&1' &
+```
+
+#### Running models on aa1 and aa2
 
 ```bash
 nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/mediom_config.json > mediom-v1-boost.log 2>&1 ; \
