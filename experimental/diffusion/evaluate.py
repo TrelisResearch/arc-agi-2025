@@ -30,9 +30,9 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from experimental.diffusion.src.model import ARCDiffusionModel
+from experimental.diffusion.utils.noise_scheduler import DiscreteNoiseScheduler
 from experimental.diffusion.src.training import ARCDiffusionSampler
 from experimental.diffusion.src.dataset import ARCDataset, load_arc_data_paths
-from experimental.diffusion.utils.noise_scheduler import DiscreteNoiseScheduler
 from experimental.diffusion.utils.grid_utils import grid_to_tokens, tokens_to_grid, TaskAugmentation
 from experimental.diffusion.utils.task_filters import filter_tasks_by_max_size
 from experimental.diffusion.utils.arc_colors import arc_cmap
@@ -284,6 +284,13 @@ class DiffusionInference:
         include_size_head = aux_config.get('include_size_head', True)
         size_head_hidden_dim = aux_config.get('size_head_hidden_dim', None)
 
+        # Create noise scheduler (needed for log(alpha_bar) timestep embedding)
+        noise_scheduler = DiscreteNoiseScheduler(
+            num_timesteps=config['num_timesteps'],
+            vocab_size=config['vocab_size'],
+            schedule_type=config['schedule_type']
+        )
+
         # Recreate model with correct max_tasks
         model = ARCDiffusionModel(
             vocab_size=config['vocab_size'],
@@ -294,7 +301,8 @@ class DiffusionInference:
             max_tasks=max_tasks,
             embedding_dropout=config.get('embedding_dropout', 0.1),
             include_size_head=include_size_head,
-            size_head_hidden_dim=size_head_hidden_dim
+            size_head_hidden_dim=size_head_hidden_dim,
+            noise_scheduler=noise_scheduler
         )
 
         # Load weights
@@ -722,9 +730,8 @@ class DiffusionInference:
                 t_batch = t.repeat(batch_size)
 
                 # Calculate self-conditioning gain (ramp from 0.3 to 1.0 over denoising process)
-                # At step 0 (high noise): gain=0.3, at final step (clean): gain=1.0
-                # Use step index i, not timestep value t (which can be e.g. 127 when using 32 inference steps)
-                progress = i / (num_inference_steps - 1) if num_inference_steps > 1 else 1.0
+                # At t=T-1 (start): gain=0.3, at t=0 (end): gain=1.0
+                progress = 1.0 - (t.item() / (num_inference_steps - 1)) if num_inference_steps > 1 else 1.0
                 sc_gain = 0.3 + 0.7 * progress
 
                 # Forward pass with self-conditioning
