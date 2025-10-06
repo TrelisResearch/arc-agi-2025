@@ -37,7 +37,13 @@ Correct!
 
 ## Daily Notes
 ### Oct 6th 2025
-#### Fixing up augmentations
+#### Running v4 with an MLP in place of a linear layer for the self-conditioning
+```bash
+nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config_aa1.json > smol-v4.log 2>&1 ; \
+PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/mediom_config.json > mediom-v4.log 2>&1' &
+```
+
+#### Fixing up augmentations and running v3
 Fixes:
 - Instead of having an input for flips and one for rotates, we just have one with eight possible values (incl. the original) for the eight possible values of the dihedral group d4.
 - Evaluation versus Training dataset weighting is now controled by `eval_weight`, and there is a pytorch sampler that allows for this.
@@ -46,32 +52,35 @@ Fixes:
 ```bash
 nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config_aa1.json > smol-v3.log 2>&1' &
 ```
+Scoring (no --maj): 16.5% | with --maj: 20.2%
 
-#### Running toiny with the snr input
+#### Running v2 toiny with the snr input
 ```bash
 nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/toiny_config_aa1.json > toiny-v2.log 2>&1' &
 ```
+Scoring (no --maj): 14.1% | with --maj: 13.0% (seems odd, I didn't dig in)
 
-#### Running smol with the snr input
+#### Running v2 smol with the snr input
 ```bash
 nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config_aa1.json > smol-v2.log 2>&1' &
 ```
+Scoring (no --maj): 14.1% | with --maj: 18.2%.
 
 ### Oct 4th 2025
+#### Running the v1 model on aa1 and aa2
 
-#### Running models on aa1 and aa2
-
-Results, all using majority voting of 40 attempts:
+aa1 results, all using majority voting of 40 attempts:
+>  w/ wrong scheduler (although the scheduler issue appears to have been minor, the fix probably would boost the score up to around 15% on smol). This was fixed on commit 3a4c2f303ea7b7d769133a65c951d050b9c40965, after which the repo moved to using noise instead of timesteps as inputs.
 aa1:
-- smol: 13.8% w/ wrong scheduler (although the scheduler issue appears to have been minor, the fix probably would boost the score up to around 15%). 
+- smol: 13.8%. 
 - mediom: 23.1%.
-- lorge: STILL RUNNING.
-- huoge: I don't plan to run this.
+- lorge: 23.5%.
 
 aa2:
+> also with wrong scheduler, so these results probably should be a bit, maybe 20%-25% higher relative.
 - smol: 0% (although a similar model has scored 0.4% before)
 - mediom: 1.7%
-- lorge: 2.1% (best [no maj, 32 steps]: 1.2%; final [no maj, 128 steps]:  )
+- lorge: 2.1% (best model [no maj, 32 steps]: 1.2%)
 - huoge [stopped at 2/3rds of the intended optimizer steps, not know why]: Scores 0%.
 
 General Notes:
@@ -94,7 +103,7 @@ PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experiment
 ```
 - smol: 0% (although a similar model has scored 0.4% before)
 - mediom: 1.7%
-- lorge: 2.1% [1.2% with 128 steps, no maj]
+- lorge: 2.1% [1.2% with 128 steps, no maj]. 1.2% [unchanged after SC and scheduler fix].
 - huoge [stopped at 263299/384000]: 0% running best model.
 
 On lorge, seeing this task correct: `71e489b6` and `981571dc` (the symetric complex pattern). Note that the task is correct after just a few diffusion steps and then stays the same from step 26 down to 0. For `981571dc`, the solution appears to be diffused out almost immediately.
@@ -108,9 +117,9 @@ PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experiment
 PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/giont_config_aa1.json > giont-v1-aa1.log 2>&1' &
 ```
 Scoring - all `--num-steps 32 --maj` - WITH A BROKEN INFERENCE SCHEDULER (WAS NOT CORRECTLY MAPPING TIMESTEPS TO THE ORIGINAL 128 STEPS):
-- smol: 13.8%.  [with --num-steps 32 and without --maj: 9.1%]
+- smol: 13.8% | with --num-steps 32 and without --maj: 9.1%.
 - mediom: 23.1%.
-- lorge: still running.
+- lorge: 23.5% | with --num-steps 32 and without --maj: 17.6% | scores 19% with scheduler fixed and without majority voting.
 - huoge: don't plan to run this.
 
 Scoring - all `--num-steps 32 --maj` - with scheduler fixed for inference BUT SC is wrong!:
@@ -121,7 +130,7 @@ Scoring - all `--num-steps 32 --maj` - with scheduler fixed for inference BUT SC
 Scoring - all with --num-steps 32 and without --maj - with scheduler fixed AND SC fixed:
 - smol: 10.1%
 - mediom: ...
-- lorge: 1.2% [unchanged after SC and scheduler fix].
+- lorge: ...
 
 So maybe that fix does have some influence.
 

@@ -87,9 +87,14 @@ class TransformerDenoiser(nn.Module):
             nn.Linear(d_model, d_model)
         )
 
-        # Self-conditioning projection
+        # Self-conditioning projection (2-layer MLP for better expressiveness)
         # Maps probability distributions (10 classes) to features
-        self.sc_proj = nn.Linear(10, d_model)
+        hidden_dim = d_model * 2  # Expansion factor
+        self.sc_proj = nn.Sequential(
+            nn.Linear(10, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, d_model)
+        )
 
         # Embedding dropout for regularization
         self.embedding_dropout = nn.Dropout(embedding_dropout)
