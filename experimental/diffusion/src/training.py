@@ -187,8 +187,7 @@ class ARCDiffusionTrainer:
         task_indices = batch['task_idx'].to(self.device)  # [batch_size]
         heights = batch['height'].to(self.device)  # [batch_size] - grid heights
         widths = batch['width'].to(self.device)   # [batch_size] - grid widths
-        rotations = batch['rotation'].to(self.device)  # [batch_size] - rotation indices
-        flips = batch['flip'].to(self.device)  # [batch_size] - flip indices
+        d4_indices = batch['d4_idx'].to(self.device)  # [batch_size] - D4 transformation indices
         color_shifts = batch['color_shift'].to(self.device)  # [batch_size] - color shift values
 
         batch_size = input_grids.shape[0]
@@ -228,8 +227,7 @@ class ARCDiffusionTrainer:
                             input_grid=input_grids,
                             task_ids=task_indices,
                             logsnr=logsnr,
-                            rotation=rotations,
-                            flip=flips,
+                            d4_idx=d4_indices,
                             color_shift=color_shifts,
                             masks=masks,
                             sc_p0=None,  # No self-conditioning in first pass
@@ -241,8 +239,7 @@ class ARCDiffusionTrainer:
                         input_grid=input_grids,
                         task_ids=task_indices,
                         logsnr=logsnr,
-                        rotation=rotations,
-                        flip=flips,
+                        d4_idx=d4_indices,
                         color_shift=color_shifts,
                         masks=masks,
                         sc_p0=None,  # No self-conditioning in first pass
@@ -260,8 +257,7 @@ class ARCDiffusionTrainer:
                     task_ids=task_indices,
                     xt=noisy_grids,
                     logsnr=logsnr,
-                    rotation=rotations,
-                    flip=flips,
+                    d4_idx=d4_indices,
                     color_shift=color_shifts,
                     heights=heights,
                     widths=widths,
@@ -276,8 +272,7 @@ class ARCDiffusionTrainer:
                 task_ids=task_indices,
                 xt=noisy_grids,
                 logsnr=logsnr,
-                rotation=rotations,
-                flip=flips,
+                d4_idx=d4_indices,
                 color_shift=color_shifts,
                 heights=heights,
                 widths=widths,
@@ -601,7 +596,7 @@ class ARCDiffusionSampler:
 
             # Forward pass with masking and self-conditioning (no augmentation during inference)
             logits = self.model(x_t, input_grids, task_indices, logsnr,
-                               rotation=None, flip=None, color_shift=None,  # No augmentation
+                               d4_idx=None, color_shift=None,  # No augmentation
                                masks=mask_float, sc_p0=sc_p0, sc_gain=sc_gain)
 
             # Apply temperature scaling
@@ -693,7 +688,6 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         data_paths=data_paths['train'],
         max_size=config['max_size'],
         augment=config['augment'],
-        n_augment=config.get('n_augment', 3),
         include_training_test_examples=config.get('include_training_test_examples', True),
         subset_file=config.get('subset_file', None),
         eval_subset_file=config.get('eval_subset_file', None),

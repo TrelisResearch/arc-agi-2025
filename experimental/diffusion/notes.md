@@ -37,6 +37,13 @@ Correct!
 
 ## Daily Notes
 ### Oct 6th 2025
+#### Fixing up augmentations
+Fixes:
+- instead of having an input for flips and one for rotates, we just have one with eight possible values (incl. the original) for the eight possible values of the dihedral group d4.
+- dataset weighting `eval_augment_boost` is now replaced by `eval_weight`.
+
+btw there's also the question now of how we handle the boost parameter. The intent there is just to upweight the evaluation dataset versus the trainign dataset. What options do we have, broadly, for doing this?
+
 #### Running toiny with the snr input
 ```bash
 nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/toiny_config_aa1.json > toiny-v2.log 2>&1' &

@@ -77,8 +77,7 @@ class TransformerDenoiser(nn.Module):
         self.task_embedding = nn.Embedding(max_tasks, d_model)
 
         # Augmentation embeddings
-        self.rotation_embedding = nn.Embedding(4, d_model)  # 0, 90, 180, 270 -> indices 0,1,2,3
-        self.flip_embedding = nn.Embedding(4, d_model)      # none, h, v, diag -> indices 0,1,2,3
+        self.d4_embedding = nn.Embedding(8, d_model)  # D4 group: 8 spatial transformations (0-7)
         self.color_shift_embedding = nn.Embedding(9, d_model)  # 0-8 color cycle offset
 
         # Time embedding
@@ -117,8 +116,7 @@ class TransformerDenoiser(nn.Module):
         input_grid: torch.Tensor,  # [batch_size, max_size, max_size] - input grid
         task_ids: torch.Tensor,  # [batch_size] - task IDs
         logsnr: torch.Tensor,  # [batch_size] - log signal-to-noise ratio
-        rotation: Optional[torch.Tensor] = None,  # [batch_size] - rotation index (0,1,2,3)
-        flip: Optional[torch.Tensor] = None,  # [batch_size] - flip index (0,1,2,3)
+        d4_idx: Optional[torch.Tensor] = None,  # [batch_size] - D4 transformation index (0-7)
         color_shift: Optional[torch.Tensor] = None,  # [batch_size] - color shift (0-8)
         masks: Optional[torch.Tensor] = None,  # [batch_size, max_size, max_size]
         sc_p0: Optional[torch.Tensor] = None,  # [batch_size, max_size, max_size, 10] - self-conditioning probs
@@ -202,33 +200,29 @@ class TransformerDenoiser(nn.Module):
         time_token = self.time_projection(time_emb).unsqueeze(1)  # [batch_size, 1, d_model]
 
         # Add augmentation tokens if provided, otherwise use zeros (no augmentation)
-        if rotation is None:
-            rotation = torch.zeros(batch_size, dtype=torch.long, device=device)
-        if flip is None:
-            flip = torch.zeros(batch_size, dtype=torch.long, device=device)
+        if d4_idx is None:
+            d4_idx = torch.zeros(batch_size, dtype=torch.long, device=device)
         if color_shift is None:
             color_shift = torch.zeros(batch_size, dtype=torch.long, device=device)
 
-        rotation_token = self.rotation_embedding(rotation).unsqueeze(1)  # [batch_size, 1, d_model]
-        flip_token = self.flip_embedding(flip).unsqueeze(1)  # [batch_size, 1, d_model]
+        d4_token = self.d4_embedding(d4_idx).unsqueeze(1)  # [batch_size, 1, d_model]
         color_shift_token = self.color_shift_embedding(color_shift).unsqueeze(1)  # [batch_size, 1, d_model]
 
-        # Concatenate in sequence dimension: [task, time, rotation, flip, color_shift, input_grid, noised_output]
+        # Concatenate in sequence dimension: [task, time, d4, color_shift, input_grid, noised_output]
         sequence = torch.cat([
             task_token,         # [batch_size, 1, d_model]
             time_token,         # [batch_size, 1, d_model]
-            rotation_token,     # [batch_size, 1, d_model]
-            flip_token,         # [batch_size, 1, d_model]
+            d4_token,           # [batch_size, 1, d_model]
             color_shift_token,  # [batch_size, 1, d_model]
             input_emb,          # [batch_size, max_size^2, d_model]
-            xt_emb         # [batch_size, max_size^2, d_model]
-        ], dim=1)  # [batch_size, 5 + 2*max_size^2, d_model]
+            xt_emb              # [batch_size, max_size^2, d_model]
+        ], dim=1)  # [batch_size, 4 + 2*max_size^2, d_model]
 
         # Single transformer processes the entire sequence
-        output = self.transformer(sequence)  # [batch_size, 5 + 2*max_size^2, d_model]
+        output = self.transformer(sequence)  # [batch_size, 4 + 2*max_size^2, d_model]
 
-        # Extract predictions for noised output positions (skip task + time + rotation + flip + color_shift + input)
-        output_start_idx = 5 + self.max_size * self.max_size
+        # Extract predictions for noised output positions (skip task + time + d4 + color_shift + input)
+        output_start_idx = 4 + self.max_size * self.max_size
         output_preds = output[:, output_start_idx:, :]  # [batch_size, max_size^2, d_model]
 
         # Predict logits for each cell (only for colors 0-9)
@@ -301,15 +295,14 @@ class ARCDiffusionModel(nn.Module):
         input_grid: torch.Tensor,
         task_ids: torch.Tensor,
         logsnr: torch.Tensor,
-        rotation: Optional[torch.Tensor] = None,
-        flip: Optional[torch.Tensor] = None,
+        d4_idx: Optional[torch.Tensor] = None,
         color_shift: Optional[torch.Tensor] = None,
         masks: Optional[torch.Tensor] = None,
         sc_p0: Optional[torch.Tensor] = None,
         sc_gain: Union[float, torch.Tensor] = 1.0,
     ) -> torch.Tensor:
         """Forward pass - predict x0 given xt."""
-        return self.denoiser(xt, input_grid, task_ids, logsnr, rotation, flip, color_shift, masks, sc_p0, sc_gain)
+        return self.denoiser(xt, input_grid, task_ids, logsnr, d4_idx, color_shift, masks, sc_p0, sc_gain)
 
     def _compute_bucket_metrics(
         self,
@@ -360,8 +353,7 @@ class ARCDiffusionModel(nn.Module):
         task_ids: torch.Tensor,  # [batch_size] - task IDs
         xt: torch.Tensor,  # [batch_size, max_size, max_size] - noisy tokens
         logsnr: torch.Tensor,  # [batch_size] - log signal-to-noise ratio
-        rotation: Optional[torch.Tensor] = None,  # [batch_size] - rotation indices
-        flip: Optional[torch.Tensor] = None,  # [batch_size] - flip indices
+        d4_idx: Optional[torch.Tensor] = None,  # [batch_size] - D4 transformation index
         color_shift: Optional[torch.Tensor] = None,  # [batch_size] - color shift
         heights: Optional[torch.Tensor] = None,  # [batch_size] - grid heights
         widths: Optional[torch.Tensor] = None,   # [batch_size] - grid widths
@@ -387,8 +379,7 @@ class ARCDiffusionModel(nn.Module):
             input_grid=input_grid,
             task_ids=task_ids,
             logsnr=logsnr,
-            rotation=rotation,
-            flip=flip,
+            d4_idx=d4_idx,
             color_shift=color_shift,
             masks=masks,
             sc_p0=sc_p0,
@@ -486,8 +477,7 @@ class ARCDiffusionModel(nn.Module):
         self,
         input_grid: torch.Tensor,
         task_ids: torch.Tensor,
-        rotation: Optional[torch.Tensor] = None,
-        flip: Optional[torch.Tensor] = None,
+        d4_idx: Optional[torch.Tensor] = None,
         color_shift: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -524,23 +514,19 @@ class ARCDiffusionModel(nn.Module):
         time_token = torch.zeros_like(task_token)
 
         # Add augmentation tokens if provided, otherwise use zeros (no augmentation)
-        if rotation is None:
-            rotation = torch.zeros(batch_size, dtype=torch.long, device=device)
-        if flip is None:
-            flip = torch.zeros(batch_size, dtype=torch.long, device=device)
+        if d4_idx is None:
+            d4_idx = torch.zeros(batch_size, dtype=torch.long, device=device)
         if color_shift is None:
             color_shift = torch.zeros(batch_size, dtype=torch.long, device=device)
 
-        rotation_token = self.denoiser.rotation_embedding(rotation).unsqueeze(1)  # [batch_size, 1, d_model]
-        flip_token = self.denoiser.flip_embedding(flip).unsqueeze(1)  # [batch_size, 1, d_model]
+        d4_token = self.denoiser.d4_embedding(d4_idx).unsqueeze(1)  # [batch_size, 1, d_model]
         color_shift_token = self.denoiser.color_shift_embedding(color_shift).unsqueeze(1)  # [batch_size, 1, d_model]
 
         # Create sequence matching the main forward pass structure
         sequence = torch.cat([
             task_token,         # [batch_size, 1, d_model]
             time_token,         # [batch_size, 1, d_model]
-            rotation_token,     # [batch_size, 1, d_model]
-            flip_token,         # [batch_size, 1, d_model]
+            d4_token,           # [batch_size, 1, d_model]
             color_shift_token,  # [batch_size, 1, d_model]
             input_emb,          # [batch_size, max_size^2, d_model]
         ], dim=1)
@@ -548,8 +534,8 @@ class ARCDiffusionModel(nn.Module):
         # Process through transformer
         encoded_features = self.denoiser.transformer(sequence)
 
-        # Extract features from input positions (skip task, time, rotation, flip, color_shift)
-        input_features = encoded_features[:, 5:5+self.max_size*self.max_size, :]
+        # Extract features from input positions (skip task, time, d4, color_shift)
+        input_features = encoded_features[:, 4:4+self.max_size*self.max_size, :]
 
         # Global average pooling
         pooled_features = input_features.mean(dim=1)  # [batch_size, d_model]
@@ -567,8 +553,7 @@ class ARCDiffusionModel(nn.Module):
         self,
         input_grid: torch.Tensor,
         task_ids: torch.Tensor,
-        rotation: Optional[torch.Tensor] = None,
-        flip: Optional[torch.Tensor] = None,
+        d4_idx: Optional[torch.Tensor] = None,
         color_shift: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -578,7 +563,7 @@ class ARCDiffusionModel(nn.Module):
             heights: [batch_size] - predicted heights (1-indexed)
             widths: [batch_size] - predicted widths (1-indexed)
         """
-        height_logits, width_logits = self.predict_size(input_grid, task_ids, rotation, flip, color_shift)
+        height_logits, width_logits = self.predict_size(input_grid, task_ids, d4_idx, color_shift)
 
         # Get predictions
         predicted_heights = torch.argmax(height_logits, dim=-1) + 1

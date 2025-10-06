@@ -41,83 +41,46 @@ from collections import Counter
 
 
 class AugmentationParams(TypedDict):
-    """Parameters for a single augmentation"""
-    flip_type: str  # 'none', 'horizontal', 'vertical'
-    rotation: int  # 0, 90, 180, 270
-    color_cycle: int  # 0-8
+    """Parameters for a single D4 augmentation"""
+    d4_idx: int  # D4 transformation index (0-7)
+    color_cycle: int  # Color cycle offset (0-8)
 
 
-def generate_augmentations(n_augment: int) -> List[AugmentationParams]:
+def generate_augmentations() -> List[AugmentationParams]:
     """
-    Generate random augmentations similar to training.
-
-    Args:
-        n_augment: Number of augmentations to generate (includes identity)
+    Generate all 72 D4 augmentations (8 D4 × 9 colors).
 
     Returns:
-        List of augmentation parameters (first one is always identity)
+        List of augmentation parameters with identity (0, 0) first
     """
-    augmentations = []
-
-    # First augmentation is always identity
-    augmentations.append(AugmentationParams(
-        flip_type='none',
-        rotation=0,
-        color_cycle=0
-    ))
-
-    # Generate n_augment - 1 random augmentations
-    for _ in range(n_augment - 1):
-        flip_type = random.choice(['none', 'none', 'horizontal', 'vertical'])  # 'none' has 2x weight
-        rotation = random.choice([0, 90, 180, 270])
-        color_cycle = random.choice(range(9))  # 0-8
-
-        augmentations.append(AugmentationParams(
-            flip_type=flip_type,
-            rotation=rotation,
-            color_cycle=color_cycle
-        ))
-
+    aug_tuples = TaskAugmentation.generate_all_d4_augmentations()
+    augmentations = [AugmentationParams(d4_idx=d4, color_cycle=color)
+                     for d4, color in aug_tuples]
     return augmentations
 
 
 def apply_augmentation(grid: np.ndarray, aug_params: AugmentationParams) -> np.ndarray:
-    """Apply augmentation to a grid."""
-    grid = TaskAugmentation.apply_flip_augmentation(grid, aug_params['flip_type'])
-    grid = TaskAugmentation.apply_rotation_augmentation(grid, aug_params['rotation'])
+    """Apply D4 augmentation to a grid."""
+    grid = TaskAugmentation.apply_d4_augmentation(grid, aug_params['d4_idx'])
     grid = TaskAugmentation.apply_color_cycle_augmentation(grid, aug_params['color_cycle'])
     return grid
 
 
 def reverse_augmentation(grid: np.ndarray, aug_params: AugmentationParams) -> np.ndarray:
-    """Reverse augmentation on a grid (de-augment)."""
-    # Reverse color cycle
-    if aug_params['color_cycle'] != 0:
-        # To reverse cycle, apply (9 - offset) since we cycle 9 colors
-        reverse_cycle = 9 - aug_params['color_cycle']
-        grid = TaskAugmentation.apply_color_cycle_augmentation(grid, reverse_cycle)
-
-    # Reverse rotation
-    if aug_params['rotation'] != 0:
-        # To reverse rotation, apply opposite rotation
-        reverse_rotation = (360 - aug_params['rotation']) % 360
-        grid = TaskAugmentation.apply_rotation_augmentation(grid, reverse_rotation)
-
-    # Reverse flip (flips are self-inverse)
-    grid = TaskAugmentation.apply_flip_augmentation(grid, aug_params['flip_type'])
-
+    """Reverse D4 augmentation on a grid (de-augment)."""
+    # Reverse color cycle first
+    grid = TaskAugmentation.reverse_color_cycle_augmentation(grid, aug_params['color_cycle'])
+    # Then reverse D4 transformation
+    grid = TaskAugmentation.reverse_d4_augmentation(grid, aug_params['d4_idx'])
     return grid
 
 
 def deaugment_size(height: int, width: int, aug_params: AugmentationParams) -> Tuple[int, int]:
     """
-    De-augment size prediction.
-    Only rotation 90/270 swaps height and width.
+    De-augment size prediction based on D4 transformation.
+    D4 transformations 1,3,6,7 swap dimensions.
     """
-    if aug_params['rotation'] in [90, 270]:
-        return width, height  # Swap
-    else:
-        return height, width  # No swap
+    return TaskAugmentation.deaugment_size_d4(height, width, aug_params['d4_idx'])
 
 
 class TrajectoryStats(TypedDict):
@@ -357,15 +320,11 @@ class DiffusionInference:
         """
         size_predictions = []
 
-        # Mapping for augmentation parameters to indices
-        flip_to_idx = {'none': 0, 'horizontal': 1, 'vertical': 2, 'diagonal': 3}
-
         # Process augmentations in batches
         for batch_start in range(0, len(augmentations), batch_size):
             batch_augs = augmentations[batch_start:batch_start + batch_size]
             batch_inputs = []
-            batch_rotations = []
-            batch_flips = []
+            batch_d4 = []
             batch_color_shifts = []
 
             # Apply augmentations to create batch
@@ -374,26 +333,23 @@ class DiffusionInference:
                 input_tokens, _, _ = grid_to_tokens(aug_input, max_size=self.config['max_size'])
                 batch_inputs.append(input_tokens)
 
-                # Convert augmentation params to indices
-                rotation_idx = aug_params['rotation'] // 90  # 0,90,180,270 -> 0,1,2,3
-                flip_idx = flip_to_idx[aug_params['flip_type']]
+                # Get D4 and color shift indices
+                d4_idx = aug_params['d4_idx']
                 color_shift_idx = aug_params['color_cycle']
 
-                batch_rotations.append(rotation_idx)
-                batch_flips.append(flip_idx)
+                batch_d4.append(d4_idx)
                 batch_color_shifts.append(color_shift_idx)
 
             # Stack into batch
             input_batch = torch.stack(batch_inputs).to(self.device)
             task_ids = torch.tensor([task_idx] * len(batch_augs)).to(self.device)
-            rotation_batch = torch.tensor(batch_rotations, dtype=torch.long).to(self.device)
-            flip_batch = torch.tensor(batch_flips, dtype=torch.long).to(self.device)
+            d4_batch = torch.tensor(batch_d4, dtype=torch.long).to(self.device)
             color_shift_batch = torch.tensor(batch_color_shifts, dtype=torch.long).to(self.device)
 
             # Get size predictions for batch with augmentation parameters
             with torch.no_grad():
                 pred_heights, pred_widths = self.model.predict_sizes(
-                    input_batch, task_ids, rotation_batch, flip_batch, color_shift_batch
+                    input_batch, task_ids, d4_batch, color_shift_batch
                 )
 
             # De-augment each size prediction
@@ -435,13 +391,11 @@ class DiffusionInference:
         """
         # Step 1: Get size predictions with majority voting
         size_predictions = []
-        flip_to_idx = {'none': 0, 'horizontal': 1, 'vertical': 2, 'diagonal': 3}
 
         for batch_start in range(0, len(augmentations), batch_size):
             batch_augs = augmentations[batch_start:batch_start + batch_size]
             batch_inputs = []
-            batch_rotations = []
-            batch_flips = []
+            batch_d4 = []
             batch_color_shifts = []
 
             for aug_params in batch_augs:
@@ -449,23 +403,20 @@ class DiffusionInference:
                 input_tokens, _, _ = grid_to_tokens(aug_input, max_size=self.config['max_size'])
                 batch_inputs.append(input_tokens)
 
-                rotation_idx = aug_params['rotation'] // 90
-                flip_idx = flip_to_idx[aug_params['flip_type']]
+                d4_idx = aug_params['d4_idx']
                 color_shift_idx = aug_params['color_cycle']
 
-                batch_rotations.append(rotation_idx)
-                batch_flips.append(flip_idx)
+                batch_d4.append(d4_idx)
                 batch_color_shifts.append(color_shift_idx)
 
             input_batch = torch.stack(batch_inputs).to(self.device)
             task_ids = torch.tensor([task_idx] * len(batch_augs)).to(self.device)
-            rotation_batch = torch.tensor(batch_rotations, dtype=torch.long).to(self.device)
-            flip_batch = torch.tensor(batch_flips, dtype=torch.long).to(self.device)
+            d4_batch = torch.tensor(batch_d4, dtype=torch.long).to(self.device)
             color_shift_batch = torch.tensor(batch_color_shifts, dtype=torch.long).to(self.device)
 
             with torch.no_grad():
                 pred_heights, pred_widths = self.model.predict_sizes(
-                    input_batch, task_ids, rotation_batch, flip_batch, color_shift_batch
+                    input_batch, task_ids, d4_batch, color_shift_batch
                 )
 
             for i, aug_params in enumerate(batch_augs):
@@ -523,8 +474,7 @@ class DiffusionInference:
             for batch_start in range(0, len(size_augs), batch_size):
                 batch_augs = size_augs[batch_start:batch_start + batch_size]
                 batch_inputs = []
-                batch_rotations = []
-                batch_flips = []
+                batch_d4 = []
                 batch_color_shifts = []
 
                 for aug_params in batch_augs:
@@ -532,23 +482,20 @@ class DiffusionInference:
                     input_tokens, _, _ = grid_to_tokens(aug_input, max_size=self.config['max_size'])
                     batch_inputs.append(input_tokens)
 
-                    rotation_idx = aug_params['rotation'] // 90
-                    flip_idx = flip_to_idx[aug_params['flip_type']]
+                    d4_idx = aug_params['d4_idx']
                     color_shift_idx = aug_params['color_cycle']
 
-                    batch_rotations.append(rotation_idx)
-                    batch_flips.append(flip_idx)
+                    batch_d4.append(d4_idx)
                     batch_color_shifts.append(color_shift_idx)
 
                 input_batch = torch.stack(batch_inputs).to(self.device)
                 task_ids = torch.tensor([task_idx] * len(batch_augs)).to(self.device)
-                rotation_batch = torch.tensor(batch_rotations, dtype=torch.long).to(self.device)
-                flip_batch = torch.tensor(batch_flips, dtype=torch.long).to(self.device)
+                d4_batch = torch.tensor(batch_d4, dtype=torch.long).to(self.device)
                 color_shift_batch = torch.tensor(batch_color_shifts, dtype=torch.long).to(self.device)
 
                 predicted_grids, _, _ = self.sample_with_steps(
                     input_batch, task_ids, pred_height, pred_width,
-                    rotation=rotation_batch, flip=flip_batch, color_shift=color_shift_batch
+                    d4_idx=d4_batch, color_shift=color_shift_batch
                 )
 
                 for i, aug_params in enumerate(batch_augs):
@@ -601,15 +548,11 @@ class DiffusionInference:
         """
         all_predictions = []
 
-        # Mapping for augmentation parameters to indices
-        flip_to_idx = {'none': 0, 'horizontal': 1, 'vertical': 2, 'diagonal': 3}
-
         # Process augmentations in batches
         for batch_start in range(0, len(augmentations), batch_size):
             batch_augs = augmentations[batch_start:batch_start + batch_size]
             batch_inputs = []
-            batch_rotations = []
-            batch_flips = []
+            batch_d4 = []
             batch_color_shifts = []
 
             # Apply augmentations to create batch
@@ -618,26 +561,22 @@ class DiffusionInference:
                 input_tokens, _, _ = grid_to_tokens(aug_input, max_size=self.config['max_size'])
                 batch_inputs.append(input_tokens)
 
-                # Convert augmentation params to indices
-                rotation_idx = aug_params['rotation'] // 90  # 0,90,180,270 -> 0,1,2,3
-                flip_idx = flip_to_idx[aug_params['flip_type']]
+                d4_idx = aug_params['d4_idx']
                 color_shift_idx = aug_params['color_cycle']
 
-                batch_rotations.append(rotation_idx)
-                batch_flips.append(flip_idx)
+                batch_d4.append(d4_idx)
                 batch_color_shifts.append(color_shift_idx)
 
             # Stack into batch
             input_batch = torch.stack(batch_inputs).to(self.device)
             task_ids = torch.tensor([task_idx] * len(batch_augs)).to(self.device)
-            rotation_batch = torch.tensor(batch_rotations, dtype=torch.long).to(self.device)
-            flip_batch = torch.tensor(batch_flips, dtype=torch.long).to(self.device)
+            d4_batch = torch.tensor(batch_d4, dtype=torch.long).to(self.device)
             color_shift_batch = torch.tensor(batch_color_shifts, dtype=torch.long).to(self.device)
 
             # Run diffusion sampling with augmentation parameters
             predicted_grids, _, _ = self.sample_with_steps(
                 input_batch, task_ids, pred_height, pred_width,
-                rotation=rotation_batch, flip=flip_batch, color_shift=color_shift_batch
+                d4_idx=d4_batch, color_shift=color_shift_batch
             )
 
             # De-augment each prediction and store
@@ -691,8 +630,7 @@ class DiffusionInference:
         task_indices: torch.Tensor,
         pred_height: int,
         pred_width: int,
-        rotation: Optional[torch.Tensor] = None,
-        flip: Optional[torch.Tensor] = None,
+        d4_idx: Optional[torch.Tensor] = None,
         color_shift: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, List[np.ndarray], TrajectoryStats]:
         """
@@ -754,7 +692,7 @@ class DiffusionInference:
 
                 # Forward pass with self-conditioning
                 logits = self.model(x_t, input_grids, task_indices, logsnr,
-                                   rotation=rotation, flip=flip, color_shift=color_shift,
+                                   d4_idx=d4_idx, color_shift=color_shift,
                                    masks=mask_float, sc_p0=sc_p0, sc_gain=sc_gain)
 
                 # Get predicted probabilities
@@ -1038,7 +976,7 @@ class DiffusionInference:
                 error_msg += f"\n{traceback.format_exc()}"
             return np.array([]), error_msg, "ground_truth", None, None
 
-    def run_task(self, task_id: str, task_data: Dict[str, Any], dataset: str, visualize: bool = False, use_majority_voting: bool = False, n_augment: int = 40, print_stats: bool = False) -> TaskResult:
+    def run_task(self, task_id: str, task_data: Dict[str, Any], dataset: str, visualize: bool = False, use_majority_voting: bool = False, print_stats: bool = False) -> TaskResult:
         """
         Run inference on a single ARC task with pass@2 scoring on all test examples.
 
@@ -1089,13 +1027,13 @@ class DiffusionInference:
                 # Use smart voting: one call generates both attempts via confidence splitting
                 attempt_1, attempt_2 = self._run_smart_voting(
                     input_grid, expected_output, test_idx=test_idx, task_idx=task_idx,
-                    task_id=task_id, n_augment=n_augment, print_stats=print_stats
+                    task_id=task_id, print_stats=print_stats
                 )
             else:
                 # Run two independent attempts
                 # Only visualize the first test example if requested
                 if visualize and test_idx == 0:
-                    attempt_1_result = self._run_attempt(input_grid, expected_output, test_idx=test_idx, task_idx=task_idx, task_id=task_id, capture_steps=True, use_majority_voting=False, n_augment=n_augment, print_stats=print_stats)
+                    attempt_1_result = self._run_attempt(input_grid, expected_output, test_idx=test_idx, task_idx=task_idx, task_id=task_id, capture_steps=True, use_majority_voting=False, print_stats=print_stats)
                     attempt_1, intermediate_steps = attempt_1_result
 
                     # Create visualization
@@ -1110,10 +1048,10 @@ class DiffusionInference:
                         save_path=str(vis_path)
                     )
                 else:
-                    attempt_1 = self._run_attempt(input_grid, expected_output, test_idx=test_idx, task_idx=task_idx, task_id=task_id, capture_steps=False, use_majority_voting=False, n_augment=n_augment, print_stats=print_stats)
+                    attempt_1 = self._run_attempt(input_grid, expected_output, test_idx=test_idx, task_idx=task_idx, task_id=task_id, capture_steps=False, use_majority_voting=False, print_stats=print_stats)
 
                 # For attempt 2, don't print stats to avoid duplicate output
-                attempt_2 = self._run_attempt(input_grid, expected_output, test_idx=test_idx, task_idx=task_idx, task_id=task_id, capture_steps=False, use_majority_voting=False, n_augment=n_augment, print_stats=False)
+                attempt_2 = self._run_attempt(input_grid, expected_output, test_idx=test_idx, task_idx=task_idx, task_id=task_id, capture_steps=False, use_majority_voting=False, print_stats=False)
 
             # Calculate pass@2 for this test example
             pass_at_2 = attempt_1["correct"] or attempt_2["correct"]
@@ -1144,20 +1082,20 @@ class DiffusionInference:
             num_train_examples=len(task_data["train"])
         )
 
-    def _run_smart_voting(self, input_grid: np.ndarray, expected_output: np.ndarray, test_idx: int, task_idx: int, task_id: str = None, n_augment: int = 40, print_stats: bool = False) -> tuple[DiffusionResult, DiffusionResult]:
+    def _run_smart_voting(self, input_grid: np.ndarray, expected_output: np.ndarray, test_idx: int, task_idx: int, task_id: str = None, print_stats: bool = False) -> tuple[DiffusionResult, DiffusionResult]:
         """
         Run smart confidence-split majority voting that returns top-2 predictions.
-        Uses only n_augment total predictions (not 2*n_augment).
+        Uses all 72 D4 augmentations.
         """
-        # Generate augmentations once
-        augmentations = generate_augmentations(n_augment)
+        # Generate all 72 augmentations
+        augmentations = generate_augmentations()
 
         if print_stats:
-            print(f"\n🔮 Smart majority voting for {task_id} test {test_idx}:")
+            print(f"\n🔮 Smart majority voting for {task_id} test {test_idx} (72 augmentations):")
 
         # Get top-2 predictions using confidence-split voting
         pred1, pred2 = self.predict_with_confidence_split_voting(
-            input_grid, task_idx, augmentations, batch_size=n_augment, print_stats=print_stats
+            input_grid, task_idx, augmentations, batch_size=72, print_stats=print_stats
         )
 
         # Check correctness for both predictions
@@ -1197,24 +1135,24 @@ class DiffusionInference:
 
         return result1, result2
 
-    def _run_attempt(self, input_grid: np.ndarray, expected_output: np.ndarray, test_idx: int, task_idx: int, task_id: str = None, capture_steps: bool = False, use_majority_voting: bool = False, n_augment: int = 40, print_stats: bool = False) -> DiffusionResult:
+    def _run_attempt(self, input_grid: np.ndarray, expected_output: np.ndarray, test_idx: int, task_idx: int, task_id: str = None, capture_steps: bool = False, use_majority_voting: bool = False, print_stats: bool = False) -> DiffusionResult:
         """Run a single diffusion attempt with copy and trajectory statistics"""
         if use_majority_voting:
-            # Generate augmentations
-            augmentations = generate_augmentations(n_augment)
+            # Generate all 72 augmentations
+            augmentations = generate_augmentations()
 
             if print_stats:
-                print(f"\n🔮 Majority voting for {task_id} test {test_idx}:")
+                print(f"\n🔮 Majority voting for {task_id} test {test_idx} (72 augmentations):")
 
             # Predict size with majority voting
             pred_height, pred_width = self.predict_size_with_majority_voting(
-                input_grid, task_idx, augmentations, batch_size=n_augment, print_stats=print_stats
+                input_grid, task_idx, augmentations, batch_size=72, print_stats=print_stats
             )
 
             # Predict output with majority voting
             predicted_grid = self.predict_with_majority_voting(
                 input_grid, task_idx, pred_height, pred_width,
-                augmentations, batch_size=n_augment, print_stats=print_stats
+                augmentations, batch_size=72, print_stats=print_stats
             )
 
             error = None
@@ -1490,8 +1428,7 @@ def main():
     parser.add_argument("--limit", type=int, default=0, help="Limit number of tasks to run (default: 0 for all)")
 
     # Majority voting ensemble
-    parser.add_argument("--maj", action="store_true", help="Enable majority voting with augmented inputs")
-    parser.add_argument("--n-augment", type=int, default=40, help="Number of augmentations for majority voting (default: 40)")
+    parser.add_argument("--maj", action="store_true", help="Enable majority voting with all 72 D4 augmentations")
     parser.add_argument("--stats", action="store_true", help="Print histogram statistics for majority voting")
 
     # Output and debugging
@@ -1697,7 +1634,6 @@ def main():
                     f"{dataset}/{subset}",
                     visualize=visualize,
                     use_majority_voting=args.maj,
-                    n_augment=args.n_augment,
                     print_stats=args.stats
                 )
                 results.append(result)

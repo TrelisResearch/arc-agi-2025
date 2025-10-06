@@ -24,7 +24,6 @@ class ARCDataset(Dataset):
         data_paths: List[str],
         max_size: int = 30,
         augment: bool = True,
-        n_augment: int = 3,
         include_training_test_examples: bool = True,
         subset_file: str = None,
         eval_subset_file: str = None,
@@ -34,8 +33,7 @@ class ARCDataset(Dataset):
         Args:
             data_paths: List of paths to JSON files containing ARC data
             max_size: Maximum grid size (grids will be padded to this size)
-            augment: Whether to apply task-level data augmentation
-            n_augment: Number of augmented versions per task (if augment=True)
+            augment: Whether to apply task-level data augmentation (uses all 71 D4 augmentations)
             include_training_test_examples: Whether to include test examples from training_challenges.json as training data
             subset_file: Optional path to text file containing training_challenges task IDs to include (one per line)
             eval_subset_file: Optional path to text file containing evaluation_challenges task IDs to include (one per line)
@@ -43,7 +41,6 @@ class ARCDataset(Dataset):
         """
         self.max_size = max_size
         self.augment = augment
-        self.n_augment = n_augment
         self.include_training_test_examples = include_training_test_examples
         self.eval_augment_boost = eval_augment_boost
 
@@ -170,10 +167,6 @@ class ARCDataset(Dataset):
         print(f"Loaded {len(all_tasks)} tasks")
 
         if self.augment:
-            if self.eval_augment_boost != 1.0:
-                print(f"Applying task-level augmentation: {self.n_augment} per training task, {int(self.n_augment * self.eval_augment_boost)} per evaluation task")
-            else:
-                print(f"Applying task-level augmentation with {self.n_augment} augmentations per task")
             self._apply_task_augmentation(all_tasks, eval_task_ids)  # Modifies all_tasks in-place
             print(f"Tasks after augmentation: {len(all_tasks)}")
 
@@ -196,15 +189,50 @@ class ARCDataset(Dataset):
                         'input_grid': example['input'],
                         'output_grid': example['output'],
                         'split': split,
-                        'rotation': example.get('rotation', 0),
-                        'flip': example.get('flip', 0),  # 0=none, 1=h, 2=v, 3=diag
+                        'd4_idx': example.get('d4_idx', 0),
                         'color_shift': example.get('color_shift', 0)
                     })
 
+    def _generate_all_augmentations(self) -> List[tuple]:
+        """
+        Generate all unique augmentation combinations using D4 symmetry group.
+
+        D4 (dihedral group of order 8) has 8 unique spatial transformations:
+        0: identity
+        1: rotate 90°
+        2: rotate 180°
+        3: rotate 270°
+        4: flip horizontal
+        5: flip vertical
+        6: flip main diagonal
+        7: flip anti-diagonal
+
+        Combined with 9 color shifts (0-8), we get 8 × 9 = 72 total combinations.
+        Minus 1 identity (d4=0, color=0) = 71 unique augmentations.
+
+        Returns:
+            List of (d4_idx, color_shift) tuples
+        """
+        d4_transformations = list(range(8))  # 8 D4 group elements
+        color_shifts = list(range(9))  # 0-8
+
+        # Generate all combinations deterministically
+        all_augmentations = [
+            (d4, color)
+            for color in color_shifts
+            for d4 in d4_transformations
+        ]
+
+        # Remove identity (no-op)
+        all_augmentations = [aug for aug in all_augmentations if aug != (0, 0)]
+
+        return all_augmentations
+
     def _apply_task_augmentation(self, tasks: Dict[str, Dict], eval_task_ids: set):
-        """Apply task-level augmentation by adding augmentation parameters to examples in-place."""
-        # Mapping for flip types to indices
-        flip_to_idx = {'none': 0, 'horizontal': 1, 'vertical': 2, 'diagonal': 3}
+        """Apply task-level augmentation by adding all unique D4 augmentation combinations to each task."""
+        # Generate all unique augmentations once
+        all_augmentations = self._generate_all_augmentations()
+        print(f"Applying {len(all_augmentations)} unique augmentations per task")
 
         for task_id, task_data in tasks.items():
             # Store original examples separately to avoid augmenting augmented examples
@@ -213,43 +241,22 @@ class ARCDataset(Dataset):
                 'test': list(task_data['test'])
             }
 
-            # Determine number of augmentations for this task
-            is_eval_task = task_id in eval_task_ids
-            n_aug = int(self.n_augment * self.eval_augment_boost) if is_eval_task else self.n_augment
-
-            for aug_idx in range(n_aug):
-                # Generate random augmentation parameters
-                flip_type = random.choice(['none', 'none', 'horizontal', 'vertical'])  # 'none' has 2x weight
-                rotation = random.choice([0, 90, 180, 270])
-                color_shift = random.choice(range(9))  # 0-8
-
-                # Skip no-op augmentations (identical to original)
-                is_no_op = (flip_type == 'none' and rotation == 0 and color_shift == 0)
-                if is_no_op:
-                    continue
-
-                # Convert rotation to index (0->0, 90->1, 180->2, 270->3)
-                rotation_idx = rotation // 90
-                flip_idx = flip_to_idx[flip_type]
-
+            for d4_idx, color_shift in all_augmentations:
                 # Apply augmentation to all ORIGINAL examples in this task
                 for split in ['train', 'test']:
                     for example in original_examples[split]:
-                        # Augment grids
-                        input_grid = TaskAugmentation.apply_flip_augmentation(example['input'], flip_type)
-                        input_grid = TaskAugmentation.apply_rotation_augmentation(input_grid, rotation)
+                        # Augment grids using D4 transformation
+                        input_grid = TaskAugmentation.apply_d4_augmentation(example['input'], d4_idx)
                         input_grid = TaskAugmentation.apply_color_cycle_augmentation(input_grid, color_shift)
 
-                        output_grid = TaskAugmentation.apply_flip_augmentation(example['output'], flip_type)
-                        output_grid = TaskAugmentation.apply_rotation_augmentation(output_grid, rotation)
+                        output_grid = TaskAugmentation.apply_d4_augmentation(example['output'], d4_idx)
                         output_grid = TaskAugmentation.apply_color_cycle_augmentation(output_grid, color_shift)
 
                         # Append to existing task_data
                         task_data[split].append({
                             'input': input_grid,
                             'output': output_grid,
-                            'rotation': rotation_idx,
-                            'flip': flip_idx,
+                            'd4_idx': d4_idx,
                             'color_shift': color_shift
                         })
 
@@ -280,8 +287,7 @@ class ARCDataset(Dataset):
             'task_idx': torch.tensor(example['task_idx'], dtype=torch.long),
             'height': torch.tensor(output_h, dtype=torch.long),
             'width': torch.tensor(output_w, dtype=torch.long),
-            'rotation': torch.tensor(example['rotation'], dtype=torch.long),
-            'flip': torch.tensor(example['flip'], dtype=torch.long),
+            'd4_idx': torch.tensor(example['d4_idx'], dtype=torch.long),
             'color_shift': torch.tensor(example['color_shift'], dtype=torch.long),
             'task_id': example['task_id']  # Keep string ID for debugging
         }
@@ -397,8 +403,7 @@ def collate_fn(batch: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
     task_indices = torch.stack([item['task_idx'] for item in batch])
     heights = torch.stack([item['height'] for item in batch])
     widths = torch.stack([item['width'] for item in batch])
-    rotations = torch.stack([item['rotation'] for item in batch])
-    flips = torch.stack([item['flip'] for item in batch])
+    d4_indices = torch.stack([item['d4_idx'] for item in batch])
     color_shifts = torch.stack([item['color_shift'] for item in batch])
 
     return {
@@ -407,8 +412,7 @@ def collate_fn(batch: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
         'task_idx': task_indices,
         'height': heights,
         'width': widths,
-        'rotation': rotations,
-        'flip': flips,
+        'd4_idx': d4_indices,
         'color_shift': color_shifts,
         'task_ids': [item['task_id'] for item in batch]  # Keep string IDs for debugging
     }

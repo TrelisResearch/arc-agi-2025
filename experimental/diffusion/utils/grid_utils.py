@@ -177,42 +177,72 @@ class TaskAugmentation:
     """Task-level augmentation utilities for ARC data."""
 
     @staticmethod
-    def apply_flip_augmentation(grid: np.ndarray, flip_type: str) -> np.ndarray:
-        """Apply flip augmentation to a grid.
+    def apply_d4_augmentation(grid: np.ndarray, d4_idx: int) -> np.ndarray:
+        """Apply D4 dihedral group transformation to a grid.
+
+        D4 (dihedral group of order 8) has 8 unique spatial transformations:
+        0: identity
+        1: rotate 90° clockwise
+        2: rotate 180°
+        3: rotate 270° clockwise (= 90° counter-clockwise)
+        4: flip horizontal
+        5: flip vertical
+        6: flip main diagonal (transpose)
+        7: flip anti-diagonal
 
         Args:
             grid: Input grid [H, W]
-            flip_type: 'horizontal', 'vertical', or 'none'
+            d4_idx: D4 transformation index (0-7)
 
         Returns:
-            Augmented grid [H, W]
+            Transformed grid [H, W]
         """
-        if flip_type == 'horizontal':
-            return np.fliplr(grid)
-        elif flip_type == 'vertical':
-            return np.flipud(grid)
-        else:  # 'none'
+        if d4_idx == 0:  # identity
             return grid.copy()
+        elif d4_idx == 1:  # rotate 90° clockwise
+            return np.rot90(grid, k=-1)
+        elif d4_idx == 2:  # rotate 180°
+            return np.rot90(grid, k=2)
+        elif d4_idx == 3:  # rotate 270° clockwise
+            return np.rot90(grid, k=1)
+        elif d4_idx == 4:  # flip horizontal
+            return np.fliplr(grid)
+        elif d4_idx == 5:  # flip vertical
+            return np.flipud(grid)
+        elif d4_idx == 6:  # flip main diagonal (transpose)
+            return np.transpose(grid)
+        elif d4_idx == 7:  # flip anti-diagonal
+            return np.rot90(np.transpose(grid), k=2)
+        else:
+            raise ValueError(f"Invalid d4_idx: {d4_idx}. Must be 0-7.")
 
     @staticmethod
-    def apply_rotation_augmentation(grid: np.ndarray, rotation: int) -> np.ndarray:
-        """Apply rotation augmentation to a grid.
+    def reverse_d4_augmentation(grid: np.ndarray, d4_idx: int) -> np.ndarray:
+        """Reverse (invert) a D4 dihedral group transformation.
+
+        D4 inverse mapping:
+        0 (identity) → 0
+        1 (rot90) → 3 (rot270)
+        2 (rot180) → 2 (rot180, self-inverse)
+        3 (rot270) → 1 (rot90)
+        4 (flip_h) → 4 (self-inverse)
+        5 (flip_v) → 5 (self-inverse)
+        6 (flip_diag) → 6 (self-inverse)
+        7 (flip_anti) → 7 (self-inverse)
 
         Args:
             grid: Input grid [H, W]
-            rotation: 0, 90, 180, or 270 degrees
+            d4_idx: D4 transformation index (0-7) to reverse
 
         Returns:
-            Rotated grid
+            Grid with inverse transformation applied [H, W]
         """
-        if rotation == 90:
-            return np.rot90(grid, k=-1)  # 90 clockwise
-        elif rotation == 180:
-            return np.rot90(grid, k=2)
-        elif rotation == 270:
-            return np.rot90(grid, k=1)   # 270 clockwise = 90 counter-clockwise
-        else:  # 0
-            return grid.copy()
+        # D4 inverse mapping
+        inverse_map = {0: 0, 1: 3, 2: 2, 3: 1, 4: 4, 5: 5, 6: 6, 7: 7}
+        inverse_idx = inverse_map.get(d4_idx)
+        if inverse_idx is None:
+            raise ValueError(f"Invalid d4_idx: {d4_idx}. Must be 0-7.")
+        return TaskAugmentation.apply_d4_augmentation(grid, inverse_idx)
 
     @staticmethod
     def apply_color_cycle_augmentation(grid: np.ndarray, cycle_offset: int) -> np.ndarray:
@@ -239,68 +269,61 @@ class TaskAugmentation:
         return color_map[grid]
 
     @staticmethod
-    def augment_task(task_data: dict, flip_type: str, rotation: int, color_cycle: int, task_suffix: str) -> dict:
-        """Apply consistent augmentation to an entire task.
+    def reverse_color_cycle_augmentation(grid: np.ndarray, cycle_offset: int) -> np.ndarray:
+        """Reverse color cycling augmentation.
 
         Args:
-            task_data: Original task with 'train' and 'test' lists
-            flip_type: 'horizontal', 'vertical', or 'none'
-            rotation: 0, 90, 180, or 270 degrees
-            color_cycle: 0-8 color cycle offset
-            task_suffix: Suffix to add to task ID
+            grid: Input grid [H, W] with values 0-9
+            cycle_offset: Original cycle offset (0-8) to reverse
 
         Returns:
-            Augmented task data
+            Grid with reversed color cycling [H, W]
         """
-        augmented_task = {
-            'train': [],
-            'test': []
-        }
+        if cycle_offset == 0:
+            return grid.copy()
 
-        # Apply same augmentation to all examples
-        for split in ['train', 'test']:
-            for example in task_data[split]:
-                # Augment input grid
-                input_grid = example['input']
-                input_grid = TaskAugmentation.apply_flip_augmentation(input_grid, flip_type)
-                input_grid = TaskAugmentation.apply_rotation_augmentation(input_grid, rotation)
-                input_grid = TaskAugmentation.apply_color_cycle_augmentation(input_grid, color_cycle)
-
-                # Augment output grid
-                output_grid = example['output']
-                output_grid = TaskAugmentation.apply_flip_augmentation(output_grid, flip_type)
-                output_grid = TaskAugmentation.apply_rotation_augmentation(output_grid, rotation)
-                output_grid = TaskAugmentation.apply_color_cycle_augmentation(output_grid, color_cycle)
-
-                augmented_task[split].append({
-                    'input': input_grid,
-                    'output': output_grid
-                })
-
-        return augmented_task
-
-
-class GridAugmentation:
-    """Simple augmentation for ARC grids: rotations and reflections."""
+        # To reverse a cycle, apply the inverse cycle: (9 - offset)
+        reverse_offset = 9 - cycle_offset
+        return TaskAugmentation.apply_color_cycle_augmentation(grid, reverse_offset)
 
     @staticmethod
-    def rotate_90(input_grid: torch.Tensor, output_grid: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Rotate both grids 90 degrees clockwise."""
-        # torch.rot90 rotates counter-clockwise, so use k=-1 for clockwise
-        input_rot = torch.rot90(input_grid, k=-1, dims=(-2, -1))
-        output_rot = torch.rot90(output_grid, k=-1, dims=(-2, -1))
-        return input_rot, output_rot
+    def generate_all_d4_augmentations() -> List[Tuple[int, int]]:
+        """Generate all 72 D4 × color augmentations (8 D4 × 9 colors).
+
+        Returns:
+            List of (d4_idx, color_cycle) tuples, with identity (0, 0) first
+        """
+        augmentations = []
+        # Identity first
+        augmentations.append((0, 0))
+        # All other combinations
+        for d4_idx in range(8):
+            for color_cycle in range(9):
+                if d4_idx == 0 and color_cycle == 0:
+                    continue  # Skip identity, already added
+                augmentations.append((d4_idx, color_cycle))
+        return augmentations
 
     @staticmethod
-    def flip_horizontal(input_grid: torch.Tensor, output_grid: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Flip both grids horizontally."""
-        input_flip = torch.flip(input_grid, dims=(-1,))
-        output_flip = torch.flip(output_grid, dims=(-1,))
-        return input_flip, output_flip
+    def deaugment_size_d4(height: int, width: int, d4_idx: int) -> Tuple[int, int]:
+        """De-augment size prediction based on D4 transformation.
 
-    @staticmethod
-    def flip_vertical(input_grid: torch.Tensor, output_grid: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Flip both grids vertically."""
-        input_flip = torch.flip(input_grid, dims=(-2,))
-        output_flip = torch.flip(output_grid, dims=(-2,))
-        return input_flip, output_flip
+        D4 transformations that swap dimensions:
+        - d4=1 (rot90): swaps
+        - d4=3 (rot270): swaps
+        - d4=6 (flip_diag/transpose): swaps
+        - d4=7 (flip_anti): swaps
+
+        Args:
+            height: Predicted height
+            width: Predicted width
+            d4_idx: D4 transformation index (0-7)
+
+        Returns:
+            (de_augmented_height, de_augmented_width)
+        """
+        if d4_idx in [1, 3, 6, 7]:  # Transformations that swap dimensions
+            return width, height
+        else:
+            return height, width
+
