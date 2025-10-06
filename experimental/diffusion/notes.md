@@ -39,10 +39,9 @@ Correct!
 ### Oct 6th 2025
 #### Fixing up augmentations
 Fixes:
-- instead of having an input for flips and one for rotates, we just have one with eight possible values (incl. the original) for the eight possible values of the dihedral group d4.
-- dataset weighting `eval_augment_boost` is now replaced by `eval_weight`.
-
-btw there's also the question now of how we handle the boost parameter. The intent there is just to upweight the evaluation dataset versus the trainign dataset. What options do we have, broadly, for doing this?
+- Instead of having an input for flips and one for rotates, we just have one with eight possible values (incl. the original) for the eight possible values of the dihedral group d4.
+- Evaluation versus Training dataset weighting is now controled by `eval_weight`, and there is a pytorch sampler that allows for this.
+- Validation is now done using evaluation test examples, a max of 128.
 
 #### Running toiny with the snr input
 ```bash
@@ -74,6 +73,7 @@ aa2:
 General Notes:
 - *Val curves differ for aa1 and aa2* Unclear why the val/accuracy curves move upwards with model size for aa2 (as one would expect), but fall for aa1 - even though training loss curves fall for aa1. In both cases, the weighting of train to eval data in the training mix is 50-50. The validation dataset is taken at random from the mixed dataset used for training.
 - *Tasks are solved with few initial diffusion steps* The tasks that are solved, when allowing 32 steps, are solved within the first or first few diffusion steps. I'm unsure if this indicates we have a sub-optimal noise scheduler. Apparently cosine does make sense here. One change I've made is, instead of embedding timestep, I'm now embedding alpha_bar_s, which is the level of noise at that given timestep. Hopefully this gets the model to more progressively de-noise.
+- *Validation losses are not meaningful* Since I sample so many augmentations the validation split is contaminated with examples that are in training. Oddly, the training and validation loss are not the same, which is perhaps just because i) some validation examples don't appear in training (by chance), and ii) the distributions are not the same and therefore the trainer may be weighting performance towards certain permutations.
 
 Improvements:
 - Embed the noise level rather than an integer timestamp (to which a sinusoidal embedding was applied). DONE FOR V2.

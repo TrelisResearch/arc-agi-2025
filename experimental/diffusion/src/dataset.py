@@ -27,7 +27,8 @@ class ARCDataset(Dataset):
         include_training_test_examples: bool = True,
         subset_file: str = None,
         eval_subset_file: str = None,
-        eval_augment_boost: float = 1.0,
+        eval_weight: float = 1.0,
+        max_val_examples: int = 128,
     ):
         """
         Args:
@@ -37,12 +38,14 @@ class ARCDataset(Dataset):
             include_training_test_examples: Whether to include test examples from training_challenges.json as training data
             subset_file: Optional path to text file containing training_challenges task IDs to include (one per line)
             eval_subset_file: Optional path to text file containing evaluation_challenges task IDs to include (one per line)
-            eval_augment_boost: Multiplier for number of augmentations applied to evaluation_challenges tasks
+            eval_weight: Weight for sampling evaluation_challenges examples (for WeightedRandomSampler)
+            max_val_examples: Maximum number of validation examples from evaluation test set
         """
         self.max_size = max_size
         self.augment = augment
         self.include_training_test_examples = include_training_test_examples
-        self.eval_augment_boost = eval_augment_boost
+        self.eval_weight = eval_weight
+        self.max_val_examples = max_val_examples
 
         # Load training subset task IDs if provided
         self.subset_task_ids = None
@@ -98,6 +101,9 @@ class ARCDataset(Dataset):
         # Load training solutions to get outputs for training test examples
         training_solutions = self._load_solutions(f"data/{dataset_name}/arc-agi_training_solutions.json")
 
+        # Load evaluation solutions to get outputs for evaluation test examples (for validation)
+        evaluation_solutions = self._load_solutions(f"data/{dataset_name}/arc-agi_evaluation_solutions.json")
+
         for data_path in data_paths:
             print(f"Loading data from {data_path}")
             with open(data_path, 'r') as f:
@@ -133,8 +139,21 @@ class ARCDataset(Dataset):
                         'output': np.array(example['output'])
                     })
 
-                # Process test examples as training data
-                if self.include_training_test_examples and not is_evaluation_challenges:
+                # Process test examples
+                if is_evaluation_challenges:
+                    # For evaluation_challenges, test examples are for validation only
+                    for i, example in enumerate(task_data.get('test', [])):
+                        input_grid = np.array(example['input'])
+
+                        # Get output from evaluation_solutions.json
+                        if task_id in evaluation_solutions and i < len(evaluation_solutions[task_id]):
+                            output_grid = np.array(evaluation_solutions[task_id][i])
+                            task_examples['test'].append({
+                                'input': input_grid,
+                                'output': output_grid,
+                                'is_validation': True  # Mark as validation-only
+                            })
+                elif self.include_training_test_examples:
                     # For training_challenges.json, use training_solutions.json for test outputs
                     for i, example in enumerate(task_data.get('test', [])):
                         input_grid = np.array(example['input'])
@@ -190,7 +209,9 @@ class ARCDataset(Dataset):
                         'output_grid': example['output'],
                         'split': split,
                         'd4_idx': example.get('d4_idx', 0),
-                        'color_shift': example.get('color_shift', 0)
+                        'color_shift': example.get('color_shift', 0),
+                        'is_validation': example.get('is_validation', False),
+                        'from_eval_dataset': task_id in eval_task_ids  # Track which dataset
                     })
 
     def _generate_all_augmentations(self) -> List[tuple]:
@@ -236,9 +257,10 @@ class ARCDataset(Dataset):
 
         for task_id, task_data in tasks.items():
             # Store original examples separately to avoid augmenting augmented examples
+            # Skip validation examples (don't augment them)
             original_examples = {
                 'train': list(task_data['train']),
-                'test': list(task_data['test'])
+                'test': [ex for ex in task_data['test'] if not ex.get('is_validation', False)]
             }
 
             for d4_idx, color_shift in all_augmentations:

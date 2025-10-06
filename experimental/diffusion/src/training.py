@@ -684,6 +684,9 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
     )
 
     # Create full dataset first
+    max_val_examples = config.get('max_val_examples', 128)
+    eval_weight = config.get('eval_weight', 1.0)
+
     full_dataset = ARCDataset(
         data_paths=data_paths['train'],
         max_size=config['max_size'],
@@ -691,21 +694,44 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         include_training_test_examples=config.get('include_training_test_examples', True),
         subset_file=config.get('subset_file', None),
         eval_subset_file=config.get('eval_subset_file', None),
-        eval_augment_boost=config.get('eval_augment_boost', 1.0)
+        eval_weight=eval_weight,
+        max_val_examples=max_val_examples
     )
 
-    # Split into train and validation
+    # Split into train and validation based on is_validation flag
+    # Validation examples are evaluation test examples (marked during loading)
+    import random
+
     total_examples = len(full_dataset)
-    max_val_examples = config.get('max_val_examples', 32)
-    val_size = min(int(0.1 * total_examples), max_val_examples)
-    train_size = total_examples - val_size
+    val_indices = [i for i in range(total_examples) if full_dataset.examples[i].get('is_validation', False)]
+    train_indices = [i for i in range(total_examples) if i not in set(val_indices)]
 
-    print(f"Splitting {total_examples} examples: {train_size} train, {val_size} validation")
+    # Cap validation at max_val_examples with fixed seed
+    random.seed(42)
+    if len(val_indices) > max_val_examples:
+        val_indices = sorted(random.sample(val_indices, max_val_examples))
 
-    # Create train/val split
-    train_dataset, val_dataset = torch.utils.data.random_split(
-        full_dataset, [train_size, val_size],
-        generator=torch.Generator().manual_seed(42)  # Reproducible split
+    print(f"Splitting {total_examples} examples: {len(train_indices)} train, {len(val_indices)} validation")
+
+    # Create Subset datasets
+    from torch.utils.data import Subset, WeightedRandomSampler
+
+    train_dataset = Subset(full_dataset, train_indices)
+    val_dataset = Subset(full_dataset, val_indices)
+
+    # Create weights for training examples based on eval_weight
+    train_weights = []
+    for idx in train_indices:
+        if full_dataset.examples[idx]['from_eval_dataset']:
+            train_weights.append(eval_weight)
+        else:
+            train_weights.append(1.0)
+
+    # Create weighted sampler for training
+    train_sampler = WeightedRandomSampler(
+        train_weights,
+        len(train_indices),
+        replacement=True
     )
 
     # Create data loaders with optimized settings
@@ -717,7 +743,7 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
     train_loader = DataLoader(
         train_dataset,
         batch_size=config['batch_size'],
-        shuffle=True,
+        sampler=train_sampler,  # Use weighted sampler instead of shuffle
         num_workers=num_workers,
         persistent_workers=use_persistent_workers,
         prefetch_factor=4 if num_workers > 0 else None,
@@ -739,6 +765,7 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
 
     print(f"Created train loader with {len(train_loader)} batches")
     print(f"Created val loader with {len(val_loader)} batches")
+    print(f"Training set upweighting: eval_weight={eval_weight}")
 
     # Get dataset info from the original full dataset
     dataset_info = full_dataset.get_task_info()
