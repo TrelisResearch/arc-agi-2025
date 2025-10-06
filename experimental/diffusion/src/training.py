@@ -787,6 +787,13 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             print(f"Merged mapping: {len(merged_task_id_to_idx)} total tasks")
             print(f"Using max_tasks={max_tasks}")
 
+        # Create noise scheduler first (needed for model initialization)
+        noise_scheduler_for_model = DiscreteNoiseScheduler(
+            num_timesteps=config['num_timesteps'],
+            vocab_size=config['vocab_size'],
+            schedule_type=config['schedule_type']
+        )
+
         # Create model with same architecture
         model = ARCDiffusionModel(
             vocab_size=config['vocab_size'],
@@ -798,7 +805,8 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             embedding_dropout=config.get('embedding_dropout', 0.1),
             input_grid_dropout=config.get('input_grid_dropout', 0.0),
             include_size_head=include_size_head,
-            size_head_hidden_dim=size_head_hidden_dim
+            size_head_hidden_dim=size_head_hidden_dim,
+            noise_scheduler=noise_scheduler_for_model
         )
 
         # Filter out incompatible keys (size mismatches) and handle partial task embedding loading
@@ -849,6 +857,13 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             if len(incompatible_keys.missing_keys) > 5:
                 print(f"    ... and {len(incompatible_keys.missing_keys) - 5} more")
     else:
+        # Create noise scheduler first (needed for model initialization)
+        noise_scheduler_for_model = DiscreteNoiseScheduler(
+            num_timesteps=config['num_timesteps'],
+            vocab_size=config['vocab_size'],
+            schedule_type=config['schedule_type']
+        )
+
         # Create model from scratch
         model = ARCDiffusionModel(
             vocab_size=config['vocab_size'],
@@ -860,7 +875,8 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             embedding_dropout=config.get('embedding_dropout', 0.1),
             input_grid_dropout=config.get('input_grid_dropout', 0.0),
             include_size_head=include_size_head,
-            size_head_hidden_dim=size_head_hidden_dim
+            size_head_hidden_dim=size_head_hidden_dim,
+            noise_scheduler=noise_scheduler_for_model
         )
 
     # Apply LoRA if configured

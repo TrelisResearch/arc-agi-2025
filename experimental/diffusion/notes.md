@@ -86,7 +86,7 @@ PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experiment
 ```
 - smol: 0% (although a similar model has scored 0.4% before)
 - mediom: 1.7%
-- lorge: 2.1%
+- lorge: 2.1% [1.2% with 128 steps, no maj]
 - huoge [stopped at 263299/384000]: still running
 
 On lorge, seeing this task correct: `71e489b6` and `981571dc` (the symetric complex pattern). Note that the task is correct after just a few diffusion steps and then stays the same from step 26 down to 0. For `981571dc`, the solution appears to be diffused out almost immediately.
@@ -102,10 +102,15 @@ PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experiment
 PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/giont_config_aa1.json > giont-v1-aa1.log 2>&1' &
 ```
 Scoring - all `--num-steps 32 --maj` - WITH A BROKEN INFERENCE SCHEDULER (WAS NOT CORRECTLY MAPPING TIMESTEPS TO THE ORIGINAL 128 STEPS):
-- smol: 13.8%. 
+- smol: 13.8%.  [with --num-steps 32 and without --maj: 9.1%]
 - mediom: 23.1%.
 - lorge: still running.
 - huoge: don't plan to run this.
+
+Scoring - all `--num-steps 32 --maj` - with scheduler fixed for inference:
+- smol: ...
+- mediom: ...
+- lorge: ...
 
 ### Oct 3rd 2025
 Have started some runs on aa1 and aa2 although they are running for cst forward pass steps, not optimizer steps. Still it can give some sense of performance.

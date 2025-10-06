@@ -54,6 +54,7 @@ class TransformerDenoiser(nn.Module):
         embedding_dropout: float = 0.1,
         input_grid_dropout: float = 0.0,  # Dropout probability for input grid conditioning
         sc_dropout_prob: float = 0.5,  # Self-conditioning dropout probability
+        noise_scheduler=None,  # Noise scheduler for alpha_bar-based timestep embedding
     ):
         super().__init__()
         self.d_model = d_model
@@ -61,6 +62,7 @@ class TransformerDenoiser(nn.Module):
         self.vocab_size = vocab_size
         self.input_grid_dropout = input_grid_dropout
         self.sc_dropout_prob = sc_dropout_prob
+        self.noise_scheduler = noise_scheduler
 
         # Token embedding with padding_idx for PAD token
         # Input/output grids use PAD (10) which gets auto-zeroed
@@ -181,7 +183,16 @@ class TransformerDenoiser(nn.Module):
         # Create separate conditioning tokens
         task_token = self.task_embedding(task_ids).unsqueeze(1)  # [batch_size, 1, d_model]
 
-        time_emb = create_timestep_embedding(timesteps, self.d_model)
+        # Use log(alpha_bar) for timestep embedding instead of raw integer timesteps
+        # This makes the embedding semantically meaningful (noise level) and generalizes better
+        if self.noise_scheduler is not None:
+            # Move timesteps to CPU to index alpha_bars, then back to device
+            alpha_bars = self.noise_scheduler.alpha_bars[timesteps.cpu()].to(device)
+            log_alpha_bars = torch.log(alpha_bars.clamp(min=1e-8))
+            time_emb = create_timestep_embedding(log_alpha_bars, self.d_model)
+        else:
+            # Fallback to integer timesteps if no scheduler provided (backward compatibility)
+            time_emb = create_timestep_embedding(timesteps.float(), self.d_model)
         time_token = self.time_projection(time_emb).unsqueeze(1)  # [batch_size, 1, d_model]
 
         # Add augmentation tokens if provided, otherwise use zeros (no augmentation)
@@ -241,6 +252,7 @@ class ARCDiffusionModel(nn.Module):
         sc_dropout_prob: float = 0.5,
         include_size_head: bool = True,
         size_head_hidden_dim: int = None,
+        noise_scheduler=None,
     ):
         super().__init__()
         self.vocab_size = vocab_size
@@ -257,7 +269,8 @@ class ARCDiffusionModel(nn.Module):
             max_tasks=max_tasks,
             embedding_dropout=embedding_dropout,
             input_grid_dropout=input_grid_dropout,
-            sc_dropout_prob=sc_dropout_prob
+            sc_dropout_prob=sc_dropout_prob,
+            noise_scheduler=noise_scheduler
         )
 
         # Integrated size prediction head (auxiliary task)
