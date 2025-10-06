@@ -43,6 +43,10 @@ Fixes:
 - Evaluation versus Training dataset weighting is now controled by `eval_weight`, and there is a pytorch sampler that allows for this.
 - Validation is now done using evaluation test examples, a max of 128.
 
+```bash
+nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config_aa1.json > smol-v3.log 2>&1' &
+```
+
 #### Running toiny with the snr input
 ```bash
 nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/toiny_config_aa1.json > toiny-v2.log 2>&1' &
@@ -71,15 +75,15 @@ aa2:
 - huoge [stopped at 2/3rds of the intended optimizer steps, not know why]: Scores 0%.
 
 General Notes:
-- *Val curves differ for aa1 and aa2* Unclear why the val/accuracy curves move upwards with model size for aa2 (as one would expect), but fall for aa1 - even though training loss curves fall for aa1. In both cases, the weighting of train to eval data in the training mix is 50-50. The validation dataset is taken at random from the mixed dataset used for training.
+- *Val curves differ for aa1 and aa2* Unclear why the val/accuracy curves move upwards with model size for aa2 (as one would expect), but fall for aa1 - even though training loss curves fall for aa1. In both cases, the weighting of train to eval data in the training mix is 50-50. The validation dataset is taken at random from the mixed dataset used for training. PERHAPS THIS IS DUE TO A BAD CHOICE FOR VALIDATION DATA SPLIT, SEE THE BULLET TWO BELOW. Essentially, validation and training curves were somewhat reflective of each other (minus a distribution and sampling shift). Now the validation should be reflective of test output performance.
 - *Tasks are solved with few initial diffusion steps* The tasks that are solved, when allowing 32 steps, are solved within the first or first few diffusion steps. I'm unsure if this indicates we have a sub-optimal noise scheduler. Apparently cosine does make sense here. One change I've made is, instead of embedding timestep, I'm now embedding alpha_bar_s, which is the level of noise at that given timestep. Hopefully this gets the model to more progressively de-noise.
 - *Validation losses are not meaningful* Since I sample so many augmentations the validation split is contaminated with examples that are in training. Oddly, the training and validation loss are not the same, which is perhaps just because i) some validation examples don't appear in training (by chance), and ii) the distributions are not the same and therefore the trainer may be weighting performance towards certain permutations.
 
 Improvements:
 - Embed the noise level rather than an integer timestamp (to which a sinusoidal embedding was applied). DONE FOR V2.
 - Consider training for longer, because the final checkpoint always seems to perform best. Doing this now.
+- We sample augmentations at random, which gives a very slightly non-uniform distribution of augmentations because there are overlapping combos (rotate 180 + flip horizontal is equivalent to flip diagonal). Probably doesn't have a huge effect. DONE.
 - Save the model optimizer state and more frequent checkpoints, to allow for training restarts. NOT DONE YET.
-- We sample augmentations at random, which gives a very slightly non-uniform distribution of augmentations because there are overlapping combos (rotate 180 + flip horizontal is equivalent to flip diagonal). Probably doesn't have a huge effect. NOT DONE YET.
 
 **aa2 results**
 ```bash
