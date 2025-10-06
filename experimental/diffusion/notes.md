@@ -1,18 +1,22 @@
-**Todo**
-[x] Implement cosine noise scheduler. Move to a uniform noise distribution.
-[x] Remove weight decay if duplicated? Was not duplicated, so added it back.
-[x] Use optimizer updates not epochs.
-[x] Remove input encoder and simplify positional encodings to use coordinate embeddings.
-[x] Just do self attention between task id, timestep, input cells and noised output cells.
-[x] Log info on accuracy.
-[x] Generate diffusion charts every x optimizer updates.
+# Diffusion Notes
 
-Command to run all three model sizes:
-```bash
-nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config.json > smol-v1.log 2>&1 ; \
-PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/mediom_config.json > mediom-v1.log 2>&1 ; \
-PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/lorge_config.json > lorge-v1.log 2>&1' &
-```
+**Notes on Schedulers**
+- What type of noise is being used?
+v1 uses a uniform noise kernel. Tokens are replaced at random with uniformly sampled values across 0-9.
+
+- What type of scheduler is being used in our v1 model? How does that compare to image and text diffusion models?
+Possibly linear was used originally but is too aggressive early on and not aggressive enough at the end.
+
+- What is the implication of using fewer steps?
+Faster inference, and larger denoising steps.
+
+- Why might a linear versus cosine scheduler be used?
+
+
+- What are some possible improvements that could be made to the noise schedule?
+
+
+
 
 **Clarifying Questions**
 - Alpha and beta
@@ -50,6 +54,30 @@ nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --co
 
 #### Running models on aa1 and aa2
 
+Results, all using majority voting of 40 attempts:
+aa1:
+- smol: 13.8% w/ wrong scheduler. 
+- mediom: 23.1%.
+- lorge: STILL RUNNING.
+- huoge: I don't plan to run this.
+
+aa2:
+- smol: 0% (although a similar model has scored 0.4% before)
+- mediom: 1.7%
+- lorge: 2.1% (best [no maj, 32 steps]: 1.2%; final [no maj, 128 steps]:  )
+- huoge [stopped at 2/3rds of the intended optimizer steps, not know why]: EVALUATION RUNNING.
+
+General Notes:
+- *Val curves differ for aa1 and aa2* Unclear why the val/accuracy curves move upwards with model size for aa2 (as one would expect), but fall for aa1 - even though training loss curves fall for aa1. In both cases, the weighting of train to eval data in the training mix is 50-50. The validation dataset is taken at random from the mixed dataset used for training.
+- *Tasks are solved with few initial diffusion steps* The tasks that are solved, when allowing 32 steps, are solved within the first or first few diffusion steps. I'm unsure if this indicates we have a sub-optimal noise scheduler.
+
+Improvements:
+- Ablate different noise schedules, because solved tasks are nearly always solved in the first or first few diffusion steps out of 32.
+- Consider training for longer, because the final checkpoint always seems to perform best.
+- Save the model optimizer state and more frequent checkpoints, to allow for training restarts.
+- We sample augmentations at random, which gives a very slightly non-uniform distribution of augmentations because there are overlapping combos (rotate 180 + flip horizontal is equivalent to flip diagonal). Probably doesn't have a huge effect.
+
+**aa2 results**
 ```bash
 nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/mediom_config.json > mediom-v1-boost.log 2>&1 ; \
 PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/lorge_config.json > lorge-v1-boost.log 2>&1 ; \
@@ -58,9 +86,14 @@ PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experiment
 ```
 - smol: 0% (although a similar model has scored 0.4% before)
 - mediom: 1.7%
-- lorge: still running
-- huoge: still running
+- lorge: 2.1%
+- huoge [stopped at 263299/384000]: still running
 
+On lorge, seeing this task correct: `71e489b6` and `981571dc` (the symetric complex pattern). Note that the task is correct after just a few diffusion steps and then stays the same from step 26 down to 0. For `981571dc`, the solution appears to be diffused out almost immediately.
+
+mv mediom-v1-boost.log experimental/diffusion/outputs/mediom/mediom-v1-boost.log
+
+**aa1 results**
 ```bash
 nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config_aa1.json > smol-v1-aa1.log 2>&1 ; \
 PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/mediom_config_aa1.json > mediom-v1-aa1.log 2>&1 ; \
@@ -68,10 +101,11 @@ PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experiment
 PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/huoge_config_aa1.json > huoge-v1-aa1.log 2>&1 ; \
 PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/giont_config_aa1.json > giont-v1-aa1.log 2>&1' &
 ```
-Scoring - all `--num-steps 32 --maj`:
-- smol: 13.8%
-- mediom: 23.1%
-- lorge: still running
+Scoring - all `--num-steps 32 --maj` - WITH A BROKEN INFERENCE SCHEDULER (WAS NOT CORRECTLY MAPPING TIMESTEPS TO THE ORIGINAL 128 STEPS):
+- smol: 13.8%. 
+- mediom: 23.1%.
+- lorge: still running.
+- huoge: don't plan to run this.
 
 ### Oct 3rd 2025
 Have started some runs on aa1 and aa2 although they are running for cst forward pass steps, not optimizer steps. Still it can give some sense of performance.

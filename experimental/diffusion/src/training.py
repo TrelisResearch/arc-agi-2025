@@ -558,12 +558,19 @@ class ARCDiffusionSampler:
         # Initialize self-conditioning buffer
         sc_p0 = None
 
-        # Denoising loop (reverse from T-1 to 0)
-        for t in reversed(range(num_inference_steps)):
-            if self.debug:
-                print(f"\n=== Timestep {t} (step {num_inference_steps - t}/{num_inference_steps}) ===")
+        # Create subsampled timestep indices from the full training range
+        # This ensures we walk the full noise schedule [T_train-1, ..., 0] in num_inference_steps
+        T_train = self.noise_scheduler.num_timesteps  # e.g., 128
+        timestep_indices = torch.round(
+            torch.linspace(T_train - 1, 0, num_inference_steps)
+        ).long().tolist()  # e.g., [127, 123, 119, ..., 4, 0] for 32 steps
 
-            # Create batch of current timestep
+        # Denoising loop (reverse from highest noise to clean)
+        for step_idx, t in enumerate(timestep_indices):
+            if self.debug:
+                print(f"\n=== Timestep {t} (step {step_idx + 1}/{num_inference_steps}) ===")
+
+            # Create batch of current timestep (using actual schedule index, not loop counter)
             t_batch = torch.full((batch_size,), t, device=self.device, dtype=torch.long)
 
             # Calculate self-conditioning gain (full gain during inference)
