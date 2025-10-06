@@ -56,7 +56,7 @@ nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --co
 
 Results, all using majority voting of 40 attempts:
 aa1:
-- smol: 13.8% w/ wrong scheduler. 
+- smol: 13.8% w/ wrong scheduler (although the scheduler issue appears to have been minor, the fix probably would boost the score up to around 15%). 
 - mediom: 23.1%.
 - lorge: STILL RUNNING.
 - huoge: I don't plan to run this.
@@ -65,14 +65,14 @@ aa2:
 - smol: 0% (although a similar model has scored 0.4% before)
 - mediom: 1.7%
 - lorge: 2.1% (best [no maj, 32 steps]: 1.2%; final [no maj, 128 steps]:  )
-- huoge [stopped at 2/3rds of the intended optimizer steps, not know why]: EVALUATION RUNNING.
+- huoge [stopped at 2/3rds of the intended optimizer steps, not know why]: Scores 0%.
 
 General Notes:
 - *Val curves differ for aa1 and aa2* Unclear why the val/accuracy curves move upwards with model size for aa2 (as one would expect), but fall for aa1 - even though training loss curves fall for aa1. In both cases, the weighting of train to eval data in the training mix is 50-50. The validation dataset is taken at random from the mixed dataset used for training.
-- *Tasks are solved with few initial diffusion steps* The tasks that are solved, when allowing 32 steps, are solved within the first or first few diffusion steps. I'm unsure if this indicates we have a sub-optimal noise scheduler.
+- *Tasks are solved with few initial diffusion steps* The tasks that are solved, when allowing 32 steps, are solved within the first or first few diffusion steps. I'm unsure if this indicates we have a sub-optimal noise scheduler. Apparently cosine does make sense here. One change I've made is, instead of embedding timestep, I'm now embedding alpha_bar_s, which is the level of noise at that given timestep. Hopefully this gets the model to more progressively de-noise.
 
 Improvements:
-- Ablate different noise schedules, because solved tasks are nearly always solved in the first or first few diffusion steps out of 32.
+- Embed the noise level rather than an integer timestamp (to which a sinusoidal embedding was applied).
 - Consider training for longer, because the final checkpoint always seems to perform best.
 - Save the model optimizer state and more frequent checkpoints, to allow for training restarts.
 - We sample augmentations at random, which gives a very slightly non-uniform distribution of augmentations because there are overlapping combos (rotate 180 + flip horizontal is equivalent to flip diagonal). Probably doesn't have a huge effect.
@@ -113,9 +113,11 @@ Scoring - all `--num-steps 32 --maj` - with scheduler fixed for inference BUT SC
 - lorge: ...
 
 Scoring - all with --num-steps 32 and without --maj - with scheduler fixed AND SC fixed:
-- smol: 9.0% [but self-conditioning is wrong!]
+- smol: 10.1%
 - mediom: ...
-- lorge: ...
+- lorge: 1.2% [unchanged after SC and scheduler fix].
+
+So maybe that fix does have some influence.
 
 ### Oct 3rd 2025
 Have started some runs on aa1 and aa2 although they are running for cst forward pass steps, not optimizer steps. Still it can give some sense of performance.

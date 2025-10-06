@@ -4,7 +4,7 @@ Discrete diffusion model for ARC tasks with size prediction and transformer back
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Tuple, Optional, Dict
+from typing import Tuple, Optional, Dict, Union
 
 from ..utils.noise_scheduler import create_timestep_embedding
 
@@ -116,13 +116,13 @@ class TransformerDenoiser(nn.Module):
         xt: torch.Tensor,  # [batch_size, max_size, max_size] - noisy output tokens
         input_grid: torch.Tensor,  # [batch_size, max_size, max_size] - input grid
         task_ids: torch.Tensor,  # [batch_size] - task IDs
-        timesteps: torch.Tensor,  # [batch_size] - timesteps
+        logsnr: torch.Tensor,  # [batch_size] - log signal-to-noise ratio
         rotation: Optional[torch.Tensor] = None,  # [batch_size] - rotation index (0,1,2,3)
         flip: Optional[torch.Tensor] = None,  # [batch_size] - flip index (0,1,2,3)
         color_shift: Optional[torch.Tensor] = None,  # [batch_size] - color shift (0-8)
         masks: Optional[torch.Tensor] = None,  # [batch_size, max_size, max_size]
         sc_p0: Optional[torch.Tensor] = None,  # [batch_size, max_size, max_size, 10] - self-conditioning probs
-        sc_gain: float = 1.0,  # Self-conditioning gain factor
+        sc_gain: Union[float, torch.Tensor] = 1.0,  # float or [batch_size] - Self-conditioning gain factor
     ) -> torch.Tensor:
         """
         Forward pass of the denoiser.
@@ -157,13 +157,23 @@ class TransformerDenoiser(nn.Module):
             sc_features = self.sc_proj(sc_p0_flat)  # [batch_size, max_size^2, d_model]
 
             # Add to xt embeddings with gain factor
-            xt_emb = xt_emb + sc_gain * sc_features
+            # Reshape sc_gain from [batch_size] to [batch_size, 1, 1] for broadcasting if it's a tensor
+            if isinstance(sc_gain, torch.Tensor):
+                sc_gain_reshaped = sc_gain.view(batch_size, 1, 1)
+            else:
+                sc_gain_reshaped = sc_gain
+            xt_emb = xt_emb + sc_gain_reshaped * sc_features
         elif self.training and torch.rand(1, device=device) > self.sc_dropout_prob:
             # During training without sc_p0, randomly apply zero self-conditioning
             # to train the model to work without self-conditioning
             zero_sc = torch.zeros(batch_size, self.max_size * self.max_size, 10, device=device)
             sc_features = self.sc_proj(zero_sc)
-            xt_emb = xt_emb + sc_gain * sc_features
+            # Reshape sc_gain from [batch_size] to [batch_size, 1, 1] for broadcasting if it's a tensor
+            if isinstance(sc_gain, torch.Tensor):
+                sc_gain_reshaped = sc_gain.view(batch_size, 1, 1)
+            else:
+                sc_gain_reshaped = sc_gain
+            xt_emb = xt_emb + sc_gain_reshaped * sc_features
 
         # Apply masking to xt features if masks provided
         # Zero out embeddings outside valid regions
@@ -183,16 +193,12 @@ class TransformerDenoiser(nn.Module):
         # Create separate conditioning tokens
         task_token = self.task_embedding(task_ids).unsqueeze(1)  # [batch_size, 1, d_model]
 
-        # Use log(alpha_bar) for timestep embedding instead of raw integer timesteps
-        # This makes the embedding semantically meaningful (noise level) and generalizes better
-        if self.noise_scheduler is not None:
-            # Move timesteps to CPU to index alpha_bars, then back to device
-            alpha_bars = self.noise_scheduler.alpha_bars[timesteps.cpu()].to(device)
-            log_alpha_bars = torch.log(alpha_bars.clamp(min=1e-8))
-            time_emb = create_timestep_embedding(log_alpha_bars, self.d_model)
-        else:
-            # Fallback to integer timesteps if no scheduler provided (backward compatibility)
-            time_emb = create_timestep_embedding(timesteps.float(), self.d_model)
+        # Use logSNR (log signal-to-noise ratio) for timestep embedding
+        # logSNR = log(alpha_bar / (1 - alpha_bar)) encodes noise level
+        # Ranges from +inf (clean) to -inf (noisy), centered around 0
+        # Clamp extreme values for numerical stability in sinusoidal embeddings
+        logsnr_clamped = logsnr.clamp(-20, 20)
+        time_emb = create_timestep_embedding(logsnr_clamped, self.d_model)
         time_token = self.time_projection(time_emb).unsqueeze(1)  # [batch_size, 1, d_model]
 
         # Add augmentation tokens if provided, otherwise use zeros (no augmentation)
@@ -294,16 +300,16 @@ class ARCDiffusionModel(nn.Module):
         xt: torch.Tensor,
         input_grid: torch.Tensor,
         task_ids: torch.Tensor,
-        timesteps: torch.Tensor,
+        logsnr: torch.Tensor,
         rotation: Optional[torch.Tensor] = None,
         flip: Optional[torch.Tensor] = None,
         color_shift: Optional[torch.Tensor] = None,
         masks: Optional[torch.Tensor] = None,
         sc_p0: Optional[torch.Tensor] = None,
-        sc_gain: float = 1.0,
+        sc_gain: Union[float, torch.Tensor] = 1.0,
     ) -> torch.Tensor:
         """Forward pass - predict x0 given xt."""
-        return self.denoiser(xt, input_grid, task_ids, timesteps, rotation, flip, color_shift, masks, sc_p0, sc_gain)
+        return self.denoiser(xt, input_grid, task_ids, logsnr, rotation, flip, color_shift, masks, sc_p0, sc_gain)
 
     def _compute_bucket_metrics(
         self,
@@ -353,7 +359,7 @@ class ARCDiffusionModel(nn.Module):
         input_grid: torch.Tensor,  # [batch_size, max_size, max_size] - input
         task_ids: torch.Tensor,  # [batch_size] - task IDs
         xt: torch.Tensor,  # [batch_size, max_size, max_size] - noisy tokens
-        timesteps: torch.Tensor,  # [batch_size] - timesteps
+        logsnr: torch.Tensor,  # [batch_size] - log signal-to-noise ratio
         rotation: Optional[torch.Tensor] = None,  # [batch_size] - rotation indices
         flip: Optional[torch.Tensor] = None,  # [batch_size] - flip indices
         color_shift: Optional[torch.Tensor] = None,  # [batch_size] - color shift
@@ -361,7 +367,7 @@ class ARCDiffusionModel(nn.Module):
         widths: Optional[torch.Tensor] = None,   # [batch_size] - grid widths
         auxiliary_size_loss_weight: float = 0.1,  # Weight for auxiliary size loss
         sc_p0: Optional[torch.Tensor] = None,  # [batch_size, max_size, max_size, 10] - self-conditioning probs
-        sc_gain: float = 1.0,  # Self-conditioning gain factor
+        sc_gain: Union[float, torch.Tensor] = 1.0,  # float or [batch_size] - Self-conditioning gain factor
     ) -> Dict[str, torch.Tensor]:
         """Compute training losses with optional masking for pad regions."""
         batch_size = x0.shape[0]
@@ -380,7 +386,7 @@ class ARCDiffusionModel(nn.Module):
             xt=xt,
             input_grid=input_grid,
             task_ids=task_ids,
-            timesteps=timesteps,
+            logsnr=logsnr,
             rotation=rotation,
             flip=flip,
             color_shift=color_shift,

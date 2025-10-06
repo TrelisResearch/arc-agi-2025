@@ -714,8 +714,11 @@ class DiffusionInference:
         # Initialize self-conditioning buffer
         sc_p0 = None
 
-        # Denoising loop
-        timesteps = torch.linspace(num_inference_steps - 1, 0, num_inference_steps, dtype=torch.long, device=self.device)
+        # Denoising loop: create timesteps and compute logSNR for each
+        T_train = self.noise_scheduler.num_timesteps  # e.g., 128
+        timesteps = torch.round(
+            torch.linspace(T_train - 1, 0, num_inference_steps)
+        ).long().to(self.device)  # e.g., [127, 123, 119, ..., 4, 0] for 32 steps
 
         # Create valid region mask for statistics (only compute within predicted size)
         valid_mask = torch.zeros((batch_size, max_size, max_size), dtype=torch.bool, device=self.device)
@@ -729,13 +732,16 @@ class DiffusionInference:
             for i, t in enumerate(timesteps):
                 t_batch = t.repeat(batch_size)
 
-                # Calculate self-conditioning gain (ramp from 0.3 to 1.0 over denoising process)
-                # At t=T-1 (start): gain=0.3, at t=0 (end): gain=1.0
-                progress = 1.0 - (t.item() / (num_inference_steps - 1)) if num_inference_steps > 1 else 1.0
-                sc_gain = 0.3 + 0.7 * progress
+                # Compute logSNR from timestep for model input
+                alpha_bars = self.noise_scheduler.alpha_bars[t_batch].clamp(1e-6, 1-1e-6).to(self.device)
+                logsnr = torch.log(alpha_bars) - torch.log1p(-alpha_bars)
+
+                # Calculate self-conditioning gain based on alpha_bar (noise level)
+                from experimental.diffusion.utils.noise_scheduler import sc_gain_from_abar
+                sc_gain = sc_gain_from_abar(t_batch, self.noise_scheduler)
 
                 # Forward pass with self-conditioning
-                logits = self.model(x_t, input_grids, task_indices, t_batch,
+                logits = self.model(x_t, input_grids, task_indices, logsnr,
                                    rotation=rotation, flip=flip, color_shift=color_shift,
                                    masks=mask_float, sc_p0=sc_p0, sc_gain=sc_gain)
 
@@ -760,8 +766,8 @@ class DiffusionInference:
                 mean_entropy = entropy.mean().item()
                 entropy_curve.append(mean_entropy)
 
-                # Sample or argmax
-                if t > 0:
+                # Sample or argmax (use .item() for tensor comparison)
+                if t.item() > 0:
                     x_t = torch.multinomial(probs.view(-1, probs.shape[-1]), 1).view(x_t.shape)
                 else:
                     x_t = torch.argmax(logits, dim=-1)

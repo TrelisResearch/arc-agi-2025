@@ -199,6 +199,11 @@ class ARCDiffusionTrainer:
         # Sample random timesteps (0-indexed: [0, num_timesteps))
         timesteps = torch.randint(0, self.noise_scheduler.num_timesteps, (batch_size,), device=self.device)
 
+        # Compute logSNR from timesteps for model input
+        # logSNR = log(alpha_bar / (1 - alpha_bar)) encodes signal-to-noise ratio
+        alpha_bars = self.noise_scheduler.alpha_bars[timesteps].clamp(1e-6, 1-1e-6).to(self.device)
+        logsnr = torch.log(alpha_bars) - torch.log1p(-alpha_bars)
+
         # Create masks for valid regions
         from experimental.diffusion.utils.grid_utils import batch_create_masks
         masks = batch_create_masks(heights, widths, self.model.max_size)
@@ -207,9 +212,10 @@ class ARCDiffusionTrainer:
         # Only noise valid regions, clamp invalid regions to 0
         noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps, masks)
 
-        # Calculate self-conditioning gain (ramp from 0.3 to 1.0 over training)
-        progress = min(1.0, self.global_step / (0.8 * self.optimizer_steps))  # Reach 1.0 at 80% of training
-        sc_gain = 0.3 + 0.7 * progress
+        # Calculate self-conditioning gain based on alpha_bar (noise level)
+        # Low alpha_bar (high noise) → low gain (0.3), High alpha_bar (low noise) → high gain (1.0)
+        from ..utils.noise_scheduler import sc_gain_from_abar
+        sc_gain = sc_gain_from_abar(timesteps, self.noise_scheduler)
 
         # First pass: Generate p0_prev without gradients for self-conditioning
         sc_p0 = None
@@ -221,7 +227,7 @@ class ARCDiffusionTrainer:
                             xt=noisy_grids,
                             input_grid=input_grids,
                             task_ids=task_indices,
-                            timesteps=timesteps,
+                            logsnr=logsnr,
                             rotation=rotations,
                             flip=flips,
                             color_shift=color_shifts,
@@ -234,7 +240,7 @@ class ARCDiffusionTrainer:
                         xt=noisy_grids,
                         input_grid=input_grids,
                         task_ids=task_indices,
-                        timesteps=timesteps,
+                        logsnr=logsnr,
                         rotation=rotations,
                         flip=flips,
                         color_shift=color_shifts,
@@ -253,7 +259,7 @@ class ARCDiffusionTrainer:
                     input_grid=input_grids,
                     task_ids=task_indices,
                     xt=noisy_grids,
-                    timesteps=timesteps,
+                    logsnr=logsnr,
                     rotation=rotations,
                     flip=flips,
                     color_shift=color_shifts,
@@ -269,7 +275,7 @@ class ARCDiffusionTrainer:
                 input_grid=input_grids,
                 task_ids=task_indices,
                 xt=noisy_grids,
-                timesteps=timesteps,
+                logsnr=logsnr,
                 rotation=rotations,
                 flip=flips,
                 color_shift=color_shifts,
@@ -372,6 +378,14 @@ class ARCDiffusionTrainer:
                 # Only noise valid regions, clamp invalid regions to 0
                 noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps, masks)
 
+                # Compute logSNR from timesteps for model input
+                alpha_bars = self.noise_scheduler.alpha_bars[timesteps].clamp(1e-6, 1-1e-6).to(self.device)
+                logsnr = torch.log(alpha_bars) - torch.log1p(-alpha_bars)
+
+                # Calculate self-conditioning gain based on alpha_bar (noise level)
+                from ..utils.noise_scheduler import sc_gain_from_abar
+                sc_gain = sc_gain_from_abar(timesteps, self.noise_scheduler)
+
                 # Forward pass (no CFG during validation) with mixed precision
                 if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
                     with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
@@ -380,9 +394,11 @@ class ARCDiffusionTrainer:
                             input_grid=input_grids,
                             task_ids=task_indices,
                             xt=noisy_grids,
-                            timesteps=timesteps,
+                            logsnr=logsnr,
                             heights=heights,
-                            widths=widths
+                            widths=widths,
+                            sc_p0=None,
+                            sc_gain=sc_gain
                         )
                 else:
                     losses = self.model.compute_loss(
@@ -390,9 +406,11 @@ class ARCDiffusionTrainer:
                         input_grid=input_grids,
                         task_ids=task_indices,
                         xt=noisy_grids,
-                        timesteps=timesteps,
+                        logsnr=logsnr,
                         heights=heights,
-                        widths=widths
+                        widths=widths,
+                        sc_p0=None,
+                        sc_gain=sc_gain
                     )
 
                 # Initialize total_losses on first batch
@@ -573,11 +591,16 @@ class ARCDiffusionSampler:
             # Create batch of current timestep (using actual schedule index, not loop counter)
             t_batch = torch.full((batch_size,), t, device=self.device, dtype=torch.long)
 
-            # Calculate self-conditioning gain (full gain during inference)
-            sc_gain = 1.0
+            # Compute logSNR from timestep for model input
+            alpha_bars = self.noise_scheduler.alpha_bars[t_batch].clamp(1e-6, 1-1e-6).to(self.device)
+            logsnr = torch.log(alpha_bars) - torch.log1p(-alpha_bars)
+
+            # Calculate self-conditioning gain based on alpha_bar (noise level)
+            from ..utils.noise_scheduler import sc_gain_from_abar
+            sc_gain = sc_gain_from_abar(t_batch, self.noise_scheduler)
 
             # Forward pass with masking and self-conditioning (no augmentation during inference)
-            logits = self.model(x_t, input_grids, task_indices, t_batch,
+            logits = self.model(x_t, input_grids, task_indices, logsnr,
                                rotation=None, flip=None, color_shift=None,  # No augmentation
                                masks=mask_float, sc_p0=sc_p0, sc_gain=sc_gain)
 
