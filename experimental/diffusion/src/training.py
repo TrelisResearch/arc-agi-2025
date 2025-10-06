@@ -193,29 +193,6 @@ class ARCDiffusionTrainer:
 
         batch_size = input_grids.shape[0]
 
-        # DEBUG: Print task embedding info (first batch only)
-        if not hasattr(self, '_debug_printed_task_embedding'):
-            with torch.no_grad():
-                # Get task_id_to_idx mapping
-                task_info = self.dataset.get_task_info()
-                task_id_to_idx = task_info['task_id_to_idx']
-
-                # Use a specific evaluation task that will also be used in inference
-                # This ensures we can compare the same task between training and inference
-                debug_task_id = "0934a4d8"  # First evaluation task
-                if debug_task_id in task_id_to_idx:
-                    debug_task_idx = task_id_to_idx[debug_task_id]
-                    debug_task_idx_tensor = torch.tensor([debug_task_idx], device=self.device)
-                    task_emb = self.model.denoiser.task_embedding(debug_task_idx_tensor)
-                    print(f"\n🔍 DEBUG: Training task embedding verification")
-                    print(f"  Task ID: {debug_task_id}")
-                    print(f"  Task index (from task_id_to_idx): {debug_task_idx}")
-                    print(f"  Task embedding (first 10 dims): {task_emb[0, :10].cpu().numpy()}")
-                    print(f"  Task embedding norm: {task_emb.norm().item():.4f}\n")
-                else:
-                    print(f"\n⚠️  DEBUG: Task {debug_task_id} not found in task_id_to_idx mapping\n")
-            self._debug_printed_task_embedding = True
-
         # Apply pixel noise to input grids only (not outputs)
         input_grids = self.apply_pixel_noise(input_grids)
 
@@ -1272,4 +1249,23 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         wandb.finish()
 
     print("Training completed!")
+
+    # DEBUG: Print task embedding info after training
+    with torch.no_grad():
+        # Get task_id_to_idx mapping
+        task_info = dataset_info
+        task_id_to_idx = task_info['task_id_to_idx']
+
+        # Use a specific evaluation task that will also be used in inference
+        debug_task_id = "0934a4d8"  # First evaluation task
+        if debug_task_id in task_id_to_idx:
+            debug_task_idx = task_id_to_idx[debug_task_id]
+            debug_task_idx_tensor = torch.tensor([debug_task_idx], device=device)
+            task_emb = model.denoiser.task_embedding(debug_task_idx_tensor)
+            print(f"\n🔍 DEBUG: Training task embedding verification (after training)")
+            print(f"  Task ID: {debug_task_id}")
+            print(f"  Task index (from task_id_to_idx): {debug_task_idx}")
+            print(f"  Task embedding (first 10 dims): {task_emb[0, :10].cpu().numpy()}")
+            print(f"  Task embedding norm: {task_emb.norm().item():.4f}\n")
+
     return model
