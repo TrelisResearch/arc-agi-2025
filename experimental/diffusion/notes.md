@@ -87,7 +87,7 @@ PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experiment
 - smol: 0% (although a similar model has scored 0.4% before)
 - mediom: 1.7%
 - lorge: 2.1% [1.2% with 128 steps, no maj]
-- huoge [stopped at 263299/384000]: still running
+- huoge [stopped at 263299/384000]: 0% running best model.
 
 On lorge, seeing this task correct: `71e489b6` and `981571dc` (the symetric complex pattern). Note that the task is correct after just a few diffusion steps and then stays the same from step 26 down to 0. For `981571dc`, the solution appears to be diffused out almost immediately.
 
@@ -107,8 +107,13 @@ Scoring - all `--num-steps 32 --maj` - WITH A BROKEN INFERENCE SCHEDULER (WAS NO
 - lorge: still running.
 - huoge: don't plan to run this.
 
-Scoring - all `--num-steps 32 --maj` - with scheduler fixed for inference:
-- smol: ...
+Scoring - all `--num-steps 32 --maj` - with scheduler fixed for inference BUT SC is wrong!:
+- smol: 9.0% [but self-conditioning is wrong!]
+- mediom: ...
+- lorge: ...
+
+Scoring - all with --num-steps 32 and without --maj - with scheduler fixed AND SC fixed:
+- smol: 9.0% [but self-conditioning is wrong!]
 - mediom: ...
 - lorge: ...
 
