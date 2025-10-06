@@ -42,6 +42,11 @@ Correct!
 nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/toiny_config_aa1.json > toiny-v2.log 2>&1' &
 ```
 
+#### Running smol with the snr input
+```bash
+nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config_aa1.json > smol-v2.log 2>&1' &
+```
+
 ### Oct 4th 2025
 
 #### Running models on aa1 and aa2
