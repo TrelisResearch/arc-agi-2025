@@ -64,10 +64,10 @@ General Notes:
 - *Tasks are solved with few initial diffusion steps* The tasks that are solved, when allowing 32 steps, are solved within the first or first few diffusion steps. I'm unsure if this indicates we have a sub-optimal noise scheduler. Apparently cosine does make sense here. One change I've made is, instead of embedding timestep, I'm now embedding alpha_bar_s, which is the level of noise at that given timestep. Hopefully this gets the model to more progressively de-noise.
 
 Improvements:
-- Embed the noise level rather than an integer timestamp (to which a sinusoidal embedding was applied).
-- Consider training for longer, because the final checkpoint always seems to perform best.
-- Save the model optimizer state and more frequent checkpoints, to allow for training restarts.
-- We sample augmentations at random, which gives a very slightly non-uniform distribution of augmentations because there are overlapping combos (rotate 180 + flip horizontal is equivalent to flip diagonal). Probably doesn't have a huge effect.
+- Embed the noise level rather than an integer timestamp (to which a sinusoidal embedding was applied). DONE FOR V2.
+- Consider training for longer, because the final checkpoint always seems to perform best. Doing this now.
+- Save the model optimizer state and more frequent checkpoints, to allow for training restarts. NOT DONE YET.
+- We sample augmentations at random, which gives a very slightly non-uniform distribution of augmentations because there are overlapping combos (rotate 180 + flip horizontal is equivalent to flip diagonal). Probably doesn't have a huge effect. NOT DONE YET.
 
 **aa2 results**
 ```bash
