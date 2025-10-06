@@ -10,13 +10,8 @@ Possibly linear was used originally but is too aggressive early on and not aggre
 - What is the implication of using fewer steps?
 Faster inference, and larger denoising steps.
 
-- Why might a linear versus cosine scheduler be used?
-
-
 - What are some possible improvements that could be made to the noise schedule?
-
-
-
+We were embedding timestamps, but it's probably more fundamental to embed noise levels instead.
 
 **Clarifying Questions**
 - Alpha and beta
@@ -41,16 +36,13 @@ Uniform is more robust and simpler.
 Correct!
 
 ## Daily Notes
-### Oct 4th 2025
-#### Running huoge on B200
+### Oct 6th 2025
+#### Running toiny with the snr input
 ```bash
-nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/huoge_config.json > huoge-v1-boost-b200.log 2>&1' &
+nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/toiny_config_aa1.json > toiny-v2.log 2>&1' &
 ```
 
-Running with less aggressive dropouts - I did run this reducing sc and embedding dropout for larger models, but saw no big difference early on on the huoge model:
-```bash
-nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/huoge_config.json > huoge-v1-boost-b200_low-dropout.log 2>&1' &
-```
+### Oct 4th 2025
 
 #### Running models on aa1 and aa2
 
@@ -90,8 +82,6 @@ PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experiment
 - huoge [stopped at 263299/384000]: 0% running best model.
 
 On lorge, seeing this task correct: `71e489b6` and `981571dc` (the symetric complex pattern). Note that the task is correct after just a few diffusion steps and then stays the same from step 26 down to 0. For `981571dc`, the solution appears to be diffused out almost immediately.
-
-mv mediom-v1-boost.log experimental/diffusion/outputs/mediom/mediom-v1-boost.log
 
 **aa1 results**
 ```bash

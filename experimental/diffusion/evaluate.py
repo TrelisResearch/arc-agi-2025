@@ -315,7 +315,19 @@ class DiffusionInference:
     def get_task_idx(self, task_id: str) -> int:
         """Get task index for a given task ID, handling unknown tasks."""
         if task_id in self.task_id_to_idx:
-            return self.task_id_to_idx[task_id]
+            task_idx = self.task_id_to_idx[task_id]
+            # DEBUG: Print task embedding info (first call only)
+            if not hasattr(self, '_debug_printed_task_embedding'):
+                with torch.no_grad():
+                    task_idx_tensor = torch.tensor([task_idx], device=self.device)
+                    task_emb = self.model.denoiser.task_embedding(task_idx_tensor)
+                    print(f"\n🔍 DEBUG: Inference task embedding verification")
+                    print(f"  Task ID: {task_id}")
+                    print(f"  Task index (from task_id_to_idx): {task_idx}")
+                    print(f"  Task embedding (first 10 dims): {task_emb[0, :10].cpu().numpy()}")
+                    print(f"  Task embedding norm: {task_emb.norm().item():.4f}\n")
+                self._debug_printed_task_embedding = True
+            return task_idx
         else:
             # For unknown tasks, use a default task index (0)
             # Could also raise an error or use a special "unknown" token
@@ -1701,7 +1713,8 @@ def main():
 
             except Exception as e:
                 errors += 1
-                if args.debug:
+                # Always print first error for debugging
+                if errors == 1 or args.debug:
                     print(f"\n❌ Error processing {task_id}: {str(e)}")
                     print(traceback.format_exc())
 
