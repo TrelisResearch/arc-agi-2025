@@ -722,8 +722,9 @@ class DiffusionInference:
                 t_batch = t.repeat(batch_size)
 
                 # Calculate self-conditioning gain (ramp from 0.3 to 1.0 over denoising process)
-                # At t=T-1 (start): gain=0.3, at t=0 (end): gain=1.0
-                progress = 1.0 - (t.item() / (num_inference_steps - 1)) if num_inference_steps > 1 else 1.0
+                # At step 0 (high noise): gain=0.3, at final step (clean): gain=1.0
+                # Use step index i, not timestep value t (which can be e.g. 127 when using 32 inference steps)
+                progress = i / (num_inference_steps - 1) if num_inference_steps > 1 else 1.0
                 sc_gain = 0.3 + 0.7 * progress
 
                 # Forward pass with self-conditioning
