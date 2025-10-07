@@ -153,30 +153,30 @@ class TransformerDenoiser(nn.Module):
         input_emb = self.embedding_dropout(input_emb)
         xt_emb = self.embedding_dropout(xt_emb)
 
-        # Handle self-conditioning
-        if sc_p0 is not None:
-            # Reshape and project previous predictions
-            sc_p0_flat = sc_p0.view(batch_size, -1, 10)  # [batch_size, max_size^2, 10]
-            sc_features = self.sc_proj(sc_p0_flat)  # [batch_size, max_size^2, d_model]
+        # # Handle self-conditioning
+        # if sc_p0 is not None:
+        #     # Reshape and project previous predictions
+        #     sc_p0_flat = sc_p0.view(batch_size, -1, 10)  # [batch_size, max_size^2, 10]
+        #     sc_features = self.sc_proj(sc_p0_flat)  # [batch_size, max_size^2, d_model]
 
-            # Add to xt embeddings with gain factor
-            # Reshape sc_gain from [batch_size] to [batch_size, 1, 1] for broadcasting if it's a tensor
-            if isinstance(sc_gain, torch.Tensor):
-                sc_gain_reshaped = sc_gain.view(batch_size, 1, 1)
-            else:
-                sc_gain_reshaped = sc_gain
-            xt_emb = xt_emb + sc_gain_reshaped * sc_features
-        elif self.training and torch.rand(1, device=device) > self.sc_dropout_prob:
-            # During training without sc_p0, randomly apply zero self-conditioning
-            # to train the model to work without self-conditioning
-            zero_sc = torch.zeros(batch_size, self.max_size * self.max_size, 10, device=device)
-            sc_features = self.sc_proj(zero_sc)
-            # Reshape sc_gain from [batch_size] to [batch_size, 1, 1] for broadcasting if it's a tensor
-            if isinstance(sc_gain, torch.Tensor):
-                sc_gain_reshaped = sc_gain.view(batch_size, 1, 1)
-            else:
-                sc_gain_reshaped = sc_gain
-            xt_emb = xt_emb + sc_gain_reshaped * sc_features
+        #     # Add to xt embeddings with gain factor
+        #     # Reshape sc_gain from [batch_size] to [batch_size, 1, 1] for broadcasting if it's a tensor
+        #     if isinstance(sc_gain, torch.Tensor):
+        #         sc_gain_reshaped = sc_gain.view(batch_size, 1, 1)
+        #     else:
+        #         sc_gain_reshaped = sc_gain
+        #     xt_emb = xt_emb + sc_gain_reshaped * sc_features
+        # elif self.training and torch.rand(1, device=device) > self.sc_dropout_prob:
+        #     # During training without sc_p0, randomly apply zero self-conditioning
+        #     # to train the model to work without self-conditioning
+        #     zero_sc = torch.zeros(batch_size, self.max_size * self.max_size, 10, device=device)
+        #     sc_features = self.sc_proj(zero_sc)
+        #     # Reshape sc_gain from [batch_size] to [batch_size, 1, 1] for broadcasting if it's a tensor
+        #     if isinstance(sc_gain, torch.Tensor):
+        #         sc_gain_reshaped = sc_gain.view(batch_size, 1, 1)
+        #     else:
+        #         sc_gain_reshaped = sc_gain
+        #     xt_emb = xt_emb + sc_gain_reshaped * sc_features
 
         # Apply masking to xt features if masks provided
         # Zero out embeddings outside valid regions

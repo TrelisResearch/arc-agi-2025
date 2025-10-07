@@ -218,7 +218,7 @@ class ARCDiffusionTrainer:
 
         # First pass: Generate p0_prev without gradients for self-conditioning
         sc_p0 = None
-        if torch.rand(1).item() > 0.5:  # 50% dropout for self-conditioning
+        if False:  # 50% dropout for self-conditioning
             with torch.no_grad():
                 if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
                     with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
