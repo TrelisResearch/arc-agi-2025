@@ -81,24 +81,26 @@ class ARCIterativeTrainer:
         if use_fused:
             print("Using fused AdamW optimizer")
 
-        # Learning rate scheduler with linear warmup
+        # Learning rate scheduler with linear warmup (in segment units)
+        # total_steps is the segment budget
+        total_updates = total_steps
         if lr_warmup_steps is None:
-            warmup_steps = int(0.05 * total_steps)  # 5% warmup (fallback)
+            warmup_updates = int(0.08 * total_updates)
         else:
-            warmup_steps = lr_warmup_steps
+            warmup_updates = lr_warmup_steps
 
         # Create warmup scheduler (linear from 0 to max_lr)
         warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
             self.optimizer,
             start_factor=0.01,  # Start at 1% of max LR
             end_factor=1.0,     # End at max LR
-            total_iters=warmup_steps
+            total_iters=warmup_updates
         )
 
         # Create cosine annealing scheduler (after warmup)
         cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             self.optimizer,
-            T_max=total_steps - warmup_steps,
+            T_max=total_updates - warmup_updates,
             eta_min=learning_rate * 0.1
         )
 
@@ -106,17 +108,16 @@ class ARCIterativeTrainer:
         self.scheduler = torch.optim.lr_scheduler.SequentialLR(
             self.optimizer,
             schedulers=[warmup_scheduler, cosine_scheduler],
-            milestones=[warmup_steps]
+            milestones=[warmup_updates]
         )
-        print(f"LR Scheduler: warmup_steps={warmup_steps}, cosine_T_max={total_steps - warmup_steps}, eta_min={learning_rate * 0.1}, initial_lr={learning_rate}")
+        print(f"LR Scheduler: warmup_steps={warmup_updates}, cosine_T_max={total_updates - warmup_updates}, eta_min={learning_rate * 0.1}, initial_lr={learning_rate}")
 
-        # Initialize global step counter
-        self.global_step = 0
-        self.optimizer_steps = total_steps
-        self.accumulation_step = 0  # Track steps within accumulation cycle
+        # Initialize segment counter
+        self.seg_updates = 0
+        self.segment_budget = total_steps
 
         if gradient_accumulation_steps > 1:
-            print(f"Using gradient accumulation: {gradient_accumulation_steps} steps")
+            print(f"Using gradient accumulation: {gradient_accumulation_steps} microbatches per segment")
 
     def apply_pixel_noise(self, grids: torch.Tensor) -> torch.Tensor:
         """
@@ -156,9 +157,10 @@ class ARCIterativeTrainer:
 
         return grids_noisy
 
-    def train_step(self, batch: Dict[str, torch.Tensor]) -> Dict[str, float]:
+    def train_step(self, batch: Dict[str, torch.Tensor], K_override: Optional[int] = None) -> Dict[str, float]:
         """Execute one training step with K-step rollout."""
         self.model.train()
+        K_used = K_override if K_override is not None else self.K
 
         # Move batch to device
         input_grids = batch['input_grid'].to(self.device)  # [batch_size, max_size, max_size]
@@ -181,11 +183,7 @@ class ARCIterativeTrainer:
         # Apply pixel noise to x_current (not input_grid)
         x_current = self.apply_pixel_noise(x_current)
 
-        # Zero gradients only at the start of accumulation cycle
-        if self.accumulation_step == 0:
-            self.optimizer.zero_grad()
-
-        # Compute size loss once per K-rollout (not per step)
+        # Compute size loss once before segment loop
         batch_size_loss = 0.0
         if self.model.include_size_head:
             if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
@@ -200,7 +198,7 @@ class ARCIterativeTrainer:
             width_loss = F.cross_entropy(width_logits, width_targets)
             batch_size_loss = height_loss + width_loss
 
-        # K-step rollout loop
+        # Track metrics
         total_loss = 0.0
         total_grid_loss = 0.0
         total_size_loss = batch_size_loss.item() if isinstance(batch_size_loss, torch.Tensor) else 0.0
@@ -208,110 +206,100 @@ class ARCIterativeTrainer:
         step_accuracies = []
         step_changes = []
         prev_pred = None
+        grad_norm = 0.0
 
-        for step in range(self.K):
+        # Split batch into microbatches using chunk (handles uneven splits)
+        indices = torch.arange(batch_size, device=self.device)
+        mb_indices_list = list(torch.chunk(indices, self.gradient_accumulation_steps))
+
+        # Per-segment optimization loop (HRM-style)
+        for step in range(K_used):
+            self.optimizer.zero_grad()
+
             step_tensor = torch.full((batch_size,), step, dtype=torch.long, device=self.device)
 
-            # Forward pass with mixed precision - get both losses and logits
-            if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
-                with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
+            # Accumulate metrics for this step
+            step_loss_accum = 0.0
+            step_acc_accum = 0.0
+
+            # Microbatch gradient accumulation within this segment
+            for mb_idx, mb_indices in enumerate(mb_indices_list):
+                if len(mb_indices) == 0:  # Skip empty chunks
+                    continue
+
+                mb_size = len(mb_indices)
+
+                # Forward pass on microbatch with mixed precision
+                if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
+                    with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
+                        losses, logits = self.model.compute_loss(
+                            x0=output_grids[mb_indices],
+                            input_grid=input_grids[mb_indices],
+                            task_ids=task_indices[mb_indices],
+                            x_prev=x_current[mb_indices].detach(),
+                            step_idx=step_tensor[mb_indices],
+                            d4_idx=d4_indices[mb_indices],
+                            color_shift=color_shifts[mb_indices],
+                            masks=masks[mb_indices],
+                            auxiliary_size_loss_weight=0.0,  # Size loss added separately
+                            return_logits=True,
+                        )
+                else:
                     losses, logits = self.model.compute_loss(
-                        x0=output_grids,
-                        input_grid=input_grids,
-                        task_ids=task_indices,
-                        x_prev=x_current,
-                        step_idx=step_tensor,
-                        d4_idx=d4_indices,
-                        color_shift=color_shifts,
-                        masks=masks,
-                        auxiliary_size_loss_weight=0.0,  # Size loss computed separately
+                        x0=output_grids[mb_indices],
+                        input_grid=input_grids[mb_indices],
+                        task_ids=task_indices[mb_indices],
+                        x_prev=x_current[mb_indices].detach(),
+                        step_idx=step_tensor[mb_indices],
+                        d4_idx=d4_indices[mb_indices],
+                        color_shift=color_shifts[mb_indices],
+                        masks=masks[mb_indices],
+                        auxiliary_size_loss_weight=0.0,  # Size loss added separately
                         return_logits=True,
                     )
-            else:
-                losses, logits = self.model.compute_loss(
-                    x0=output_grids,
-                    input_grid=input_grids,
-                    task_ids=task_indices,
-                    x_prev=x_current,
-                    step_idx=step_tensor,
-                    d4_idx=d4_indices,
-                    color_shift=color_shifts,
-                    masks=masks,
-                    auxiliary_size_loss_weight=0.0,  # Size loss computed separately
-                    return_logits=True,
-                )
 
-            # Backward pass with equal weight for all steps (loss / K)
-            step_loss = losses['total_loss'] / self.K
-            scaled_loss = step_loss / self.gradient_accumulation_steps
+                # Compute loss for this microbatch
+                loss = losses['total_loss'] / self.gradient_accumulation_steps
 
-            if self.scaler is not None:
-                self.scaler.scale(scaled_loss).backward()
-            else:
-                scaled_loss.backward()
+                # Add size loss only to first microbatch of step 0
+                if step == 0 and mb_idx == 0 and isinstance(batch_size_loss, torch.Tensor):
+                    loss = loss + (self.auxiliary_size_loss_weight * batch_size_loss) / self.gradient_accumulation_steps
 
-            step_losses.append(losses['grid_loss'].item())
-            step_accuracies.append(losses['accuracy'])
-            total_loss += step_loss.item()
-            total_grid_loss += losses['grid_loss'].item() / self.K
-
-            # Sample next prediction using logits from compute_loss (no second forward!)
-            with torch.no_grad():
-                # Detach and cast to fp32 for numerical stability
-                logits_detached = logits.detach().float()
-
-                # Sampling strategy:
-                # - Train: categorical sampling for steps 0..K-2, argmax at K-1
-                # - This teaches robustness to stochastic errors while keeping target sharp
-                if step < self.K - 1:
-                    # Categorical sampling from softmax
-                    # Clamp logits for numerical stability
-                    logits_clamped = torch.clamp(logits_detached, min=-20.0, max=20.0)
-                    probs = F.softmax(logits_clamped, dim=-1)  # [B, H, W, 10]
-                    x_next = torch.multinomial(
-                        probs.view(-1, 10),
-                        num_samples=1
-                    ).view(batch_size, self.model.max_size, self.model.max_size)
+                # Backward
+                if self.scaler is not None:
+                    self.scaler.scale(loss).backward()
                 else:
-                    # Argmax for final step
-                    x_next = torch.argmax(logits_detached, dim=-1)
+                    loss.backward()
 
-                # Enforce mask: zero out predictions outside valid region
-                x_next = torch.where(masks, x_next, torch.zeros_like(x_next))
+                # Accumulate metrics
+                step_loss_accum += losses['grid_loss'].item() * (mb_size / batch_size)
+                step_acc_accum += losses['accuracy'] * (mb_size / batch_size)
 
-                # Track % cells changed
-                if prev_pred is not None:
-                    mask_flat = masks.view(batch_size, -1).bool()
-                    changed = (x_next.view(batch_size, -1) != prev_pred.view(batch_size, -1))[mask_flat]
-                    pct_changed = changed.float().mean().item() * 100
-                    step_changes.append(pct_changed)
-                else:
-                    step_changes.append(100.0)  # First step: all "changed"
+                # Sample next x_current for this microbatch (no grad)
+                with torch.no_grad():
+                    logits_detached = logits.detach().float()
 
-                prev_pred = x_next.clone()
+                    # Sampling strategy: categorical for steps 0..K-2, argmax at K-1
+                    if step < K_used - 1:
+                        logits_clamped = torch.clamp(logits_detached, min=-20.0, max=20.0)
+                        probs = F.softmax(logits_clamped, dim=-1)
+                        x_next_mb = torch.multinomial(
+                            probs.view(-1, 10),
+                            num_samples=1
+                        ).view(mb_size, self.model.max_size, self.model.max_size)
+                    else:
+                        x_next_mb = torch.argmax(logits_detached, dim=-1)
 
-                # Detach for next iteration (KEY!)
-                x_current = x_next.detach()
+                    # Enforce mask
+                    x_next_mb = torch.where(masks[mb_indices], x_next_mb, torch.zeros_like(x_next_mb))
 
-        # Add size loss to total (computed once, not per-step)
-        # Divide by K to match per-step weighting (grid loss is averaged over K)
-        if isinstance(batch_size_loss, torch.Tensor):
-            size_loss_scaled = (self.auxiliary_size_loss_weight * batch_size_loss) / (self.K * self.gradient_accumulation_steps)
-            if self.use_mixed_precision and self.scaler is not None:
-                self.scaler.scale(size_loss_scaled).backward()
-            else:
-                size_loss_scaled.backward()
+                    # Update x_current for this microbatch
+                    x_current[mb_indices] = x_next_mb
 
-        # Increment accumulation step
-        self.accumulation_step += 1
-
-        # Only update weights after accumulating gradients
-        grad_norm = 0.0
-        if self.accumulation_step >= self.gradient_accumulation_steps:
+            # After all microbatches: clip, step, schedule
             if self.scaler is not None:
                 self.scaler.unscale_(self.optimizer)
 
-            # Compute gradient norm and clip
             grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
 
             if self.scaler is not None:
@@ -320,16 +308,29 @@ class ARCIterativeTrainer:
             else:
                 self.optimizer.step()
 
-            self.scheduler.step()
+            self.scheduler.step()  # Step scheduler once per segment
+            self.seg_updates += 1
 
-            # Increment global step counter
-            self.global_step += 1
+            # Track metrics for this segment
+            step_losses.append(step_loss_accum)
+            step_accuracies.append(step_acc_accum)
+            total_loss += step_loss_accum
+            total_grid_loss += step_loss_accum
 
-            # Reset accumulation counter
-            self.accumulation_step = 0
+            # Track % cells changed
+            with torch.no_grad():
+                if prev_pred is not None:
+                    mask_flat = masks.view(batch_size, -1).bool()
+                    changed = (x_current.view(batch_size, -1) != prev_pred.view(batch_size, -1))[mask_flat]
+                    pct_changed = changed.float().mean().item() * 100
+                    step_changes.append(pct_changed)
+                else:
+                    step_changes.append(100.0)
+
+                prev_pred = x_current.clone()
 
         # Compute per-step delta-improvement
-        step_delta_acc = [0.0] + [step_accuracies[i] - step_accuracies[i-1] for i in range(1, self.K)]
+        step_delta_acc = [0.0] + [step_accuracies[i] - step_accuracies[i-1] for i in range(1, K_used)]
 
         # Compute refinement gain (improvement from step 0 to final step)
         refinement_gain = step_accuracies[-1] - step_accuracies[0]
@@ -593,7 +594,9 @@ def train_arc_iterative(config: Dict[str, Any]) -> ARCIterativeModel:
 
     # Training setup
     optimizer_steps = config['optimizer_steps']
-    print(f"Training setup: {optimizer_steps} optimizer steps (~{optimizer_steps / len(train_loader):.1f} epochs at {len(train_loader)} steps/epoch)")
+    K = config.get('K', 8)
+    num_batches = optimizer_steps // K
+    print(f"Training setup: {optimizer_steps} segment updates (~{num_batches} batches at K={K} segments/batch)")
 
     # Create trainer
     trainer = ARCIterativeTrainer(
@@ -614,11 +617,12 @@ def train_arc_iterative(config: Dict[str, Any]) -> ARCIterativeModel:
 
     print(f"Model has {num_params:,} parameters")
 
-    # Training loop
+    # Training loop (segment-based)
     best_val_loss = float('inf')
-    pbar = tqdm(total=optimizer_steps, desc="Training")
+    seg_budget = optimizer_steps  # This is now the segment budget
+    pbar = tqdm(total=seg_budget, desc="Training")
 
-    for step in range(optimizer_steps):
+    while trainer.seg_updates < seg_budget:
         # Get batch
         try:
             batch = next(train_iter)
@@ -626,11 +630,15 @@ def train_arc_iterative(config: Dict[str, Any]) -> ARCIterativeModel:
             train_iter = iter(train_loader)
             batch = next(train_iter)
 
-        # Train step
-        metrics = trainer.train_step(batch)
+        # If close to budget, cap K for final batch
+        remaining = seg_budget - trainer.seg_updates
+        K_this = min(trainer.K, remaining)
 
-        # Update progress bar
-        pbar.update(1)
+        # Train step
+        metrics = trainer.train_step(batch, K_override=K_this)
+
+        # Update progress bar (by number of segments processed)
+        pbar.update(K_this)
         pbar.set_postfix({
             'loss': f"{metrics['loss']:.4f}",
             'acc': f"{metrics['accuracy']:.3f}",
@@ -638,7 +646,7 @@ def train_arc_iterative(config: Dict[str, Any]) -> ARCIterativeModel:
         })
 
         # Log to W&B
-        if config.get('use_wandb', False) and step % config.get('log_every', 10) == 0:
+        if config.get('use_wandb', False) and trainer.seg_updates % config.get('log_every', 10) == 0:
             log_dict = {
                 'train/loss': metrics['loss'],
                 'train/grid_loss': metrics['grid_loss'],
@@ -646,30 +654,31 @@ def train_arc_iterative(config: Dict[str, Any]) -> ARCIterativeModel:
                 'train/accuracy': metrics['accuracy'],
                 'train/grad_norm': metrics['grad_norm'],
                 'train/lr': trainer.scheduler.get_last_lr()[0],
-                'train/step': step,
+                'train/seg_update': trainer.seg_updates,
                 'train/refinement_gain': metrics['refinement_gain'],
             }
             # Add size accuracy if available
             if 'size_accuracy' in metrics:
                 log_dict['train/size_accuracy'] = metrics['size_accuracy']
-            # Log per-step metrics
-            for k in range(trainer.K):
+            # Log per-step metrics (only for steps that were executed)
+            K_this = len(metrics['step_accuracies'])
+            for k in range(K_this):
                 log_dict[f'train/step_{k}_acc'] = metrics['step_accuracies'][k]
                 log_dict[f'train/step_{k}_delta_acc'] = metrics['step_delta_acc'][k]
                 log_dict[f'train/step_{k}_changes_pct'] = metrics['step_changes_pct'][k]
 
-            wandb.log(log_dict, step=step)
+            wandb.log(log_dict, step=trainer.seg_updates)
 
         # Validation
-        if step % config.get('val_every_steps', 500) == 0 and step > 0:
+        if trainer.seg_updates % config.get('val_every_steps', 500) == 0 and trainer.seg_updates > 0:
             val_metrics = trainer.validate(val_loader, num_batches=len(val_loader))
-            print(f"\nStep {step} - Val Loss: {val_metrics['total_loss']:.4f}, Val Acc: {val_metrics['accuracy']:.3f}")
+            print(f"\nStep {trainer.seg_updates} - Val Loss: {val_metrics['total_loss']:.4f}, Val Acc: {val_metrics['accuracy']:.3f}")
 
             if config.get('use_wandb', False):
                 val_log_dict = {
                     'val/loss': val_metrics['total_loss'],
                     'val/accuracy': val_metrics['accuracy'],
-                    'val/step': step,
+                    'val/seg_update': trainer.seg_updates,
                 }
                 if 'grid_loss' in val_metrics:
                     val_log_dict['val/grid_loss'] = val_metrics['grid_loss']
@@ -680,14 +689,16 @@ def train_arc_iterative(config: Dict[str, Any]) -> ARCIterativeModel:
                 if 'refinement_gain' in val_metrics:
                     val_log_dict['val/refinement_gain'] = val_metrics['refinement_gain']
 
-                # Log per-step metrics
-                for k in range(trainer.K):
+                # Log per-step metrics (only for steps that were executed)
+                # Count how many step_k_acc keys exist
+                K_val = sum(1 for k in range(trainer.K) if f'step_{k}_acc' in val_metrics)
+                for k in range(K_val):
                     if f'step_{k}_acc' in val_metrics:
                         val_log_dict[f'val/step_{k}_acc'] = val_metrics[f'step_{k}_acc']
                     if f'step_{k}_delta_acc' in val_metrics:
                         val_log_dict[f'val/step_{k}_delta_acc'] = val_metrics[f'step_{k}_delta_acc']
 
-                wandb.log(val_log_dict, step=step)
+                wandb.log(val_log_dict, step=trainer.seg_updates)
 
             # Save best model
             if val_metrics['total_loss'] < best_val_loss and config.get('save_best', True):
