@@ -94,45 +94,52 @@ class TransformerRefiner(nn.Module):
 
     def forward(
         self,
-        x_prev: torch.Tensor,  # [batch_size, max_size, max_size] - previous prediction
+        x_prev: torch.Tensor,  # [batch_size, max_size, max_size] - previous prediction (unused if prev_hidden given)
         input_grid: torch.Tensor,  # [batch_size, max_size, max_size] - input grid
         task_ids: torch.Tensor,  # [batch_size] - task IDs
-        step_idx: torch.Tensor,  # [batch_size] - refinement step (0 to K-1)
+        step_idx: torch.Tensor,  # [batch_size] - refinement step (unused, kept for API)
         d4_idx: Optional[torch.Tensor] = None,  # [batch_size] - D4 transformation index (0-7)
         color_shift: Optional[torch.Tensor] = None,  # [batch_size] - color shift (0-8)
         masks: Optional[torch.Tensor] = None,  # [batch_size, max_size, max_size]
-    ) -> torch.Tensor:
+        prev_hidden: Optional[torch.Tensor] = None,  # [batch_size, max_size^2, d_model] - HRM latent state
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Forward pass of the refiner.
+        Forward pass of the refiner with HRM-style latent state carryover.
 
         Returns:
             logits: [batch_size, max_size, max_size, 10] - predicted logits for colors 0-9
+            hidden_next: [batch_size, max_size^2, d_model] - latent state to carry forward
         """
         batch_size = x_prev.shape[0]
         device = x_prev.device
 
-        # Flatten grids
+        # Flatten input grid
         input_flat = input_grid.view(batch_size, -1)  # [batch_size, max_size^2]
-        x_prev_flat = x_prev.view(batch_size, -1)  # [batch_size, max_size^2]
 
-        # Embed tokens
+        # Embed input tokens
         input_emb = self.token_embedding(input_flat)  # [batch_size, max_size^2, d_model]
-        x_prev_emb = self.token_embedding(x_prev_flat)  # [batch_size, max_size^2, d_model]
 
-        # Add positional encoding to both
+        # Add positional encoding
         pos_emb = self.pos_encoding(batch_size)  # [batch_size, max_size^2, d_model]
         input_emb = input_emb + pos_emb
-        x_prev_emb = x_prev_emb + pos_emb
 
         # Apply embedding dropout
         input_emb = self.embedding_dropout(input_emb)
-        x_prev_emb = self.embedding_dropout(x_prev_emb)
 
-        # Apply masking to x_prev features if masks provided
-        # Zero out embeddings outside valid regions
-        if masks is not None:
-            masks_flat = masks.view(batch_size, -1, 1).float()  # [batch_size, max_size^2, 1]
-            x_prev_emb = x_prev_emb * masks_flat  # Zero out invalid regions
+        # Previous state: use hidden if provided (HRM), else embed x_prev tokens (step 0)
+        if prev_hidden is None:
+            x_prev_flat = x_prev.view(batch_size, -1)  # [batch_size, max_size^2]
+            x_prev_emb = self.token_embedding(x_prev_flat)  # [batch_size, max_size^2, d_model]
+            x_prev_emb = x_prev_emb + pos_emb
+            x_prev_emb = self.embedding_dropout(x_prev_emb)
+
+            # Apply masking to x_prev features if masks provided (only for step 0)
+            if masks is not None:
+                masks_flat = masks.view(batch_size, -1, 1).float()  # [batch_size, max_size^2, 1]
+                x_prev_emb = x_prev_emb * masks_flat  # Zero out invalid regions
+        else:
+            # HRM: Use latent state directly (already has positional info from previous step)
+            x_prev_emb = prev_hidden
 
         # Apply input grid conditioning dropout (training only)
         if self.training and self.input_grid_dropout > 0:
@@ -168,13 +175,18 @@ class TransformerRefiner(nn.Module):
 
         # Extract predictions for previous output positions (skip task + d4 + color_shift + input)
         output_start_idx = 3 + self.max_size * self.max_size
-        output_preds = output[:, output_start_idx:, :]  # [batch_size, max_size^2, d_model]
+        hidden_next = output[:, output_start_idx:, :]  # [batch_size, max_size^2, d_model] - HRM latent state
+
+        # Mask latent state outside valid cells (stabilizes carryover)
+        if masks is not None:
+            masks_flat = masks.view(batch_size, -1, 1).float()  # [batch_size, max_size^2, 1]
+            hidden_next = hidden_next * masks_flat
 
         # Predict logits for each cell (only for colors 0-9)
-        logits = self.output_head(output_preds)  # [batch_size, max_size^2, 10]
+        logits = self.output_head(hidden_next)  # [batch_size, max_size^2, 10]
         logits = logits.view(batch_size, self.max_size, self.max_size, 10)
 
-        return logits
+        return logits, hidden_next
 
 
 class ARCIterativeModel(nn.Module):
@@ -240,25 +252,27 @@ class ARCIterativeModel(nn.Module):
         d4_idx: Optional[torch.Tensor] = None,
         color_shift: Optional[torch.Tensor] = None,
         masks: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
-        """Forward pass - predict next refinement given previous."""
-        return self.refiner(x_prev, input_grid, task_ids, step_idx, d4_idx, color_shift, masks)
+        prev_hidden: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Forward pass - predict next refinement given previous (HRM-style)."""
+        return self.refiner(x_prev, input_grid, task_ids, step_idx, d4_idx, color_shift, masks, prev_hidden)
 
     def compute_loss(
         self,
         x0: torch.Tensor,  # [batch_size, max_size, max_size] - ground truth
         input_grid: torch.Tensor,  # [batch_size, max_size, max_size] - input
         task_ids: torch.Tensor,  # [batch_size] - task IDs
-        x_prev: torch.Tensor,  # [batch_size, max_size, max_size] - previous prediction
-        step_idx: torch.Tensor,  # [batch_size] - refinement step
+        x_prev: torch.Tensor,  # [batch_size, max_size, max_size] - previous prediction (unused if prev_hidden given)
+        step_idx: torch.Tensor,  # [batch_size] - refinement step (unused, kept for API)
         d4_idx: Optional[torch.Tensor] = None,  # [batch_size] - D4 transformation index
         color_shift: Optional[torch.Tensor] = None,  # [batch_size] - color shift
         heights: Optional[torch.Tensor] = None,  # [batch_size] - grid heights
         widths: Optional[torch.Tensor] = None,   # [batch_size] - grid widths
         masks: Optional[torch.Tensor] = None,  # [batch_size, max_size, max_size] - precomputed masks
         auxiliary_size_loss_weight: float = 0.1,  # Weight for auxiliary size loss
-        return_logits: bool = False,  # If True, return (metrics, logits) tuple
-    ) -> Union[Dict[str, torch.Tensor], Tuple[Dict[str, torch.Tensor], torch.Tensor]]:
+        prev_hidden: Optional[torch.Tensor] = None,  # HRM latent state
+        return_logits: bool = False,  # If True, return (metrics, (logits, hidden_next)) tuple
+    ) -> Union[Dict[str, torch.Tensor], Tuple[Dict[str, torch.Tensor], Tuple[torch.Tensor, torch.Tensor]]]:
         """Compute training losses with optional masking for pad regions."""
         batch_size = x0.shape[0]
         max_size = x0.shape[1]
@@ -273,8 +287,8 @@ class ARCIterativeModel(nn.Module):
             # Masks passed in are already boolean from training.py
             mask_bool = masks
 
-        # Forward pass with masks
-        logits = self.forward(
+        # Forward pass with masks (returns logits and hidden_next)
+        logits, hidden_next = self.forward(
             x_prev=x_prev,
             input_grid=input_grid,
             task_ids=task_ids,
@@ -282,6 +296,7 @@ class ARCIterativeModel(nn.Module):
             d4_idx=d4_idx,
             color_shift=color_shift,
             masks=masks,
+            prev_hidden=prev_hidden,
         )
 
         # Apply mask for loss computation if provided
@@ -355,7 +370,7 @@ class ARCIterativeModel(nn.Module):
         metrics.update(size_metrics)
 
         if return_logits:
-            return metrics, logits
+            return metrics, (logits, hidden_next)
         return metrics
 
     def predict_size(

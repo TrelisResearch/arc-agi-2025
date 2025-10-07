@@ -4,15 +4,13 @@ Training loop and sampling for the ARC iterative refinement model.
 import torch
 import torch.nn.functional as F
 import numpy as np
-from typing import Dict, List, Tuple, Optional, Any
+from typing import Dict, Optional, Any
 from tqdm import tqdm
 import wandb
 from pathlib import Path
 
 from .model import ARCIterativeModel
 from .dataset import ARCDataset, load_arc_data_paths, collate_fn
-from ..utils.grid_utils import grid_to_display_string
-from torch.utils.data import DataLoader
 
 
 class ARCIterativeTrainer:
@@ -119,6 +117,8 @@ class ARCIterativeTrainer:
         if gradient_accumulation_steps > 1:
             print(f"Using gradient accumulation: {gradient_accumulation_steps} microbatches per segment")
 
+        print("Using HRM-style latent state carryover within each batch")
+
     def apply_pixel_noise(self, grids: torch.Tensor) -> torch.Tensor:
         """
         Apply pixel noise: randomly replace % of cells with random colors 0-9 (different from current).
@@ -177,11 +177,10 @@ class ARCIterativeTrainer:
         from ..utils.grid_utils import batch_create_masks
         masks = batch_create_masks(heights, widths, self.model.max_size).bool()
 
-        # Initialize x_current as zeros
+        # HRM: Initialize discrete view (only for step 0 embedding and metrics)
         x_current = torch.zeros_like(output_grids)
-
-        # Apply pixel noise to x_current (not input_grid)
-        x_current = self.apply_pixel_noise(x_current)
+        # HRM: Initialize latent state (None = step 0 will embed x_current tokens)
+        h_current = None
 
         # Compute size loss once before segment loop
         batch_size_loss = 0.0
@@ -229,10 +228,10 @@ class ARCIterativeTrainer:
 
                 mb_size = len(mb_indices)
 
-                # Forward pass on microbatch with mixed precision
+                # Forward pass on microbatch with mixed precision (HRM-style)
                 if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
                     with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
-                        losses, logits = self.model.compute_loss(
+                        losses, (logits, hidden_next) = self.model.compute_loss(
                             x0=output_grids[mb_indices],
                             input_grid=input_grids[mb_indices],
                             task_ids=task_indices[mb_indices],
@@ -242,10 +241,11 @@ class ARCIterativeTrainer:
                             color_shift=color_shifts[mb_indices],
                             masks=masks[mb_indices],
                             auxiliary_size_loss_weight=0.0,  # Size loss added separately
+                            prev_hidden=None if h_current is None else h_current[mb_indices].detach(),
                             return_logits=True,
                         )
                 else:
-                    losses, logits = self.model.compute_loss(
+                    losses, (logits, hidden_next) = self.model.compute_loss(
                         x0=output_grids[mb_indices],
                         input_grid=input_grids[mb_indices],
                         task_ids=task_indices[mb_indices],
@@ -255,6 +255,7 @@ class ARCIterativeTrainer:
                         color_shift=color_shifts[mb_indices],
                         masks=masks[mb_indices],
                         auxiliary_size_loss_weight=0.0,  # Size loss added separately
+                        prev_hidden=None if h_current is None else h_current[mb_indices].detach(),
                         return_logits=True,
                     )
 
@@ -287,6 +288,16 @@ class ARCIterativeTrainer:
 
                     # Update x_current for this microbatch
                     x_current[mb_indices] = x_next_mb
+
+                    # HRM: Update latent hidden state for this microbatch
+                    if h_current is None:
+                        h_current = torch.zeros(
+                            batch_size,
+                            self.model.max_size * self.model.max_size,
+                            self.model.d_model,
+                            device=self.device
+                        )
+                    h_current[mb_indices] = hidden_next.detach()
 
             # After all microbatches: clip, step, schedule
             if self.scaler is not None:
@@ -368,6 +379,7 @@ class ARCIterativeTrainer:
 
                 # K-step refinement (all argmax for eval)
                 x_current = torch.zeros_like(output_grids)
+                h_current = None  # HRM latent state
                 step_accuracies = []
                 step_delta_acc = []
 
@@ -375,7 +387,7 @@ class ARCIterativeTrainer:
                     step_tensor = torch.full((batch_size,), step, dtype=torch.long, device=self.device)
 
                     # Get both losses and logits (no second forward!)
-                    losses, logits = self.model.compute_loss(
+                    losses, (logits, hidden_next) = self.model.compute_loss(
                         x0=output_grids,
                         input_grid=input_grids,
                         task_ids=task_indices,
@@ -386,6 +398,7 @@ class ARCIterativeTrainer:
                         heights=heights,
                         widths=widths,
                         auxiliary_size_loss_weight=self.auxiliary_size_loss_weight,
+                        prev_hidden=h_current,
                         return_logits=True,
                     )
 
@@ -398,6 +411,9 @@ class ARCIterativeTrainer:
 
                     # Argmax from returned logits (reuse!)
                     x_current = torch.argmax(logits, dim=-1)
+
+                    # Update HRM latent state
+                    h_current = hidden_next.detach()
 
                     # Enforce mask: zero out predictions outside valid region
                     x_current = torch.where(masks, x_current, torch.zeros_like(x_current))

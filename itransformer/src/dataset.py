@@ -6,7 +6,6 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 from typing import Dict, List, Any
-import random
 from pathlib import Path
 
 from ..utils.grid_utils import grid_to_tokens, TaskAugmentation
@@ -311,6 +310,7 @@ class ARCDataset(Dataset):
             'width': torch.tensor(output_w, dtype=torch.long),
             'd4_idx': torch.tensor(example['d4_idx'], dtype=torch.long),
             'color_shift': torch.tensor(example['color_shift'], dtype=torch.long),
+            'example_idx': torch.tensor(idx, dtype=torch.long),  # Unique example index for state bank
             'task_id': example['task_id']  # Keep string ID for debugging
         }
 
@@ -427,6 +427,7 @@ def collate_fn(batch: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
     widths = torch.stack([item['width'] for item in batch])
     d4_indices = torch.stack([item['d4_idx'] for item in batch])
     color_shifts = torch.stack([item['color_shift'] for item in batch])
+    example_indices = torch.stack([item['example_idx'] for item in batch])
 
     return {
         'input_grid': input_grids,
@@ -436,6 +437,7 @@ def collate_fn(batch: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
         'width': widths,
         'd4_idx': d4_indices,
         'color_shift': color_shifts,
+        'example_idx': example_indices,
         'task_ids': [item['task_id'] for item in batch]  # Keep string IDs for debugging
     }
 
