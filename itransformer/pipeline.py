@@ -121,7 +121,7 @@ Examples:
     # Step 1: Iterative model training (with integrated size head)
     if not args.skip_training:
         if not run_command(
-            ["uv", "run", "python", "itransformer/train.py", "--config", str(config_path), "--no-wandb"],
+            ["uv", "run", "python", "itransformer/train.py", "--config", str(config_path)],
             "Iterative refiner training (with integrated size head)",
             cwd=str(project_root)
         ):
