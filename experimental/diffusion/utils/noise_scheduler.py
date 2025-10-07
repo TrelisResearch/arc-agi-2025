@@ -74,15 +74,18 @@ class DiscreteNoiseScheduler:
 
         return betas
 
-    def add_noise(self, x0: torch.Tensor, t: torch.Tensor, masks: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def add_noise(self, x0: torch.Tensor, t: torch.Tensor, masks: Optional[torch.Tensor] = None, 
+                  prediction_probs: Optional[torch.Tensor] = None, p_structured: float = 0.0) -> torch.Tensor:
         """
-        Add noise to clean tokens x0 at timestep t using uniform mixing kernel.
+        Add noise to clean tokens x0 at timestep t using uniform or structured mixing kernel.
         Only noise valid regions (where mask=1), clamp invalid regions to 0 (black).
 
         Args:
             x0: Clean tokens [batch_size, height, width]
             t: Timestep tensor [batch_size]
             masks: Valid region masks [batch_size, height, width], 1 for valid, 0 for invalid
+            prediction_probs: Model prediction probabilities [batch_size, height, width, 10], optional
+            p_structured: Probability of using structured noise vs uniform noise
 
         Returns:
             xt: Noisy tokens [batch_size, height, width]
@@ -101,8 +104,24 @@ class DiscreteNoiseScheduler:
         # Create random mask: keep original token with prob alpha_bar_t
         keep_mask = torch.rand(batch_size, height, width, device=device) < alpha_bars_t.unsqueeze(-1).unsqueeze(-1)
 
-        # Create random tokens for replacement using uniform distribution over colors {0..9}
-        random_tokens = torch.randint(0, 10, (batch_size, height, width), device=device)
+        # Create replacement tokens using hybrid structured/uniform noise
+        if prediction_probs is not None and p_structured > 0.0:
+            # Decide which pixels get structured vs uniform noise
+            structured_mask = torch.rand(batch_size, height, width, device=device) < p_structured
+            
+            # Sample from model predictions for structured noise
+            structured_tokens = torch.multinomial(
+                prediction_probs.view(-1, 10), 1
+            ).view(batch_size, height, width)
+            
+            # Sample from uniform distribution for remaining pixels
+            uniform_tokens = torch.randint(0, 10, (batch_size, height, width), device=device)
+            
+            # Combine structured and uniform noise
+            random_tokens = torch.where(structured_mask, structured_tokens, uniform_tokens)
+        else:
+            # Fallback to uniform noise
+            random_tokens = torch.randint(0, 10, (batch_size, height, width), device=device)
 
         # Apply noise: keep original where mask is True, replace with random elsewhere
         xt = torch.where(keep_mask, x0, random_tokens)

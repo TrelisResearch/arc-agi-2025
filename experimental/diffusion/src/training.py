@@ -8,6 +8,7 @@ from typing import Dict, List, Tuple, Optional, Any
 from tqdm import tqdm
 import wandb
 from pathlib import Path
+from contextlib import contextmanager
 
 from .model import ARCDiffusionModel
 from .dataset import ARCDataset, load_arc_data_paths, collate_fn
@@ -15,6 +16,16 @@ from ..utils.noise_scheduler import DiscreteNoiseScheduler
 from ..utils.grid_utils import grid_to_display_string
 from ..utils.visualization import create_training_visualization, create_denoising_progression_visualization
 from torch.utils.data import DataLoader
+
+
+@contextmanager
+def maybe_autocast(use_mixed_precision: bool, device_type: str, amp_dtype: torch.dtype):
+    """Context manager that conditionally applies autocast for mixed precision training."""
+    if use_mixed_precision and device_type in ['cuda', 'mps']:
+        with torch.autocast(device_type=device_type, dtype=amp_dtype):
+            yield
+    else:
+        yield
 
 
 class ARCDiffusionTrainer:
@@ -51,23 +62,20 @@ class ARCDiffusionTrainer:
         self.gradient_accumulation_steps = gradient_accumulation_steps
 
         # Set up mixed precision
-        if use_mixed_precision and device.type in ['cuda', 'mps']:
-            self.use_mixed_precision = True
-            # Use bfloat16 for modern hardware
+        self.use_mixed_precision = use_mixed_precision and device.type in ['cuda', 'mps']
+        
+        if self.use_mixed_precision:
+            # Use bfloat16 for modern hardware, float16 for older
             if device.type == 'cuda' and torch.cuda.is_bf16_supported():
                 self.amp_dtype = torch.bfloat16
-                print("Using bfloat16 mixed precision")
                 self.scaler = None  # bfloat16 doesn't need scaling
+                print("Using bfloat16 mixed precision")
             else:
                 self.amp_dtype = torch.float16
-                print("Using float16 mixed precision")
                 # Only use scaler for CUDA float16
-                if device.type == 'cuda':
-                    self.scaler = torch.amp.GradScaler(device.type)
-                else:
-                    self.scaler = None
+                self.scaler = torch.amp.GradScaler(device.type) if device.type == 'cuda' else None
+                print("Using float16 mixed precision")
         else:
-            self.use_mixed_precision = False
             self.amp_dtype = torch.float32
             self.scaler = None
             print("Using float32 precision")
@@ -207,65 +215,39 @@ class ARCDiffusionTrainer:
         from experimental.diffusion.utils.grid_utils import batch_create_masks
         masks = batch_create_masks(heights, widths, self.model.max_size)
 
-        # Add noise to clean output grids using uniform distribution over {0..9}
-        # Only noise valid regions, clamp invalid regions to 0
-        noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps, masks)
-
-        # Calculate self-conditioning gain based on alpha_bar (noise level)
-        # Low alpha_bar (high noise) → low gain (0.3), High alpha_bar (low noise) → high gain (1.0)
-        from ..utils.noise_scheduler import sc_gain_from_abar
-        sc_gain = sc_gain_from_abar(timesteps, self.noise_scheduler)
-
-        # First pass: Generate p0_prev without gradients for self-conditioning
-        sc_p0 = None
-        if torch.rand(1).item() > 0.5:  # 50% dropout for self-conditioning
-            with torch.no_grad():
-                if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
-                    with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
-                        logits_prev = self.model(
-                            xt=noisy_grids,
-                            input_grid=input_grids,
-                            task_ids=task_indices,
-                            logsnr=logsnr,
-                            d4_idx=d4_indices,
-                            color_shift=color_shifts,
-                            masks=masks,
-                            sc_p0=None,  # No self-conditioning in first pass
-                            sc_gain=0.0
-                        )
-                else:
-                    logits_prev = self.model(
-                        xt=noisy_grids,
-                        input_grid=input_grids,
-                        task_ids=task_indices,
-                        logsnr=logsnr,
-                        d4_idx=d4_indices,
-                        color_shift=color_shifts,
-                        masks=masks,
-                        sc_p0=None,  # No self-conditioning in first pass
-                        sc_gain=0.0
-                    )
-                # Convert logits to probabilities
-                sc_p0 = torch.softmax(logits_prev, dim=-1)
-
-        # Second pass: Forward with self-conditioning and compute loss
-        if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
-            with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
-                losses = self.model.compute_loss(
-                    x0=output_grids,
+        # Generate prediction probabilities from clean output grids for structured noise
+        # This creates a noise distribution based on the model's current mistakes
+        prediction_probs = None
+        with torch.no_grad():
+            with maybe_autocast(self.use_mixed_precision, self.device.type, self.amp_dtype):
+                # Predict from clean grids (zero noise timestep)
+                zero_timesteps = torch.zeros(batch_size, device=self.device, dtype=torch.long)
+                zero_alpha_bars = self.noise_scheduler.alpha_bars[zero_timesteps].clamp(1e-6, 1-1e-6).to(self.device)
+                zero_logsnr = torch.log(zero_alpha_bars) - torch.log1p(-zero_alpha_bars)
+                
+                logits_clean = self.model(
+                    xt=output_grids,  # Use clean grids as input
                     input_grid=input_grids,
                     task_ids=task_indices,
-                    xt=noisy_grids,
-                    logsnr=logsnr,
+                    logsnr=zero_logsnr,  # Zero noise logsnr
                     d4_idx=d4_indices,
                     color_shift=color_shifts,
-                    heights=heights,
-                    widths=widths,
-                    auxiliary_size_loss_weight=self.auxiliary_size_loss_weight,
-                    sc_p0=sc_p0,
-                    sc_gain=sc_gain
+                    masks=masks,
+                    sc_p0=None,
+                    sc_gain=0.0
                 )
-        else:
+                # Convert logits to probabilities for structured noise
+                prediction_probs = torch.softmax(logits_clean, dim=-1)
+
+        # Add noise to clean output grids using structured noise distribution
+        # Mix of model predictions (50%) and uniform distribution (50%)
+        noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps, masks, prediction_probs, p_structured=0.5)
+
+        # Calculate self-conditioning gain (disabled for now)
+        sc_gain = torch.zeros_like(timesteps, dtype=torch.float32, device=self.device)
+
+        # Forward pass and compute loss (no self-conditioning)
+        with maybe_autocast(self.use_mixed_precision, self.device.type, self.amp_dtype):
             losses = self.model.compute_loss(
                 x0=output_grids,
                 input_grid=input_grids,
@@ -277,7 +259,7 @@ class ARCDiffusionTrainer:
                 heights=heights,
                 widths=widths,
                 auxiliary_size_loss_weight=self.auxiliary_size_loss_weight,
-                sc_p0=sc_p0,
+                sc_p0=None,  # No self-conditioning
                 sc_gain=sc_gain
             )
 
@@ -369,7 +351,7 @@ class ARCDiffusionTrainer:
                 from experimental.diffusion.utils.grid_utils import batch_create_masks
                 masks = batch_create_masks(heights, widths, self.model.max_size)
 
-                # Add noise using uniform distribution over {0..9}
+                # Add noise using uniform distribution over {0..9} (no structured noise in validation)
                 # Only noise valid regions, clamp invalid regions to 0
                 noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps, masks)
 
@@ -377,25 +359,8 @@ class ARCDiffusionTrainer:
                 alpha_bars = self.noise_scheduler.alpha_bars[timesteps].clamp(1e-6, 1-1e-6).to(self.device)
                 logsnr = torch.log(alpha_bars) - torch.log1p(-alpha_bars)
 
-                # Calculate self-conditioning gain based on alpha_bar (noise level)
-                from ..utils.noise_scheduler import sc_gain_from_abar
-                sc_gain = sc_gain_from_abar(timesteps, self.noise_scheduler)
-
-                # Forward pass (no CFG during validation) with mixed precision
-                if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
-                    with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
-                        losses = self.model.compute_loss(
-                            x0=output_grids,
-                            input_grid=input_grids,
-                            task_ids=task_indices,
-                            xt=noisy_grids,
-                            logsnr=logsnr,
-                            heights=heights,
-                            widths=widths,
-                            sc_p0=None,
-                            sc_gain=sc_gain
-                        )
-                else:
+                # Forward pass (no self-conditioning during validation)
+                with maybe_autocast(self.use_mixed_precision, self.device.type, self.amp_dtype):
                     losses = self.model.compute_loss(
                         x0=output_grids,
                         input_grid=input_grids,
@@ -404,8 +369,8 @@ class ARCDiffusionTrainer:
                         logsnr=logsnr,
                         heights=heights,
                         widths=widths,
-                        sc_p0=None,
-                        sc_gain=sc_gain
+                        sc_p0=None,  # No self-conditioning
+                        sc_gain=torch.zeros_like(timesteps, dtype=torch.float32, device=self.device)
                     )
 
                 # Initialize total_losses on first batch
