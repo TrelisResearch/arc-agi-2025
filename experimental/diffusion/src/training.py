@@ -216,13 +216,13 @@ class ARCDiffusionTrainer:
         from ..utils.noise_scheduler import sc_gain_from_abar
         sc_gain = sc_gain_from_abar(timesteps, self.noise_scheduler)
 
-        # First pass: Generate p0_prev without gradients for self-conditioning
-        sc_p0 = None
+        # First pass: Generate embeddings without gradients for self-conditioning
+        sc_embeddings = None
         if torch.rand(1).item() > 0.5:  # 50% dropout for self-conditioning
             with torch.no_grad():
                 if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
                     with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
-                        logits_prev = self.model(
+                        logits_prev, embeddings_prev = self.model.forward_with_embeddings(
                             xt=noisy_grids,
                             input_grid=input_grids,
                             task_ids=task_indices,
@@ -230,11 +230,11 @@ class ARCDiffusionTrainer:
                             d4_idx=d4_indices,
                             color_shift=color_shifts,
                             masks=masks,
-                            sc_p0=None,  # No self-conditioning in first pass
+                            sc_embeddings=None,  # No self-conditioning in first pass
                             sc_gain=0.0
                         )
                 else:
-                    logits_prev = self.model(
+                    logits_prev, embeddings_prev = self.model.forward_with_embeddings(
                         xt=noisy_grids,
                         input_grid=input_grids,
                         task_ids=task_indices,
@@ -242,11 +242,11 @@ class ARCDiffusionTrainer:
                         d4_idx=d4_indices,
                         color_shift=color_shifts,
                         masks=masks,
-                        sc_p0=None,  # No self-conditioning in first pass
+                        sc_embeddings=None,  # No self-conditioning in first pass
                         sc_gain=0.0
                     )
-                # Convert logits to probabilities
-                sc_p0 = torch.softmax(logits_prev, dim=-1)
+                # Use embeddings directly (no conversion to probabilities)
+                sc_embeddings = embeddings_prev.detach()
 
         # Second pass: Forward with self-conditioning and compute loss
         if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
@@ -262,7 +262,7 @@ class ARCDiffusionTrainer:
                     heights=heights,
                     widths=widths,
                     auxiliary_size_loss_weight=self.auxiliary_size_loss_weight,
-                    sc_p0=sc_p0,
+                    sc_embeddings=sc_embeddings,
                     sc_gain=sc_gain
                 )
         else:
@@ -277,7 +277,7 @@ class ARCDiffusionTrainer:
                 heights=heights,
                 widths=widths,
                 auxiliary_size_loss_weight=self.auxiliary_size_loss_weight,
-                sc_p0=sc_p0,
+                sc_embeddings=sc_embeddings,
                 sc_gain=sc_gain
             )
 
@@ -392,7 +392,7 @@ class ARCDiffusionTrainer:
                             logsnr=logsnr,
                             heights=heights,
                             widths=widths,
-                            sc_p0=None,
+                            sc_embeddings=None,
                             sc_gain=sc_gain
                         )
                 else:
@@ -404,7 +404,7 @@ class ARCDiffusionTrainer:
                         logsnr=logsnr,
                         heights=heights,
                         widths=widths,
-                        sc_p0=None,
+                        sc_embeddings=None,
                         sc_gain=sc_gain
                     )
 
@@ -569,7 +569,7 @@ class ARCDiffusionSampler:
         x_t = torch.where(mask, x_t, 0)
 
         # Initialize self-conditioning buffer
-        sc_p0 = None
+        sc_embeddings = None
 
         # Create subsampled timestep indices from the full training range
         # This ensures we walk the full noise schedule [T_train-1, ..., 0] in num_inference_steps
@@ -595,15 +595,15 @@ class ARCDiffusionSampler:
             sc_gain = sc_gain_from_abar(t_batch, self.noise_scheduler)
 
             # Forward pass with masking and self-conditioning (no augmentation during inference)
-            logits = self.model(x_t, input_grids, task_indices, logsnr,
+            logits, embeddings = self.model.forward_with_embeddings(x_t, input_grids, task_indices, logsnr,
                                d4_idx=None, color_shift=None,  # No augmentation
-                               masks=mask_float, sc_p0=sc_p0, sc_gain=sc_gain)
+                               masks=mask_float, sc_embeddings=sc_embeddings, sc_gain=sc_gain)
 
             # Apply temperature scaling
             logits_scaled = logits / temperature
 
-            # Update self-conditioning buffer with current predictions
-            sc_p0 = torch.softmax(logits_scaled, dim=-1)
+            # Update self-conditioning buffer with current embeddings
+            sc_embeddings = embeddings.detach()
 
             # Perform discrete reverse step
             x_t = self.discrete_reverse_step(

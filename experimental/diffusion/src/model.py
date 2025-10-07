@@ -87,10 +87,6 @@ class TransformerDenoiser(nn.Module):
             nn.Linear(d_model, d_model)
         )
 
-        # Self-conditioning projection
-        # Maps probability distributions (10 classes) to features
-        self.sc_proj = nn.Linear(10, d_model)
-
         # Embedding dropout for regularization
         self.embedding_dropout = nn.Dropout(embedding_dropout)
 
@@ -119,7 +115,7 @@ class TransformerDenoiser(nn.Module):
         d4_idx: Optional[torch.Tensor] = None,  # [batch_size] - D4 transformation index (0-7)
         color_shift: Optional[torch.Tensor] = None,  # [batch_size] - color shift (0-8)
         masks: Optional[torch.Tensor] = None,  # [batch_size, max_size, max_size]
-        sc_p0: Optional[torch.Tensor] = None,  # [batch_size, max_size, max_size, 10] - self-conditioning probs
+        sc_embeddings: Optional[torch.Tensor] = None,  # [batch_size, max_size, max_size, d_model] - self-conditioning embeddings
         sc_gain: Union[float, torch.Tensor] = 1.0,  # float or [batch_size] - Self-conditioning gain factor
     ) -> torch.Tensor:
         """
@@ -127,6 +123,7 @@ class TransformerDenoiser(nn.Module):
 
         Returns:
             logits: [batch_size, max_size, max_size, 10] - predicted logits for colors 0-9
+            embeddings: [batch_size, max_size, max_size, d_model] - hidden embeddings before logits
         """
         batch_size = xt.shape[0]
         device = xt.device
@@ -149,10 +146,9 @@ class TransformerDenoiser(nn.Module):
         xt_emb = self.embedding_dropout(xt_emb)
 
         # Handle self-conditioning
-        if sc_p0 is not None:
-            # Reshape and project previous predictions
-            sc_p0_flat = sc_p0.view(batch_size, -1, 10)  # [batch_size, max_size^2, 10]
-            sc_features = self.sc_proj(sc_p0_flat)  # [batch_size, max_size^2, d_model]
+        if sc_embeddings is not None:
+            # Use embeddings directly (no projection needed)
+            sc_embeddings_flat = sc_embeddings.view(batch_size, -1, self.d_model)  # [batch_size, max_size^2, d_model]
 
             # Add to xt embeddings with gain factor
             # Reshape sc_gain from [batch_size] to [batch_size, 1, 1] for broadcasting if it's a tensor
@@ -160,18 +156,17 @@ class TransformerDenoiser(nn.Module):
                 sc_gain_reshaped = sc_gain.view(batch_size, 1, 1)
             else:
                 sc_gain_reshaped = sc_gain
-            xt_emb = xt_emb + sc_gain_reshaped * sc_features
+            xt_emb = xt_emb + sc_gain_reshaped * sc_embeddings_flat
         elif self.training and torch.rand(1, device=device) > self.sc_dropout_prob:
-            # During training without sc_p0, randomly apply zero self-conditioning
+            # During training without sc_embeddings, randomly apply zero self-conditioning
             # to train the model to work without self-conditioning
-            zero_sc = torch.zeros(batch_size, self.max_size * self.max_size, 10, device=device)
-            sc_features = self.sc_proj(zero_sc)
+            zero_sc_embeddings = torch.zeros(batch_size, self.max_size * self.max_size, self.d_model, device=device)
             # Reshape sc_gain from [batch_size] to [batch_size, 1, 1] for broadcasting if it's a tensor
             if isinstance(sc_gain, torch.Tensor):
                 sc_gain_reshaped = sc_gain.view(batch_size, 1, 1)
             else:
                 sc_gain_reshaped = sc_gain
-            xt_emb = xt_emb + sc_gain_reshaped * sc_features
+            xt_emb = xt_emb + sc_gain_reshaped * zero_sc_embeddings
 
         # Apply masking to xt features if masks provided
         # Zero out embeddings outside valid regions
@@ -229,7 +224,10 @@ class TransformerDenoiser(nn.Module):
         logits = self.output_head(output_preds)  # [batch_size, max_size^2, 10]
         logits = logits.view(batch_size, self.max_size, self.max_size, 10)
 
-        return logits
+        # Also return the embeddings (before logits)
+        embeddings = output_preds.view(batch_size, self.max_size, self.max_size, self.d_model)
+
+        return logits, embeddings
 
 
 
@@ -298,11 +296,27 @@ class ARCDiffusionModel(nn.Module):
         d4_idx: Optional[torch.Tensor] = None,
         color_shift: Optional[torch.Tensor] = None,
         masks: Optional[torch.Tensor] = None,
-        sc_p0: Optional[torch.Tensor] = None,
+        sc_embeddings: Optional[torch.Tensor] = None,
         sc_gain: Union[float, torch.Tensor] = 1.0,
     ) -> torch.Tensor:
         """Forward pass - predict x0 given xt."""
-        return self.denoiser(xt, input_grid, task_ids, logsnr, d4_idx, color_shift, masks, sc_p0, sc_gain)
+        logits, embeddings = self.denoiser(xt, input_grid, task_ids, logsnr, d4_idx, color_shift, masks, sc_embeddings, sc_gain)
+        return logits
+
+    def forward_with_embeddings(
+        self,
+        xt: torch.Tensor,
+        input_grid: torch.Tensor,
+        task_ids: torch.Tensor,
+        logsnr: torch.Tensor,
+        d4_idx: Optional[torch.Tensor] = None,
+        color_shift: Optional[torch.Tensor] = None,
+        masks: Optional[torch.Tensor] = None,
+        sc_embeddings: Optional[torch.Tensor] = None,
+        sc_gain: Union[float, torch.Tensor] = 1.0,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Forward pass - predict x0 given xt, returning both logits and embeddings."""
+        return self.denoiser(xt, input_grid, task_ids, logsnr, d4_idx, color_shift, masks, sc_embeddings, sc_gain)
 
     def _compute_bucket_metrics(
         self,
@@ -358,7 +372,7 @@ class ARCDiffusionModel(nn.Module):
         heights: Optional[torch.Tensor] = None,  # [batch_size] - grid heights
         widths: Optional[torch.Tensor] = None,   # [batch_size] - grid widths
         auxiliary_size_loss_weight: float = 0.1,  # Weight for auxiliary size loss
-        sc_p0: Optional[torch.Tensor] = None,  # [batch_size, max_size, max_size, 10] - self-conditioning probs
+        sc_embeddings: Optional[torch.Tensor] = None,  # [batch_size, max_size, max_size, d_model] - self-conditioning embeddings
         sc_gain: Union[float, torch.Tensor] = 1.0,  # float or [batch_size] - Self-conditioning gain factor
     ) -> Dict[str, torch.Tensor]:
         """Compute training losses with optional masking for pad regions."""
@@ -382,7 +396,7 @@ class ARCDiffusionModel(nn.Module):
             d4_idx=d4_idx,
             color_shift=color_shift,
             masks=masks,
-            sc_p0=sc_p0,
+            sc_embeddings=sc_embeddings,
             sc_gain=sc_gain
         )
 
