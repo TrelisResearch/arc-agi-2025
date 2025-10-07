@@ -4,6 +4,7 @@
 ### v2
 - remove embedding for step number
 - switch to back-prop after each segment, to encourage later steps to learn
+- turn off noise in inputs
 
 Run toiny:
 ```bash
