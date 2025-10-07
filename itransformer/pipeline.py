@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Full ARC Diffusion Pipeline Runner
+Full ARC Iterative Refiner Pipeline Runner
 
 Runs the complete training pipeline in sequence:
-1. Diffusion model training (with integrated size head)
+1. Iterative refinement model training (with integrated size head)
 2. Model evaluation
 
 Usage:
-    uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/my_config.json
-    uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/my_config.json --skip-training
+    uv run itransformer/pipeline.py --config itransformer/configs/test_config.json
+    uv run itransformer/pipeline.py --config itransformer/configs/test_config.json --skip-training
 """
 
 import argparse
@@ -58,26 +58,27 @@ def run_command(command: list, description: str, cwd: str = None) -> bool:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Run full ARC diffusion training pipeline",
+        description="Run full ARC iterative refiner training pipeline",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   # Run full pipeline (training + evaluation)
-  uv run experimental/diffusion/pipeline.py --config configs/my_config.json
+  uv run itransformer/pipeline.py --config itransformer/configs/test_config.json
 
   # Skip training, only run evaluation
-  uv run experimental/diffusion/pipeline.py --config configs/my_config.json --skip-training
+  uv run itransformer/pipeline.py --config itransformer/configs/test_config.json --skip-training
 
   # Only run training
-  uv run experimental/diffusion/pipeline.py --config configs/my_config.json --skip-evaluation
+  uv run itransformer/pipeline.py --config itransformer/configs/test_config.json --skip-evaluation
         """
     )
 
     parser.add_argument("--config", required=True, help="Path to config JSON file")
-    parser.add_argument("--skip-training", action="store_true", help="Skip diffusion model training")
+    parser.add_argument("--skip-training", action="store_true", help="Skip iterative model training")
     parser.add_argument("--skip-evaluation", action="store_true", help="Skip evaluation")
     parser.add_argument("--eval-limit", type=int, default=0, help="Limit evaluation to N tasks (default: 0 for all)")
     parser.add_argument("--prefer-best", action="store_true", help="Use best_model.pt for evaluation instead of final_model.pt")
+    parser.add_argument("--inference-steps", type=int, help="Number of refinement steps at inference (default: K from config)")
 
     args = parser.parse_args()
 
@@ -96,12 +97,13 @@ Examples:
         sys.exit(1)
 
     # Extract key paths
-    output_dir = Path(config.get('output', {}).get('output_dir', 'experimental/diffusion/outputs/default'))
+    output_dir = Path(config.get('output', {}).get('output_dir', 'itransformer/outputs/default'))
 
-    print(f"🎯 ARC Diffusion Full Pipeline")
+    print(f"🎯 ARC Iterative Refiner Full Pipeline")
     print(f"📅 Started at: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"📁 Config: {config_path}")
     print(f"📂 Output dir: {output_dir}")
+    print(f"⚡ Refinement steps (K): {config.get('training', {}).get('K', 8)}")
     print(f"⚡ Evaluation limit: {args.eval_limit}")
 
     # Track which steps to run
@@ -116,17 +118,17 @@ Examples:
     # Get project root (assuming we're running from repo root)
     project_root = Path.cwd()
 
-    # Step 1: Diffusion model training (with integrated size head)
+    # Step 1: Iterative model training (with integrated size head)
     if not args.skip_training:
         if not run_command(
-            ["uv", "run", "python", "experimental/diffusion/train_diffusion_backbone.py", "--config", str(config_path)],
-            "Diffusion model training (with integrated size head)",
+            ["uv", "run", "python", "itransformer/train.py", "--config", str(config_path), "--no-wandb"],
+            "Iterative refiner training (with integrated size head)",
             cwd=str(project_root)
         ):
             print("❌ Training failed, stopping pipeline")
             sys.exit(1)
     else:
-        print("\n⏭️ Skipping diffusion model training")
+        print("\n⏭️ Skipping iterative model training")
 
     # Step 2: Evaluation
     if not args.skip_evaluation:
@@ -156,7 +158,7 @@ Examples:
 
         # Run evaluation
         eval_command = [
-            "uv", "run", "python", "experimental/diffusion/evaluate.py",
+            "uv", "run", "python", "itransformer/evaluate.py",
             "--config", str(config_path),
             "--limit", str(args.eval_limit)
         ]
@@ -164,6 +166,10 @@ Examples:
         # Add --prefer-best flag if specified
         if args.prefer_best:
             eval_command.append("--prefer-best")
+
+        # Add --inference-steps flag if specified
+        if args.inference_steps is not None:
+            eval_command.extend(["--inference-steps", str(args.inference_steps)])
 
         if not run_command(
             eval_command,
@@ -175,16 +181,7 @@ Examples:
     else:
         print("\n⏭️ Skipping evaluation")
 
-    # Step 3: Upload to Hugging Face Hub
-    if not run_command(
-        ["uv", "run", "python", "experimental/diffusion/hf.py", "--push", "--config", str(config_path)],
-        "Upload to Hugging Face Hub",
-        cwd=str(project_root)
-    ):
-        print("⚠️ HF upload failed (continuing anyway)")
-
     # Pipeline completed
-    total_time = time.time()
     print(f"\n{'='*60}")
     print(f"🎉 Pipeline completed successfully!")
     print(f"📂 Results saved in: {output_dir}")
@@ -202,10 +199,6 @@ Examples:
     if eval_files:
         latest_eval = max(eval_files, key=lambda x: x.stat().st_mtime)
         print(f"  📊 Evaluation: {latest_eval}")
-
-    visualization_path = output_dir / "training_noise_visualization.png"
-    if visualization_path.exists():
-        print(f"  🎨 Visualization: {visualization_path}")
 
     print(f"{'='*60}")
 
