@@ -1,0 +1,1292 @@
+"""
+Training loop and sampling for the ARC diffusion model.
+"""
+import torch
+import torch.nn.functional as F
+import numpy as np
+from typing import Dict, List, Tuple, Optional, Any
+from tqdm import tqdm
+import wandb
+from pathlib import Path
+
+from .model import ARCDiffusionModel
+from .dataset import ARCDataset, load_arc_data_paths, collate_fn
+from ..utils.noise_scheduler import DiscreteNoiseScheduler
+from ..utils.grid_utils import grid_to_display_string
+from ..utils.visualization import create_training_visualization, create_denoising_progression_visualization
+from torch.utils.data import DataLoader
+
+
+class ARCDiffusionTrainer:
+    """Training class for the ARC diffusion model."""
+
+    def __init__(
+        self,
+        model: ARCDiffusionModel,
+        noise_scheduler: DiscreteNoiseScheduler,
+        device: torch.device,
+        dataset,  # Need dataset reference to get task info
+        learning_rate: float = 3e-4,
+        weight_decay: float = 0.01,
+        use_mixed_precision: bool = True,
+        pixel_noise_prob: float = 0.15,
+        pixel_noise_rate: float = 0.02,
+        total_steps: int = 10000,
+        auxiliary_size_loss_weight: float = 0.1,
+        use_ema: bool = True,
+        ema_decay: float = 0.9995,
+        ema_warmup_steps: int = 1000,
+        gradient_accumulation_steps: int = 1,
+        lr_warmup_steps: int = None
+    ):
+        self.model = model
+        self.noise_scheduler = noise_scheduler
+        self.device = device
+        self.dataset = dataset
+        self.use_mixed_precision = use_mixed_precision
+        self.pixel_noise_prob = pixel_noise_prob
+        self.pixel_noise_rate = pixel_noise_rate
+        self.auxiliary_size_loss_weight = auxiliary_size_loss_weight
+        self.use_ema = use_ema
+        self.gradient_accumulation_steps = gradient_accumulation_steps
+
+        # Set up mixed precision
+        if use_mixed_precision and device.type in ['cuda', 'mps']:
+            self.use_mixed_precision = True
+            # Use bfloat16 for modern hardware
+            if device.type == 'cuda' and torch.cuda.is_bf16_supported():
+                self.amp_dtype = torch.bfloat16
+                print("Using bfloat16 mixed precision")
+                self.scaler = None  # bfloat16 doesn't need scaling
+            else:
+                self.amp_dtype = torch.float16
+                print("Using float16 mixed precision")
+                # Only use scaler for CUDA float16
+                if device.type == 'cuda':
+                    self.scaler = torch.amp.GradScaler(device.type)
+                else:
+                    self.scaler = None
+        else:
+            self.use_mixed_precision = False
+            self.amp_dtype = torch.float32
+            self.scaler = None
+            print("Using float32 precision")
+
+        # Move model to device and ensure parameters stay in float32
+        self.model.to(device)
+        self.model.float()  # Always keep parameters in fp32
+
+        # Optimizer with fused kernels for CUDA
+        use_fused = device.type == 'cuda'
+        self.optimizer = torch.optim.AdamW(
+            model.parameters(),
+            lr=learning_rate,
+            weight_decay=weight_decay,
+            fused=use_fused
+        )
+        if use_fused:
+            print("Using fused AdamW optimizer")
+
+        # Learning rate scheduler with linear warmup
+        if lr_warmup_steps is None:
+            warmup_steps = int(0.05 * total_steps)  # 5% warmup (fallback)
+        else:
+            warmup_steps = lr_warmup_steps
+
+        # Create warmup scheduler (linear from 0 to max_lr)
+        warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+            self.optimizer,
+            start_factor=0.01,  # Start at 1% of max LR
+            end_factor=1.0,     # End at max LR
+            total_iters=warmup_steps
+        )
+
+        # Create cosine annealing scheduler (after warmup)
+        cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            self.optimizer,
+            T_max=total_steps - warmup_steps,
+            eta_min=learning_rate * 0.1
+        )
+
+        # Combine with SequentialLR
+        self.scheduler = torch.optim.lr_scheduler.SequentialLR(
+            self.optimizer,
+            schedulers=[warmup_scheduler, cosine_scheduler],
+            milestones=[warmup_steps]
+        )
+        print(f"LR Scheduler: warmup_steps={warmup_steps}, cosine_T_max={total_steps - warmup_steps}, eta_min={learning_rate * 0.1}, initial_lr={learning_rate}")
+
+        # Set up EMA if enabled
+        self.ema = None
+        if use_ema:
+            from experimental.diffusion.utils.ema import EMA
+            self.ema = EMA(
+                model=model,
+                decay=ema_decay,
+                warmup_steps=ema_warmup_steps,
+                device=device
+            )
+            print(f"Using EMA with decay={ema_decay}, warmup={ema_warmup_steps} steps")
+
+        # Initialize global step counter for self-conditioning gain scheduling
+        self.global_step = 0
+        self.optimizer_steps = total_steps
+        self.accumulation_step = 0  # Track steps within accumulation cycle
+
+        if gradient_accumulation_steps > 1:
+            print(f"Using gradient accumulation: {gradient_accumulation_steps} steps")
+
+    def apply_pixel_noise(self, grids: torch.Tensor) -> torch.Tensor:
+        """
+        Apply pixel noise to input grids: randomly swap black pixels (0) with colors (1-9).
+
+        Args:
+            grids: Input grids [batch_size, height, width]
+
+        Returns:
+            Grids with noise applied
+        """
+        if self.pixel_noise_prob <= 0 or self.pixel_noise_rate <= 0:
+            return grids
+
+        batch_size = grids.shape[0]
+        grids_noisy = grids.clone()
+
+        for i in range(batch_size):
+            # Apply noise to this example with probability pixel_noise_prob
+            if torch.rand(1).item() < self.pixel_noise_prob:
+                grid = grids_noisy[i]
+
+                # Find all black pixels (value 0)
+                black_mask = (grid == 0)
+                black_indices = torch.where(black_mask)
+
+                if len(black_indices[0]) > 0:
+                    # Determine how many black pixels to flip
+                    num_black = len(black_indices[0])
+                    num_to_flip = max(1, int(num_black * self.pixel_noise_rate))
+
+                    # Randomly select which black pixels to flip
+                    perm = torch.randperm(num_black)[:num_to_flip]
+                    flip_row_idx = black_indices[0][perm]
+                    flip_col_idx = black_indices[1][perm]
+
+                    # Replace with random colors 1-9 (avoid 0 and 10/PAD)
+                    random_colors = torch.randint(1, 10, (num_to_flip,), device=grids.device)
+                    grids_noisy[i, flip_row_idx, flip_col_idx] = random_colors
+
+        return grids_noisy
+
+    def train_step(self, batch: Dict[str, torch.Tensor]) -> Dict[str, float]:
+        """Execute one training step."""
+        self.model.train()
+
+        # Move batch to device
+        input_grids = batch['input_grid'].to(self.device)  # [batch_size, max_size, max_size]
+        output_grids = batch['output_grid'].to(self.device)  # [batch_size, max_size, max_size]
+        task_indices = batch['task_idx'].to(self.device)  # [batch_size]
+        heights = batch['height'].to(self.device)  # [batch_size] - grid heights
+        widths = batch['width'].to(self.device)   # [batch_size] - grid widths
+        d4_indices = batch['d4_idx'].to(self.device)  # [batch_size] - D4 transformation indices
+        color_shifts = batch['color_shift'].to(self.device)  # [batch_size] - color shift values
+
+        batch_size = input_grids.shape[0]
+
+        # Apply pixel noise to input grids only (not outputs)
+        input_grids = self.apply_pixel_noise(input_grids)
+
+        # Sample random timesteps (0-indexed: [0, num_timesteps))
+        timesteps = torch.randint(0, self.noise_scheduler.num_timesteps, (batch_size,), device=self.device)
+
+        # Compute logSNR from timesteps for model input
+        # logSNR = log(alpha_bar / (1 - alpha_bar)) encodes signal-to-noise ratio
+        alpha_bars = self.noise_scheduler.alpha_bars[timesteps].clamp(1e-6, 1-1e-6).to(self.device)
+        logsnr = torch.log(alpha_bars) - torch.log1p(-alpha_bars)
+
+        # Create masks for valid regions
+        from experimental.diffusion.utils.grid_utils import batch_create_masks
+        masks = batch_create_masks(heights, widths, self.model.max_size)
+
+        # Add noise to clean output grids using uniform distribution over {0..9}
+        # Only noise valid regions, clamp invalid regions to 0
+        noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps, masks)
+
+        # Calculate self-conditioning gain based on alpha_bar (noise level)
+        # Low alpha_bar (high noise) → low gain (0.3), High alpha_bar (low noise) → high gain (1.0)
+        from ..utils.noise_scheduler import sc_gain_from_abar
+        sc_gain = sc_gain_from_abar(timesteps, self.noise_scheduler)
+
+        # First pass: Generate p0_prev without gradients for self-conditioning
+        sc_p0 = None
+        if torch.rand(1).item() > 0.5:  # 50% dropout for self-conditioning
+            with torch.no_grad():
+                if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
+                    with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
+                        logits_prev = self.model(
+                            xt=noisy_grids,
+                            input_grid=input_grids,
+                            task_ids=task_indices,
+                            logsnr=logsnr,
+                            d4_idx=d4_indices,
+                            color_shift=color_shifts,
+                            masks=masks,
+                            sc_p0=None,  # No self-conditioning in first pass
+                            sc_gain=0.0
+                        )
+                else:
+                    logits_prev = self.model(
+                        xt=noisy_grids,
+                        input_grid=input_grids,
+                        task_ids=task_indices,
+                        logsnr=logsnr,
+                        d4_idx=d4_indices,
+                        color_shift=color_shifts,
+                        masks=masks,
+                        sc_p0=None,  # No self-conditioning in first pass
+                        sc_gain=0.0
+                    )
+                # Convert logits to probabilities
+                sc_p0 = torch.softmax(logits_prev, dim=-1)
+
+        # Second pass: Forward with self-conditioning and compute loss
+        if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
+            with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
+                losses = self.model.compute_loss(
+                    x0=output_grids,
+                    input_grid=input_grids,
+                    task_ids=task_indices,
+                    xt=noisy_grids,
+                    logsnr=logsnr,
+                    d4_idx=d4_indices,
+                    color_shift=color_shifts,
+                    heights=heights,
+                    widths=widths,
+                    auxiliary_size_loss_weight=self.auxiliary_size_loss_weight,
+                    sc_p0=sc_p0,
+                    sc_gain=sc_gain
+                )
+        else:
+            losses = self.model.compute_loss(
+                x0=output_grids,
+                input_grid=input_grids,
+                task_ids=task_indices,
+                xt=noisy_grids,
+                logsnr=logsnr,
+                d4_idx=d4_indices,
+                color_shift=color_shifts,
+                heights=heights,
+                widths=widths,
+                auxiliary_size_loss_weight=self.auxiliary_size_loss_weight,
+                sc_p0=sc_p0,
+                sc_gain=sc_gain
+            )
+
+        # Backward pass with mixed precision and gradient accumulation
+        total_loss = losses['total_loss']
+
+        # Scale loss by accumulation steps for correct gradient magnitude
+        scaled_loss = total_loss / self.gradient_accumulation_steps
+
+        # Zero gradients only at the start of accumulation cycle
+        if self.accumulation_step == 0:
+            self.optimizer.zero_grad()
+
+        if self.scaler is not None:
+            # CUDA with float16 and gradient scaling
+            self.scaler.scale(scaled_loss).backward()
+        else:
+            # MPS, CPU, or bfloat16 without gradient scaling
+            scaled_loss.backward()
+
+        # Increment accumulation step
+        self.accumulation_step += 1
+
+        # Only update weights after accumulating gradients
+        grad_norm = 0.0
+        if self.accumulation_step >= self.gradient_accumulation_steps:
+            if self.scaler is not None:
+                self.scaler.unscale_(self.optimizer)
+
+            # Compute gradient norm and clip
+            grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+
+            if self.scaler is not None:
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+            else:
+                self.optimizer.step()
+
+            self.scheduler.step()
+
+            # Update EMA after optimizer step
+            if self.ema is not None:
+                self.ema.update(self.model)
+
+            # Increment global step counter
+            self.global_step += 1
+
+            # Reset accumulation counter
+            self.accumulation_step = 0
+
+        # Return losses and grad norm as Python floats
+        losses['grad_norm'] = grad_norm.item() if isinstance(grad_norm, torch.Tensor) else grad_norm
+        return {key: value.item() if hasattr(value, 'item') else value for key, value in losses.items()}
+
+    def validate(self, val_loader: torch.utils.data.DataLoader, num_batches: int = 10, use_ema: bool = True) -> Dict[str, float]:
+        """Run validation."""
+        # Use EMA weights if available and requested
+        if use_ema and self.ema is not None:
+            from experimental.diffusion.utils.ema import ModelWithEMA
+            with ModelWithEMA(self.model, self.ema) as ema_model:
+                return self._validate_impl(val_loader, num_batches)
+        else:
+            return self._validate_impl(val_loader, num_batches)
+
+    def _validate_impl(self, val_loader: torch.utils.data.DataLoader, num_batches: int = 10) -> Dict[str, float]:
+        """Internal validation implementation."""
+        self.model.eval()
+        total_losses = {}  # Will be initialized from first batch
+        num_samples = 0
+
+        with torch.no_grad():
+            for i, batch in enumerate(val_loader):
+                if i >= num_batches:
+                    break
+
+                # Move batch to device
+                input_grids = batch['input_grid'].to(self.device)
+                output_grids = batch['output_grid'].to(self.device)
+                task_indices = batch['task_idx'].to(self.device)
+                heights = batch['height'].to(self.device)
+                widths = batch['width'].to(self.device)
+
+                batch_size = input_grids.shape[0]
+
+                # Sample random timesteps (0-indexed for array access)
+                timesteps = torch.randint(0, self.noise_scheduler.num_timesteps, (batch_size,), device=self.device)
+
+                # Create masks for valid regions
+                from experimental.diffusion.utils.grid_utils import batch_create_masks
+                masks = batch_create_masks(heights, widths, self.model.max_size)
+
+                # Add noise using uniform distribution over {0..9}
+                # Only noise valid regions, clamp invalid regions to 0
+                noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps, masks)
+
+                # Compute logSNR from timesteps for model input
+                alpha_bars = self.noise_scheduler.alpha_bars[timesteps].clamp(1e-6, 1-1e-6).to(self.device)
+                logsnr = torch.log(alpha_bars) - torch.log1p(-alpha_bars)
+
+                # Calculate self-conditioning gain based on alpha_bar (noise level)
+                from ..utils.noise_scheduler import sc_gain_from_abar
+                sc_gain = sc_gain_from_abar(timesteps, self.noise_scheduler)
+
+                # Forward pass (no CFG during validation) with mixed precision
+                if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
+                    with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
+                        losses = self.model.compute_loss(
+                            x0=output_grids,
+                            input_grid=input_grids,
+                            task_ids=task_indices,
+                            xt=noisy_grids,
+                            logsnr=logsnr,
+                            heights=heights,
+                            widths=widths,
+                            sc_p0=None,
+                            sc_gain=sc_gain
+                        )
+                else:
+                    losses = self.model.compute_loss(
+                        x0=output_grids,
+                        input_grid=input_grids,
+                        task_ids=task_indices,
+                        xt=noisy_grids,
+                        logsnr=logsnr,
+                        heights=heights,
+                        widths=widths,
+                        sc_p0=None,
+                        sc_gain=sc_gain
+                    )
+
+                # Initialize total_losses on first batch
+                if not total_losses:
+                    total_losses = {key: 0.0 for key in losses.keys()}
+
+                # Accumulate losses - handle missing keys gracefully
+                for key, value in losses.items():
+                    if key not in total_losses:
+                        total_losses[key] = 0.0
+
+                    if isinstance(value, torch.Tensor):
+                        total_losses[key] += value.item() * batch_size
+                    else:
+                        total_losses[key] += value * batch_size
+
+                num_samples += batch_size
+
+        # Average losses
+        avg_losses = {key: total / num_samples for key, total in total_losses.items()}
+        return avg_losses
+
+
+class ARCDiffusionSampler:
+    """Sampling class for the ARC diffusion model."""
+
+    def __init__(
+        self,
+        model: ARCDiffusionModel,
+        noise_scheduler: DiscreteNoiseScheduler,
+        device: torch.device,
+        dataset=None,  # Need dataset for task info
+        debug: bool = False
+    ):
+        self.model = model
+        self.noise_scheduler = noise_scheduler
+        self.device = device
+        self.dataset = dataset
+        self.debug = debug
+
+    def discrete_reverse_step(
+        self,
+        x_t: torch.Tensor,
+        logits_x0: torch.Tensor,
+        t: int,
+        mask: Optional[torch.Tensor] = None,
+        deterministic: bool = True
+    ) -> torch.Tensor:
+        """
+        Perform discrete reverse diffusion step using uniform kernel.
+
+        Args:
+            x_t: Current noised state [batch_size, H, W] with values in {0..9}
+            logits_x0: Model's prediction of clean data [batch_size, H, W, 10]
+            t: Current timestep (0-indexed)
+            mask: Valid region mask [batch_size, H, W]
+            deterministic: If True, use argmax; if False, sample
+
+        Returns:
+            x_{t-1}: Less noisy state [batch_size, H, W]
+        """
+        batch_size, H, W, _ = logits_x0.shape
+        device = logits_x0.device
+
+        # Get model's p(x0|xt)
+        p0 = torch.softmax(logits_x0, dim=-1)  # [B, H, W, 10]
+
+        # Get schedule parameters
+        beta = self.noise_scheduler.betas[t].to(device).view(1, 1, 1, 1)
+
+        # alpha_bar_{t-1}
+        if t > 0:
+            abar_tm1 = self.noise_scheduler.alpha_bars[t-1].to(device).view(1, 1, 1, 1)
+        else:
+            abar_tm1 = torch.tensor(1.0, device=device).view(1, 1, 1, 1)
+
+        # Uniform kernel over 10 colors
+        K = 0.1
+
+        # Compute A(x0) = (1 - alpha_bar_{t-1}) * K + alpha_bar_{t-1} * p(x0)
+        A = (1 - abar_tm1) * K + abar_tm1 * p0  # [B, H, W, 10]
+
+        # Initialize mass with base term: beta * K * A(x0)
+        mass = beta * K * A  # [B, H, W, 10]
+
+        # Add inertia term: (1 - beta) * A(x_t) for current token
+        s = x_t.unsqueeze(-1)  # [B, H, W, 1] - current token indices
+        A_s = A.gather(-1, s)  # [B, H, W, 1] - A values at current tokens
+        mass.scatter_(-1, s, (1 - beta) * A_s)  # Update mass at current token positions
+
+        # Normalize to get probabilities
+        probs = mass / mass.sum(-1, keepdim=True).clamp_min(1e-8)  # [B, H, W, 10]
+
+        # Sample or take argmax
+        if deterministic:
+            x_tm1 = probs.argmax(-1)  # [B, H, W]
+        else:
+            # Sample from categorical distribution
+            x_tm1 = torch.multinomial(probs.view(-1, 10), 1).view(batch_size, H, W)
+
+        # Apply mask to keep invalid regions fixed at 0
+        if mask is not None:
+            x_tm1 = torch.where(mask, x_tm1, 0)
+
+        return x_tm1
+
+    @torch.no_grad()
+    def sample(
+        self,
+        input_grids: torch.Tensor,
+        task_indices: torch.Tensor,
+        num_inference_steps: Optional[int] = None,
+        temperature: float = 1.0
+    ) -> torch.Tensor:
+        """
+        Sample outputs for given inputs using DDPM sampling.
+
+        Args:
+            input_grids: [batch_size, max_size, max_size]
+            task_indices: [batch_size]
+            num_inference_steps: Number of denoising steps (default: use scheduler's num_timesteps)
+
+        Returns:
+            predictions: [batch_size, max_size, max_size] - predicted output grids
+        """
+        self.model.eval()
+
+        batch_size = input_grids.shape[0]
+        max_size = input_grids.shape[1]
+
+        if num_inference_steps is None:
+            num_inference_steps = self.noise_scheduler.num_timesteps
+
+        # Predict output grid sizes if available
+        predicted_heights = None
+        predicted_widths = None
+        # Check for integrated size head in model
+        if hasattr(self.model, 'include_size_head') and self.model.include_size_head:
+            predicted_heights, predicted_widths = self.model.predict_sizes(input_grids, task_indices)
+            print(f"Predicted sizes (integrated): heights={predicted_heights.cpu().tolist()}, widths={predicted_widths.cpu().tolist()}")
+
+        # Build mask from predicted sizes (or full grid if no size prediction)
+        mask = torch.zeros((batch_size, max_size, max_size), dtype=torch.bool, device=self.device)
+        if predicted_heights is not None and predicted_widths is not None:
+            for b in range(batch_size):
+                h, w = predicted_heights[b].item(), predicted_widths[b].item()
+                mask[b, :h, :w] = True
+        else:
+            # If no size prediction, assume full grid is valid
+            mask[:] = True
+
+        # Create float mask for model
+        mask_float = mask.float()
+
+        # Initialize with uniform random noise over {0..9}, black outside mask
+        x_t = torch.randint(
+            0, 10,  # Uniform over {0..9}
+            (batch_size, max_size, max_size),
+            device=self.device
+        )
+        x_t = torch.where(mask, x_t, 0)
+
+        # Initialize self-conditioning buffer
+        sc_p0 = None
+
+        # Create subsampled timestep indices from the full training range
+        # This ensures we walk the full noise schedule [T_train-1, ..., 0] in num_inference_steps
+        T_train = self.noise_scheduler.num_timesteps  # e.g., 128
+        timestep_indices = torch.round(
+            torch.linspace(T_train - 1, 0, num_inference_steps)
+        ).long().tolist()  # e.g., [127, 123, 119, ..., 4, 0] for 32 steps
+
+        # Denoising loop (reverse from highest noise to clean)
+        for step_idx, t in enumerate(timestep_indices):
+            if self.debug:
+                print(f"\n=== Timestep {t} (step {step_idx + 1}/{num_inference_steps}) ===")
+
+            # Create batch of current timestep (using actual schedule index, not loop counter)
+            t_batch = torch.full((batch_size,), t, device=self.device, dtype=torch.long)
+
+            # Compute logSNR from timestep for model input
+            alpha_bars = self.noise_scheduler.alpha_bars[t_batch].clamp(1e-6, 1-1e-6).to(self.device)
+            logsnr = torch.log(alpha_bars) - torch.log1p(-alpha_bars)
+
+            # Calculate self-conditioning gain based on alpha_bar (noise level)
+            from ..utils.noise_scheduler import sc_gain_from_abar
+            sc_gain = sc_gain_from_abar(t_batch, self.noise_scheduler)
+
+            # Forward pass with masking and self-conditioning (no augmentation during inference)
+            logits = self.model(x_t, input_grids, task_indices, logsnr,
+                               d4_idx=None, color_shift=None,  # No augmentation
+                               masks=mask_float, sc_p0=sc_p0, sc_gain=sc_gain)
+
+            # Apply temperature scaling
+            logits_scaled = logits / temperature
+
+            # Update self-conditioning buffer with current predictions
+            sc_p0 = torch.softmax(logits_scaled, dim=-1)
+
+            # Perform discrete reverse step
+            x_t = self.discrete_reverse_step(
+                x_t, logits_scaled, t, mask=mask,
+                deterministic=True
+                # deterministic=(t == 0)  # Only deterministic at final step
+            )
+
+            # Debug printing
+            if self.debug:
+                # Show first 10x10 of the grid
+                display_size = min(10, max_size)
+                valid_grid = x_t[0, :display_size, :display_size].cpu().numpy()
+                print(f"Grid content (showing {display_size}x{display_size}):")
+                print(grid_to_display_string(valid_grid, pad_symbol='*'))
+                print("---")
+
+        return x_t
+
+
+def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
+    """
+    Main training function for ARC diffusion model.
+
+    Args:
+        config: Training configuration dict with all settings
+
+    Returns:
+        Trained model
+    """
+    # Set up device (prioritize CUDA > MPS > CPU)
+    if torch.cuda.is_available():
+        device = torch.device('cuda')
+        # Enable PyTorch optimizations for CUDA
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.set_float32_matmul_precision("high")
+        torch.backends.cuda.enable_flash_sdp(True)
+        torch.backends.cuda.enable_mem_efficient_sdp(True)
+        torch.backends.cuda.enable_math_sdp(False)
+        print("Enabled CUDA optimizations: TF32, Flash Attention, Memory-Efficient SDPA")
+    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        device = torch.device('mps')
+        # MPS memory optimization
+        torch.mps.set_per_process_memory_fraction(0.5)  # Use max 70% of memory
+    else:
+        device = torch.device('cpu')
+    print(f"Using device: {device}")
+
+    # Create output directory
+    output_dir = Path(config['output_dir'])
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save config to output directory
+    import json
+    config_save_path = output_dir / 'config.json'
+    with open(config_save_path, 'w') as f:
+        json.dump(config, f, indent=2)
+    print(f"Saved config to {config_save_path}")
+
+    # Construct wandb run name from model_version and tag
+    model_version = config.get('model_version', 'unknown')
+    tag = config.get('tag', 'default')
+    wandb_run_name = f"{model_version}_{tag}"
+
+    # Initialize W&B if enabled
+    if config.get('use_wandb', False):
+        wandb.init(
+            project="arc-prize-2025-diffusion",
+            name=wandb_run_name,
+            config=config,
+            save_code=True
+        )
+
+    # Load data paths
+    data_paths = load_arc_data_paths(
+        data_dir=config.get('data_dir', 'data/arc-prize-2025'),
+        datasets=config.get('datasets', None)
+    )
+
+    # Create full dataset first
+    max_val_examples = config.get('max_val_examples', 128)
+    eval_weight = config.get('eval_weight', 1.0)
+
+    full_dataset = ARCDataset(
+        data_paths=data_paths['train'],
+        max_size=config['max_size'],
+        augment=config['augment'],
+        include_training_test_examples=config.get('include_training_test_examples', True),
+        subset_file=config.get('subset_file', None),
+        eval_subset_file=config.get('eval_subset_file', None),
+        eval_weight=eval_weight,
+        max_val_examples=max_val_examples
+    )
+
+    # Split into train and validation based on is_validation flag
+    # Validation examples are evaluation test examples (marked during loading)
+    import random
+
+    total_examples = len(full_dataset)
+    val_indices = [i for i in range(total_examples) if full_dataset.examples[i].get('is_validation', False)]
+    train_indices = [i for i in range(total_examples) if i not in set(val_indices)]
+
+    # Cap validation at max_val_examples with fixed seed
+    random.seed(42)
+    if len(val_indices) > max_val_examples:
+        val_indices = sorted(random.sample(val_indices, max_val_examples))
+
+    print(f"Splitting {total_examples} examples: {len(train_indices)} train, {len(val_indices)} validation")
+
+    # Create Subset datasets
+    from torch.utils.data import Subset, WeightedRandomSampler
+
+    train_dataset = Subset(full_dataset, train_indices)
+    val_dataset = Subset(full_dataset, val_indices)
+
+    # Create weights for training examples based on eval_weight
+    train_weights = []
+    for idx in train_indices:
+        if full_dataset.examples[idx]['from_eval_dataset']:
+            train_weights.append(eval_weight)
+        else:
+            train_weights.append(1.0)
+
+    # Create weighted sampler for training
+    train_sampler = WeightedRandomSampler(
+        train_weights,
+        len(train_indices),
+        replacement=True
+    )
+
+    # Create data loaders with optimized settings
+    # Disable pin_memory for MPS to avoid warnings and reduce memory usage
+    use_pin_memory = device.type == 'cuda'
+    num_workers = 4 if device.type == 'cuda' else 0
+    use_persistent_workers = num_workers > 0
+
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=config['batch_size'],
+        sampler=train_sampler,  # Use weighted sampler instead of shuffle
+        num_workers=num_workers,
+        persistent_workers=use_persistent_workers,
+        prefetch_factor=4 if num_workers > 0 else None,
+        pin_memory=use_pin_memory,
+        drop_last=True,
+        collate_fn=collate_fn
+    )
+
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=config['batch_size'] // 2,
+        shuffle=False,
+        num_workers=num_workers,
+        persistent_workers=use_persistent_workers,
+        prefetch_factor=4 if num_workers > 0 else None,
+        pin_memory=use_pin_memory,
+        collate_fn=collate_fn
+    )
+
+    print(f"Created train loader with {len(train_loader)} batches")
+    print(f"Created val loader with {len(val_loader)} batches")
+    print(f"Training set upweighting: eval_weight={eval_weight}")
+
+    # Get dataset info from the original full dataset
+    dataset_info = full_dataset.get_task_info()
+    print(f"Dataset info: {dataset_info}")
+
+    # Get auxiliary loss config
+    aux_config = config.get('auxiliary_loss', {})
+    include_size_head = aux_config.get('include_size_head', True)
+    size_head_hidden_dim = aux_config.get('size_head_hidden_dim', None)
+
+    # Check if loading from pretrained model
+    pretrained_path = config.get('pretrained_model_path', None)
+
+    if pretrained_path:
+        print(f"Loading pretrained model from: {pretrained_path}")
+        checkpoint = torch.load(pretrained_path, map_location='cpu')
+
+        # Extract model state dict
+        if 'model_state_dict' in checkpoint:
+            model_state_dict = checkpoint['model_state_dict']
+        else:
+            model_state_dict = checkpoint
+
+        # Strip _orig_mod. prefix if present (from torch.compile)
+        # This happens when a compiled model's state dict is saved
+        if any(k.startswith('_orig_mod.') for k in model_state_dict.keys()):
+            print("Detected torch.compile checkpoint - stripping _orig_mod. prefix")
+            model_state_dict = {k.replace('_orig_mod.', ''): v for k, v in model_state_dict.items()}
+
+        # Determine max_tasks: need to accommodate both pretrained tasks AND new tasks
+        pretrained_max_tasks = 0
+        pretrained_task_id_to_idx = {}
+        if 'dataset_info' in checkpoint:
+            if 'num_tasks' in checkpoint['dataset_info']:
+                pretrained_max_tasks = checkpoint['dataset_info']['num_tasks']
+            if 'task_id_to_idx' in checkpoint['dataset_info']:
+                pretrained_task_id_to_idx = checkpoint['dataset_info']['task_id_to_idx']
+
+        pretrained_task_ids = set(pretrained_task_id_to_idx.keys())
+        current_task_ids = set(dataset_info['task_id_to_idx'].keys())
+        new_task_ids = current_task_ids - pretrained_task_ids
+
+        # Merge task mappings: keep all pretrained mappings + add new tasks
+        merged_task_id_to_idx = pretrained_task_id_to_idx.copy()
+        if new_task_ids:
+            # Assign new indices starting from the max of pretrained indices
+            next_idx = max(pretrained_task_id_to_idx.values()) + 1 if pretrained_task_id_to_idx else 0
+            for task_id in new_task_ids:
+                merged_task_id_to_idx[task_id] = next_idx
+                next_idx += 1
+
+        # Update dataset_info with merged mapping
+        dataset_info['task_id_to_idx'] = merged_task_id_to_idx
+        dataset_info['num_tasks'] = len(merged_task_id_to_idx)
+        max_tasks = dataset_info['num_tasks']
+
+        if pretrained_max_tasks > 0:
+            print(f"Pretrained model: {pretrained_max_tasks} tasks")
+            print(f"Current dataset: {len(current_task_ids)} tasks")
+            if new_task_ids:
+                print(f"New tasks detected: {len(new_task_ids)} tasks will get fresh embeddings")
+                print(f"  New task IDs: {list(new_task_ids)[:5]}{'...' if len(new_task_ids) > 5 else ''}")
+            print(f"Merged mapping: {len(merged_task_id_to_idx)} total tasks")
+            print(f"Using max_tasks={max_tasks}")
+
+        # Create noise scheduler first (needed for model initialization)
+        noise_scheduler_for_model = DiscreteNoiseScheduler(
+            num_timesteps=config['num_timesteps'],
+            vocab_size=config['vocab_size'],
+            schedule_type=config['schedule_type']
+        )
+
+        # Create model with same architecture
+        model = ARCDiffusionModel(
+            vocab_size=config['vocab_size'],
+            d_model=config['d_model'],
+            nhead=config['nhead'],
+            num_layers=config['num_layers'],
+            max_size=config['max_size'],
+            max_tasks=max_tasks,
+            embedding_dropout=config.get('embedding_dropout', 0.1),
+            input_grid_dropout=config.get('input_grid_dropout', 0.0),
+            include_size_head=include_size_head,
+            size_head_hidden_dim=size_head_hidden_dim,
+            noise_scheduler=noise_scheduler_for_model
+        )
+
+        # Filter out incompatible keys (size mismatches) and handle partial task embedding loading
+        model_state = model.state_dict()
+        filtered_state_dict = {}
+        skipped_keys = []
+        partially_loaded_keys = []
+
+        for key, value in model_state_dict.items():
+            if key in model_state:
+                # Check if shapes match
+                if model_state[key].shape == value.shape:
+                    filtered_state_dict[key] = value
+                elif key == 'denoiser.task_embedding.weight' and value.shape[0] <= model_state[key].shape[0]:
+                    # Partial load: pretrained task embedding is smaller than or equal to new model
+                    # Copy pretrained embeddings, leave new task embeddings randomly initialized
+                    print(f"Partially loading task_embedding: copying {value.shape[0]} embeddings, leaving {model_state[key].shape[0] - value.shape[0]} new embeddings")
+                    filtered_state_dict[key] = model_state[key].clone()
+                    filtered_state_dict[key][:value.shape[0]] = value
+                    partially_loaded_keys.append(f"{key} (partial: {value.shape[0]}/{model_state[key].shape[0]})")
+                else:
+                    # Skip keys with shape mismatch
+                    skipped_keys.append(f"{key} (shape mismatch: {value.shape} vs {model_state[key].shape})")
+            else:
+                # Key not in model (shouldn't happen after _orig_mod stripping, but handle it)
+                skipped_keys.append(f"{key} (not in model)")
+
+        # Load compatible weights
+        incompatible_keys = model.load_state_dict(filtered_state_dict, strict=False)
+
+        # Report what was loaded vs skipped
+        print(f"Successfully loaded pretrained weights:")
+        print(f"  Loaded: {len(filtered_state_dict)}/{len(model_state_dict)} parameters")
+        if partially_loaded_keys:
+            print(f"  Partially loaded {len(partially_loaded_keys)} parameters:")
+            for key in partially_loaded_keys:
+                print(f"    - {key}")
+        if skipped_keys:
+            print(f"  Skipped {len(skipped_keys)} parameters (will be randomly initialized):")
+            for key in skipped_keys[:5]:  # Show first 5
+                print(f"    - {key}")
+            if len(skipped_keys) > 5:
+                print(f"    ... and {len(skipped_keys) - 5} more")
+        if incompatible_keys.missing_keys:
+            print(f"  Missing keys (randomly initialized): {len(incompatible_keys.missing_keys)}")
+            for key in list(incompatible_keys.missing_keys)[:5]:
+                print(f"    - {key}")
+            if len(incompatible_keys.missing_keys) > 5:
+                print(f"    ... and {len(incompatible_keys.missing_keys) - 5} more")
+    else:
+        # Create noise scheduler first (needed for model initialization)
+        noise_scheduler_for_model = DiscreteNoiseScheduler(
+            num_timesteps=config['num_timesteps'],
+            vocab_size=config['vocab_size'],
+            schedule_type=config['schedule_type']
+        )
+
+        # Create model from scratch
+        model = ARCDiffusionModel(
+            vocab_size=config['vocab_size'],
+            d_model=config['d_model'],
+            nhead=config['nhead'],
+            num_layers=config['num_layers'],
+            max_size=config['max_size'],
+            max_tasks=dataset_info['num_tasks'],
+            embedding_dropout=config.get('embedding_dropout', 0.1),
+            input_grid_dropout=config.get('input_grid_dropout', 0.0),
+            include_size_head=include_size_head,
+            size_head_hidden_dim=size_head_hidden_dim,
+            noise_scheduler=noise_scheduler_for_model
+        )
+
+    # Apply LoRA if configured
+    use_lora = config.get('lora', {}).get('enabled', False)
+    if use_lora:
+        from experimental.diffusion.utils.lora import (
+            replace_linear_with_lora,
+            mark_only_lora_as_trainable,
+            print_lora_info
+        )
+
+        lora_config = config['lora']
+        rank = lora_config.get('rank', 8)
+        lora_alpha = lora_config.get('alpha', 16.0)
+        lora_dropout = lora_config.get('dropout', 0.0)
+
+        # Target attention out_proj and MLP (linear1, linear2) in all transformer layers
+        # Also target size head if present
+        # Based on actual model structure:
+        #   - denoiser.transformer.layers.*.self_attn.out_proj (attention output projection)
+        #   - denoiser.transformer.layers.*.linear1 (MLP first layer)
+        #   - denoiser.transformer.layers.*.linear2 (MLP second layer)
+        #   - size_head.* (size prediction head layers)
+        #   - height_head, width_head (size output heads)
+        target_modules = ['self_attn.out_proj', 'linear1', 'linear2']
+
+        if include_size_head:
+            target_modules.extend(['size_head', 'height_head', 'width_head'])
+
+        print(f"\n🔧 Applying LoRA with rank={rank}, alpha={lora_alpha}, dropout={lora_dropout}")
+        print(f"🎯 Target modules: {target_modules}")
+
+        # Replace linear layers with LoRA versions
+        replaced = replace_linear_with_lora(
+            model,
+            rank=rank,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+            target_modules=target_modules
+        )
+
+        # Freeze all non-LoRA parameters
+        trainable_params = mark_only_lora_as_trainable(model)
+
+        # Print LoRA info
+        print_lora_info(model)
+        print(f"  Total trainable parameters: {trainable_params:,}")
+        print(f"  Replaced {len(replaced)} modules with LoRA")
+
+    # Compile model with torch.compile for CUDA optimization
+    if device.type == 'cuda':
+        print("Compiling model with torch.compile(mode='max-autotune')...")
+        model = torch.compile(model, mode="max-autotune")
+        print("Model compiled successfully")
+
+    # Create noise scheduler
+    noise_scheduler = DiscreteNoiseScheduler(
+        num_timesteps=config['num_timesteps'],
+        vocab_size=config['vocab_size'],
+        schedule_type=config['schedule_type']
+    )
+    noise_scheduler.to(device)
+
+    # Get optimizer steps from config
+    if 'optimizer_steps' not in config:
+        raise KeyError(
+            "Config missing 'optimizer_steps'. Please update your config file to use 'optimizer_steps' instead of 'num_epochs'. "
+            "Example: 'optimizer_steps': 3000"
+        )
+    optimizer_steps = config['optimizer_steps']
+    steps_per_epoch = len(train_loader)
+    estimated_epochs = optimizer_steps / steps_per_epoch
+    print(f"Training setup: {optimizer_steps} optimizer steps (~{estimated_epochs:.1f} epochs at {steps_per_epoch} steps/epoch)")
+
+    # Create trainer
+    trainer = ARCDiffusionTrainer(
+        model=model,
+        noise_scheduler=noise_scheduler,
+        device=device,
+        dataset=full_dataset,  # Pass dataset for task info
+        learning_rate=config['learning_rate'],
+        weight_decay=config.get('weight_decay', 0.01),
+        use_mixed_precision=config.get('use_mixed_precision', True),
+        pixel_noise_prob=config.get('pixel_noise_prob', 0.15),
+        pixel_noise_rate=config.get('pixel_noise_rate', 0.02),
+        total_steps=optimizer_steps,
+        auxiliary_size_loss_weight=aux_config.get('auxiliary_size_loss_weight', 0.1),
+        use_ema=config.get('use_ema', True),
+        ema_decay=config.get('ema_decay', 0.9995),
+        ema_warmup_steps=config.get('ema_warmup_steps', 1000),
+        gradient_accumulation_steps=config.get('gradient_accumulation_steps', 1),
+        lr_warmup_steps=config.get('lr_warmup_steps', None)
+    )
+
+    print(f"Model has {sum(p.numel() for p in model.parameters()):,} parameters")
+
+    # Create training data visualization before starting training
+    create_training_visualization(
+        dataset=full_dataset,
+        noise_scheduler=noise_scheduler,
+        device=device,
+        output_dir=output_dir,
+        config=config
+    )
+
+    # Training loop
+    step = 0
+    best_val_loss = float('inf')
+
+    # Training loop using steps instead of epochs
+    steps_per_epoch = len(train_loader)
+    current_epoch = 0
+
+    # Create infinite data loader
+    def infinite_dataloader(dataloader):
+        while True:
+            for batch in dataloader:
+                yield batch
+
+    data_iter = infinite_dataloader(train_loader)
+
+    # Check if profiling mode is enabled
+    if config.get('profile_mode', False):
+        print("\n🔬 Starting profiling mode (20 steps)...")
+        from torch.profiler import profile, record_function, ProfilerActivity
+
+        profile_steps = 20
+        activities = [ProfilerActivity.CPU]
+        if torch.cuda.is_available():
+            activities.append(ProfilerActivity.CUDA)
+
+        with profile(
+            activities=activities,
+            record_shapes=True,
+            profile_memory=True,
+            with_stack=True
+        ) as prof:
+            with record_function("training_loop"):
+                for step_idx in range(profile_steps):
+                    batch = next(data_iter)
+                    losses = trainer.train_step(batch)
+                    print(f"Step {step_idx + 1}/{profile_steps}: loss={losses['total_loss']:.4f}")
+
+        # Save and print results
+        trace_path = output_dir / "profile_trace.json"
+        prof.export_chrome_trace(str(trace_path))
+        print(f"\n📊 Chrome trace saved to: {trace_path}")
+        print("   View in Chrome at: chrome://tracing\n")
+
+        # Print table sorted by CUDA time (or CPU if no CUDA)
+        sort_key = "cuda_time_total" if torch.cuda.is_available() else "cpu_time_total"
+        print(f"Top operations by {sort_key}:")
+        print(prof.key_averages().table(sort_by=sort_key, row_limit=25))
+
+        print("\n✅ Profiling complete! Exiting...")
+        return model
+
+    # Progress bar for optimizer steps
+    gradient_accumulation_steps = config.get('gradient_accumulation_steps', 1)
+    total_train_steps = optimizer_steps * gradient_accumulation_steps
+    progress_bar = tqdm(range(total_train_steps), desc="Training")
+
+    # Track halfway checkpoint
+    halfway_step = optimizer_steps // 2
+    halfway_saved = False
+
+    # Track epoch losses for validation
+    epoch_losses = {
+        'total_loss': 0.0,
+        'grid_loss': 0.0,
+        'grad_norm': 0.0
+    }
+    num_batches_this_epoch = 0
+
+    for step_idx in progress_bar:
+        batch = next(data_iter)
+        losses = trainer.train_step(batch)
+
+        # Accumulate losses for epoch average
+        for key in epoch_losses:
+            if key in losses:
+                epoch_losses[key] += losses[key]
+        num_batches_this_epoch += 1
+
+        # Use actual optimizer step count from trainer
+        step = trainer.global_step
+
+        # Update progress bar
+        current_epoch_approx = step / steps_per_epoch
+        progress_bar.set_postfix({
+            'loss': f"{losses['total_loss']:.4f}",
+            'grid': f"{losses['grid_loss']:.4f}",
+            'acc': f"{losses.get('accuracy', 0.0):.3f}",
+            'grad': f"{losses['grad_norm']:.2f}",
+            'epoch': f"{current_epoch_approx:.1f}",
+            'opt_step': step
+        })
+
+        # Only log/validate/checkpoint when optimizer actually stepped
+        if trainer.accumulation_step == 0:
+            # Log to wandb
+            if config.get('use_wandb', False) and step % config.get('log_every', 50) == 0:
+                log_dict = {f"train/{key}": value for key, value in losses.items()}
+                log_dict["train/learning_rate"] = trainer.scheduler.get_last_lr()[0]
+                log_dict["train/step"] = step
+                log_dict["train/epoch"] = current_epoch_approx
+                wandb.log(log_dict, step=step)
+
+            # Check if we've completed an epoch for printing
+            if step % steps_per_epoch == 0:
+                current_epoch = step // steps_per_epoch
+                print(f"\nCompleted epoch {current_epoch} (step {step})")
+
+            # Validation based on step intervals (not epoch boundaries)
+            val_every_steps = config.get('val_every_steps', steps_per_epoch)  # Default to every epoch
+            if step > 0 and step % val_every_steps == 0:
+                # Calculate average training losses for this validation period
+                avg_train_losses = {key: total / num_batches_this_epoch for key, total in epoch_losses.items()}
+
+                print("Running validation...")
+                val_losses = trainer.validate(val_loader, num_batches=config.get('max_val_batches', 10))
+
+                # Print key validation metrics in a readable format
+                print(f"Validation losses: {val_losses}")
+
+                # Print timestep bucket summary if available
+                if any(key.endswith('_count') for key in val_losses.keys()):
+                    print("Timestep bucket breakdown:")
+                    for bucket in ['low_noise', 'mid_noise', 'high_noise']:
+                        if f'{bucket}_count' in val_losses:
+                            acc = val_losses.get(f'{bucket}_accuracy', 0.0)
+                            count = val_losses.get(f'{bucket}_count', 0)
+                            print(f"  {bucket:10s}: acc={acc:.3f}, count={count:4.0f}")
+
+                overall_acc = val_losses.get('accuracy', 0.0)
+                print(f"Overall: acc={overall_acc:.3f}")
+
+                # Log validation losses
+                if config.get('use_wandb', False):
+                    val_log_dict = {f"val/{key}": value for key, value in val_losses.items()}
+                    val_log_dict["val/learning_rate"] = trainer.scheduler.get_last_lr()[0]
+                    val_log_dict["val/step"] = step
+                    val_log_dict["val/epoch"] = current_epoch_approx
+                    wandb.log(val_log_dict, step=step)
+
+                # Save best model (weights only to save space)
+                if val_losses['total_loss'] < best_val_loss:
+                    best_val_loss = val_losses['total_loss']
+                    # Save model in bfloat16 without modifying the original
+                    model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
+                    save_dict = {
+                        'model_state_dict': model_state_dict_bf16,
+                        'config': config,
+                        'dataset_info': dataset_info
+                    }
+                    # Save EMA state if available
+                    if trainer.ema is not None:
+                        save_dict['ema_state_dict'] = trainer.ema.state_dict()
+                    torch.save(save_dict, output_dir / 'best_model.pt')
+                    print(f"Saved best model with val loss: {best_val_loss:.4f}")
+
+                # Save halfway checkpoint
+                if step >= halfway_step and not halfway_saved:
+                    halfway_saved = True
+                    model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
+                    save_dict = {
+                        'model_state_dict': model_state_dict_bf16,
+                        'config': config,
+                        'dataset_info': dataset_info,
+                        'step': step
+                    }
+                    # Save EMA state if available
+                    if trainer.ema is not None:
+                        save_dict['ema_state_dict'] = trainer.ema.state_dict()
+                    torch.save(save_dict, output_dir / 'halfway_model.pt')
+                    print(f"Saved halfway checkpoint at step {step} ({step/optimizer_steps:.0%} of training)")
+
+                # Create denoising progression visualization
+                vis_every_steps = config.get('vis_every_steps', val_every_steps)  # Default to same as validation
+                if step % vis_every_steps == 0:
+                    try:
+                        create_denoising_progression_visualization(
+                            model=model,
+                            noise_scheduler=noise_scheduler,
+                            val_dataset=val_dataset,
+                            device=device,
+                            output_dir=output_dir,
+                            step=step,
+                            config=config
+                        )
+                    except Exception as e:
+                        print(f"⚠️ Failed to create denoising visualization: {e}")
+
+                # Print validation summary
+                current_lr = trainer.scheduler.get_last_lr()[0]
+                print(f"Step {step} - Train Loss: {avg_train_losses['total_loss']:.4f}, Grad Norm: {avg_train_losses['grad_norm']:.3f}, LR: {current_lr:.6f}")
+
+                # Reset validation period tracking
+                epoch_losses = {
+                    'total_loss': 0.0,
+                    'grid_loss': 0.0,
+                    'grad_norm': 0.0
+                }
+                num_batches_this_epoch = 0
+
+        # Early stopping based on steps if configured
+        if config.get('early_stop_steps') and step >= config['early_stop_steps']:
+            print(f"Early stopping after {step} steps")
+            break
+
+    # Merge LoRA weights if using LoRA
+    if config.get('lora', {}).get('enabled', False):
+        from experimental.diffusion.utils.lora import merge_lora_weights
+        print("\n🔧 Merging LoRA weights into base model...")
+        merge_lora_weights(model)
+        print("✅ LoRA weights merged successfully")
+
+        # Extract clean state dict (only base weights, not LoRA parameters)
+        state_dict = model.state_dict()
+        clean_state_dict = {}
+        for key, value in state_dict.items():
+            # Skip LoRA-specific parameters (lora_A, lora_B)
+            if 'lora_A' in key or 'lora_B' in key:
+                continue
+            # Strip _orig_mod. prefix from torch.compile if present
+            clean_key = key.replace('_orig_mod.', '')
+            clean_state_dict[clean_key] = value
+
+        model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in clean_state_dict.items()}
+    else:
+        # Save final model (weights only to save space)
+        state_dict = model.state_dict()
+        # Strip _orig_mod. prefix from torch.compile if present
+        clean_state_dict = {k.replace('_orig_mod.', ''): v for k, v in state_dict.items()}
+        model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in clean_state_dict.items()}
+    save_dict = {
+        'model_state_dict': model_state_dict_bf16,
+        'config': config,
+        'dataset_info': dataset_info
+    }
+    # Save EMA state if available
+    if trainer.ema is not None:
+        save_dict['ema_state_dict'] = trainer.ema.state_dict()
+    torch.save(save_dict, output_dir / 'final_model.pt')
+
+    if config.get('use_wandb', False):
+        wandb.finish()
+
+    print("Training completed!")
+
+    # DEBUG: Print task embedding info after training
+    with torch.no_grad():
+        # Get task_id_to_idx mapping
+        task_info = dataset_info
+        task_id_to_idx = task_info['task_id_to_idx']
+
+        # Use a specific evaluation task that will also be used in inference
+        debug_task_id = "0934a4d8"  # First evaluation task
+        if debug_task_id in task_id_to_idx:
+            debug_task_idx = task_id_to_idx[debug_task_id]
+            debug_task_idx_tensor = torch.tensor([debug_task_idx], device=device)
+            task_emb = model.denoiser.task_embedding(debug_task_idx_tensor)
+            print(f"\n🔍 DEBUG: Training task embedding verification (after training)")
+            print(f"  Task ID: {debug_task_id}")
+            print(f"  Task index (from task_id_to_idx): {debug_task_idx}")
+            print(f"  Task embedding (first 10 dims): {task_emb[0, :10].cpu().numpy()}")
+            print(f"  Task embedding norm: {task_emb.norm().item():.4f}\n")
+
+    return model
