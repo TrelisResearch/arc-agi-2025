@@ -187,6 +187,8 @@ class ARCIterativeTrainer:
 
         # K-step rollout loop
         total_loss = 0.0
+        total_grid_loss = 0.0
+        total_size_loss = 0.0
         step_losses = []
         step_accuracies = []
         step_changes = []
@@ -236,6 +238,9 @@ class ARCIterativeTrainer:
             step_losses.append(losses['grid_loss'].item())
             step_accuracies.append(losses['accuracy'])
             total_loss += step_loss.item()
+            total_grid_loss += losses['grid_loss'].item() / self.K
+            if 'size_loss' in losses:
+                total_size_loss += losses.get('size_loss', 0.0) if isinstance(losses.get('size_loss', 0.0), float) else losses['size_loss'].item() / self.K
 
             # Sample next prediction
             with torch.no_grad():
@@ -322,6 +327,8 @@ class ARCIterativeTrainer:
         # Return metrics
         return {
             'loss': total_loss,
+            'grid_loss': total_grid_loss,
+            'size_loss': total_size_loss,
             'accuracy': step_accuracies[-1],  # Final step accuracy (headline)
             'grad_norm': grad_norm.item() if isinstance(grad_norm, torch.Tensor) else grad_norm,
             'step_losses': step_losses,
@@ -607,6 +614,8 @@ def train_arc_iterative(config: Dict[str, Any]) -> ARCIterativeModel:
         if config.get('use_wandb', False) and step % config.get('log_every', 10) == 0:
             log_dict = {
                 'train/loss': metrics['loss'],
+                'train/grid_loss': metrics['grid_loss'],
+                'train/size_loss': metrics['size_loss'],
                 'train/accuracy': metrics['accuracy'],
                 'train/grad_norm': metrics['grad_norm'],
                 'train/lr': trainer.scheduler.get_last_lr()[0],
@@ -618,7 +627,7 @@ def train_arc_iterative(config: Dict[str, Any]) -> ARCIterativeModel:
                 log_dict[f'train/step_{k}_delta_acc'] = metrics['step_delta_acc'][k]
                 log_dict[f'train/step_{k}_changes_pct'] = metrics['step_changes_pct'][k]
 
-            wandb.log(log_dict)
+            wandb.log(log_dict, step=step)
 
         # Validation
         if step % config.get('val_every_steps', 500) == 0 and step > 0:
@@ -626,11 +635,16 @@ def train_arc_iterative(config: Dict[str, Any]) -> ARCIterativeModel:
             print(f"\nStep {step} - Val Loss: {val_metrics['total_loss']:.4f}, Val Acc: {val_metrics['accuracy']:.3f}")
 
             if config.get('use_wandb', False):
-                wandb.log({
+                val_log_dict = {
                     'val/loss': val_metrics['total_loss'],
                     'val/accuracy': val_metrics['accuracy'],
                     'val/step': step,
-                })
+                }
+                if 'grid_loss' in val_metrics:
+                    val_log_dict['val/grid_loss'] = val_metrics['grid_loss']
+                if 'size_loss' in val_metrics:
+                    val_log_dict['val/size_loss'] = val_metrics['size_loss']
+                wandb.log(val_log_dict, step=step)
 
             # Save best model
             if val_metrics['total_loss'] < best_val_loss and config.get('save_best', True):
