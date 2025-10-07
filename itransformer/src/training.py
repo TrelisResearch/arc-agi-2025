@@ -44,10 +44,6 @@ class ARCIterativeTrainer:
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.K = K
 
-        # Validate step embedding capacity
-        max_steps = model.refiner.step_embedding.num_embeddings
-        assert max_steps >= K, f"Model max_steps ({max_steps}) must be >= K ({K})"
-
         # Set up mixed precision
         if use_mixed_precision and device.type in ['cuda', 'mps']:
             self.use_mixed_precision = True

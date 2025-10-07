@@ -1,6 +1,10 @@
 # iTransformer (iterative Transformer) Notes
 
 ## October 7th 2025
+### v2
+- remove embedding for step number
+- switch to back-prop after each segment, to encourage later steps to learn
+
 ### v1 
 - remove learnable start token, so we just always start from black now.
 - ramp noise up to 50% of inputs, and at a 10% level; up from 10% of grids at a 5% level.
@@ -21,6 +25,10 @@ Run toiny:
 ```bash
 PYTHONUNBUFFERED=1 nohup uv run itransformer/pipeline.py --config itransformer/configs/toiny_config_aa1.json > toiny_config_aa1.log &
 ```
+Scores, without --maj: 0.6%. 
+
+📏 SIZE PREDICTION:
+  Correct: 281/419 (67.1%)
 
 Run smol:
 ```bash

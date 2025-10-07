@@ -69,8 +69,6 @@ class TransformerRefiner(nn.Module):
         # Task embedding (for task conditioning)
         self.task_embedding = nn.Embedding(max_tasks, d_model)
 
-        # Step embedding (for refinement step)
-        self.step_embedding = nn.Embedding(max_steps, d_model)
 
         # Augmentation embeddings
         self.d4_embedding = nn.Embedding(8, d_model)  # D4 group: 8 spatial transformations (0-7)
@@ -146,7 +144,6 @@ class TransformerRefiner(nn.Module):
 
         # Create separate conditioning tokens
         task_token = self.task_embedding(task_ids).unsqueeze(1)  # [batch_size, 1, d_model]
-        step_token = self.step_embedding(step_idx).unsqueeze(1)  # [batch_size, 1, d_model]
 
         # Add augmentation tokens if provided, otherwise use zeros (no augmentation)
         if d4_idx is None:
@@ -157,21 +154,20 @@ class TransformerRefiner(nn.Module):
         d4_token = self.d4_embedding(d4_idx).unsqueeze(1)  # [batch_size, 1, d_model]
         color_shift_token = self.color_shift_embedding(color_shift).unsqueeze(1)  # [batch_size, 1, d_model]
 
-        # Concatenate in sequence dimension: [task, step, d4, color_shift, input_grid, prev_output]
+        # Concatenate in sequence dimension: [task, d4, color_shift, input_grid, prev_output]
         sequence = torch.cat([
             task_token,         # [batch_size, 1, d_model]
-            step_token,         # [batch_size, 1, d_model]
             d4_token,           # [batch_size, 1, d_model]
             color_shift_token,  # [batch_size, 1, d_model]
             input_emb,          # [batch_size, max_size^2, d_model]
             x_prev_emb          # [batch_size, max_size^2, d_model]
-        ], dim=1)  # [batch_size, 4 + 2*max_size^2, d_model]
+        ], dim=1)  # [batch_size, 3 + 2*max_size^2, d_model]
 
         # Single transformer processes the entire sequence
-        output = self.transformer(sequence)  # [batch_size, 4 + 2*max_size^2, d_model]
+        output = self.transformer(sequence)  # [batch_size, 3 + 2*max_size^2, d_model]
 
-        # Extract predictions for previous output positions (skip task + step + d4 + color_shift + input)
-        output_start_idx = 4 + self.max_size * self.max_size
+        # Extract predictions for previous output positions (skip task + d4 + color_shift + input)
+        output_start_idx = 3 + self.max_size * self.max_size
         output_preds = output[:, output_start_idx:, :]  # [batch_size, max_size^2, d_model]
 
         # Predict logits for each cell (only for colors 0-9)
@@ -399,9 +395,6 @@ class ARCIterativeModel(nn.Module):
         task_emb = self.refiner.task_embedding(task_ids)  # [batch_size, d_model]
         task_token = task_emb.unsqueeze(1)  # [batch_size, 1, d_model]
 
-        # Create dummy step token (zeros for size prediction)
-        step_token = torch.zeros_like(task_token)
-
         # Add augmentation tokens if provided, otherwise use zeros (no augmentation)
         if d4_idx is None:
             d4_idx = torch.zeros(batch_size, dtype=torch.long, device=device)
@@ -414,7 +407,6 @@ class ARCIterativeModel(nn.Module):
         # Create sequence matching the main forward pass structure
         sequence = torch.cat([
             task_token,         # [batch_size, 1, d_model]
-            step_token,         # [batch_size, 1, d_model]
             d4_token,           # [batch_size, 1, d_model]
             color_shift_token,  # [batch_size, 1, d_model]
             input_emb,          # [batch_size, max_size^2, d_model]
@@ -423,8 +415,8 @@ class ARCIterativeModel(nn.Module):
         # Process through transformer
         encoded_features = self.refiner.transformer(sequence)
 
-        # Extract features from input positions (skip task, step, d4, color_shift)
-        input_features = encoded_features[:, 4:4+self.max_size*self.max_size, :]
+        # Extract features from input positions (skip task, d4, color_shift)
+        input_features = encoded_features[:, 3:3+self.max_size*self.max_size, :]
 
         # Global average pooling
         pooled_features = input_features.mean(dim=1)  # [batch_size, d_model]
