@@ -44,6 +44,10 @@ class ARCIterativeTrainer:
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.K = K
 
+        # Validate step embedding capacity
+        max_steps = model.refiner.step_embedding.num_embeddings
+        assert max_steps >= K, f"Model max_steps ({max_steps}) must be >= K ({K})"
+
         # Set up mixed precision
         if use_mixed_precision and device.type in ['cuda', 'mps']:
             self.use_mixed_precision = True
@@ -173,7 +177,7 @@ class ARCIterativeTrainer:
 
         # Create masks for valid regions
         from ..utils.grid_utils import batch_create_masks
-        masks = batch_create_masks(heights, widths, self.model.max_size)
+        masks = batch_create_masks(heights, widths, self.model.max_size).bool()
 
         # Initialize x_current as zeros
         x_current = torch.zeros_like(output_grids)
@@ -185,10 +189,25 @@ class ARCIterativeTrainer:
         if self.accumulation_step == 0:
             self.optimizer.zero_grad()
 
+        # Compute size loss once per K-rollout (not per step)
+        batch_size_loss = 0.0
+        if self.model.include_size_head:
+            if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
+                with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
+                    height_logits, width_logits = self.model.predict_size(input_grids, task_indices)
+            else:
+                height_logits, width_logits = self.model.predict_size(input_grids, task_indices)
+
+            height_targets = heights - 1
+            width_targets = widths - 1
+            height_loss = F.cross_entropy(height_logits, height_targets)
+            width_loss = F.cross_entropy(width_logits, width_targets)
+            batch_size_loss = height_loss + width_loss
+
         # K-step rollout loop
         total_loss = 0.0
         total_grid_loss = 0.0
-        total_size_loss = 0.0
+        total_size_loss = batch_size_loss.item() if isinstance(batch_size_loss, torch.Tensor) else 0.0
         step_losses = []
         step_accuracies = []
         step_changes = []
@@ -197,10 +216,10 @@ class ARCIterativeTrainer:
         for step in range(self.K):
             step_tensor = torch.full((batch_size,), step, dtype=torch.long, device=self.device)
 
-            # Forward pass with mixed precision
+            # Forward pass with mixed precision - get both losses and logits
             if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
                 with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
-                    losses = self.model.compute_loss(
+                    losses, logits = self.model.compute_loss(
                         x0=output_grids,
                         input_grid=input_grids,
                         task_ids=task_indices,
@@ -208,12 +227,12 @@ class ARCIterativeTrainer:
                         step_idx=step_tensor,
                         d4_idx=d4_indices,
                         color_shift=color_shifts,
-                        heights=heights,
-                        widths=widths,
-                        auxiliary_size_loss_weight=self.auxiliary_size_loss_weight,
+                        masks=masks,
+                        auxiliary_size_loss_weight=0.0,  # Size loss computed separately
+                        return_logits=True,
                     )
             else:
-                losses = self.model.compute_loss(
+                losses, logits = self.model.compute_loss(
                     x0=output_grids,
                     input_grid=input_grids,
                     task_ids=task_indices,
@@ -221,9 +240,9 @@ class ARCIterativeTrainer:
                     step_idx=step_tensor,
                     d4_idx=d4_indices,
                     color_shift=color_shifts,
-                    heights=heights,
-                    widths=widths,
-                    auxiliary_size_loss_weight=self.auxiliary_size_loss_weight,
+                    masks=masks,
+                    auxiliary_size_loss_weight=0.0,  # Size loss computed separately
+                    return_logits=True,
                 )
 
             # Backward pass with equal weight for all steps (loss / K)
@@ -239,47 +258,30 @@ class ARCIterativeTrainer:
             step_accuracies.append(losses['accuracy'])
             total_loss += step_loss.item()
             total_grid_loss += losses['grid_loss'].item() / self.K
-            if 'size_loss' in losses:
-                total_size_loss += losses.get('size_loss', 0.0) if isinstance(losses.get('size_loss', 0.0), float) else losses['size_loss'].item() / self.K
 
-            # Sample next prediction
+            # Sample next prediction using logits from compute_loss (no second forward!)
             with torch.no_grad():
-                # Get logits for sampling
-                if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
-                    with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
-                        logits = self.model(
-                            x_prev=x_current,
-                            input_grid=input_grids,
-                            task_ids=task_indices,
-                            step_idx=step_tensor,
-                            d4_idx=d4_indices,
-                            color_shift=color_shifts,
-                            masks=masks,
-                        )
-                else:
-                    logits = self.model(
-                        x_prev=x_current,
-                        input_grid=input_grids,
-                        task_ids=task_indices,
-                        step_idx=step_tensor,
-                        d4_idx=d4_indices,
-                        color_shift=color_shifts,
-                        masks=masks,
-                    )
+                # Detach and cast to fp32 for numerical stability
+                logits_detached = logits.detach().float()
 
                 # Sampling strategy:
                 # - Train: categorical sampling for steps 0..K-2, argmax at K-1
                 # - This teaches robustness to stochastic errors while keeping target sharp
                 if step < self.K - 1:
                     # Categorical sampling from softmax
-                    probs = F.softmax(logits, dim=-1)  # [B, H, W, 10]
+                    # Clamp logits for numerical stability
+                    logits_clamped = torch.clamp(logits_detached, min=-20.0, max=20.0)
+                    probs = F.softmax(logits_clamped, dim=-1)  # [B, H, W, 10]
                     x_next = torch.multinomial(
-                        probs.view(batch_size, -1, 10).view(-1, 10),
+                        probs.view(-1, 10),
                         num_samples=1
                     ).view(batch_size, self.model.max_size, self.model.max_size)
                 else:
                     # Argmax for final step
-                    x_next = torch.argmax(logits, dim=-1)
+                    x_next = torch.argmax(logits_detached, dim=-1)
+
+                # Enforce mask: zero out predictions outside valid region
+                x_next = torch.where(masks, x_next, torch.zeros_like(x_next))
 
                 # Track % cells changed
                 if prev_pred is not None:
@@ -294,6 +296,15 @@ class ARCIterativeTrainer:
 
                 # Detach for next iteration (KEY!)
                 x_current = x_next.detach()
+
+        # Add size loss to total (computed once, not per-step)
+        # Divide by K to match per-step weighting (grid loss is averaged over K)
+        if isinstance(batch_size_loss, torch.Tensor):
+            size_loss_scaled = (self.auxiliary_size_loss_weight * batch_size_loss) / (self.K * self.gradient_accumulation_steps)
+            if self.use_mixed_precision and self.scaler is not None:
+                self.scaler.scale(size_loss_scaled).backward()
+            else:
+                size_loss_scaled.backward()
 
         # Increment accumulation step
         self.accumulation_step += 1
@@ -360,16 +371,18 @@ class ARCIterativeTrainer:
 
                 # Create masks
                 from ..utils.grid_utils import batch_create_masks
-                masks = batch_create_masks(heights, widths, self.model.max_size)
+                masks = batch_create_masks(heights, widths, self.model.max_size).bool()
 
                 # K-step refinement (all argmax for eval)
                 x_current = torch.zeros_like(output_grids)
                 step_accuracies = []
+                step_delta_acc = []
 
                 for step in range(self.K):
                     step_tensor = torch.full((batch_size,), step, dtype=torch.long, device=self.device)
 
-                    losses = self.model.compute_loss(
+                    # Get both losses and logits (no second forward!)
+                    losses, logits = self.model.compute_loss(
                         x0=output_grids,
                         input_grid=input_grids,
                         task_ids=task_indices,
@@ -380,21 +393,21 @@ class ARCIterativeTrainer:
                         heights=heights,
                         widths=widths,
                         auxiliary_size_loss_weight=self.auxiliary_size_loss_weight,
+                        return_logits=True,
                     )
 
-                    step_accuracies.append(losses['accuracy'])
+                    step_acc = losses['accuracy']
+                    step_accuracies.append(step_acc)
+                    if step == 0:
+                        step_delta_acc.append(0.0)
+                    else:
+                        step_delta_acc.append(step_acc - step_accuracies[step - 1])
 
-                    # Argmax for next step
-                    logits = self.model(
-                        x_prev=x_current,
-                        input_grid=input_grids,
-                        task_ids=task_indices,
-                        step_idx=step_tensor,
-                        d4_idx=d4_indices,
-                        color_shift=color_shifts,
-                        masks=masks,
-                    )
+                    # Argmax from returned logits (reuse!)
                     x_current = torch.argmax(logits, dim=-1)
+
+                    # Enforce mask: zero out predictions outside valid region
+                    x_current = torch.where(masks, x_current, torch.zeros_like(x_current))
 
                 # Accumulate metrics (use final step)
                 for key, value in losses.items():
@@ -402,6 +415,14 @@ class ARCIterativeTrainer:
                         total_metrics[key] += value * batch_size
                     else:
                         total_metrics[key] = value * batch_size
+
+                # Add per-step metrics
+                for k in range(self.K):
+                    if f'step_{k}_acc' not in total_metrics:
+                        total_metrics[f'step_{k}_acc'] = 0.0
+                        total_metrics[f'step_{k}_delta_acc'] = 0.0
+                    total_metrics[f'step_{k}_acc'] += step_accuracies[k] * batch_size
+                    total_metrics[f'step_{k}_delta_acc'] += step_delta_acc[k] * batch_size
 
                 num_samples += batch_size
 
@@ -644,6 +665,14 @@ def train_arc_iterative(config: Dict[str, Any]) -> ARCIterativeModel:
                     val_log_dict['val/grid_loss'] = val_metrics['grid_loss']
                 if 'size_loss' in val_metrics:
                     val_log_dict['val/size_loss'] = val_metrics['size_loss']
+
+                # Log per-step metrics
+                for k in range(trainer.K):
+                    if f'step_{k}_acc' in val_metrics:
+                        val_log_dict[f'val/step_{k}_acc'] = val_metrics[f'step_{k}_acc']
+                    if f'step_{k}_delta_acc' in val_metrics:
+                        val_log_dict[f'val/step_{k}_delta_acc'] = val_metrics[f'step_{k}_delta_acc']
+
                 wandb.log(val_log_dict, step=step)
 
             # Save best model

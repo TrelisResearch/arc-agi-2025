@@ -79,6 +79,9 @@ class TransformerRefiner(nn.Module):
         # Embedding dropout for regularization
         self.embedding_dropout = nn.Dropout(embedding_dropout)
 
+        # Start token to avoid all-black bias at step 0
+        self.start_token = nn.Parameter(torch.zeros(d_model))
+
         # Main transformer
         self.transformer = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(
@@ -125,6 +128,10 @@ class TransformerRefiner(nn.Module):
         pos_emb = self.pos_encoding(batch_size)  # [batch_size, max_size^2, d_model]
         input_emb = input_emb + pos_emb
         x_prev_emb = x_prev_emb + pos_emb
+
+        # Add start token for step 0 to avoid all-black bias
+        if step_idx.numel() > 0 and (step_idx == 0).all():
+            x_prev_emb = x_prev_emb + self.start_token.view(1, 1, -1)
 
         # Apply embedding dropout
         input_emb = self.embedding_dropout(input_emb)
@@ -259,19 +266,23 @@ class ARCIterativeModel(nn.Module):
         color_shift: Optional[torch.Tensor] = None,  # [batch_size] - color shift
         heights: Optional[torch.Tensor] = None,  # [batch_size] - grid heights
         widths: Optional[torch.Tensor] = None,   # [batch_size] - grid widths
+        masks: Optional[torch.Tensor] = None,  # [batch_size, max_size, max_size] - precomputed masks
         auxiliary_size_loss_weight: float = 0.1,  # Weight for auxiliary size loss
-    ) -> Dict[str, torch.Tensor]:
+        return_logits: bool = False,  # If True, return (metrics, logits) tuple
+    ) -> Union[Dict[str, torch.Tensor], Tuple[Dict[str, torch.Tensor], torch.Tensor]]:
         """Compute training losses with optional masking for pad regions."""
         batch_size = x0.shape[0]
         max_size = x0.shape[1]
 
-        # Create masks for valid positions if heights/widths provided (vectorized)
-        masks = None
+        # Create masks for valid positions if not provided
         mask_bool = None
-        if heights is not None and widths is not None:
+        if masks is None and heights is not None and widths is not None:
             from ..utils.grid_utils import batch_create_masks
             masks = batch_create_masks(heights, widths, max_size)
-            mask_bool = masks.bool()  # Reuse same mask as bool for indexing
+            mask_bool = masks.bool()
+        elif masks is not None:
+            # Masks passed in are already boolean from training.py
+            mask_bool = masks
 
         # Forward pass with masks
         logits = self.forward(
@@ -354,6 +365,8 @@ class ARCIterativeModel(nn.Module):
         # Add size metrics
         metrics.update(size_metrics)
 
+        if return_logits:
+            return metrics, logits
         return metrics
 
     def predict_size(
