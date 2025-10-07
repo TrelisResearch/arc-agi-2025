@@ -1,6 +1,20 @@
 # iTransformer (iterative Transformer) Notes
 
 ## October 7th 2025
+### v1 
+- remove learnable start token, so we just always start from black now.
+- ramp noise up to 50% of inputs, and at a 10% level; up from 10% of grids at a 5% level.
+
+Run toiny:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run itransformer/pipeline.py --config itransformer/configs/toiny_config_aa1.json > toiny_config_aa1_v1.log &
+```
+
+Run smol:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run itransformer/pipeline.py --config itransformer/configs/smol_config_aa1.json > smol_config_aa1_v1.log &
+```
+
 ### v0 itransformer design
 
 Run toiny:

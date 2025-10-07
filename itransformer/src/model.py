@@ -79,9 +79,6 @@ class TransformerRefiner(nn.Module):
         # Embedding dropout for regularization
         self.embedding_dropout = nn.Dropout(embedding_dropout)
 
-        # Start token to avoid all-black bias at step 0
-        self.start_token = nn.Parameter(torch.zeros(d_model))
-
         # Main transformer
         self.transformer = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(

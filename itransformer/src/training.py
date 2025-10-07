@@ -335,6 +335,9 @@ class ARCIterativeTrainer:
         # Compute per-step delta-improvement
         step_delta_acc = [0.0] + [step_accuracies[i] - step_accuracies[i-1] for i in range(1, self.K)]
 
+        # Compute refinement gain (improvement from step 0 to final step)
+        refinement_gain = step_accuracies[-1] - step_accuracies[0]
+
         # Return metrics
         return {
             'loss': total_loss,
@@ -346,6 +349,7 @@ class ARCIterativeTrainer:
             'step_accuracies': step_accuracies,
             'step_delta_acc': step_delta_acc,
             'step_changes_pct': step_changes,
+            'refinement_gain': refinement_gain,
         }
 
     def validate(self, val_loader: torch.utils.data.DataLoader, num_batches: int = 10) -> Dict[str, float]:
@@ -423,6 +427,12 @@ class ARCIterativeTrainer:
                         total_metrics[f'step_{k}_delta_acc'] = 0.0
                     total_metrics[f'step_{k}_acc'] += step_accuracies[k] * batch_size
                     total_metrics[f'step_{k}_delta_acc'] += step_delta_acc[k] * batch_size
+
+                # Add refinement gain
+                refinement_gain = step_accuracies[-1] - step_accuracies[0]
+                if 'refinement_gain' not in total_metrics:
+                    total_metrics['refinement_gain'] = 0.0
+                total_metrics['refinement_gain'] += refinement_gain * batch_size
 
                 num_samples += batch_size
 
@@ -641,6 +651,7 @@ def train_arc_iterative(config: Dict[str, Any]) -> ARCIterativeModel:
                 'train/grad_norm': metrics['grad_norm'],
                 'train/lr': trainer.scheduler.get_last_lr()[0],
                 'train/step': step,
+                'train/refinement_gain': metrics['refinement_gain'],
             }
             # Add size accuracy if available
             if 'size_accuracy' in metrics:
@@ -670,6 +681,8 @@ def train_arc_iterative(config: Dict[str, Any]) -> ARCIterativeModel:
                     val_log_dict['val/size_loss'] = val_metrics['size_loss']
                 if 'size_accuracy' in val_metrics:
                     val_log_dict['val/size_accuracy'] = val_metrics['size_accuracy']
+                if 'refinement_gain' in val_metrics:
+                    val_log_dict['val/refinement_gain'] = val_metrics['refinement_gain']
 
                 # Log per-step metrics
                 for k in range(trainer.K):
