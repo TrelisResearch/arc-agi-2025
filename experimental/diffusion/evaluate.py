@@ -661,9 +661,6 @@ class DiffusionInference:
         entropy_curve = []
         early_lock_step = None
 
-        # Initialize self-conditioning buffer
-        sc_p0 = None
-
         # Denoising loop: create timesteps and compute logSNR for each
         T_train = self.noise_scheduler.num_timesteps  # e.g., 128
         timesteps = torch.round(
@@ -686,20 +683,13 @@ class DiffusionInference:
                 alpha_bars = self.noise_scheduler.alpha_bars[t_batch].clamp(1e-6, 1-1e-6).to(self.device)
                 logsnr = torch.log(alpha_bars) - torch.log1p(-alpha_bars)
 
-                # Calculate self-conditioning gain based on alpha_bar (noise level)
-                from experimental.diffusion.utils.noise_scheduler import sc_gain_from_abar
-                sc_gain = sc_gain_from_abar(t_batch, self.noise_scheduler)
-
-                # Forward pass with self-conditioning
+                # Forward pass (no self-conditioning at inference)
                 logits = self.model(x_t, input_grids, task_indices, logsnr,
                                    d4_idx=d4_idx, color_shift=color_shift,
-                                   masks=mask_float, sc_p0=sc_p0, sc_gain=sc_gain)
+                                   masks=mask_float)
 
                 # Get predicted probabilities
                 probs = torch.softmax(logits, dim=-1)
-
-                # Update self-conditioning buffer with current predictions
-                sc_p0 = probs.clone()
 
                 # Compute trajectory statistics (only on valid region)
                 valid_probs = probs[valid_mask]  # [N_valid, vocab_size]
