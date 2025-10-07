@@ -181,6 +181,14 @@ Examples:
     else:
         print("\n⏭️ Skipping evaluation")
 
+    # Step 3: Upload to Hugging Face Hub
+    if not run_command(
+        ["uv", "run", "python", "itransformer/hf.py", "--push", "--config", str(config_path)],
+        "Upload to Hugging Face Hub",
+        cwd=str(project_root)
+    ):
+        print("⚠️ HF upload failed (continuing anyway)")
+
     # Pipeline completed
     print(f"\n{'='*60}")
     print(f"🎉 Pipeline completed successfully!")
