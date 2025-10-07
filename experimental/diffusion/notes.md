@@ -40,8 +40,8 @@ Correct!
 #### Try using prior grid prediction as feedback
 - blend predicted grid with ground truth before noising. Sample evenly from both.
 ```bash
-nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config_aa1.json > smol-v4.log 2>&1 ; \
-PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/mediom_config.json > mediom-v4.log 2>&1' &
+nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config_aa1.json > smol-v5.log 2>&1 ; \
+PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/mediom_config.json > mediom-v5.log 2>&1' &
 ```
 
 
