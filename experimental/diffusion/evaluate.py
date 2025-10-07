@@ -775,6 +775,11 @@ class DiffusionInference:
             task_id: Task identifier
             save_path: Path to save the visualization
         """
+        # Handle None intermediate_steps
+        if intermediate_steps is None:
+            print(f"⚠️  No intermediate steps to visualize for {task_id}")
+            return
+
         # Create figure with subplots
         n_steps = len(intermediate_steps)
         n_cols = min(n_steps + 2, 8)  # Input + GT + up to 6 intermediate steps

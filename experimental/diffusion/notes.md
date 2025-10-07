@@ -36,6 +36,15 @@ Uniform is more robust and simpler.
 Correct!
 
 ## Daily Notes
+### Oct 7th 2024
+#### Try using prior grid prediction as feedback
+- blend predicted grid with ground truth before noising. Sample evenly from both.
+```bash
+nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config_aa1.json > smol-v4.log 2>&1 ; \
+PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/mediom_config.json > mediom-v4.log 2>&1' &
+```
+
+
 ### Oct 6th 2025
 #### Running v4 with an MLP in place of a linear layer for the self-conditioning
 ```bash
