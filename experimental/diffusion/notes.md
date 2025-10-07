@@ -42,6 +42,12 @@ Correct!
 nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config_aa1.json > smol-v4.log 2>&1 ; \
 PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/mediom_config.json > mediom-v4.log 2>&1' &
 ```
+Final model 2x attempt scores
+smol aa1: 12.25%
+mediom aa2: STILL RUNNING
+
+Notes:
+- I also ran the best model on aa1 and it scored only 1.8%, indicating that more training helps the score EVEN if the validation loss is falling. This means the validation loss alone is not all that useful. Perhaps it indicates overfitting when it falls, but there is something beneficial happening with more training that is still not seen.
 
 #### Fixing up augmentations and running v3
 Fixes:
