@@ -1,6 +1,11 @@
 # iTransformer (iterative Transformer) Notes
 
 ## October 7th 2025
+### v3
+- cut down to just 2 steps, K=2
+- double LR
+- double steps
+
 ### v2
 - remove embedding for step number
 - switch to back-prop after each segment, to encourage later steps to learn
