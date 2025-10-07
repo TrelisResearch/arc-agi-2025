@@ -158,7 +158,9 @@ Examples:
         eval_command = [
             "uv", "run", "python", "experimental/diffusion/evaluate.py",
             "--config", str(config_path),
-            "--limit", str(args.eval_limit)
+            "--limit", str(args.eval_limit),
+            "--maj",
+            "--stats"
         ]
 
         # Add --prefer-best flag if specified
