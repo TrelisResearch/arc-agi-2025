@@ -642,6 +642,9 @@ def train_arc_iterative(config: Dict[str, Any]) -> ARCIterativeModel:
                 'train/lr': trainer.scheduler.get_last_lr()[0],
                 'train/step': step,
             }
+            # Add size accuracy if available
+            if 'size_accuracy' in metrics:
+                log_dict['train/size_accuracy'] = metrics['size_accuracy']
             # Log per-step metrics
             for k in range(trainer.K):
                 log_dict[f'train/step_{k}_acc'] = metrics['step_accuracies'][k]
@@ -665,6 +668,8 @@ def train_arc_iterative(config: Dict[str, Any]) -> ARCIterativeModel:
                     val_log_dict['val/grid_loss'] = val_metrics['grid_loss']
                 if 'size_loss' in val_metrics:
                     val_log_dict['val/size_loss'] = val_metrics['size_loss']
+                if 'size_accuracy' in val_metrics:
+                    val_log_dict['val/size_accuracy'] = val_metrics['size_accuracy']
 
                 # Log per-step metrics
                 for k in range(trainer.K):
