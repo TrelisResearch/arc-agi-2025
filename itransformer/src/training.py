@@ -452,6 +452,7 @@ def train_arc_iterative(config: Dict[str, Any]) -> ARCIterativeModel:
     # Initialize W&B if enabled
     if config.get('use_wandb', False):
         wandb.init(
+            entity="Trelis",
             project="arc-prize-2025-itransformer",
             name=wandb_run_name,
             config=config,

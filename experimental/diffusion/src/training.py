@@ -671,6 +671,7 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
     # Initialize W&B if enabled
     if config.get('use_wandb', False):
         wandb.init(
+            entity="Trelis",
             project="arc-prize-2025-diffusion",
             name=wandb_run_name,
             config=config,
