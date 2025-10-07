@@ -560,7 +560,6 @@ def train_arc_iterative(config: Dict[str, Any]) -> ARCIterativeModel:
     # Training setup
     optimizer_steps = config['optimizer_steps']
     print(f"Training setup: {optimizer_steps} optimizer steps (~{optimizer_steps / len(train_loader):.1f} epochs at {len(train_loader)} steps/epoch)")
-    print(f"Using float16 mixed precision" if config.get('use_mixed_precision', True) else "Using float32 precision")
 
     # Create trainer
     trainer = ARCIterativeTrainer(
