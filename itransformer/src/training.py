@@ -279,16 +279,8 @@ class ARCIterativeTrainer:
                 with torch.no_grad():
                     logits_detached = logits.detach().float()
 
-                    # Sampling strategy: categorical for steps 0..K-2, argmax at K-1
-                    if step < K_used - 1:
-                        logits_clamped = torch.clamp(logits_detached, min=-20.0, max=20.0)
-                        probs = F.softmax(logits_clamped, dim=-1)
-                        x_next_mb = torch.multinomial(
-                            probs.view(-1, 10),
-                            num_samples=1
-                        ).view(mb_size, self.model.max_size, self.model.max_size)
-                    else:
-                        x_next_mb = torch.argmax(logits_detached, dim=-1)
+                    # Sampling strategy: greedy argmax for all steps
+                    x_next_mb = torch.argmax(logits_detached, dim=-1)
 
                     # Enforce mask
                     x_next_mb = torch.where(masks[mb_indices], x_next_mb, torch.zeros_like(x_next_mb))
