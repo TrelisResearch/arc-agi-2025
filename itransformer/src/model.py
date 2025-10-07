@@ -126,10 +126,6 @@ class TransformerRefiner(nn.Module):
         input_emb = input_emb + pos_emb
         x_prev_emb = x_prev_emb + pos_emb
 
-        # Add start token for step 0 to avoid all-black bias
-        if step_idx.numel() > 0 and (step_idx == 0).all():
-            x_prev_emb = x_prev_emb + self.start_token.view(1, 1, -1)
-
         # Apply embedding dropout
         input_emb = self.embedding_dropout(input_emb)
         x_prev_emb = self.embedding_dropout(x_prev_emb)
