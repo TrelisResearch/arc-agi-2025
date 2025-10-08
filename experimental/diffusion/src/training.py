@@ -26,11 +26,12 @@ def prepare_ema_state_dict(model, ema, use_lora: bool):
         use_lora: Whether LoRA is enabled
 
     Returns:
-        Dict with EMA state (with merged LoRA if applicable)
+        Dict with EMA parameters (just the shadow weights, not the full ema state)
     """
     if not use_lora:
         # Normal EMA save for non-LoRA training
-        return ema.state_dict()
+        # Return just the shadow weights, not the full ema.state_dict()
+        return ema.state_dict()['shadow']
 
     # For LoRA training, merge EMA LoRA weights into base before saving
     from experimental.diffusion.utils.ema import ModelWithEMA
@@ -500,7 +501,8 @@ class ARCDiffusionTrainer:
                 'dataset_info': dataset_info
             }
             if self.ema is not None:
-                save_dict['ema_state_dict'] = self.ema.state_dict()
+                use_lora = config.get('lora', {}).get('enabled', False)
+                save_dict['ema_state_dict'] = prepare_ema_state_dict(self.model, self.ema, use_lora)
 
             torch.save(save_dict, temp_checkpoint_path)
 

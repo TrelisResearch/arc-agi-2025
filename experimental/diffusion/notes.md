@@ -55,6 +55,8 @@ This scores 16.9%, which is excellent and what we want.
 
 With `--maj`, updated since the last time (where we got 20.2%), we get: 19.8%, which is very similar, seems fine.
 
+And now that ema is working, we are scoring without maj: 16.6% (no obvious boost).
+
 ### Oct 7th 2025
 #### Try using prior grid prediction as feedback
 - blend predicted grid with ground truth before noising. Sample evenly from both.

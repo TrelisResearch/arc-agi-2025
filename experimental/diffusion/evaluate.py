@@ -277,10 +277,13 @@ class DiffusionInference:
         if self.use_ema and 'ema_state_dict' in checkpoint:
             print(f"✓ Using EMA weights for inference")
             ema_state = checkpoint['ema_state_dict']
-            # Apply EMA weights to model (overwrite parameters with EMA values)
-            for name, param in model.named_parameters():
+            # Apply EMA weights to model (overwrite all matching tensors with EMA values)
+            model_state = model.state_dict()
+            for name in model_state.keys():
                 if name in ema_state:
-                    param.data.copy_(ema_state[name])
+                    # Convert EMA weight to model's dtype if needed (EMA stores in fp32)
+                    target_dtype = model_state[name].dtype
+                    model_state[name].copy_(ema_state[name].to(target_dtype))
         else:
             if self.use_ema and 'ema_state_dict' not in checkpoint:
                 print(f"⚠️  EMA weights not found in checkpoint, using training weights")
