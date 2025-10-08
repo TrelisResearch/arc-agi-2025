@@ -952,11 +952,16 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         print(f"Loading pretrained model from: {pretrained_path}")
         checkpoint = torch.load(pretrained_path, map_location='cpu')
 
-        # Extract model state dict
-        if 'model_state_dict' in checkpoint:
+        # Prefer EMA weights if available (usually better for fine-tuning)
+        if 'ema_state_dict' in checkpoint:
+            model_state_dict = checkpoint['ema_state_dict']
+            print("✓ Using EMA weights from pretrained checkpoint (recommended for fine-tuning)")
+        elif 'model_state_dict' in checkpoint:
             model_state_dict = checkpoint['model_state_dict']
+            print("Using training weights from pretrained checkpoint")
         else:
             model_state_dict = checkpoint
+            print("Using direct state dict from checkpoint")
 
         # Strip _orig_mod. prefix if present (from torch.compile)
         # This happens when a compiled model's state dict is saved
