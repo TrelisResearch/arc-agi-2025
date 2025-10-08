@@ -43,6 +43,9 @@ Correct!
 nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config_aa1.json > smol-v5.log 2>&1 ; \
 PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/mediom_config.json > mediom-v5.log 2>&1' &
 ```
+Scores 11.2% without maj, on final_model.
+Scores 6.9% without maj, on halfway model.
+
 
 
 ### Oct 6th 2025
