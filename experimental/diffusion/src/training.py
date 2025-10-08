@@ -6,7 +6,6 @@ import torch.nn.functional as F
 import numpy as np
 from typing import Dict, List, Tuple, Optional, Any
 from tqdm import tqdm
-import wandb
 from pathlib import Path
 
 from .model import ARCDiffusionModel
@@ -670,8 +669,10 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
     tag = config.get('tag', 'default')
     wandb_run_name = f"{model_version}_{tag}"
 
-    # Initialize W&B if enabled
-    if config.get('use_wandb', False):
+    # Import and initialize W&B if enabled
+    use_wandb = config.get('use_wandb', False)
+    if use_wandb:
+        import wandb
         wandb.init(
             entity="Trelis",
             project="arc-prize-2025-diffusion",
@@ -679,6 +680,8 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             config=config,
             save_code=True
         )
+    else:
+        wandb = None  # Set to None if not using W&B
 
     # Load data paths
     data_paths = load_arc_data_paths(
@@ -1128,7 +1131,7 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         # Only log/validate/checkpoint when optimizer actually stepped
         if trainer.accumulation_step == 0:
             # Log to wandb
-            if config.get('use_wandb', False) and step % config.get('log_every', 50) == 0:
+            if use_wandb and step % config.get('log_every', 50) == 0:
                 log_dict = {f"train/{key}": value for key, value in losses.items()}
                 log_dict["train/learning_rate"] = trainer.scheduler.get_last_lr()[0]
                 log_dict["train/step"] = step
@@ -1165,7 +1168,7 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
                 print(f"Overall: acc={overall_acc:.3f}")
 
                 # Log validation losses
-                if config.get('use_wandb', False):
+                if use_wandb:
                     val_log_dict = {f"val/{key}": value for key, value in val_losses.items()}
                     val_log_dict["val/learning_rate"] = trainer.scheduler.get_last_lr()[0]
                     val_log_dict["val/step"] = step
@@ -1272,7 +1275,7 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         save_dict['ema_state_dict'] = trainer.ema.state_dict()
     torch.save(save_dict, output_dir / 'final_model.pt')
 
-    if config.get('use_wandb', False):
+    if use_wandb:
         wandb.finish()
 
     print("Training completed!")

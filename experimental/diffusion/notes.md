@@ -36,7 +36,14 @@ Uniform is more robust and simpler.
 Correct!
 
 ## Daily Notes
-### Oct 7th 2024
+### Oct 8th 2025
+#### Reverting to Self Conditioning
+Notes on self conditioning:
+- Currently, training uses 50% SC, 25% nothing, 25% zeros in place of conditioning (weird?)
+
+Checking out evaluation of the smol-v3 model.
+
+### Oct 7th 2025
 #### Try using prior grid prediction as feedback
 - blend predicted grid with ground truth before noising. Sample evenly from both.
 ```bash
