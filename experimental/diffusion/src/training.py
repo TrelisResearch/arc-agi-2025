@@ -495,13 +495,36 @@ class ARCDiffusionTrainer:
 
         try:
             # Save current model state to temp checkpoint
+            use_lora = config.get('lora', {}).get('enabled', False)
+
+            # For LoRA: temporarily merge weights to save merged checkpoint
+            if use_lora:
+                from experimental.diffusion.utils.lora import merge_lora_weights, unmerge_lora_weights
+                merge_lora_weights(self.model)
+
+            # Get state dict (now has merged LoRA if applicable)
+            raw_state_dict = self.model.state_dict()
+
+            # Clean the state dict: remove lora_A/lora_B keys and _orig_mod prefix
+            clean_state_dict = {}
+            for key, value in raw_state_dict.items():
+                # Skip LoRA parameters (already merged into base)
+                if 'lora_A' in key or 'lora_B' in key:
+                    continue
+                # Strip torch.compile prefix
+                clean_key = key.replace('_orig_mod.', '')
+                clean_state_dict[clean_key] = value
+
+            # Unmerge LoRA to restore training state
+            if use_lora:
+                unmerge_lora_weights(self.model)
+
             save_dict = {
-                'model_state_dict': self.model.state_dict(),
+                'model_state_dict': clean_state_dict,
                 'config': config,
                 'dataset_info': dataset_info
             }
             if self.ema is not None:
-                use_lora = config.get('lora', {}).get('enabled', False)
                 save_dict['ema_state_dict'] = prepare_ema_state_dict(self.model, self.ema, use_lora)
 
             torch.save(save_dict, temp_checkpoint_path)
@@ -954,7 +977,17 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
 
         # Prefer EMA weights if available (usually better for fine-tuning)
         if 'ema_state_dict' in checkpoint:
-            model_state_dict = checkpoint['ema_state_dict']
+            ema_state = checkpoint['ema_state_dict']
+            # Handle both old and new EMA format for backward compatibility
+            # Old format: {'shadow': {...}, 'decay': ..., 'warmup_steps': ..., 'steps': ...}
+            # New format: {'param.name': tensor, ...}
+            if 'shadow' in ema_state:
+                model_state_dict = ema_state['shadow']
+                print("⚠️  WARNING: Loading EMA weights from OLD checkpoint format (has 'shadow' key)")
+                print("   This format is DEPRECATED and support will be removed in future versions")
+                print("   Please re-save your checkpoints with the updated training code")
+            else:
+                model_state_dict = ema_state
             print("✓ Using EMA weights from pretrained checkpoint (recommended for fine-tuning)")
         elif 'model_state_dict' in checkpoint:
             model_state_dict = checkpoint['model_state_dict']

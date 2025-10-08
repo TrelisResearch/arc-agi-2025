@@ -277,13 +277,24 @@ class DiffusionInference:
         if self.use_ema and 'ema_state_dict' in checkpoint:
             print(f"✓ Using EMA weights for inference")
             ema_state = checkpoint['ema_state_dict']
+
+            # Handle both old and new EMA format for backward compatibility
+            # Old format: {'shadow': {...}, 'decay': ..., 'warmup_steps': ..., 'steps': ...}
+            # New format: {'param.name': tensor, ...}
+            if 'shadow' in ema_state:
+                print(f"⚠️  WARNING: Checkpoint uses OLD EMA format (has 'shadow' key)")
+                print(f"   This format is DEPRECATED. Please re-save with updated code.")
+                ema_weights = ema_state['shadow']
+            else:
+                ema_weights = ema_state
+
             # Apply EMA weights to model (overwrite all matching tensors with EMA values)
             model_state = model.state_dict()
             for name in model_state.keys():
-                if name in ema_state:
+                if name in ema_weights:
                     # Convert EMA weight to model's dtype if needed (EMA stores in fp32)
                     target_dtype = model_state[name].dtype
-                    model_state[name].copy_(ema_state[name].to(target_dtype))
+                    model_state[name].copy_(ema_weights[name].to(target_dtype))
         else:
             if self.use_ema and 'ema_state_dict' not in checkpoint:
                 print(f"⚠️  EMA weights not found in checkpoint, using training weights")
