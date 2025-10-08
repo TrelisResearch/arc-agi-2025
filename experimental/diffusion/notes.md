@@ -37,11 +37,23 @@ Correct!
 
 ## Daily Notes
 ### Oct 8th 2025
+#### Train LoRA and Embeddings of aa1 model to see if we can score on aa2!
+
+#### Add evaluations during training so we can chart progress.
+- We can now configure how often to run evaluations, and see that progress in wandb.
+- We'll also use ema weights going forward in evaluate, which we weren't doing but should improve performance.
+
 #### Reverting to Self Conditioning
 Notes on self conditioning:
 - Currently, training uses 50% SC, 25% nothing, 25% zeros in place of conditioning (weird?)
 
-Checking out evaluation of the smol-v3 model.
+Checking out evaluation of the smol-v3 model, which should score ~ 16.5%:
+```bash
+uv run experimental/diffusion/evaluate.py --config experimental/diffusion/outputs/aa1/config.json --model-path experimental/diffusion/outputs/aa1/final_model.pt --limit 0
+```
+This scores 16.9%, which is excellent and what we want.
+
+With `--maj`, updated since the last time (where we got 20.2%), we get: 19.8%, which is very similar, seems fine.
 
 ### Oct 7th 2025
 #### Try using prior grid prediction as feedback

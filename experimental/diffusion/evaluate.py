@@ -155,9 +155,11 @@ class DiffusionInference:
         device: str = "auto",
         num_inference_steps: Optional[int] = None,
         debug: bool = False,
-        dataset: str = "arc-prize-2025"
+        dataset: str = "arc-prize-2025",
+        use_ema: bool = True
     ):
         self.model_path = model_path
+        self.use_ema = use_ema
         # Set up device (prioritize CUDA > MPS > CPU)
         if device == "auto":
             if torch.cuda.is_available():
@@ -269,8 +271,21 @@ class DiffusionInference:
             noise_scheduler=noise_scheduler
         )
 
-        # Load weights
-        model.load_state_dict(state_dict)
+        # Load weights - prefer EMA if available and use_ema=True
+        if self.use_ema and 'ema_state_dict' in checkpoint:
+            print(f"✓ Using EMA weights for inference")
+            ema_state = checkpoint['ema_state_dict']
+            # Apply EMA weights to model
+            for name, param in model.named_parameters():
+                if name in ema_state:
+                    param.data.copy_(ema_state[name])
+        else:
+            if self.use_ema and 'ema_state_dict' not in checkpoint:
+                print(f"⚠️  EMA weights not found in checkpoint, using training weights")
+            elif not self.use_ema:
+                print(f"Using training weights (EMA disabled)")
+            model.load_state_dict(state_dict)
+
         model.to(self.device)
         model.eval()
 
@@ -1440,6 +1455,7 @@ def main():
     # Output and debugging
     parser.add_argument("--output", help="Override output file path (defaults to config output dir)")
     parser.add_argument("--debug", action="store_true", help="Enable debug output")
+    parser.add_argument("--no-ema", action="store_true", help="Use training weights instead of EMA weights")
 
     args = parser.parse_args()
 
@@ -1541,7 +1557,8 @@ def main():
             device=args.device,
             num_inference_steps=args.num_steps,
             debug=args.debug,
-            dataset=dataset
+            dataset=dataset,
+            use_ema=not args.no_ema
         )
 
         # Load tasks directly from JSON files

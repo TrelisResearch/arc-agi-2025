@@ -16,6 +16,44 @@ from ..utils.visualization import create_training_visualization, create_denoisin
 from torch.utils.data import DataLoader
 
 
+def prepare_ema_state_dict(model, ema, use_lora: bool):
+    """
+    Prepare EMA state dict, merging LoRA weights if applicable.
+
+    Args:
+        model: The model (may have LoRA layers)
+        ema: EMA object
+        use_lora: Whether LoRA is enabled
+
+    Returns:
+        Dict with EMA state (with merged LoRA if applicable)
+    """
+    if not use_lora:
+        # Normal EMA save for non-LoRA training
+        return ema.state_dict()
+
+    # For LoRA training, merge EMA LoRA weights into base before saving
+    from experimental.diffusion.utils.ema import ModelWithEMA
+    from experimental.diffusion.utils.lora import merge_lora_weights
+
+    with ModelWithEMA(model, ema) as ema_model:
+        # Merge LoRA in the EMA-weighted model
+        merge_lora_weights(ema_model)
+
+        # Extract merged state without lora params
+        ema_state = ema_model.state_dict()
+        ema_clean_state = {}
+        for key, value in ema_state.items():
+            # Skip LoRA-specific parameters
+            if 'lora_A' in key or 'lora_B' in key:
+                continue
+            # Strip _orig_mod. prefix from torch.compile if present
+            clean_key = key.replace('_orig_mod.', '')
+            ema_clean_state[clean_key] = value
+
+        return ema_clean_state
+
+
 class ARCDiffusionTrainer:
     """Training class for the ARC diffusion model."""
 
@@ -427,6 +465,91 @@ class ARCDiffusionTrainer:
         avg_losses = {key: total / num_samples for key, total in total_losses.items()}
         return avg_losses
 
+    def run_periodic_evaluation(
+        self,
+        eval_tasks: List[Tuple[str, Dict[str, Any]]],
+        config: Dict[str, Any],
+        dataset_info: Dict[str, Any],
+        output_dir: Path,
+        dataset_name: str = "arc-prize-2025",
+        dataset_split: str = "evaluation",
+        use_ema: bool = True
+    ) -> float:
+        """
+        Run full inference evaluation on a subset of tasks.
+
+        Args:
+            dataset_split: Which split to use ('evaluation' or 'training') for loading solutions
+
+        Returns:
+            avg_task_score: The average task score (partial credit metric)
+        """
+        import tempfile
+        import json
+        from pathlib import Path
+
+        # Save temporary checkpoint for evaluation
+        with tempfile.NamedTemporaryFile(mode='wb', suffix='.pt', delete=False) as tmp_file:
+            temp_checkpoint_path = tmp_file.name
+
+        try:
+            # Save current model state to temp checkpoint
+            save_dict = {
+                'model_state_dict': self.model.state_dict(),
+                'config': config,
+                'dataset_info': dataset_info
+            }
+            if self.ema is not None:
+                save_dict['ema_state_dict'] = self.ema.state_dict()
+
+            torch.save(save_dict, temp_checkpoint_path)
+
+            # Import DiffusionInference (lazy import to avoid circular dependency)
+            from ..evaluate import DiffusionInference, calculate_metrics, TaskResult
+
+            # Create inference instance
+            inference = DiffusionInference(
+                model_path=temp_checkpoint_path,
+                device=str(self.device),
+                num_inference_steps=config.get('num_timesteps', 32),
+                debug=False,
+                dataset=dataset_name,
+                use_ema=use_ema
+            )
+
+            # Override the solutions loader to use correct split
+            # Build dataset identifier that _load_solutions can parse
+            dataset_for_solutions = f"{dataset_name}/{dataset_split}"
+
+            # Run evaluation on each task
+            results = []
+            for task_id, task_data in eval_tasks:
+                try:
+                    result = inference.run_task(
+                        task_id=task_id,
+                        task_data=task_data,
+                        dataset=dataset_for_solutions,  # Pass split info for solutions loading
+                        visualize=False,
+                        use_majority_voting=False,
+                        print_stats=False
+                    )
+                    results.append(result)
+                except Exception as e:
+                    print(f"⚠️  Error evaluating task {task_id}: {str(e)}")
+                    continue
+
+            # Calculate metrics
+            if results:
+                metrics = calculate_metrics(results)
+                return metrics['avg_task_score']
+            else:
+                return 0.0
+
+        finally:
+            # Clean up temp checkpoint
+            if Path(temp_checkpoint_path).exists():
+                Path(temp_checkpoint_path).unlink()
+
 
 class ARCDiffusionSampler:
     """Sampling class for the ARC diffusion model."""
@@ -777,6 +900,44 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
     dataset_info = full_dataset.get_task_info()
     print(f"Dataset info: {dataset_info}")
 
+    # Load evaluation tasks for periodic evaluation (if enabled)
+    # Extract evaluation task IDs from the loaded dataset (respects eval_subset_file)
+    eval_tasks = []
+    eval_every_steps = config.get('eval_every_steps', 0)
+    if eval_every_steps > 0:
+        num_eval_tasks = config.get('num_eval_tasks', 120)
+        data_dir = config.get('data_dir', 'data/arc-prize-2025')
+
+        # Extract unique task IDs from evaluation dataset (those marked from_eval_dataset)
+        eval_task_ids_set = set()
+        for example in full_dataset.examples:
+            if example.get('from_eval_dataset', False):
+                eval_task_ids_set.add(example['task_id'])
+
+        eval_task_ids_list = sorted(list(eval_task_ids_set))[:num_eval_tasks]
+
+        if eval_task_ids_list:
+            print(f"Loading {len(eval_task_ids_list)} evaluation tasks for periodic evaluation...")
+            try:
+                # Load full task definitions from evaluation_challenges.json
+                eval_file = f"{data_dir}/arc-agi_evaluation_challenges.json"
+                with open(eval_file, 'r') as f:
+                    all_eval_tasks = json.load(f)
+
+                # Load only the tasks that are in our dataset (respects eval_subset)
+                eval_tasks = [(task_id, all_eval_tasks[task_id])
+                             for task_id in eval_task_ids_list
+                             if task_id in all_eval_tasks]
+                print(f"✓ Loaded {len(eval_tasks)} evaluation tasks for periodic evaluation")
+            except Exception as e:
+                print(f"⚠️  Failed to load evaluation tasks: {e}")
+                print(f"   Periodic evaluation will be disabled")
+                eval_every_steps = 0
+        else:
+            print(f"⚠️  No evaluation tasks found in dataset")
+            print(f"   Periodic evaluation will be disabled")
+            eval_every_steps = 0
+
     # Get auxiliary loss config
     aux_config = config.get('auxiliary_loss', {})
     include_size_head = aux_config.get('include_size_head', True)
@@ -1038,6 +1199,8 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
     # Training loop
     step = 0
     best_val_loss = float('inf')
+    best_eval_score = 0.0
+    best_model_metric = config.get('best_model_metric', 'val_loss')  # 'val_loss' or 'eval_score'
 
     # Training loop using steps instead of epochs
     steps_per_epoch = len(train_loader)
@@ -1175,9 +1338,57 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
                     val_log_dict["val/epoch"] = current_epoch_approx
                     wandb.log(val_log_dict, step=step)
 
+                # Run periodic task evaluation if configured
+                eval_score = None
+                if eval_every_steps > 0 and step % eval_every_steps == 0 and eval_tasks:
+                    print(f"\n🎯 Running periodic evaluation on {len(eval_tasks)} tasks...")
+                    try:
+                        # Get dataset basename (e.g., "arc-prize-2025")
+                        dataset_basename = data_dir.split('/')[-1]
+
+                        eval_score = trainer.run_periodic_evaluation(
+                            eval_tasks=eval_tasks,
+                            config=config,
+                            dataset_info=dataset_info,
+                            output_dir=output_dir,
+                            dataset_name=dataset_basename,
+                            dataset_split="evaluation",  # Always using evaluation tasks
+                            use_ema=True
+                        )
+                        print(f"✓ Evaluation complete: avg_task_score = {eval_score:.1%}")
+
+                        # Update best eval score
+                        if eval_score > best_eval_score:
+                            best_eval_score = eval_score
+
+                        # Log to wandb
+                        if use_wandb:
+                            eval_log_dict = {
+                                "eval/avg_task_score": eval_score,
+                                "eval/best_eval_score": best_eval_score,
+                                "eval/step": step
+                            }
+                            wandb.log(eval_log_dict, step=step)
+                    except Exception as e:
+                        print(f"⚠️  Periodic evaluation failed: {e}")
+                        import traceback
+                        traceback.print_exc()
+
+                # Determine if we should save as best model based on configured metric
+                save_as_best = False
+                if best_model_metric == 'eval_score':
+                    if eval_score is not None and eval_score > best_eval_score:
+                        save_as_best = True
+                        best_eval_score = eval_score
+                        print(f"New best eval score: {best_eval_score:.1%}")
+                elif best_model_metric == 'val_loss':
+                    if val_losses['total_loss'] < best_val_loss:
+                        save_as_best = True
+                        best_val_loss = val_losses['total_loss']
+                        print(f"New best val loss: {best_val_loss:.4f}")
+
                 # Save best model (weights only to save space)
-                if val_losses['total_loss'] < best_val_loss:
-                    best_val_loss = val_losses['total_loss']
+                if save_as_best:
                     # Save model in bfloat16 without modifying the original
                     model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
                     save_dict = {
@@ -1185,11 +1396,16 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
                         'config': config,
                         'dataset_info': dataset_info
                     }
-                    # Save EMA state if available
+                    # Save EMA state if available (merge LoRA if applicable)
                     if trainer.ema is not None:
-                        save_dict['ema_state_dict'] = trainer.ema.state_dict()
+                        use_lora = config.get('lora', {}).get('enabled', False)
+                        save_dict['ema_state_dict'] = prepare_ema_state_dict(model, trainer.ema, use_lora)
                     torch.save(save_dict, output_dir / 'best_model.pt')
-                    print(f"Saved best model with val loss: {best_val_loss:.4f}")
+                    # Print based on which metric was used
+                    if best_model_metric == 'eval_score':
+                        print(f"Saved best model with eval score: {best_eval_score:.1%}")
+                    else:
+                        print(f"Saved best model with val loss: {best_val_loss:.4f}")
 
                 # Save halfway checkpoint
                 if step >= halfway_step and not halfway_saved:
@@ -1201,9 +1417,10 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
                         'dataset_info': dataset_info,
                         'step': step
                     }
-                    # Save EMA state if available
+                    # Save EMA state if available (merge LoRA if applicable)
                     if trainer.ema is not None:
-                        save_dict['ema_state_dict'] = trainer.ema.state_dict()
+                        use_lora = config.get('lora', {}).get('enabled', False)
+                        save_dict['ema_state_dict'] = prepare_ema_state_dict(model, trainer.ema, use_lora)
                     torch.save(save_dict, output_dir / 'halfway_model.pt')
                     print(f"Saved halfway checkpoint at step {step} ({step/optimizer_steps:.0%} of training)")
 
@@ -1241,7 +1458,8 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             break
 
     # Merge LoRA weights if using LoRA
-    if config.get('lora', {}).get('enabled', False):
+    use_lora = config.get('lora', {}).get('enabled', False)
+    if use_lora:
         from experimental.diffusion.utils.lora import merge_lora_weights
         print("\n🔧 Merging LoRA weights into base model...")
         merge_lora_weights(model)
@@ -1265,14 +1483,22 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         # Strip _orig_mod. prefix from torch.compile if present
         clean_state_dict = {k.replace('_orig_mod.', ''): v for k, v in state_dict.items()}
         model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in clean_state_dict.items()}
+
     save_dict = {
         'model_state_dict': model_state_dict_bf16,
         'config': config,
         'dataset_info': dataset_info
     }
-    # Save EMA state if available
+
+    # Save EMA state if available (merge LoRA if applicable)
     if trainer.ema is not None:
-        save_dict['ema_state_dict'] = trainer.ema.state_dict()
+        if use_lora:
+            print("🔧 Merging EMA LoRA weights for final checkpoint...")
+            save_dict['ema_state_dict'] = prepare_ema_state_dict(model, trainer.ema, use_lora)
+            print("✅ EMA LoRA weights merged successfully")
+        else:
+            save_dict['ema_state_dict'] = prepare_ema_state_dict(model, trainer.ema, use_lora)
+
     torch.save(save_dict, output_dir / 'final_model.pt')
 
     if use_wandb:
