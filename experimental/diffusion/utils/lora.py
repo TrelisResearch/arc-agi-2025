@@ -167,9 +167,13 @@ def get_lora_parameters(model: nn.Module) -> List[nn.Parameter]:
     return lora_params
 
 
-def mark_only_lora_as_trainable(model: nn.Module) -> int:
+def mark_only_lora_as_trainable(model: nn.Module, train_task_embeddings: bool = False) -> int:
     """
     Freeze all parameters except LoRA parameters.
+
+    Args:
+        model: The model to modify
+        train_task_embeddings: If True, also make task embeddings trainable
 
     Returns:
         Number of trainable parameters
@@ -185,6 +189,12 @@ def mark_only_lora_as_trainable(model: nn.Module) -> int:
             module.lora_A.requires_grad = True
             module.lora_B.requires_grad = True
             trainable_params += module.lora_A.numel() + module.lora_B.numel()
+
+    # Optionally unfreeze task embeddings
+    if train_task_embeddings:
+        if hasattr(model, 'denoiser') and hasattr(model.denoiser, 'task_embedding'):
+            model.denoiser.task_embedding.weight.requires_grad = True
+            trainable_params += model.denoiser.task_embedding.weight.numel()
 
     return trainable_params
 

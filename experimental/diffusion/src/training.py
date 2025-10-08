@@ -211,12 +211,15 @@ class ARCDiffusionTrainer:
         # Only noise valid regions, clamp invalid regions to 0
         noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps, masks)
 
-        # Self-conditioning via blend-and-renoise approach
-        # First pass: predict x0, blend with GT, re-noise, then predict again
-        xt_for_loss = noisy_grids
+        # Calculate self-conditioning gain based on alpha_bar (noise level)
+        # Low alpha_bar (high noise) → low gain (0.3), High alpha_bar (low noise) → high gain (1.0)
+        from ..utils.noise_scheduler import sc_gain_from_abar
+        sc_gain = sc_gain_from_abar(timesteps, self.noise_scheduler)
+
+        # First pass: Generate p0_prev without gradients for self-conditioning
+        sc_p0 = None
         if torch.rand(1).item() > 0.5:  # 50% dropout for self-conditioning
             with torch.no_grad():
-                # First pass: predict from original noisy grids
                 if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
                     with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
                         logits_prev = self.model(
@@ -226,7 +229,9 @@ class ARCDiffusionTrainer:
                             logsnr=logsnr,
                             d4_idx=d4_indices,
                             color_shift=color_shifts,
-                            masks=masks
+                            masks=masks,
+                            sc_p0=None,  # No self-conditioning in first pass
+                            sc_gain=0.0
                         )
                 else:
                     logits_prev = self.model(
@@ -236,52 +241,44 @@ class ARCDiffusionTrainer:
                         logsnr=logsnr,
                         d4_idx=d4_indices,
                         color_shift=color_shifts,
-                        masks=masks
+                        masks=masks,
+                        sc_p0=None,  # No self-conditioning in first pass
+                        sc_gain=0.0
                     )
+                # Convert logits to probabilities
+                sc_p0 = torch.softmax(logits_prev, dim=-1)
 
-                # Get predicted x0 (clean grid)
-                x0_pred = torch.argmax(logits_prev, dim=-1)  # [batch_size, max_size, max_size]
-
-                # Sample blend ratio uniformly for each example in batch
-                # alpha=1: pure prediction, alpha=0: pure GT
-                alpha = torch.rand(batch_size, device=self.device)  # [batch_size]
-
-                # Pixel-wise blending: each pixel randomly chooses prediction or GT
-                # Expand alpha to match grid shape for broadcasting
-                alpha_expanded = alpha.view(batch_size, 1, 1)  # [batch_size, 1, 1]
-                blend_mask = torch.rand_like(output_grids, dtype=torch.float32) < alpha_expanded
-                x_blend = torch.where(blend_mask, x0_pred, output_grids)
-
-                # Add noise to blended grid at same timestep
-                xt_for_loss = self.noise_scheduler.add_noise(x_blend, timesteps, masks)
-
-        # Second pass: Forward with re-noised blend and compute loss
+        # Second pass: Forward with self-conditioning and compute loss
         if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
             with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
                 losses = self.model.compute_loss(
                     x0=output_grids,
                     input_grid=input_grids,
                     task_ids=task_indices,
-                    xt=xt_for_loss,  # Use blended+noised grid if SC enabled
+                    xt=noisy_grids,
                     logsnr=logsnr,
                     d4_idx=d4_indices,
                     color_shift=color_shifts,
                     heights=heights,
                     widths=widths,
-                    auxiliary_size_loss_weight=self.auxiliary_size_loss_weight
+                    auxiliary_size_loss_weight=self.auxiliary_size_loss_weight,
+                    sc_p0=sc_p0,
+                    sc_gain=sc_gain
                 )
         else:
             losses = self.model.compute_loss(
                 x0=output_grids,
                 input_grid=input_grids,
                 task_ids=task_indices,
-                xt=xt_for_loss,  # Use blended+noised grid if SC enabled
+                xt=noisy_grids,
                 logsnr=logsnr,
                 d4_idx=d4_indices,
                 color_shift=color_shifts,
                 heights=heights,
                 widths=widths,
-                auxiliary_size_loss_weight=self.auxiliary_size_loss_weight
+                auxiliary_size_loss_weight=self.auxiliary_size_loss_weight,
+                sc_p0=sc_p0,
+                sc_gain=sc_gain
             )
 
         # Backward pass with mixed precision and gradient accumulation
@@ -380,6 +377,10 @@ class ARCDiffusionTrainer:
                 alpha_bars = self.noise_scheduler.alpha_bars[timesteps].clamp(1e-6, 1-1e-6).to(self.device)
                 logsnr = torch.log(alpha_bars) - torch.log1p(-alpha_bars)
 
+                # Calculate self-conditioning gain based on alpha_bar (noise level)
+                from ..utils.noise_scheduler import sc_gain_from_abar
+                sc_gain = sc_gain_from_abar(timesteps, self.noise_scheduler)
+
                 # Forward pass (no SC during validation) with mixed precision
                 if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
                     with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
@@ -390,7 +391,9 @@ class ARCDiffusionTrainer:
                             xt=noisy_grids,
                             logsnr=logsnr,
                             heights=heights,
-                            widths=widths
+                            widths=widths,
+                            sc_p0=None,
+                            sc_gain=sc_gain
                         )
                 else:
                     losses = self.model.compute_loss(
@@ -400,7 +403,9 @@ class ARCDiffusionTrainer:
                         xt=noisy_grids,
                         logsnr=logsnr,
                         heights=heights,
-                        widths=widths
+                        widths=widths,
+                        sc_p0=None,
+                        sc_gain=sc_gain
                     )
 
                 # Initialize total_losses on first batch
@@ -846,6 +851,7 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             max_tasks=max_tasks,
             embedding_dropout=config.get('embedding_dropout', 0.1),
             input_grid_dropout=config.get('input_grid_dropout', 0.0),
+            sc_dropout_prob=config.get('sc_dropout_prob', 0.5),
             include_size_head=include_size_head,
             size_head_hidden_dim=size_head_hidden_dim,
             noise_scheduler=noise_scheduler_for_model
@@ -916,6 +922,7 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             max_tasks=dataset_info['num_tasks'],
             embedding_dropout=config.get('embedding_dropout', 0.1),
             input_grid_dropout=config.get('input_grid_dropout', 0.0),
+            sc_dropout_prob=config.get('sc_dropout_prob', 0.5),
             include_size_head=include_size_head,
             size_head_hidden_dim=size_head_hidden_dim,
             noise_scheduler=noise_scheduler_for_model
@@ -960,13 +967,14 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             target_modules=target_modules
         )
 
-        # Freeze all non-LoRA parameters
-        trainable_params = mark_only_lora_as_trainable(model)
+        # Freeze all non-LoRA parameters (also make task embeddings trainable)
+        trainable_params = mark_only_lora_as_trainable(model, train_task_embeddings=True)
 
         # Print LoRA info
         print_lora_info(model)
         print(f"  Total trainable parameters: {trainable_params:,}")
         print(f"  Replaced {len(replaced)} modules with LoRA")
+        print(f"  Task embeddings: trainable")
 
     # Compile model with torch.compile for CUDA optimization
     if device.type == 'cuda':

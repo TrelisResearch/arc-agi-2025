@@ -263,6 +263,7 @@ class DiffusionInference:
             max_size=config['max_size'],
             max_tasks=max_tasks,
             embedding_dropout=config.get('embedding_dropout', 0.1),
+            sc_dropout_prob=config.get('sc_dropout_prob', 0.5),
             include_size_head=include_size_head,
             size_head_hidden_dim=size_head_hidden_dim,
             noise_scheduler=noise_scheduler
@@ -675,6 +676,9 @@ class DiffusionInference:
         # Create float mask for model
         mask_float = valid_mask.float()
 
+        # Initialize self-conditioning buffer
+        sc_p0 = None
+
         with torch.no_grad():
             for i, t in enumerate(timesteps):
                 t_batch = t.repeat(batch_size)
@@ -683,13 +687,20 @@ class DiffusionInference:
                 alpha_bars = self.noise_scheduler.alpha_bars[t_batch].clamp(1e-6, 1-1e-6).to(self.device)
                 logsnr = torch.log(alpha_bars) - torch.log1p(-alpha_bars)
 
-                # Forward pass (no self-conditioning at inference)
+                # Calculate self-conditioning gain based on alpha_bar (noise level)
+                from experimental.diffusion.utils.noise_scheduler import sc_gain_from_abar
+                sc_gain = sc_gain_from_abar(t_batch, self.noise_scheduler)
+
+                # Forward pass with self-conditioning (no augmentation during inference)
                 logits = self.model(x_t, input_grids, task_indices, logsnr,
                                    d4_idx=d4_idx, color_shift=color_shift,
-                                   masks=mask_float)
+                                   masks=mask_float, sc_p0=sc_p0, sc_gain=sc_gain)
 
                 # Get predicted probabilities
                 probs = torch.softmax(logits, dim=-1)
+
+                # Update self-conditioning buffer with current predictions
+                sc_p0 = probs
 
                 # Compute trajectory statistics (only on valid region)
                 valid_probs = probs[valid_mask]  # [N_valid, vocab_size]
