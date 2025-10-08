@@ -271,11 +271,13 @@ class DiffusionInference:
             noise_scheduler=noise_scheduler
         )
 
-        # Load weights - prefer EMA if available and use_ema=True
+        # Load weights - always load base state_dict first, then apply EMA if needed
+        model.load_state_dict(state_dict)
+
         if self.use_ema and 'ema_state_dict' in checkpoint:
             print(f"✓ Using EMA weights for inference")
             ema_state = checkpoint['ema_state_dict']
-            # Apply EMA weights to model
+            # Apply EMA weights to model (overwrite parameters with EMA values)
             for name, param in model.named_parameters():
                 if name in ema_state:
                     param.data.copy_(ema_state[name])
@@ -284,7 +286,6 @@ class DiffusionInference:
                 print(f"⚠️  EMA weights not found in checkpoint, using training weights")
             elif not self.use_ema:
                 print(f"Using training weights (EMA disabled)")
-            model.load_state_dict(state_dict)
 
         model.to(self.device)
         model.eval()
