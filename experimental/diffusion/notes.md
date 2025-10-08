@@ -38,6 +38,11 @@ Correct!
 ## Daily Notes
 ### Oct 8th 2025
 #### Train LoRA and Embeddings of aa1 model to see if we can score on aa2!
+```bash
+nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config_lora.json > smol-v3-reverted-lora.log 2>&1 ; \
+PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config_aa1.json > smol-v3-reverted.log 2>&1 ; \
+PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/mediom_config.json > mediom-v3-reverted.log 2>&1' &
+```
 
 #### Add evaluations during training so we can chart progress.
 - We can now configure how often to run evaluations, and see that progress in wandb.

@@ -532,11 +532,11 @@ class ARCDiffusionTrainer:
             # Import DiffusionInference (lazy import to avoid circular dependency)
             from ..evaluate import DiffusionInference, calculate_metrics, TaskResult
 
-            # Create inference instance
+            # Create inference instance (use 32 steps for faster periodic evaluation)
             inference = DiffusionInference(
                 model_path=temp_checkpoint_path,
                 device=str(self.device),
-                num_inference_steps=config.get('num_timesteps', 32),
+                num_inference_steps=32,
                 debug=False,
                 dataset=dataset_name,
                 use_ema=use_ema
@@ -1074,11 +1074,26 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
                     filtered_state_dict[key] = value
                 elif key == 'denoiser.task_embedding.weight' and value.shape[0] <= model_state[key].shape[0]:
                     # Partial load: pretrained task embedding is smaller than or equal to new model
-                    # Copy pretrained embeddings, leave new task embeddings randomly initialized
-                    print(f"Partially loading task_embedding: copying {value.shape[0]} embeddings, leaving {model_state[key].shape[0] - value.shape[0]} new embeddings")
+                    # Strategy: Initialize new embeddings with mean of pretrained + small noise
+                    num_pretrained = value.shape[0]
+                    num_new = model_state[key].shape[0] - num_pretrained
+
+                    print(f"Partially loading task_embedding: copying {num_pretrained} embeddings, initializing {num_new} new embeddings")
+
+                    # Start with model's state (random init)
                     filtered_state_dict[key] = model_state[key].clone()
-                    filtered_state_dict[key][:value.shape[0]] = value
-                    partially_loaded_keys.append(f"{key} (partial: {value.shape[0]}/{model_state[key].shape[0]})")
+
+                    # Copy pretrained embeddings
+                    filtered_state_dict[key][:num_pretrained] = value
+
+                    # Initialize new embeddings with mean of pretrained + small noise
+                    pretrained_mean = value.mean(dim=0)  # Average across all pretrained tasks
+                    noise_std = 0.01
+                    noise = torch.randn(num_new, value.shape[1]) * noise_std
+                    filtered_state_dict[key][num_pretrained:] = pretrained_mean + noise
+
+                    print(f"  Initialized new embeddings with mean of pretrained (+ noise std={noise_std})")
+                    partially_loaded_keys.append(f"{key} (partial: {num_pretrained}/{model_state[key].shape[0]}, new init: mean+noise)")
                 else:
                     # Skip keys with shape mismatch
                     skipped_keys.append(f"{key} (shape mismatch: {value.shape} vs {model_state[key].shape})")
@@ -1381,7 +1396,7 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
                 # Run periodic task evaluation if configured
                 eval_score = None
                 if eval_every_steps > 0 and step % eval_every_steps == 0 and eval_tasks:
-                    print(f"\n🎯 Running periodic evaluation on {len(eval_tasks)} tasks...")
+                    print(f"\n🎯 Running periodic evaluation on {len(eval_tasks)} tasks (32 inference steps)...")
                     try:
                         # Get dataset basename (e.g., "arc-prize-2025")
                         dataset_basename = data_dir.split('/')[-1]
