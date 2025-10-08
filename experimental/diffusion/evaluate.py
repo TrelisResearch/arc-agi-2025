@@ -974,12 +974,14 @@ class DiffusionInference:
                     pred_heights, pred_widths = self.model.predict_sizes(input_batch, task_ids)
                     pred_height, pred_width = pred_heights[0].item(), pred_widths[0].item()
                 size_source = "integrated_size_head"
-                print(f"Using integrated size head predictions: {pred_height}×{pred_width}")
+                if self.debug:
+                    print(f"Using integrated size head predictions: {pred_height}×{pred_width}")
             else:
                 # Fallback to ground truth dimensions
                 if expected_output is not None and len(expected_output) > 0:
                     pred_height, pred_width = expected_output.shape
-                    print(f"⚠️  No size head available, using ground truth dimensions: {pred_height}×{pred_width}")
+                    if self.debug:
+                        print(f"⚠️  No size head available, using ground truth dimensions: {pred_height}×{pred_width}")
                     size_source = "ground_truth"
                 else:
                     print("⚠️  No size head and no ground truth available, using max size")
