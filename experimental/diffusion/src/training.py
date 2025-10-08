@@ -495,29 +495,56 @@ class ARCDiffusionTrainer:
 
         try:
             # Save current model state to temp checkpoint
+            # IMPORTANT: Don't modify the training model (it's compiled) - work with state dict only
             use_lora = config.get('lora', {}).get('enabled', False)
 
-            # For LoRA: temporarily merge weights to save merged checkpoint
-            if use_lora:
-                from experimental.diffusion.utils.lora import merge_lora_weights, unmerge_lora_weights
-                merge_lora_weights(self.model)
-
-            # Get state dict (now has merged LoRA if applicable)
+            # Get state dict (includes lora_A/lora_B if LoRA enabled)
             raw_state_dict = self.model.state_dict()
 
-            # Clean the state dict: remove lora_A/lora_B keys and _orig_mod prefix
+            # Merge LoRA weights in the state dict (not in the actual model)
             clean_state_dict = {}
-            for key, value in raw_state_dict.items():
-                # Skip LoRA parameters (already merged into base)
-                if 'lora_A' in key or 'lora_B' in key:
-                    continue
-                # Strip torch.compile prefix
-                clean_key = key.replace('_orig_mod.', '')
-                clean_state_dict[clean_key] = value
-
-            # Unmerge LoRA to restore training state
             if use_lora:
-                unmerge_lora_weights(self.model)
+                from experimental.diffusion.utils.lora import LoRALinear
+
+                # Process each parameter
+                for key, value in raw_state_dict.items():
+                    # Strip torch.compile prefix first
+                    clean_key = key.replace('_orig_mod.', '')
+
+                    # Skip lora_A and lora_B - we'll merge them into base weights
+                    if 'lora_A' in key or 'lora_B' in key:
+                        continue
+
+                    # For base weights in LoRA layers, merge lora_A @ lora_B
+                    if 'weight' in key and not 'lora' in key:
+                        # Check if this has corresponding LoRA parameters
+                        lora_A_key = key.replace('weight', 'lora_A')
+                        lora_B_key = key.replace('weight', 'lora_B')
+
+                        if lora_A_key in raw_state_dict and lora_B_key in raw_state_dict:
+                            # Merge: weight = base_weight + scaling * (lora_B @ lora_A)
+                            lora_A = raw_state_dict[lora_A_key]
+                            lora_B = raw_state_dict[lora_B_key]
+
+                            # Get scaling from config (alpha / rank)
+                            lora_config = config.get('lora', {})
+                            rank = lora_config.get('rank', 8)
+                            alpha = lora_config.get('alpha', 16.0)
+                            scaling = alpha / rank
+
+                            merged_weight = value + (lora_B @ lora_A) * scaling
+                            clean_state_dict[clean_key] = merged_weight
+                        else:
+                            # No LoRA for this weight, just copy
+                            clean_state_dict[clean_key] = value
+                    else:
+                        # Not a weight parameter (bias, etc), just copy
+                        clean_state_dict[clean_key] = value
+            else:
+                # No LoRA, just strip prefixes
+                for key, value in raw_state_dict.items():
+                    clean_key = key.replace('_orig_mod.', '')
+                    clean_state_dict[clean_key] = value
 
             save_dict = {
                 'model_state_dict': clean_state_dict,
@@ -566,9 +593,16 @@ class ARCDiffusionTrainer:
             # Calculate metrics
             if results:
                 metrics = calculate_metrics(results)
-                return metrics['avg_task_score']
+                eval_score = metrics['avg_task_score']
             else:
-                return 0.0
+                eval_score = 0.0
+
+            # Clean up inference instance to free GPU memory
+            del inference
+            if self.device.type == 'cuda':
+                torch.cuda.empty_cache()
+
+            return eval_score
 
         finally:
             # Clean up temp checkpoint
