@@ -41,6 +41,10 @@ Correct!
 ```bash
 nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config_aa1.json > smol-v7.log 2>&1' &
 ```
+re-run deep:
+```bash
+nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config_aa1_deep.json > smol_config_aa1-v7-deep.log 2>&1' &
+```
 
 #### v6 - with cst LR
 - uses cst learning rate
