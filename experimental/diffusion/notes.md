@@ -38,7 +38,10 @@ Correct!
 ## Daily Notes
 ### Oct 9th 2025
 #### Kicking off a long run
-Will run for 1000000 optimizer steps.
+Will run for 1000000 optimizer steps!
+```bash
+nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config.json > smol-v7-1M.log 2>&1' &
+```
 
 #### v7 - fixed SC
 So far, it seems like the v7 approach to SC is weaker than v6. Possibly just doing time-aligned is better than where we currently inference the same step twice. I'll need to re-run evaluation whereby I pass 128 steps, to see if that's the issue, and shorter steps doesn't work well without doing time steps.
@@ -51,12 +54,14 @@ same time 2x attempts:  6.0%
 temporal 2x attempts: 6.0%
 
 so I had to re-train it with temporal (And that seems to have worked):
-Scores --maj with 48k steps: 
+Scores --maj with 48k steps: 9.6%
 
 re-run deep:
 ```bash
 nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config_aa1_deep.json > smol_config_aa1-v7-deep.log 2>&1' &
 ```
+Scores, --maj: 6.12%
+
 
 #### v6 - with cst LR
 - uses cst learning rate
