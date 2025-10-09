@@ -673,6 +673,9 @@ class DiffusionInference:
         # Create float mask for model
         mask_float = valid_mask.float()
 
+        # Initialize prev-step SC buffer
+        prev_sc = None
+
         with torch.no_grad():
             for i, t in enumerate(timesteps):
                 t_batch = t.repeat(batch_size)
@@ -685,21 +688,14 @@ class DiffusionInference:
                 from experimental.diffusion.utils.noise_scheduler import sc_gain_from_abar
                 sc_gain = sc_gain_from_abar(t_batch, self.noise_scheduler)
 
-                # Same-timestep two-pass self-conditioning
-                # Pass 1: No SC to get initial prediction
-                logits_pass1 = self.model(x_t, input_grids, task_indices, logsnr,
-                                         d4_idx=d4_idx, color_shift=color_shift,
-                                         masks=mask_float, sc_p0=None, sc_gain=0.0)
-
-                # Create SC input: log-probs with temperature, centered (fp32 for stability)
-                logits_fp32 = logits_pass1.float()
-                log_probs = torch.log_softmax(logits_fp32 / SC_TEMPERATURE, dim=-1).to(logits_pass1.dtype)
-                sc_p0 = log_probs - log_probs.mean(dim=-1, keepdim=True)
-
-                # Pass 2: With SC to get final prediction for this timestep
-                logits = self.model(x_t, input_grids, task_indices, logsnr,
-                                   d4_idx=d4_idx, color_shift=color_shift,
-                                   masks=mask_float, sc_p0=sc_p0, sc_gain=sc_gain)
+                # === TEMPORAL SC: one pass per step, feed previous step's SC ===
+                logits = self.model(
+                    x_t, input_grids, task_indices, logsnr,
+                    d4_idx=d4_idx, color_shift=color_shift,
+                    masks=mask_float,
+                    sc_p0=prev_sc,            # <-- use prev step SC (None on first step)
+                    sc_gain=sc_gain
+                )
 
                 # Get predicted probabilities for statistics
                 probs = torch.softmax(logits, dim=-1)
@@ -714,8 +710,8 @@ class DiffusionInference:
 
                 # Entropy: mean entropy across valid cells
                 # H = -sum(p * log(p))
-                log_probs = torch.log(valid_probs + 1e-10)
-                entropy = -(valid_probs * log_probs).sum(dim=-1)
+                log_probs_stats = torch.log(valid_probs + 1e-10)
+                entropy = -(valid_probs * log_probs_stats).sum(dim=-1)
                 mean_entropy = entropy.mean().item()
                 entropy_curve.append(mean_entropy)
 
@@ -741,6 +737,13 @@ class DiffusionInference:
                         early_lock_step = i
 
                 x_prev = x_t.clone()
+
+                # === Build SC for the *next* step ===
+                # Use fp32 for stability; centered log-probs; detach so it's a feature only
+                logits_fp32 = logits.float()
+                log_probs = torch.log_softmax(logits_fp32 / SC_TEMPERATURE, dim=-1).to(logits.dtype)
+                prev_sc = log_probs - log_probs.mean(dim=-1, keepdim=True)
+                prev_sc = prev_sc.detach()
 
                 # Capture intermediate steps with their timestep
                 if i % capture_interval == 0 or i == num_inference_steps - 1:
