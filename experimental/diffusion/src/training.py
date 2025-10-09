@@ -15,6 +15,9 @@ from ..utils.grid_utils import grid_to_display_string
 from ..utils.visualization import create_training_visualization, create_denoising_progression_visualization
 from torch.utils.data import DataLoader
 
+# Self-conditioning temperature for log-softmax (helps stability at high noise)
+SC_TEMPERATURE = 1.5
+
 
 def prepare_ema_state_dict(model, ema, use_lora: bool, lora_config: dict = None):
     """
@@ -307,8 +310,12 @@ class ARCDiffusionTrainer:
                         sc_p0=None,  # No self-conditioning in first pass
                         sc_gain=0.0
                     )
-                # Convert logits to probabilities
-                sc_p0 = torch.softmax(logits_prev, dim=-1)
+                # Convert logits to centered log-probs with temperature
+                # Use fp32 for stability (helps prevent NaNs at high noise)
+                logits_fp32 = logits_prev.float()
+                log_probs = torch.log_softmax(logits_fp32 / SC_TEMPERATURE, dim=-1).to(logits_prev.dtype)
+                # Center by subtracting per-cell mean to remove bias
+                sc_p0 = log_probs - log_probs.mean(dim=-1, keepdim=True)
 
         # Second pass: Forward with self-conditioning and compute loss
         if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
@@ -438,7 +445,47 @@ class ARCDiffusionTrainer:
                 from ..utils.noise_scheduler import sc_gain_from_abar
                 sc_gain = sc_gain_from_abar(timesteps, self.noise_scheduler)
 
-                # Forward pass (no SC during validation) with mixed precision
+                # Get D4 and color shift from batch if available
+                d4_indices = batch.get('d4_idx', None)
+                color_shifts = batch.get('color_shift', None)
+                if d4_indices is not None:
+                    d4_indices = d4_indices.to(self.device)
+                if color_shifts is not None:
+                    color_shifts = color_shifts.to(self.device)
+
+                # First pass: Generate SC input (same as training)
+                sc_p0 = None
+                if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
+                    with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
+                        logits_prev = self.model(
+                            xt=noisy_grids,
+                            input_grid=input_grids,
+                            task_ids=task_indices,
+                            logsnr=logsnr,
+                            d4_idx=d4_indices,
+                            color_shift=color_shifts,
+                            masks=masks,
+                            sc_p0=None,
+                            sc_gain=0.0
+                        )
+                else:
+                    logits_prev = self.model(
+                        xt=noisy_grids,
+                        input_grid=input_grids,
+                        task_ids=task_indices,
+                        logsnr=logsnr,
+                        d4_idx=d4_indices,
+                        color_shift=color_shifts,
+                        masks=masks,
+                        sc_p0=None,
+                        sc_gain=0.0
+                    )
+                # Convert to centered log-probs with temperature (fp32 for stability)
+                logits_fp32 = logits_prev.float()
+                log_probs = torch.log_softmax(logits_fp32 / SC_TEMPERATURE, dim=-1).to(logits_prev.dtype)
+                sc_p0 = log_probs - log_probs.mean(dim=-1, keepdim=True)
+
+                # Second pass: Forward with SC (mirrors training)
                 if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
                     with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
                         losses = self.model.compute_loss(
@@ -449,7 +496,9 @@ class ARCDiffusionTrainer:
                             logsnr=logsnr,
                             heights=heights,
                             widths=widths,
-                            sc_p0=None,
+                            d4_idx=d4_indices,
+                            color_shift=color_shifts,
+                            sc_p0=sc_p0,
                             sc_gain=sc_gain
                         )
                 else:
@@ -461,7 +510,9 @@ class ARCDiffusionTrainer:
                         logsnr=logsnr,
                         heights=heights,
                         widths=widths,
-                        sc_p0=None,
+                        d4_idx=d4_indices,
+                        color_shift=color_shifts,
+                        sc_p0=sc_p0,
                         sc_gain=sc_gain
                     )
 

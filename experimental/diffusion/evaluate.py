@@ -38,6 +38,9 @@ from experimental.diffusion.utils.arc_colors import arc_cmap
 import random
 from collections import Counter
 
+# Self-conditioning temperature for log-softmax (helps stability at high noise)
+SC_TEMPERATURE = 1.5
+
 
 class AugmentationParams(TypedDict):
     """Parameters for a single D4 augmentation"""
@@ -256,7 +259,6 @@ class DiffusionInference:
             max_size=config['max_size'],
             max_tasks=max_tasks,
             embedding_dropout=config.get('embedding_dropout', 0.1),
-            sc_dropout_prob=config.get('sc_dropout_prob', 0.5),
             include_size_head=include_size_head,
             size_head_hidden_dim=size_head_hidden_dim,
             noise_scheduler=noise_scheduler
@@ -671,9 +673,6 @@ class DiffusionInference:
         # Create float mask for model
         mask_float = valid_mask.float()
 
-        # Initialize self-conditioning buffer
-        sc_p0 = None
-
         with torch.no_grad():
             for i, t in enumerate(timesteps):
                 t_batch = t.repeat(batch_size)
@@ -686,16 +685,24 @@ class DiffusionInference:
                 from experimental.diffusion.utils.noise_scheduler import sc_gain_from_abar
                 sc_gain = sc_gain_from_abar(t_batch, self.noise_scheduler)
 
-                # Forward pass with self-conditioning (no augmentation during inference)
+                # Same-timestep two-pass self-conditioning
+                # Pass 1: No SC to get initial prediction
+                logits_pass1 = self.model(x_t, input_grids, task_indices, logsnr,
+                                         d4_idx=d4_idx, color_shift=color_shift,
+                                         masks=mask_float, sc_p0=None, sc_gain=0.0)
+
+                # Create SC input: log-probs with temperature, centered (fp32 for stability)
+                logits_fp32 = logits_pass1.float()
+                log_probs = torch.log_softmax(logits_fp32 / SC_TEMPERATURE, dim=-1).to(logits_pass1.dtype)
+                sc_p0 = log_probs - log_probs.mean(dim=-1, keepdim=True)
+
+                # Pass 2: With SC to get final prediction for this timestep
                 logits = self.model(x_t, input_grids, task_indices, logsnr,
                                    d4_idx=d4_idx, color_shift=color_shift,
                                    masks=mask_float, sc_p0=sc_p0, sc_gain=sc_gain)
 
-                # Get predicted probabilities
+                # Get predicted probabilities for statistics
                 probs = torch.softmax(logits, dim=-1)
-
-                # Update self-conditioning buffer with current predictions
-                sc_p0 = probs
 
                 # Compute trajectory statistics (only on valid region)
                 valid_probs = probs[valid_mask]  # [N_valid, vocab_size]
@@ -712,11 +719,9 @@ class DiffusionInference:
                 mean_entropy = entropy.mean().item()
                 entropy_curve.append(mean_entropy)
 
-                # Sample or argmax (use .item() for tensor comparison)
-                if t.item() > 0:
-                    x_t = torch.multinomial(probs.view(-1, probs.shape[-1]), 1).view(x_t.shape)
-                else:
-                    x_t = torch.argmax(logits, dim=-1)
+                # Use deterministic argmax at all steps for ARC tasks
+                # (sampling can be re-enabled if diversity is needed)
+                x_t = torch.argmax(logits, dim=-1)
 
                 # Apply size masking
                 for b in range(batch_size):

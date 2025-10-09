@@ -86,8 +86,16 @@ class TransformerDenoiser(nn.Module):
         )
 
         # Self-conditioning projection
-        # Maps probability distributions (10 classes) to features
-        self.sc_proj = nn.Linear(10, d_model)
+        # Maps log-probability distributions (10 classes) to features
+        # LayerNorm keeps scale consistent across timesteps
+        self.sc_proj = nn.Sequential(
+            nn.Linear(10, d_model, bias=True),
+            nn.LayerNorm(d_model)
+        )
+
+        # Learnable scalar gate for self-conditioning (initialized to 0.3)
+        # Allows model to downweight SC when harmful
+        self.sc_gate = nn.Parameter(torch.tensor(0.3))
 
         # Embedding dropout for regularization
         self.embedding_dropout = nn.Dropout(embedding_dropout)
@@ -117,7 +125,7 @@ class TransformerDenoiser(nn.Module):
         d4_idx: Optional[torch.Tensor] = None,  # [batch_size] - D4 transformation index (0-7)
         color_shift: Optional[torch.Tensor] = None,  # [batch_size] - color shift (0-8)
         masks: Optional[torch.Tensor] = None,  # [batch_size, max_size, max_size]
-        sc_p0: Optional[torch.Tensor] = None,  # [batch_size, max_size, max_size, 10] - self-conditioning probs
+        sc_p0: Optional[torch.Tensor] = None,  # [batch_size, max_size, max_size, 10] - self-conditioning log-probs (centered)
         sc_gain: Union[float, torch.Tensor] = 1.0,  # float or [batch_size] - Self-conditioning gain factor
     ) -> torch.Tensor:
         """
@@ -149,17 +157,24 @@ class TransformerDenoiser(nn.Module):
         # Handle self-conditioning
         # When sc_p0 is None, we add nothing (true zero, no bias injection)
         if sc_p0 is not None:
-            # Reshape and project previous predictions
+            # Reshape SC input (log-probs, centered)
             sc_p0_flat = sc_p0.view(batch_size, -1, 10)  # [batch_size, max_size^2, 10]
+
+            # Apply masking to SC input (zero outside valid regions)
+            if masks is not None:
+                masks_flat = masks.view(batch_size, -1, 1).float()  # [batch_size, max_size^2, 1]
+                sc_p0_flat = sc_p0_flat * masks_flat
+
+            # Project with LayerNorm
             sc_features = self.sc_proj(sc_p0_flat)  # [batch_size, max_size^2, d_model]
 
-            # Add to xt embeddings with gain factor
+            # Add to xt embeddings with gain factor and learnable gate
             # Reshape sc_gain from [batch_size] to [batch_size, 1, 1] for broadcasting if it's a tensor
             if isinstance(sc_gain, torch.Tensor):
                 sc_gain_reshaped = sc_gain.view(batch_size, 1, 1)
             else:
                 sc_gain_reshaped = sc_gain
-            xt_emb = xt_emb + sc_gain_reshaped * sc_features
+            xt_emb = xt_emb + sc_gain_reshaped * self.sc_gate * sc_features
 
         # Apply masking to xt features if masks provided
         # Zero out embeddings outside valid regions

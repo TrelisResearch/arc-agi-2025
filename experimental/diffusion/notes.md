@@ -440,7 +440,7 @@ mediom - 32 steps (final model, not best):
 - sample-40x-augs: Correct Sizes: 125/172 (72.7%)
 
 ### Oct 9th 2025
-#### Architectural cleanup
+#### Architectural cleanup (Part 1)
 Removed dead code and consolidated self-conditioning (SC) logic:
 - **Removed ARCDiffusionSampler class** (~195 lines): This class had a blend-and-re-noise variant that was never called. All inference goes through DiffusionInference.sample_with_steps with temporal SC (previous step's probs).
 - **Fixed "no-SC" to be truly zero**: Removed the `elif` branch that added `sc_proj(zeros)`, which was injecting bias even when SC was disabled.
@@ -452,3 +452,39 @@ Files modified:
 - `src/training.py`: Removed ARCDiffusionSampler class, added sc_dropout_prob to ARCDiffusionTrainer
 - `evaluate.py`: Removed ARCDiffusionSampler import
 - `configs/*.json`: Moved sc_dropout_prob from "model" to "training" section
+
+#### Self-conditioning improvements (Part 2)
+Improved SC mechanism for better stability and effectiveness:
+
+**1. Enhanced SC projection head:**
+- Replaced `nn.Linear(10, d_model)` with `nn.Sequential(nn.Linear(10, d_model), nn.LayerNorm(d_model))`
+- Added learnable scalar gate `nn.Parameter(torch.tensor(0.3))` to allow model to downweight SC when harmful
+- LayerNorm keeps scale consistent across timesteps
+
+**2. Switched from probabilities to log-probs:**
+- Changed SC input from `softmax(logits)` to tempered, centered log-probs
+- Temperature = 1.5 for stability at high noise
+- Center by subtracting per-cell mean: `log_probs - log_probs.mean(dim=-1, keepdim=True)`
+- Log-probs preserve margin info better than saturated probabilities
+
+**3. Fixed to same-timestep two-pass SC:**
+- **Training & validation**: Already used two-pass (pass-1: no SC → get logits → pass-2: with SC)
+- **Inference**: Changed from temporal SC (using previous step's probs) to same-timestep two-pass
+- Each denoising step now does: pass-1 (no SC) → create SC input → pass-2 (with SC) → update x_t
+
+**4. Deterministic sampling:**
+- Changed inference to use `argmax` at all timesteps (was: sampling for t>0, argmax for t=0)
+- Better for ARC tasks where diversity is not needed
+
+**5. Applied masks to SC input:**
+- Zero SC features outside valid regions before projection
+
+Files modified:
+- `src/model.py`: Updated SC projection head, added gate, masked SC input
+- `src/training.py`: Changed to log-probs with temperature and centering, added SC_TEMPERATURE constant, fp32 stability
+- `evaluate.py`: Changed to same-timestep two-pass, deterministic sampling, fixed constructor call, added SC_TEMPERATURE constant, fp32 stability
+
+**Additional stability improvements:**
+- Hoisted temperature to `SC_TEMPERATURE = 1.5` constant at top of training.py and evaluate.py for consistency
+- Wrapped log_softmax computation in fp32 for stability: `logits.float() → log_softmax → .to(dtype)` to prevent NaNs at high noise
+- Removed `sc_dropout_prob` from `DiffusionInference._load_model()` constructor call (was causing crash)
