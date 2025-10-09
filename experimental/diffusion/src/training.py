@@ -495,64 +495,29 @@ class ARCDiffusionTrainer:
 
         try:
             # Save current model state to temp checkpoint
-            # IMPORTANT: Don't modify the training model (it's compiled) - work with state dict only
+            # For periodic eval: use EMA weights (already merged, clean, and what we care about)
             use_lora = config.get('lora', {}).get('enabled', False)
 
-            # Get state dict (includes lora_A/lora_B if LoRA enabled)
-            raw_state_dict = self.model.state_dict()
+            if self.ema is not None:
+                # Use EMA weights as the main model state (already merged via prepare_ema_state_dict)
+                model_state_dict = prepare_ema_state_dict(self.model, self.ema, use_lora)
+            else:
+                # No EMA - fall back to current training weights (requires manual merging)
+                raw_state_dict = self.model.state_dict()
+                model_state_dict = {}
 
-            # Merge LoRA weights in the state dict (not in the actual model)
-            clean_state_dict = {}
-            if use_lora:
-                from experimental.diffusion.utils.lora import LoRALinear
-
-                # Process each parameter
+                # Strip prefixes and skip LoRA params (evaluate with base weights only if no EMA)
                 for key, value in raw_state_dict.items():
-                    # Strip torch.compile prefix first
-                    clean_key = key.replace('_orig_mod.', '')
-
-                    # Skip lora_A and lora_B - we'll merge them into base weights
                     if 'lora_A' in key or 'lora_B' in key:
                         continue
-
-                    # For base weights in LoRA layers, merge lora_A @ lora_B
-                    if 'weight' in key and not 'lora' in key:
-                        # Check if this has corresponding LoRA parameters
-                        lora_A_key = key.replace('weight', 'lora_A')
-                        lora_B_key = key.replace('weight', 'lora_B')
-
-                        if lora_A_key in raw_state_dict and lora_B_key in raw_state_dict:
-                            # Merge: weight = base_weight + scaling * (lora_B @ lora_A)
-                            lora_A = raw_state_dict[lora_A_key]
-                            lora_B = raw_state_dict[lora_B_key]
-
-                            # Get scaling from config (alpha / rank)
-                            lora_config = config.get('lora', {})
-                            rank = lora_config.get('rank', 8)
-                            alpha = lora_config.get('alpha', 16.0)
-                            scaling = alpha / rank
-
-                            merged_weight = value + (lora_B @ lora_A) * scaling
-                            clean_state_dict[clean_key] = merged_weight
-                        else:
-                            # No LoRA for this weight, just copy
-                            clean_state_dict[clean_key] = value
-                    else:
-                        # Not a weight parameter (bias, etc), just copy
-                        clean_state_dict[clean_key] = value
-            else:
-                # No LoRA, just strip prefixes
-                for key, value in raw_state_dict.items():
                     clean_key = key.replace('_orig_mod.', '')
-                    clean_state_dict[clean_key] = value
+                    model_state_dict[clean_key] = value
 
             save_dict = {
-                'model_state_dict': clean_state_dict,
+                'model_state_dict': model_state_dict,
                 'config': config,
                 'dataset_info': dataset_info
             }
-            if self.ema is not None:
-                save_dict['ema_state_dict'] = prepare_ema_state_dict(self.model, self.ema, use_lora)
 
             torch.save(save_dict, temp_checkpoint_path)
 
@@ -560,13 +525,14 @@ class ARCDiffusionTrainer:
             from ..evaluate import DiffusionInference, calculate_metrics, TaskResult
 
             # Create inference instance (use 32 steps for faster periodic evaluation)
+            # Note: checkpoint already contains EMA weights, so don't apply EMA again
             inference = DiffusionInference(
                 model_path=temp_checkpoint_path,
                 device=str(self.device),
                 num_inference_steps=32,
                 debug=False,
                 dataset=dataset_name,
-                use_ema=use_ema
+                use_ema=False  # Already using EMA weights in model_state_dict
             )
 
             # Override the solutions loader to use correct split

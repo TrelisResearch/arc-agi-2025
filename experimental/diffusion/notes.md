@@ -44,6 +44,10 @@ PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experiment
 PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/mediom_config.json > mediom-v3-reverted.log 2>&1' &
 ```
 
+```bash
+nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config_lora.json > smol-v3-reverted-lora.log 2>&1' &
+```
+
 #### Add evaluations during training so we can chart progress.
 - We can now configure how often to run evaluations, and see that progress in wandb.
 - We'll also use ema weights going forward in evaluate, which we weren't doing but should improve performance.
