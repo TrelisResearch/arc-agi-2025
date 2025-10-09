@@ -37,6 +37,11 @@ Correct!
 
 ## Daily Notes
 ### Oct 9th 2025
+#### v7 - fixed SC
+```bash
+nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config_aa1.json > smol-v7.log 2>&1' &
+```
+
 #### v6 - with cst LR
 - uses cst learning rate
 - uses ema by default everywhere
