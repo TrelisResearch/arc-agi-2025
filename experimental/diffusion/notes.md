@@ -36,6 +36,10 @@ Uniform is more robust and simpler.
 Correct!
 
 ## Daily Notes
+### Oct 9th 2025
+#### v6 - with cst LR
+
+
 ### Oct 8th 2025
 #### Train LoRA and Embeddings of aa1 model to see if we can score on aa2!
 ```bash
@@ -43,10 +47,15 @@ nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --co
 PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config_aa1.json > smol-v3-reverted.log 2>&1 ; \
 PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/mediom_config.json > mediom-v3-reverted.log 2>&1' &
 ```
+smol scores 16.1% maj. roughly in line with the previous score.
+mediom scores 0.83% with maj., which is quite a bit lower than 2.5% on v3. Seems a bit odd, and could be that ema is scoring lower?
+
+re-test with `no-ema`: 0.8% as well.
 
 ```bash
 nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config_lora.json > smol-v3-reverted-lora.log 2>&1' &
 ```
+Scores 0.83% with majority vote. Training is stable. Was trained for 8k steps.
 
 #### Add evaluations during training so we can chart progress.
 - We can now configure how often to run evaluations, and see that progress in wandb.
@@ -85,7 +94,7 @@ nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --co
 PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/mediom_config.json > mediom-v4.log 2>&1' &
 ```
 Final model 2x attempt scores
-smol aa1: 12.25%
+smol aa1: 12.25% | 
 mediom aa2: 1.2% | or 2.5% with --maj [compare this to 1.7% for --maj on v1 model]
 
 mediom got 2 perfect and 2 partial.
