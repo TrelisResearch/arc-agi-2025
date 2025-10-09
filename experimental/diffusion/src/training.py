@@ -16,43 +16,64 @@ from ..utils.visualization import create_training_visualization, create_denoisin
 from torch.utils.data import DataLoader
 
 
-def prepare_ema_state_dict(model, ema, use_lora: bool):
+def prepare_ema_state_dict(model, ema, use_lora: bool, lora_config: dict = None):
     """
     Prepare EMA state dict, merging LoRA weights if applicable.
 
+    IMPORTANT: This function NEVER modifies the training model - works purely with EMA shadow dict.
+
     Args:
-        model: The model (may have LoRA layers)
+        model: The model (only used to infer structure, never modified)
         ema: EMA object
         use_lora: Whether LoRA is enabled
+        lora_config: LoRA config dict (needed for rank/alpha if use_lora=True)
 
     Returns:
-        Dict with EMA parameters (just the shadow weights, not the full ema state)
+        Dict with EMA parameters (merged LoRA if applicable)
     """
+    # Get EMA shadow weights - this is a COPY, never touches the model
+    ema_shadow = ema.state_dict()['shadow']
+
     if not use_lora:
-        # Normal EMA save for non-LoRA training
-        # Return just the shadow weights, not the full ema.state_dict()
-        return ema.state_dict()['shadow']
+        # Non-LoRA: just return shadow weights
+        return ema_shadow
 
-    # For LoRA training, merge EMA LoRA weights into base before saving
-    from experimental.diffusion.utils.ema import ModelWithEMA
-    from experimental.diffusion.utils.lora import merge_lora_weights
+    # LoRA: Merge LoRA weights mathematically in the shadow dict
+    # Get LoRA scaling factor
+    rank = lora_config.get('rank', 8)
+    alpha = lora_config.get('alpha', 16.0)
+    scaling = alpha / rank
 
-    with ModelWithEMA(model, ema) as ema_model:
-        # Merge LoRA in the EMA-weighted model
-        merge_lora_weights(ema_model)
+    merged_state = {}
 
-        # Extract merged state without lora params
-        ema_state = ema_model.state_dict()
-        ema_clean_state = {}
-        for key, value in ema_state.items():
-            # Skip LoRA-specific parameters
-            if 'lora_A' in key or 'lora_B' in key:
-                continue
-            # Strip _orig_mod. prefix from torch.compile if present
-            clean_key = key.replace('_orig_mod.', '')
-            ema_clean_state[clean_key] = value
+    for key, value in ema_shadow.items():
+        # Strip torch.compile prefix
+        clean_key = key.replace('_orig_mod.', '')
 
-        return ema_clean_state
+        # Skip lora_A and lora_B - we'll merge them into base weights
+        if 'lora_A' in key or 'lora_B' in key:
+            continue
+
+        # For base weights in LoRA layers, check if we need to merge
+        if 'weight' in key and not 'lora' in key:
+            # Check if this weight has corresponding LoRA parameters
+            lora_A_key = key.replace('weight', 'lora_A')
+            lora_B_key = key.replace('weight', 'lora_B')
+
+            if lora_A_key in ema_shadow and lora_B_key in ema_shadow:
+                # Merge: merged_weight = base_weight + scaling * (lora_B @ lora_A)
+                lora_A = ema_shadow[lora_A_key]
+                lora_B = ema_shadow[lora_B_key]
+                merged_weight = value + (lora_B @ lora_A) * scaling
+                merged_state[clean_key] = merged_weight
+            else:
+                # No LoRA for this weight, just copy
+                merged_state[clean_key] = value
+        else:
+            # Not a weight parameter (bias, embeddings, etc), just copy
+            merged_state[clean_key] = value
+
+    return merged_state
 
 
 class ARCDiffusionTrainer:
@@ -495,7 +516,8 @@ class ARCDiffusionTrainer:
 
             if self.ema is not None:
                 # Use EMA weights as the main model state (already merged via prepare_ema_state_dict)
-                model_state_dict = prepare_ema_state_dict(self.model, self.ema, use_lora)
+                lora_config = config.get('lora', {}) if use_lora else None
+                model_state_dict = prepare_ema_state_dict(self.model, self.ema, use_lora, lora_config)
             else:
                 # No EMA - fall back to current training weights (requires manual merging)
                 raw_state_dict = self.model.state_dict()
@@ -1449,7 +1471,8 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
                     # Save EMA state if available (merge LoRA if applicable)
                     if trainer.ema is not None:
                         use_lora = config.get('lora', {}).get('enabled', False)
-                        save_dict['ema_state_dict'] = prepare_ema_state_dict(model, trainer.ema, use_lora)
+                        lora_config = config.get('lora', {}) if use_lora else None
+                        save_dict['ema_state_dict'] = prepare_ema_state_dict(model, trainer.ema, use_lora, lora_config)
                     torch.save(save_dict, output_dir / 'best_model.pt')
                     # Print based on which metric was used
                     if best_model_metric == 'eval_score':
@@ -1470,7 +1493,8 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
                     # Save EMA state if available (merge LoRA if applicable)
                     if trainer.ema is not None:
                         use_lora = config.get('lora', {}).get('enabled', False)
-                        save_dict['ema_state_dict'] = prepare_ema_state_dict(model, trainer.ema, use_lora)
+                        lora_config = config.get('lora', {}) if use_lora else None
+                        save_dict['ema_state_dict'] = prepare_ema_state_dict(model, trainer.ema, use_lora, lora_config)
                     torch.save(save_dict, output_dir / 'halfway_model.pt')
                     print(f"Saved halfway checkpoint at step {step} ({step/optimizer_steps:.0%} of training)")
 
@@ -1542,12 +1566,13 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
 
     # Save EMA state if available (merge LoRA if applicable)
     if trainer.ema is not None:
+        lora_config = config.get('lora', {}) if use_lora else None
         if use_lora:
             print("🔧 Merging EMA LoRA weights for final checkpoint...")
-            save_dict['ema_state_dict'] = prepare_ema_state_dict(model, trainer.ema, use_lora)
+            save_dict['ema_state_dict'] = prepare_ema_state_dict(model, trainer.ema, use_lora, lora_config)
             print("✅ EMA LoRA weights merged successfully")
         else:
-            save_dict['ema_state_dict'] = prepare_ema_state_dict(model, trainer.ema, use_lora)
+            save_dict['ema_state_dict'] = prepare_ema_state_dict(model, trainer.ema, use_lora, lora_config)
 
     torch.save(save_dict, output_dir / 'final_model.pt')
 
