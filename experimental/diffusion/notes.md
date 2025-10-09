@@ -48,7 +48,7 @@ PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experiment
 PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/mediom_config.json > mediom-v3-reverted.log 2>&1' &
 ```
 smol scores 16.1% maj. roughly in line with the previous score.
-mediom scores 0.83% with maj., which is quite a bit lower than 2.5% on v3. Seems a bit odd, and could be that ema is scoring lower?
+mediom scores 0.83% with maj., which is quite a bit lower than 2.5% on v3. Seems a bit odd, and could be that ema is scoring lower? I re-ran ema. I've no idea why the scoring is lower than before. NOTE FOR THE FUTURE. MOVING ON AS V3-REVERTED IS FINE ON aa1.
 
 re-test with `no-ema`: 0.8% as well.
 

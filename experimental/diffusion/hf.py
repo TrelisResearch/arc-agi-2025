@@ -16,7 +16,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from huggingface_hub import HfApi, create_repo, hf_hub_download, snapshot_download
+from huggingface_hub import HfApi, create_repo, hf_hub_download, snapshot_download, upload_large_folder
 from huggingface_hub.utils import HfHubHTTPError
 
 # Add project root to Python path
@@ -91,10 +91,11 @@ def push_to_hf(config_path: str):
     # Upload all files from output directory
     try:
         print(f"📤 Uploading files from {output_dir}...")
-        api.upload_folder(
+        upload_large_folder(
             folder_path=str(output_dir),
             repo_id=full_repo_name,
             repo_type="model",
+            num_workers=8,
         )
         print(f"✓ Uploaded all files from {output_dir}")
     except Exception as e:
