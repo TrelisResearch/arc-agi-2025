@@ -31,7 +31,6 @@ sys.path.insert(0, str(project_root))
 
 from experimental.diffusion.src.model import ARCDiffusionModel
 from experimental.diffusion.utils.noise_scheduler import DiscreteNoiseScheduler
-from experimental.diffusion.src.training import ARCDiffusionSampler
 from experimental.diffusion.src.dataset import ARCDataset, load_arc_data_paths
 from experimental.diffusion.utils.grid_utils import grid_to_tokens, tokens_to_grid, TaskAugmentation
 from experimental.diffusion.utils.task_filters import filter_tasks_by_max_size
@@ -201,14 +200,6 @@ class DiffusionInference:
         # Check for integrated size head in model
         if hasattr(self.model, 'include_size_head') and self.model.include_size_head:
             print(f"✓ Using integrated size head from model")
-
-        self.sampler = ARCDiffusionSampler(
-            self.model,
-            self.noise_scheduler,
-            self.device,
-            dataset=self.dataset,
-            debug=self.debug
-        )
 
         if self.num_inference_steps is None:
             self.num_inference_steps = self.config['num_timesteps']

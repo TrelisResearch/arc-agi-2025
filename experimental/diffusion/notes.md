@@ -42,9 +42,19 @@ Correct!
 - uses ema by default everywhere
 - uses 48k optimizer steps
 
-Testing first on toiny, should take about 40 mins.
+Testing first on toiny, should take about 40 mins (logs say v4 instead of v6).
 ```bash
 nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/toiny_config.json > toiny-v4.log 2>&1' &
+```
+
+Testing smol
+```bash
+nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config_aa1.json > smol_config_aa1-v6.log 2>&1' &
+```
+
+and testing with a deeper network:
+```bash
+nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config_aa1_deep.json > smol_config_aa1-v6-deep.log 2>&1' &
 ```
 
 ### Oct 8th 2025
