@@ -19,6 +19,61 @@ from torch.utils.data import DataLoader
 SC_TEMPERATURE = 1.5
 
 
+def discrete_reverse_step(
+    x_t: torch.Tensor,
+    logits_x0: torch.Tensor,
+    t_idx: torch.Tensor,
+    noise_scheduler: DiscreteNoiseScheduler,
+    mask: Optional[torch.Tensor] = None
+) -> torch.Tensor:
+    """
+    Deterministic discrete reverse step for teacher-forcing during training.
+
+    Computes x_{t-1} from x_t and predicted x0 logits using the discrete diffusion kernel.
+
+    Args:
+        x_t: Current noisy tokens [B, H, W] ints in {0..9}
+        logits_x0: Predicted clean logits [B, H, W, 10] from model
+        t_idx: Timestep indices [B] long in {0..T-1}
+        noise_scheduler: Noise scheduler with betas and alpha_bars
+        mask: Valid region mask [B, H, W] bool or float (optional)
+
+    Returns:
+        x_{t-1}: Previous timestep tokens [B, H, W] ints
+    """
+    B, H, W, _ = logits_x0.shape
+    device = logits_x0.device
+
+    # Get predicted x0 probabilities
+    p0 = torch.softmax(logits_x0, dim=-1)  # [B, H, W, 10]
+
+    # Get beta_t for this timestep
+    beta = noise_scheduler.betas[t_idx].view(B, 1, 1, 1).to(device)  # [B, 1, 1, 1]
+
+    # Get alpha_bar_{t-1} (use 1.0 when t==0, though we shouldn't train on t==0)
+    t_minus_1 = (t_idx - 1).clamp_min(0)
+    abar_tm1 = noise_scheduler.alpha_bars[t_minus_1].view(B, 1, 1, 1).to(device)
+
+    # Compute reverse transition probabilities
+    K = 0.1  # uniform over 10 colors
+    A = (1 - abar_tm1) * K + abar_tm1 * p0  # [B, H, W, 10]
+    mass = beta * K * A  # base mass for all tokens
+
+    # Add inertia for current token
+    s = x_t.unsqueeze(-1)  # [B, H, W, 1] current token index
+    A_s = A.gather(-1, s)  # [B, H, W, 1] probability mass at current token
+    mass.scatter_(-1, s, (1 - beta) * A_s)  # inertia on current token
+
+    # Deterministic argmax
+    x_tm1 = mass.argmax(dim=-1)  # [B, H, W]
+
+    # Apply mask if provided
+    if mask is not None:
+        x_tm1 = torch.where(mask.bool(), x_tm1, 0)
+
+    return x_tm1
+
+
 def prepare_ema_state_dict(model, ema, use_lora: bool, lora_config: dict = None):
     """
     Prepare EMA state dict, merging LoRA weights if applicable.
@@ -260,94 +315,112 @@ class ARCDiffusionTrainer:
         # Apply pixel noise to input grids only (not outputs)
         input_grids = self.apply_pixel_noise(input_grids)
 
-        # Sample random timesteps (0-indexed: [0, num_timesteps))
-        timesteps = torch.randint(0, self.noise_scheduler.num_timesteps, (batch_size,), device=self.device)
+        # Sample random timesteps from 1 to T-1 (avoid t=0 for temporal SC)
+        # This ensures we can compute t-1 without issues
+        T = self.noise_scheduler.num_timesteps
+        timesteps = torch.randint(1, T, (batch_size,), device=self.device)
 
-        # Compute logSNR from timesteps for model input
+        # Compute logSNR from timesteps for model input (at timestep t)
         # logSNR = log(alpha_bar / (1 - alpha_bar)) encodes signal-to-noise ratio
-        alpha_bars = self.noise_scheduler.alpha_bars[timesteps].clamp(1e-6, 1-1e-6).to(self.device)
-        logsnr = torch.log(alpha_bars) - torch.log1p(-alpha_bars)
+        alpha_bars_t = self.noise_scheduler.alpha_bars[timesteps].clamp(1e-6, 1-1e-6).to(self.device)
+        logsnr_t = torch.log(alpha_bars_t) - torch.log1p(-alpha_bars_t)
 
         # Create masks for valid regions
         from experimental.diffusion.utils.grid_utils import batch_create_masks
         masks = batch_create_masks(heights, widths, self.model.max_size)
 
-        # Add noise to clean output grids using uniform distribution over {0..9}
+        # Add noise to clean output grids at timestep t
         # Only noise valid regions, clamp invalid regions to 0
-        noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps, masks)
+        noisy_grids_t = self.noise_scheduler.add_noise(output_grids, timesteps, masks)
 
-        # Calculate self-conditioning gain based on alpha_bar (noise level)
-        # Low alpha_bar (high noise) → low gain (0.3), High alpha_bar (low noise) → high gain (1.0)
+        # Calculate self-conditioning gain for timestep t
         from ..utils.noise_scheduler import sc_gain_from_abar
-        sc_gain = sc_gain_from_abar(timesteps, self.noise_scheduler)
+        sc_gain_t = sc_gain_from_abar(timesteps, self.noise_scheduler)
 
-        # First pass: Generate p0_prev without gradients for self-conditioning
-        sc_p0 = None
-        if torch.rand(1).item() > self.sc_dropout_prob:
-            with torch.no_grad():
-                if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
-                    with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
-                        logits_prev = self.model(
-                            xt=noisy_grids,
-                            input_grid=input_grids,
-                            task_ids=task_indices,
-                            logsnr=logsnr,
-                            d4_idx=d4_indices,
-                            color_shift=color_shifts,
-                            masks=masks,
-                            sc_p0=None,  # No self-conditioning in first pass
-                            sc_gain=0.0
-                        )
-                else:
-                    logits_prev = self.model(
-                        xt=noisy_grids,
+        # === TEMPORAL SC: First pass at t (no SC) to get logits for x0 ===
+        with torch.no_grad():
+            if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
+                with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
+                    logits_t = self.model(
+                        xt=noisy_grids_t,
                         input_grid=input_grids,
                         task_ids=task_indices,
-                        logsnr=logsnr,
+                        logsnr=logsnr_t,
                         d4_idx=d4_indices,
                         color_shift=color_shifts,
                         masks=masks,
                         sc_p0=None,  # No self-conditioning in first pass
                         sc_gain=0.0
                     )
-                # Convert logits to centered log-probs with temperature
-                # Use fp32 for stability (helps prevent NaNs at high noise)
-                logits_fp32 = logits_prev.float()
-                log_probs = torch.log_softmax(logits_fp32 / SC_TEMPERATURE, dim=-1).to(logits_prev.dtype)
-                # Center by subtracting per-cell mean to remove bias
-                sc_p0 = log_probs - log_probs.mean(dim=-1, keepdim=True)
+            else:
+                logits_t = self.model(
+                    xt=noisy_grids_t,
+                    input_grid=input_grids,
+                    task_ids=task_indices,
+                    logsnr=logsnr_t,
+                    d4_idx=d4_indices,
+                    color_shift=color_shifts,
+                    masks=masks,
+                    sc_p0=None,  # No self-conditioning in first pass
+                    sc_gain=0.0
+                )
 
-        # Second pass: Forward with self-conditioning and compute loss
+            # Build SC features from logits_t (centered log-probs with temperature)
+            # Use fp32 for stability (helps prevent NaNs at high noise)
+            logits_fp32 = logits_t.float()
+            log_probs_t = torch.log_softmax(logits_fp32 / SC_TEMPERATURE, dim=-1).to(logits_t.dtype)
+            sc_prev_t = log_probs_t - log_probs_t.mean(dim=-1, keepdim=True)
+
+            # Teacher-force one reverse step to get x_{t-1}
+            x_tm1 = discrete_reverse_step(
+                x_t=noisy_grids_t,
+                logits_x0=logits_t,
+                t_idx=timesteps,
+                noise_scheduler=self.noise_scheduler,
+                mask=masks
+            )
+
+        # Compute logsnr for t-1
+        t_minus_1 = (timesteps - 1).clamp_min(0)
+        alpha_bars_tm1 = self.noise_scheduler.alpha_bars[t_minus_1].clamp(1e-6, 1-1e-6).to(self.device)
+        logsnr_tm1 = torch.log(alpha_bars_tm1) - torch.log1p(-alpha_bars_tm1)
+        sc_gain_tm1 = sc_gain_from_abar(t_minus_1, self.noise_scheduler)
+
+        # Apply SC dropout for the receiving step (t-1)
+        use_sc = (torch.rand(1, device=self.device).item() > self.sc_dropout_prob)
+        sc_for_tm1 = sc_prev_t if use_sc else None
+
+        # === Second pass at t-1 with SC from t → compute loss ===
         if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
             with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
                 losses = self.model.compute_loss(
-                    x0=output_grids,
+                    x0=output_grids,  # still supervise to clean x0
                     input_grid=input_grids,
                     task_ids=task_indices,
-                    xt=noisy_grids,
-                    logsnr=logsnr,
+                    xt=x_tm1,  # IMPORTANT: train on t-1 input
+                    logsnr=logsnr_tm1,  # logsnr for t-1
                     d4_idx=d4_indices,
                     color_shift=color_shifts,
                     heights=heights,
                     widths=widths,
                     auxiliary_size_loss_weight=self.auxiliary_size_loss_weight,
-                    sc_p0=sc_p0,
-                    sc_gain=sc_gain
+                    sc_p0=sc_for_tm1,  # prev-t SC (or None if dropped)
+                    sc_gain=sc_gain_tm1
                 )
         else:
             losses = self.model.compute_loss(
                 x0=output_grids,
                 input_grid=input_grids,
                 task_ids=task_indices,
-                xt=noisy_grids,
-                logsnr=logsnr,
+                xt=x_tm1,
+                logsnr=logsnr_tm1,
                 d4_idx=d4_indices,
                 color_shift=color_shifts,
                 heights=heights,
                 widths=widths,
                 auxiliary_size_loss_weight=self.auxiliary_size_loss_weight,
-                sc_p0=sc_p0,
-                sc_gain=sc_gain
+                sc_p0=sc_for_tm1,
+                sc_gain=sc_gain_tm1
             )
 
         # Backward pass with mixed precision and gradient accumulation
@@ -426,24 +499,24 @@ class ARCDiffusionTrainer:
 
                 batch_size = input_grids.shape[0]
 
-                # Sample random timesteps (0-indexed for array access)
-                timesteps = torch.randint(0, self.noise_scheduler.num_timesteps, (batch_size,), device=self.device)
+                # Sample random timesteps from 1 to T-1 (avoid t=0 for temporal SC)
+                T = self.noise_scheduler.num_timesteps
+                timesteps = torch.randint(1, T, (batch_size,), device=self.device)
 
                 # Create masks for valid regions
                 from experimental.diffusion.utils.grid_utils import batch_create_masks
                 masks = batch_create_masks(heights, widths, self.model.max_size)
 
-                # Add noise using uniform distribution over {0..9}
-                # Only noise valid regions, clamp invalid regions to 0
-                noisy_grids = self.noise_scheduler.add_noise(output_grids, timesteps, masks)
+                # Add noise at timestep t
+                noisy_grids_t = self.noise_scheduler.add_noise(output_grids, timesteps, masks)
 
-                # Compute logSNR from timesteps for model input
-                alpha_bars = self.noise_scheduler.alpha_bars[timesteps].clamp(1e-6, 1-1e-6).to(self.device)
-                logsnr = torch.log(alpha_bars) - torch.log1p(-alpha_bars)
+                # Compute logSNR for timestep t
+                alpha_bars_t = self.noise_scheduler.alpha_bars[timesteps].clamp(1e-6, 1-1e-6).to(self.device)
+                logsnr_t = torch.log(alpha_bars_t) - torch.log1p(-alpha_bars_t)
 
-                # Calculate self-conditioning gain based on alpha_bar (noise level)
+                # Calculate self-conditioning gain for timestep t
                 from ..utils.noise_scheduler import sc_gain_from_abar
-                sc_gain = sc_gain_from_abar(timesteps, self.noise_scheduler)
+                sc_gain_t = sc_gain_from_abar(timesteps, self.noise_scheduler)
 
                 # Get D4 and color shift from batch if available
                 d4_indices = batch.get('d4_idx', None)
@@ -453,15 +526,14 @@ class ARCDiffusionTrainer:
                 if color_shifts is not None:
                     color_shifts = color_shifts.to(self.device)
 
-                # First pass: Generate SC input (same as training)
-                sc_p0 = None
+                # === TEMPORAL SC: First pass at t (no SC) to get logits ===
                 if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
                     with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
-                        logits_prev = self.model(
-                            xt=noisy_grids,
+                        logits_t = self.model(
+                            xt=noisy_grids_t,
                             input_grid=input_grids,
                             task_ids=task_indices,
-                            logsnr=logsnr,
+                            logsnr=logsnr_t,
                             d4_idx=d4_indices,
                             color_shift=color_shifts,
                             masks=masks,
@@ -469,51 +541,67 @@ class ARCDiffusionTrainer:
                             sc_gain=0.0
                         )
                 else:
-                    logits_prev = self.model(
-                        xt=noisy_grids,
+                    logits_t = self.model(
+                        xt=noisy_grids_t,
                         input_grid=input_grids,
                         task_ids=task_indices,
-                        logsnr=logsnr,
+                        logsnr=logsnr_t,
                         d4_idx=d4_indices,
                         color_shift=color_shifts,
                         masks=masks,
                         sc_p0=None,
                         sc_gain=0.0
                     )
-                # Convert to centered log-probs with temperature (fp32 for stability)
-                logits_fp32 = logits_prev.float()
-                log_probs = torch.log_softmax(logits_fp32 / SC_TEMPERATURE, dim=-1).to(logits_prev.dtype)
-                sc_p0 = log_probs - log_probs.mean(dim=-1, keepdim=True)
 
-                # Second pass: Forward with SC (mirrors training)
+                # Build SC features from logits_t (centered log-probs with temperature)
+                logits_fp32 = logits_t.float()
+                log_probs_t = torch.log_softmax(logits_fp32 / SC_TEMPERATURE, dim=-1).to(logits_t.dtype)
+                sc_prev_t = log_probs_t - log_probs_t.mean(dim=-1, keepdim=True)
+
+                # Teacher-force one reverse step to get x_{t-1}
+                x_tm1 = discrete_reverse_step(
+                    x_t=noisy_grids_t,
+                    logits_x0=logits_t,
+                    t_idx=timesteps,
+                    noise_scheduler=self.noise_scheduler,
+                    mask=masks
+                )
+
+                # Compute logsnr for t-1
+                t_minus_1 = (timesteps - 1).clamp_min(0)
+                alpha_bars_tm1 = self.noise_scheduler.alpha_bars[t_minus_1].clamp(1e-6, 1-1e-6).to(self.device)
+                logsnr_tm1 = torch.log(alpha_bars_tm1) - torch.log1p(-alpha_bars_tm1)
+                sc_gain_tm1 = sc_gain_from_abar(t_minus_1, self.noise_scheduler)
+
+                # === Second pass at t-1 with SC from t (no dropout in validation) ===
                 if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
                     with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
                         losses = self.model.compute_loss(
                             x0=output_grids,
                             input_grid=input_grids,
                             task_ids=task_indices,
-                            xt=noisy_grids,
-                            logsnr=logsnr,
+                            xt=x_tm1,  # train on t-1 input
+                            logsnr=logsnr_tm1,  # logsnr for t-1
                             heights=heights,
                             widths=widths,
                             d4_idx=d4_indices,
                             color_shift=color_shifts,
-                            sc_p0=sc_p0,
-                            sc_gain=sc_gain
+                            sc_p0=sc_prev_t,  # prev-t SC (no dropout in validation)
+                            sc_gain=sc_gain_tm1
                         )
                 else:
                     losses = self.model.compute_loss(
                         x0=output_grids,
                         input_grid=input_grids,
                         task_ids=task_indices,
-                        xt=noisy_grids,
-                        logsnr=logsnr,
+                        xt=x_tm1,
+                        logsnr=logsnr_tm1,
                         heights=heights,
                         widths=widths,
                         d4_idx=d4_indices,
                         color_shift=color_shifts,
-                        sc_p0=sc_p0,
-                        sc_gain=sc_gain
+                        sc_p0=sc_prev_t,
+                        sc_gain=sc_gain_tm1
                     )
 
                 # Initialize total_losses on first batch

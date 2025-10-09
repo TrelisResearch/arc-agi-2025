@@ -43,8 +43,8 @@ So far, it seems like the v7 approach to SC is weaker than v6. Possibly just doi
 ```bash
 nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config_aa1.json > smol-v7.log 2>&1' &
 ```
-Scores --maj with 48k steps (same time, not temporal): 
-same time 2x attempts:  
+Scores --maj with 48k steps (same time, not temporal): 7.6%
+same time 2x attempts:  6.0%
 temporal 2x attempts: 
 
 re-run deep:
