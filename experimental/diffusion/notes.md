@@ -38,7 +38,14 @@ Correct!
 ## Daily Notes
 ### Oct 9th 2025
 #### v6 - with cst LR
+- uses cst learning rate
+- uses ema by default everywhere
+- uses 48k optimizer steps
 
+Testing first on toiny, should take about 40 mins.
+```bash
+nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/toiny_config.json > toiny-v4.log 2>&1' &
+```
 
 ### Oct 8th 2025
 #### Train LoRA and Embeddings of aa1 model to see if we can score on aa2!

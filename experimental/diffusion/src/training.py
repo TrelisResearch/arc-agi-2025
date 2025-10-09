@@ -993,26 +993,12 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         print(f"Loading pretrained model from: {pretrained_path}")
         checkpoint = torch.load(pretrained_path, map_location='cpu')
 
-        # Prefer EMA weights if available (usually better for fine-tuning)
-        if 'ema_state_dict' in checkpoint:
-            ema_state = checkpoint['ema_state_dict']
-            # Handle both old and new EMA format for backward compatibility
-            # Old format: {'shadow': {...}, 'decay': ..., 'warmup_steps': ..., 'steps': ...}
-            # New format: {'param.name': tensor, ...}
-            if 'shadow' in ema_state:
-                model_state_dict = ema_state['shadow']
-                print("⚠️  WARNING: Loading EMA weights from OLD checkpoint format (has 'shadow' key)")
-                print("   This format is DEPRECATED and support will be removed in future versions")
-                print("   Please re-save your checkpoints with the updated training code")
-            else:
-                model_state_dict = ema_state
-            print("✓ Using EMA weights from pretrained checkpoint (recommended for fine-tuning)")
-        elif 'model_state_dict' in checkpoint:
+        # Load model_state_dict (contains EMA weights if EMA was used during training)
+        if 'model_state_dict' in checkpoint:
             model_state_dict = checkpoint['model_state_dict']
-            print("Using training weights from pretrained checkpoint")
         else:
             model_state_dict = checkpoint
-            print("Using direct state dict from checkpoint")
+        print("✓ Loading weights from pretrained checkpoint")
 
         # Strip _orig_mod. prefix if present (from torch.compile)
         # This happens when a compiled model's state dict is saved
@@ -1430,10 +1416,6 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
                         )
                         print(f"✓ Evaluation complete: avg_task_score = {eval_score:.1%}")
 
-                        # Update best eval score
-                        if eval_score > best_eval_score:
-                            best_eval_score = eval_score
-
                         # Log to wandb
                         if use_wandb:
                             eval_log_dict = {
@@ -1462,18 +1444,21 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
 
                 # Save best model (weights only to save space)
                 if save_as_best:
-                    # Save model in bfloat16 without modifying the original
-                    model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
+                    use_lora = config.get('lora', {}).get('enabled', False)
+                    lora_config = config.get('lora', {}) if use_lora else None
+
+                    # Use EMA weights as model_state_dict if EMA is enabled, otherwise use training weights
+                    if trainer.ema is not None:
+                        ema_state = prepare_ema_state_dict(model, trainer.ema, use_lora, lora_config)
+                        model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in ema_state.items()}
+                    else:
+                        model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
+
                     save_dict = {
                         'model_state_dict': model_state_dict_bf16,
                         'config': config,
                         'dataset_info': dataset_info
                     }
-                    # Save EMA state if available (merge LoRA if applicable)
-                    if trainer.ema is not None:
-                        use_lora = config.get('lora', {}).get('enabled', False)
-                        lora_config = config.get('lora', {}) if use_lora else None
-                        save_dict['ema_state_dict'] = prepare_ema_state_dict(model, trainer.ema, use_lora, lora_config)
                     torch.save(save_dict, output_dir / 'best_model.pt')
                     # Print based on which metric was used
                     if best_model_metric == 'eval_score':
@@ -1484,18 +1469,22 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
                 # Save halfway checkpoint
                 if step >= halfway_step and not halfway_saved:
                     halfway_saved = True
-                    model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
+                    use_lora = config.get('lora', {}).get('enabled', False)
+                    lora_config = config.get('lora', {}) if use_lora else None
+
+                    # Use EMA weights as model_state_dict if EMA is enabled, otherwise use training weights
+                    if trainer.ema is not None:
+                        ema_state = prepare_ema_state_dict(model, trainer.ema, use_lora, lora_config)
+                        model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in ema_state.items()}
+                    else:
+                        model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
+
                     save_dict = {
                         'model_state_dict': model_state_dict_bf16,
                         'config': config,
                         'dataset_info': dataset_info,
                         'step': step
                     }
-                    # Save EMA state if available (merge LoRA if applicable)
-                    if trainer.ema is not None:
-                        use_lora = config.get('lora', {}).get('enabled', False)
-                        lora_config = config.get('lora', {}) if use_lora else None
-                        save_dict['ema_state_dict'] = prepare_ema_state_dict(model, trainer.ema, use_lora, lora_config)
                     torch.save(save_dict, output_dir / 'halfway_model.pt')
                     print(f"Saved halfway checkpoint at step {step} ({step/optimizer_steps:.0%} of training)")
 
@@ -1534,13 +1523,25 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
 
     # Merge LoRA weights if using LoRA
     use_lora = config.get('lora', {}).get('enabled', False)
-    if use_lora:
-        from experimental.diffusion.utils.lora import merge_lora_weights
-        print("\n🔧 Merging LoRA weights into base model...")
-        merge_lora_weights(model)
-        print("✅ LoRA weights merged successfully")
+    # Use EMA weights as model_state_dict if EMA is enabled, otherwise use training weights
+    lora_config = config.get('lora', {}) if use_lora else None
 
-        # Extract clean state dict (only base weights, not LoRA parameters)
+    if trainer.ema is not None:
+        if use_lora:
+            print("\n🔧 Merging EMA LoRA weights for final checkpoint...")
+        ema_state = prepare_ema_state_dict(model, trainer.ema, use_lora, lora_config)
+        model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in ema_state.items()}
+        if use_lora:
+            print("✅ EMA LoRA weights merged successfully")
+    else:
+        # No EMA: use training weights
+        if use_lora:
+            from experimental.diffusion.utils.lora import merge_lora_weights
+            print("\n🔧 Merging LoRA weights into base model...")
+            merge_lora_weights(model)
+            print("✅ LoRA weights merged successfully")
+
+        # Extract clean state dict
         state_dict = model.state_dict()
         clean_state_dict = {}
         for key, value in state_dict.items():
@@ -1550,13 +1551,6 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             # Strip _orig_mod. prefix from torch.compile if present
             clean_key = key.replace('_orig_mod.', '')
             clean_state_dict[clean_key] = value
-
-        model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in clean_state_dict.items()}
-    else:
-        # Save final model (weights only to save space)
-        state_dict = model.state_dict()
-        # Strip _orig_mod. prefix from torch.compile if present
-        clean_state_dict = {k.replace('_orig_mod.', ''): v for k, v in state_dict.items()}
         model_state_dict_bf16 = {k: v.to(torch.bfloat16) for k, v in clean_state_dict.items()}
 
     save_dict = {
@@ -1564,16 +1558,6 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         'config': config,
         'dataset_info': dataset_info
     }
-
-    # Save EMA state if available (merge LoRA if applicable)
-    if trainer.ema is not None:
-        lora_config = config.get('lora', {}) if use_lora else None
-        if use_lora:
-            print("🔧 Merging EMA LoRA weights for final checkpoint...")
-            save_dict['ema_state_dict'] = prepare_ema_state_dict(model, trainer.ema, use_lora, lora_config)
-            print("✅ EMA LoRA weights merged successfully")
-        else:
-            save_dict['ema_state_dict'] = prepare_ema_state_dict(model, trainer.ema, use_lora, lora_config)
 
     torch.save(save_dict, output_dir / 'final_model.pt')
 
