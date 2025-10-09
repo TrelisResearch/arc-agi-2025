@@ -37,6 +37,9 @@ Correct!
 
 ## Daily Notes
 ### Oct 9th 2025
+#### Kicking off a long run
+Will run for 1000000 optimizer steps.
+
 #### v7 - fixed SC
 So far, it seems like the v7 approach to SC is weaker than v6. Possibly just doing time-aligned is better than where we currently inference the same step twice. I'll need to re-run evaluation whereby I pass 128 steps, to see if that's the issue, and shorter steps doesn't work well without doing time steps.
 
@@ -45,7 +48,10 @@ nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --co
 ```
 Scores --maj with 48k steps (same time, not temporal): 7.6%
 same time 2x attempts:  6.0%
-temporal 2x attempts: 
+temporal 2x attempts: 6.0%
+
+so I had to re-train it with temporal (And that seems to have worked):
+Scores --maj with 48k steps: 
 
 re-run deep:
 ```bash
