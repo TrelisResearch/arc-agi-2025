@@ -96,7 +96,8 @@ class ARCDiffusionTrainer:
         ema_decay: float = 0.9995,
         ema_warmup_steps: int = 1000,
         gradient_accumulation_steps: int = 1,
-        lr_warmup_steps: int = None
+        lr_warmup_steps: int = None,
+        sc_dropout_prob: float = 0.5
     ):
         self.model = model
         self.noise_scheduler = noise_scheduler
@@ -108,6 +109,7 @@ class ARCDiffusionTrainer:
         self.auxiliary_size_loss_weight = auxiliary_size_loss_weight
         self.use_ema = use_ema
         self.gradient_accumulation_steps = gradient_accumulation_steps
+        self.sc_dropout_prob = sc_dropout_prob
 
         # Set up mixed precision
         if use_mixed_precision and device.type in ['cuda', 'mps']:
@@ -278,7 +280,7 @@ class ARCDiffusionTrainer:
 
         # First pass: Generate p0_prev without gradients for self-conditioning
         sc_p0 = None
-        if torch.rand(1).item() > 0.5:  # 50% dropout for self-conditioning
+        if torch.rand(1).item() > self.sc_dropout_prob:
             with torch.no_grad():
                 if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
                     with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
@@ -862,7 +864,6 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             max_tasks=max_tasks,
             embedding_dropout=config.get('embedding_dropout', 0.1),
             input_grid_dropout=config.get('input_grid_dropout', 0.0),
-            sc_dropout_prob=config.get('sc_dropout_prob', 0.5),
             include_size_head=include_size_head,
             size_head_hidden_dim=size_head_hidden_dim,
             noise_scheduler=noise_scheduler_for_model
@@ -948,7 +949,6 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
             max_tasks=dataset_info['num_tasks'],
             embedding_dropout=config.get('embedding_dropout', 0.1),
             input_grid_dropout=config.get('input_grid_dropout', 0.0),
-            sc_dropout_prob=config.get('sc_dropout_prob', 0.5),
             include_size_head=include_size_head,
             size_head_hidden_dim=size_head_hidden_dim,
             noise_scheduler=noise_scheduler_for_model
@@ -1044,7 +1044,8 @@ def train_arc_diffusion(config: Dict[str, Any]) -> ARCDiffusionModel:
         ema_decay=config.get('ema_decay', 0.9995),
         ema_warmup_steps=config.get('ema_warmup_steps', 1000),
         gradient_accumulation_steps=config.get('gradient_accumulation_steps', 1),
-        lr_warmup_steps=config.get('lr_warmup_steps', None)
+        lr_warmup_steps=config.get('lr_warmup_steps', None),
+        sc_dropout_prob=config.get('sc_dropout_prob', 0.5)
     )
 
     print(f"Model has {sum(p.numel() for p in model.parameters()):,} parameters")

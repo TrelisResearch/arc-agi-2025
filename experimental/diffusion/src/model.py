@@ -53,7 +53,6 @@ class TransformerDenoiser(nn.Module):
         max_tasks: int = 1000,  # Maximum number of task IDs
         embedding_dropout: float = 0.1,
         input_grid_dropout: float = 0.0,  # Dropout probability for input grid conditioning
-        sc_dropout_prob: float = 0.5,  # Self-conditioning dropout probability
         noise_scheduler=None,  # Noise scheduler for alpha_bar-based timestep embedding
     ):
         super().__init__()
@@ -61,7 +60,6 @@ class TransformerDenoiser(nn.Module):
         self.max_size = max_size
         self.vocab_size = vocab_size
         self.input_grid_dropout = input_grid_dropout
-        self.sc_dropout_prob = sc_dropout_prob
         self.noise_scheduler = noise_scheduler
 
         # Token embedding with padding_idx for PAD token
@@ -149,23 +147,13 @@ class TransformerDenoiser(nn.Module):
         xt_emb = self.embedding_dropout(xt_emb)
 
         # Handle self-conditioning
+        # When sc_p0 is None, we add nothing (true zero, no bias injection)
         if sc_p0 is not None:
             # Reshape and project previous predictions
             sc_p0_flat = sc_p0.view(batch_size, -1, 10)  # [batch_size, max_size^2, 10]
             sc_features = self.sc_proj(sc_p0_flat)  # [batch_size, max_size^2, d_model]
 
             # Add to xt embeddings with gain factor
-            # Reshape sc_gain from [batch_size] to [batch_size, 1, 1] for broadcasting if it's a tensor
-            if isinstance(sc_gain, torch.Tensor):
-                sc_gain_reshaped = sc_gain.view(batch_size, 1, 1)
-            else:
-                sc_gain_reshaped = sc_gain
-            xt_emb = xt_emb + sc_gain_reshaped * sc_features
-        elif self.training and torch.rand(1, device=device) > self.sc_dropout_prob:
-            # During training without sc_p0, randomly apply zero self-conditioning
-            # to train the model to work without self-conditioning
-            zero_sc = torch.zeros(batch_size, self.max_size * self.max_size, 10, device=device)
-            sc_features = self.sc_proj(zero_sc)
             # Reshape sc_gain from [batch_size] to [batch_size, 1, 1] for broadcasting if it's a tensor
             if isinstance(sc_gain, torch.Tensor):
                 sc_gain_reshaped = sc_gain.view(batch_size, 1, 1)
@@ -249,7 +237,6 @@ class ARCDiffusionModel(nn.Module):
         max_tasks: int = 1000,
         embedding_dropout: float = 0.1,
         input_grid_dropout: float = 0.0,
-        sc_dropout_prob: float = 0.5,
         include_size_head: bool = True,
         size_head_hidden_dim: int = None,
         noise_scheduler=None,
@@ -269,7 +256,6 @@ class ARCDiffusionModel(nn.Module):
             max_tasks=max_tasks,
             embedding_dropout=embedding_dropout,
             input_grid_dropout=input_grid_dropout,
-            sc_dropout_prob=sc_dropout_prob,
             noise_scheduler=noise_scheduler
         )
 

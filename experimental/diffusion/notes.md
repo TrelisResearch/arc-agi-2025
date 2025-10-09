@@ -42,7 +42,7 @@ Correct!
 - uses ema by default everywhere
 - uses 48k optimizer steps
 
-Testing first on toiny, should take about 40 mins (logs say v4 instead of v6).
+Testing first on toiny, should take about 40 mins (logs say v4 instead of v6) - btw this is wrong because it's aa2 not aa1.
 ```bash
 nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/toiny_config.json > toiny-v4.log 2>&1' &
 ```
@@ -436,5 +436,19 @@ smol - 32 steps (final model, not best):
 uv run python experimental/diffusion/evaluate.py --config experimental/diffusion/configs/mediom_config.json --num-steps 32 --maj --model-path experimental/diffusion/outputs/mediom/final_model.pt
 ```
 mediom - 32 steps (final model, not best):
-- simple: 
+- simple:
 - sample-40x-augs: Correct Sizes: 125/172 (72.7%)
+
+### Oct 9th 2025
+#### Architectural cleanup
+Removed dead code and consolidated self-conditioning (SC) logic:
+- **Removed ARCDiffusionSampler class** (~195 lines): This class had a blend-and-re-noise variant that was never called. All inference goes through DiffusionInference.sample_with_steps with temporal SC (previous step's probs).
+- **Fixed "no-SC" to be truly zero**: Removed the `elif` branch that added `sc_proj(zeros)`, which was injecting bias even when SC was disabled.
+- **Moved sc_dropout_prob from model to trainer**: Consolidated all SC logic in the trainer, not split between model and trainer. This parameter now lives in the `training` section of config files, not the `model` section.
+- **Created smol_config_aa1_deep.json**: 4x deeper network with same parameter count: 192d × 16 layers (vs 384d × 4 layers). Tests depth vs width trade-off.
+
+Files modified:
+- `src/model.py`: Removed sc_dropout_prob parameter from DiffusionDenoiser and ARCDiffusionModel
+- `src/training.py`: Removed ARCDiffusionSampler class, added sc_dropout_prob to ARCDiffusionTrainer
+- `evaluate.py`: Removed ARCDiffusionSampler import
+- `configs/*.json`: Moved sc_dropout_prob from "model" to "training" section
