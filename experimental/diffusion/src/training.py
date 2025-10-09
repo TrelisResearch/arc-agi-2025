@@ -333,10 +333,6 @@ class ARCDiffusionTrainer:
         # Only noise valid regions, clamp invalid regions to 0
         noisy_grids_t = self.noise_scheduler.add_noise(output_grids, timesteps, masks)
 
-        # Calculate self-conditioning gain for timestep t
-        from ..utils.noise_scheduler import sc_gain_from_abar
-        sc_gain_t = sc_gain_from_abar(timesteps, self.noise_scheduler)
-
         # === TEMPORAL SC: First pass at t (no SC) to get logits for x0 ===
         with torch.no_grad():
             if self.use_mixed_precision and self.device.type in ['cuda', 'mps']:
@@ -384,6 +380,8 @@ class ARCDiffusionTrainer:
         t_minus_1 = (timesteps - 1).clamp_min(0)
         alpha_bars_tm1 = self.noise_scheduler.alpha_bars[t_minus_1].clamp(1e-6, 1-1e-6).to(self.device)
         logsnr_tm1 = torch.log(alpha_bars_tm1) - torch.log1p(-alpha_bars_tm1)
+
+        from ..utils.noise_scheduler import sc_gain_from_abar
         sc_gain_tm1 = sc_gain_from_abar(t_minus_1, self.noise_scheduler)
 
         # Apply SC dropout for the receiving step (t-1)
@@ -514,10 +512,6 @@ class ARCDiffusionTrainer:
                 alpha_bars_t = self.noise_scheduler.alpha_bars[timesteps].clamp(1e-6, 1-1e-6).to(self.device)
                 logsnr_t = torch.log(alpha_bars_t) - torch.log1p(-alpha_bars_t)
 
-                # Calculate self-conditioning gain for timestep t
-                from ..utils.noise_scheduler import sc_gain_from_abar
-                sc_gain_t = sc_gain_from_abar(timesteps, self.noise_scheduler)
-
                 # Get D4 and color shift from batch if available
                 d4_indices = batch.get('d4_idx', None)
                 color_shifts = batch.get('color_shift', None)
@@ -571,6 +565,8 @@ class ARCDiffusionTrainer:
                 t_minus_1 = (timesteps - 1).clamp_min(0)
                 alpha_bars_tm1 = self.noise_scheduler.alpha_bars[t_minus_1].clamp(1e-6, 1-1e-6).to(self.device)
                 logsnr_tm1 = torch.log(alpha_bars_tm1) - torch.log1p(-alpha_bars_tm1)
+
+                from ..utils.noise_scheduler import sc_gain_from_abar
                 sc_gain_tm1 = sc_gain_from_abar(t_minus_1, self.noise_scheduler)
 
                 # === Second pass at t-1 with SC from t (no dropout in validation) ===
