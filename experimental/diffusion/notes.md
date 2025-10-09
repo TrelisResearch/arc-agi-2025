@@ -38,9 +38,13 @@ Correct!
 ## Daily Notes
 ### Oct 9th 2025
 #### v7 - fixed SC
+So far, it seems like the v7 approach to SC is weaker than v6. Possibly just doing time-aligned is better than where we currently inference the same step twice. I'll need to re-run evaluation whereby I pass 128 steps, to see if that's the issue, and shorter steps doesn't work well without doing time steps.
+
 ```bash
 nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config_aa1.json > smol-v7.log 2>&1' &
 ```
+
+
 re-run deep:
 ```bash
 nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config_aa1_deep.json > smol_config_aa1-v7-deep.log 2>&1' &
@@ -55,6 +59,7 @@ Testing first on toiny, should take about 40 mins (logs say v4 instead of v6) - 
 ```bash
 nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/toiny_config.json > toiny-v4.log 2>&1' &
 ```
+Scores --maj with 48k steps: 12.0%
 
 Testing smol
 ```bash
@@ -497,3 +502,10 @@ Files modified:
 - Hoisted temperature to `SC_TEMPERATURE = 1.5` constant at top of training.py and evaluate.py for consistency
 - Wrapped log_softmax computation in fp32 for stability: `logits.float() → log_softmax → .to(dtype)` to prevent NaNs at high noise
 - Removed `sc_dropout_prob` from `DiffusionInference._load_model()` constructor call (was causing crash)
+
+**Fixed denoising progression visualizations:**
+- `create_denoising_progression_visualization` was using single-pass with no SC
+- Also had a bug: was passing timestep index where model expects logsnr
+- Updated to use same two-pass SC as training/inference
+- Now properly computes logsnr from timestep before passing to model
+- Visualizations now accurately reflect actual model behavior

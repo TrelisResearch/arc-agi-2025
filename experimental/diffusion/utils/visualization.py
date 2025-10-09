@@ -264,9 +264,31 @@ def create_denoising_progression_visualization(
                        valid_height=height, valid_width=width)
 
             # Generate denoised prediction from this timestep with masking
-            logits = model(noisy_grid, input_grid, task_idx, t_tensor,
+            # Use same two-pass SC as training/inference
+            # Compute logSNR from timestep
+            alpha_bars_t = noise_scheduler.alpha_bars[t_tensor].clamp(1e-6, 1-1e-6).to(device)
+            logsnr = torch.log(alpha_bars_t) - torch.log1p(-alpha_bars_t)
+
+            # Calculate self-conditioning gain
+            from experimental.diffusion.utils.noise_scheduler import sc_gain_from_abar
+            sc_gain = sc_gain_from_abar(t_tensor, noise_scheduler)
+
+            # Pass 1: No SC
+            logits_pass1 = model(noisy_grid, input_grid, task_idx, logsnr,
+                               d4_idx=d4_idx, color_shift=color_shift,
+                               masks=mask.float(), sc_p0=None, sc_gain=0.0)
+
+            # Create SC input: log-probs with temperature, centered (fp32 for stability)
+            from experimental.diffusion.src.training import SC_TEMPERATURE
+            logits_fp32 = logits_pass1.float()
+            log_probs = torch.log_softmax(logits_fp32 / SC_TEMPERATURE, dim=-1).to(logits_pass1.dtype)
+            sc_p0 = log_probs - log_probs.mean(dim=-1, keepdim=True)
+
+            # Pass 2: With SC
+            logits = model(noisy_grid, input_grid, task_idx, logsnr,
                          d4_idx=d4_idx, color_shift=color_shift,
-                         masks=mask.float())
+                         masks=mask.float(), sc_p0=sc_p0, sc_gain=sc_gain)
+
             predicted_grid = torch.argmax(logits, dim=-1)
 
             # Debug: Check prediction statistics
