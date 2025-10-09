@@ -370,18 +370,13 @@ class ARCDiffusionTrainer:
         losses['grad_norm'] = grad_norm.item() if isinstance(grad_norm, torch.Tensor) else grad_norm
         return {key: value.item() if hasattr(value, 'item') else value for key, value in losses.items()}
 
-    def validate(self, val_loader: torch.utils.data.DataLoader, num_batches: int = 10, use_ema: bool = True) -> Dict[str, float]:
-        """Run validation."""
-        # Use EMA weights if available and requested
-        if use_ema and self.ema is not None:
-            from experimental.diffusion.utils.ema import ModelWithEMA
-            with ModelWithEMA(self.model, self.ema) as ema_model:
-                return self._validate_impl(val_loader, num_batches)
-        else:
-            return self._validate_impl(val_loader, num_batches)
+    def validate(self, val_loader: torch.utils.data.DataLoader, num_batches: int = 10) -> Dict[str, float]:
+        """
+        Run validation using current training weights (not EMA).
 
-    def _validate_impl(self, val_loader: torch.utils.data.DataLoader, num_batches: int = 10) -> Dict[str, float]:
-        """Internal validation implementation."""
+        Note: For accurate performance measurement with EMA, use periodic evaluation instead.
+        Validation is just for quick monitoring of training progress.
+        """
         self.model.eval()
         total_losses = {}  # Will be initialized from first batch
         num_samples = 0
