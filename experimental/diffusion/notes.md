@@ -42,6 +42,10 @@ Will run for 1000000 optimizer steps!
 ```bash
 nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/smol_config.json > smol-v7-1M.log 2>&1' &
 ```
+and kick off a mediom version too:
+```bash
+nohup bash -c 'PYTHONUNBUFFERED=1 uv run experimental/diffusion/pipeline.py --config experimental/diffusion/configs/mediom_config.json > mediom-v7-1M.log 2>&1' &
+```
 
 #### v7 - fixed SC
 So far, it seems like the v7 approach to SC is weaker than v6. Possibly just doing time-aligned is better than where we currently inference the same step twice. I'll need to re-run evaluation whereby I pass 128 steps, to see if that's the issue, and shorter steps doesn't work well without doing time steps.
