@@ -33,6 +33,25 @@ curl --request POST https://rest.runpod.io/v1/pods \
      }'
 ```
 
+### Quick Start - Evaluation
+
+For evaluation, you can run models from a private endpoint OR from a Runpod instance that will automatically spin up (you need to set `RUNPOD_API_KEY` in a `.env` file for Runpod or set `OPENAI_API_KEY_OPENAI` to hit an openai style endpoint). To see evaluation options run:
+```bash
+uv run python3 -m llm_python.run_arc_tasks_soar -h
+```
+for example, to run 10 ARC PRIZE 2024 evaluation tasks using gpt-5-nano you would run:
+```bash
+uv run python3 -m llm_python.run_arc_tasks_soar --model gpt-5-nano --dataset arc-prize-2025 --subset evaluation --limit 10 --max_workers 64 --base-url https://openrouter.ai/api/v1 --unsafe-executor --max_attempts 2 --max-tokens 32000
+```
+
+You can also run a model from HuggingFace by automatically booting up a Runpod H100 and then evaluating that model:
+```bash
+PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-2025 Trelis/Soar-qwen-14b-FP8-Dynamic --max-attempts 64 --subset training --max-workers 64 > julien31_soar_qwen_14b_all_100_training_64x.log 2>&1 &
+```
+
+### Quick Start - Training/Fine-tuning
+Get started on a GPU (e.g. by booting up the runpod template above on an H100 SXM), and then navigate to `llm_python/fine-tuning/unsloth_arc_finetuning_soar.ipynb` in a jupyter terminal.
+
 ### UV Project Discovery
 
 **Important**: When you run `uv` commands (like `uv venv`, `uv sync`, `uv run`) from subdirectories such as `llm_python/`, `uv` will automatically search upward through the directory hierarchy to find the root `pyproject.toml` file.
