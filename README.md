@@ -40,7 +40,7 @@ curl --request POST https://rest.runpod.io/v1/pods \
 
 ### Quick Start - Evaluation
 
-For evaluation, you can run models from a private endpoint OR from a Runpod instance that will automatically spin up (you need to set `RUNPOD_API_KEY` in a `.env` file for Runpod or set `OPENAI_API_KEY_OPENAI` to hit an openai style endpoint). To see evaluation options run:
+For evaluation, you can run models from a private endpoint OR from a Runpod instance that will automatically spin up (you need to set `RUNPOD_API_KEY` in a `.env` file for Runpod or set `OPENAI_API_KEY` to hit an openai style endpoint). To see evaluation options run:
 ```bash
 uv run python3 -m llm_python.run_arc_tasks_soar -h
 ```
