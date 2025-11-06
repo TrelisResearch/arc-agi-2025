@@ -1,6 +1,11 @@
 # ARC-AGI 2025
 
-This repository contains resources for working with the ARC-AGI (Abstraction and Reasoning Corpus for Artificial General Intelligence) datasets.
+This repository contains resources for working with the ARC-AGI (Abstraction and Reasoning Corpus for Artificial General Intelligence) datasets. 
+
+> See [here](llm_python/experiment_notes.md) for experiment notes and [here](https://wandb.ai/trelis/arc-agi-2025) for Weights and Biases logs.
+
+>[!TIP]
+> Watch [this Youtube Video](https://youtube.com/live/ev2XuAktWpM?feature=share) to better understand how to use this repository.
 
 ## Setup / requirements
 
@@ -50,7 +55,7 @@ PYTHONUNBUFFERED=1 nohup uv run runpod/create_pod_and_run_tasks.py arc-prize-202
 ```
 
 ### Quick Start - Training/Fine-tuning
-Get started on a GPU (e.g. by booting up the runpod template above on an H100 SXM), and then navigate to `llm_python/fine-tuning/unsloth_arc_finetuning_soar.ipynb` in a jupyter terminal.
+Get started on a GPU (e.g. by booting up the runpod template above on an H100 SXM), and then navigate to `llm_python/fine-tuning/unsloth_arc_finetuning_soar.ipynb` in a jupyter terminal. Before running that notebook, adjust the values in the side-by-side config.yaml .
 
 ### UV Project Discovery
 
